@@ -1,0 +1,35 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.8
+    hooks:
+      - id: ruff
+        args: [--fix]  # Автоматически исправляет проблемы
+      - id: ruff-format  # Форматирование кода
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0  # Обновлённая версия
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-added-large-files
+        args: [--maxkb=1000]  # Ограничение размера файлов (1MB)
+      - id: check-yaml  # Проверка YAML файлов
+      - id: check-toml  # Проверка TOML файлов
+      - id: check-merge-conflict  # Проверка конфликтов слияния
+      - id: debug-statements  # Находит забытые breakpoint(), pdb
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        args: [
+          --ignore-missing-imports,
+          --no-strict-optional,  # Мягче с Optional типами
+          --warn-return-any,     # Предупреждать о Any
+        ]
+        additional_dependencies: [
+          types-requests,      # Типы для requests
+          types-PyYAML,        # Типы для PyYAML
+          pandas-stubs,        # Типы для pandas
+          types-python-dateutil,
+        ]

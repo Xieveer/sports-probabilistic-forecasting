@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Env
+.venv/
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Data
+data/
+datasets/
+*.parquet
+*.csv
+*.xlsx
+
+# DVC
+.dvc/
+*.dvc
+dvc.lock
+
+# MLflow
+mlruns/
+
+# Models
+models/
+*.pkl
+*.bin
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Cache
+*.cache
+.cache/

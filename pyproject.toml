@@ -1,0 +1,23 @@
+[project]
+name = "sports-probabilistic-forecasting"
+version = "0.1.0"
+description = "Probabilistic Forecasting Service for Sports Event Outcomes"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "catboost",
+    "dvc",
+    "hydra-core",
+    "mlflow",
+    "numpy>=2.2.6",
+    "pandas>=2.3.3",
+    "scikit-learn",
+]
+
+[dependency-groups]
+dev = [
+    "cookiecutter>=2.6.0",
+    "pre-commit>=4.5.0",
+    "pytest>=9.0.1",
+    "ruff>=0.14.8",
+]
