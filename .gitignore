@@ -22,11 +22,6 @@ datasets/
 *.csv
 *.xlsx
 
-# DVC
-.dvc/
-*.dvc
-dvc.lock
-
 # MLflow
 mlruns/
 
