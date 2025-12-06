@@ -6,7 +6,7 @@
 SRC := sports_forecast
 TESTS := tests
 
-.PHONY: help init install lint format test pre-commit train clean
+.PHONY: help init install lint format test pre-commit train clean dvc-repro
 
 # ---------- Справка ----------
 
@@ -20,6 +20,7 @@ help:
 	@echo "  make pre-commit   - прогнать все pre-commit хуки на всех файлах"
 	@echo "  make train        - запустить training-пайплайн (python -m sports_forecast.train)"
 	@echo "  make clean        - удалить кеши и временные файлы"
+	@echo "  make dvc-repro     - перепроизвести датасет с DVC"
 
 # ---------- Окружение / зависимости ----------
 
@@ -63,3 +64,7 @@ clean:
 	find . -name "__pycache__" -exec rm -rf {} +
 	find . -name "*.pyc" -delete
 	find . -name "*.pyo" -delete
+
+# ---------- DVC репозиторий ----------
+dvc-repro:
+	uv run dvc repro
