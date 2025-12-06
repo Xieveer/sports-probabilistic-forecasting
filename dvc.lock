@@ -1,0 +1,15 @@
+schema: '2.0'
+stages:
+  ingest:
+    cmd: python -m sports_forecast.data.ingest
+    deps:
+    - path: sports_forecast/data/ingest.py
+      hash: md5
+      md5: 4bd030f043c7e59c47973da3d6a9940b
+      size: 849
+    outs:
+    - path: data/raw
+      hash: md5
+      md5: 65cb73a20862fc1869acedd3d07a64e3.dir
+      size: 176
+      nfiles: 1

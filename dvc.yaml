@@ -1,0 +1,7 @@
+stages:
+  ingest:
+    cmd: python -m sports_forecast.data.ingest
+    deps:
+    - sports_forecast/data/ingest.py
+    outs:
+    - data/raw
