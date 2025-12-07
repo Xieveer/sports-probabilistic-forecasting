@@ -6,7 +6,7 @@
 SRC := sports_forecast
 TESTS := tests
 
-.PHONY: help init install lint format test pre-commit train clean dvc-repro
+.PHONY: help init install lint format fix test pre-commit train clean dvc-repro
 
 # ---------- Справка ----------
 
@@ -16,6 +16,7 @@ help:
 	@echo "  make install      - обновить зависимости через uv"
 	@echo "  make lint         - запустить ruff (линтер)"
 	@echo "  make format       - отформатировать код ruff format"
+	@echo "  make fix         - автофиксить все проблемы перед коммитом"
 	@echo "  make test         - запустить pytest"
 	@echo "  make pre-commit   - прогнать все pre-commit хуки на всех файлах"
 	@echo "  make train        - запустить training-пайплайн (python -m sports_forecast.train)"
@@ -40,6 +41,11 @@ lint:
 
 # Форматирование кода (ruff format)
 format:
+	uv run ruff format $(SRC) $(TESTS)
+
+# Автофикс всех проблем перед коммитом
+fix:
+	uv run ruff check --fix $(SRC) $(TESTS)
 	uv run ruff format $(SRC) $(TESTS)
 
 # Полный прогон всех pre-commit хуков
