@@ -1,15 +1,20 @@
 schema: '2.0'
 stages:
   ingest:
-    cmd: python -m sports_forecast.data.ingest
+    cmd: uv run python -m sports_forecast.data.ingest
     deps:
+    - path: data/source
+      hash: md5
+      md5: 1022cd2c19734344a57b6417d84df57d.dir
+      size: 1377086890
+      nfiles: 4
     - path: sports_forecast/data/ingest.py
       hash: md5
-      md5: 4bd030f043c7e59c47973da3d6a9940b
-      size: 849
+      md5: 8f9b7033096f449af77fed45df43a455
+      size: 1216
     outs:
     - path: data/raw
       hash: md5
-      md5: 65cb73a20862fc1869acedd3d07a64e3.dir
-      size: 176
-      nfiles: 1
+      md5: a8a2ac5727e69e1c99e86f6730ee1c2f.dir
+      size: 176341472
+      nfiles: 4

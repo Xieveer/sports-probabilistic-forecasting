@@ -16,7 +16,7 @@ __pycache__/
 *.log
 
 # Data
-data/
+/data/
 datasets/
 *.parquet
 *.csv

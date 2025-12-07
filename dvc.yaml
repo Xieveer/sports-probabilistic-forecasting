@@ -1,7 +1,8 @@
 stages:
   ingest:
-    cmd: python -m sports_forecast.data.ingest
+    cmd: uv run python -m sports_forecast.data.ingest
     deps:
-    - sports_forecast/data/ingest.py
+      - sports_forecast/data/ingest.py
+      - data/source
     outs:
-    - data/raw
+      - data/raw
