@@ -18,3 +18,21 @@ stages:
       md5: a8a2ac5727e69e1c99e86f6730ee1c2f.dir
       size: 176341472
       nfiles: 4
+  features:
+    cmd: uv run python -m sports_forecast.features.clean
+    deps:
+    - path: data/raw
+      hash: md5
+      md5: a8a2ac5727e69e1c99e86f6730ee1c2f.dir
+      size: 176341472
+      nfiles: 4
+    - path: sports_forecast/features/clean.py
+      hash: md5
+      md5: 216c531ca4b11df60121b98fab3f90fb
+      size: 2353
+    outs:
+    - path: data/processed
+      hash: md5
+      md5: b1ef2629effb10835ea13f88c95a33f0.dir
+      size: 176341472
+      nfiles: 4
