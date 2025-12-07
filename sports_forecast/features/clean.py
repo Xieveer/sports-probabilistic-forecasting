@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
 import pandas as pd
+
+from sports_forecast.utils.logging import get_logger
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_RAW_DIR = PROJECT_ROOT / "data" / "raw"
 DATA_PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="[features] %(message)s")
+logger = get_logger(__name__)
 
 
 def process_tournament(tournament_dir: Path) -> None:
@@ -31,10 +31,13 @@ def process_tournament(tournament_dir: Path) -> None:
         return
 
     logger.info("Турнир %s: читаю raw %s", tournament_name, raw_path)
-    df = pd.read_parquet(raw_path)
+    df: pd.DataFrame = pd.read_parquet(raw_path)
 
-    # TODO: тут будет реальная очистка и нормализация
-    df_clean = df.copy()
+    if df is None or df.empty:
+        logger.warning("Турнир %s: пустой датафрейм, пропускаю", tournament_name)
+        return
+
+    df_clean: pd.DataFrame = df.copy()
 
     out_dir = DATA_PROCESSED_DIR / tournament_name
     out_dir.mkdir(parents=True, exist_ok=True)
