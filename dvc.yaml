@@ -7,10 +7,10 @@ stages:
     outs:
       - data/raw
 
-  features:
-    cmd: uv run python -m sports_forecast.features.clean
+  clean:
+    cmd: uv run python -m sports_forecast.data.clean
     deps:
-      - sports_forecast/features/clean.py
+      - sports_forecast/data/clean.py
       - data/raw
     outs:
-      - data/processed
+      - data/interim

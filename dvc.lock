@@ -10,8 +10,8 @@ stages:
       nfiles: 4
     - path: sports_forecast/data/ingest.py
       hash: md5
-      md5: 51818fe60d2c49532a8e05bd7e65d5f0
-      size: 1826
+      md5: 24890a7f473925b3099f679ba1c5e2ef
+      size: 6506
     outs:
     - path: data/raw
       hash: md5
@@ -32,6 +32,24 @@ stages:
       size: 2413
     outs:
     - path: data/processed
+      hash: md5
+      md5: b1ef2629effb10835ea13f88c95a33f0.dir
+      size: 176341472
+      nfiles: 4
+  clean:
+    cmd: uv run python -m sports_forecast.data.clean
+    deps:
+    - path: data/raw
+      hash: md5
+      md5: a8a2ac5727e69e1c99e86f6730ee1c2f.dir
+      size: 176341472
+      nfiles: 4
+    - path: sports_forecast/data/clean.py
+      hash: md5
+      md5: a8f7a90b2f80c21d4447dfd13751359e
+      size: 5803
+    outs:
+    - path: data/interim
       hash: md5
       md5: b1ef2629effb10835ea13f88c95a33f0.dir
       size: 176341472

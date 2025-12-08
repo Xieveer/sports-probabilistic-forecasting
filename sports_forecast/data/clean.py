@@ -1,6 +1,6 @@
 """Модуль очистки и предобработки данных матчей.
 
-Этот модуль отвечает за преобразование сырых данных (raw) в очищенный формат (processed).
+Этот модуль отвечает за преобразование сырых данных (raw) в очищенный формат (interim).
 
 Основные функции:
 
@@ -11,7 +11,7 @@
 Структура данных:
 
 * Входные данные: data/raw/{tournament_name}/matches.parquet
-* Выходные данные: data/processed/{tournament_name}/matches_clean.parquet
+* Выходные данные: data/interim/{tournament_name}/matches_clean.parquet
 
 Attributes:
     PROJECT_ROOT (Path): Корневая директория проекта
@@ -45,17 +45,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_RAW_DIR = PROJECT_ROOT / "data" / "raw"
 
 #: Директория для обработанных данных
-DATA_PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
+DATA_PROCESSED_DIR = PROJECT_ROOT / "data" / "interim"
 
 #: Логгер модуля для отслеживания процесса обработки
 logger = get_logger(__name__)
 
 
 def process_tournament(tournament_dir: Path) -> None:
-    """Обработать один турнир: raw → processed.
+    """Обработать один турнир: raw → interim.
 
     Читает сырые данные матчей из parquet-файла, выполняет базовую очистку
-    и сохраняет результат в processed директорию.
+    и сохраняет результат в interim директорию.
 
     Args:
         tournament_dir: Путь к директории турнира в data/raw.
@@ -104,7 +104,7 @@ def process_tournament(tournament_dir: Path) -> None:
     out_path = out_dir / "matches_clean.parquet"
 
     logger.info(
-        "Турнир %s: записываю processed (%d записей) → %s",
+        "Турнир %s: записываю interim (%d записей) → %s",
         tournament_name,
         len(df_clean),
         out_path,
