@@ -33,7 +33,10 @@ extensions = [
     "sphinx.ext.intersphinx",  # Ссылки на другую документацию (Python, pandas и т.д.)
     "sphinx.ext.todo",  # Поддержка TODO директив
     "sphinx.ext.coverage",  # Проверка покрытия документацией
+    "sphinx.ext.autosummary",
 ]
+
+autosummary_generate = True
 
 templates_path: list[str] = ["_templates"]
 exclude_patterns: list[str] = []
