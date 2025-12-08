@@ -27,13 +27,13 @@ version = "0.1.0"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
-    "sphinx.ext.autodoc",  # Автоматическая документация из docstrings
-    "sphinx.ext.napoleon",  # Поддержка Google/NumPy style docstrings
+    "sphinx.ext.autodoc",  # Автодокументация из docstrings
+    "sphinx.ext.napoleon",  # Google/NumPy style docstrings
     "sphinx.ext.viewcode",  # Ссылки на исходный код
-    "sphinx.ext.intersphinx",  # Ссылки на другую документацию (Python, pandas и т.д.)
-    "sphinx.ext.todo",  # Поддержка TODO директив
-    "sphinx.ext.coverage",  # Проверка покрытия документацией
-    "sphinx.ext.autosummary",
+    "sphinx.ext.intersphinx",  # Ссылки на внешнюю документацию
+    "sphinx.ext.todo",  # Директивы для заметок в документации
+    "sphinx.ext.coverage",  # Анализ покрытия документацией
+    "sphinx.ext.autosummary",  # Автогенерация сводных таблиц
 ]
 
 autosummary_generate = True
@@ -90,7 +90,7 @@ napoleon_preprocess_types = False
 napoleon_type_aliases = None
 napoleon_attr_annotations = True
 
-# Todo extension
+# Настройки расширения для заметок в документации
 todo_include_todos = True
 todo_emit_warnings = False
 
