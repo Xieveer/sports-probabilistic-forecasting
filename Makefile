@@ -9,7 +9,7 @@ DOCS_SOURCE := docs/source
 DOCS_BUILD := docs/build
 
 .PHONY: help init install lint format fix test pre-commit train clean dvc-repro
-.PHONY: docs docs-serve docs-clean docs-open docs-coverage docs-linkcheck
+.PHONY: docs docs-serve docs-clean docs-open docs-coverage docs-linkcheck tree
 
 # ---------- Справка ----------
 
@@ -36,6 +36,7 @@ help:
 	@echo "  make docs-open         - открыть документацию в браузере"
 	@echo "  make docs-coverage     - проверить покрытие кода документацией"
 	@echo "  make docs-linkcheck    - проверить битые ссылки в документации"
+	@echo "  make tree [DEPTH=3]    - вывести структуру проекта (с указанием глубины)"
 	@echo ""
 	@echo "Пайплайн:"
 	@echo "  make train        - запустить training-пайплайн"
@@ -130,6 +131,16 @@ docs-linkcheck:
 		echo ""; \
 		echo "=== Результаты проверки ссылок ==="; \
 		cat $(DOCS_BUILD)/linkcheck/output.txt | grep -E "(broken|redirected)" || echo "✅ Все ссылки работают!"; \
+	fi
+
+# ---------- Структура проекта ----------
+
+# Вывести структуру проекта
+tree:
+	@if command -v tree >/dev/null 2>&1; then \
+		tree -L $(or $(DEPTH),3) -I '__pycache__|*.pyc|*.pyo|.pytest_cache|.ruff_cache|*.egg-info|.venv|.git|docs/build'; \
+	else \
+		echo "❌ Команда 'tree' не найдена. Установите: sudo apt install tree (Linux) или brew install tree (macOS)"; \
 	fi
 
 # ---------- Основной пайплайн обучения ----------
