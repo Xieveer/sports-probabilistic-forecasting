@@ -65,10 +65,10 @@ data/**
 !data/processed/README.md
 
 # Исключаем все содержимое внутри слоев (турниры и файлы)
-data/source/**
-data/raw/**
-data/interim/**
-data/processed/**
+/data/source/**
+/data/raw/**
+/data/interim/**
+/data/processed/**
 
 # Sphinx documentation
 docs/build/
@@ -126,3 +126,5 @@ desktop.ini
 *.bak
 *.swp
 *~
+/models
+quick_convert.py

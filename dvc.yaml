@@ -24,3 +24,12 @@ stages:
       - data/interim
     outs:
       - data/processed
+
+  train:
+    cmd: uv run python -m sports_forecast.train --config-name train_catboost
+    deps:
+      - sports_forecast/train.py
+      - conf/train_catboost.yaml
+      - data/processed
+    outs:
+      - models
