@@ -18,6 +18,7 @@ select = [
 ignore = [
     "E203",         # конфликт с Black
     "E501",         # длина строки контролируется line-length
+    "N806",         # variable in function should be lowercase (для X, y в ML)
 ]
 
 [lint.per-file-ignores]
