@@ -42,28 +42,33 @@ outputs/
 multirun/
 .hydra/
 
-# Data - исключаем ВСЕ данные
+# Data - исключаем ВСЕ данные, но показываем структуру слоев
+data/**
+!data/.gitkeep
+!data/README.md
+
+# Разрешаем только структуру основных слоев
+!data/source/
+!data/source/.gitkeep
+!data/source/README.md
+
+!data/raw/
+!data/raw/.gitkeep
+!data/raw/README.md
+
+!data/interim/
+!data/interim/.gitkeep
+!data/interim/README.md
+
+!data/processed/
+!data/processed/.gitkeep
+!data/processed/README.md
+
+# Исключаем все содержимое внутри слоев (турниры и файлы)
+data/source/**
 data/raw/**
 data/interim/**
 data/processed/**
-data/external/**
-data/source/**/*.json
-data/source/**/*.csv
-data/source/**/*.parquet
-*.parquet
-*.csv
-*.xlsx
-*.feather
-*.h5
-*.hdf5
-
-# Разрешаем только структуру директорий
-!data/raw/.gitkeep
-!data/interim/.gitkeep
-!data/processed/.gitkeep
-!data/external/.gitkeep
-!data/source/.gitkeep
-!data/source/*/.gitkeep
 
 # Sphinx documentation
 docs/build/
