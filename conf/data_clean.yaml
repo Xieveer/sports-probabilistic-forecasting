@@ -7,12 +7,14 @@ clean:
   # Обязательные колонки, без которых матч считаем некорректным
   required_columns:
     - id
+    - status
     - datetime  # Обязательное поле с датой и временем матча
 
   # По этим колонкам дропаем строки с NaN
   drop_na_columns:
     - id
     - datetime
+    - status
     - home_points  # После маппинга
     - away_points  # После маппинга
 
@@ -27,6 +29,7 @@ clean:
   select_columns:
     - id
     - datetime
+    - status
     - home_points
     - away_points
 
@@ -40,6 +43,7 @@ clean:
     # Строковые колонки
     string:
       - id
+      - status
 
     # Datetime колонки
     datetime:

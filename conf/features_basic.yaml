@@ -2,6 +2,19 @@ paths:
   interim_dir: "data/interim"
   processed_dir: "data/processed"
 
+split:
+  status_column: "status"        # <-- твоя колонка статуса
+  train_status: "finished"       # <-- сыгранные
+  inference_status: "upcoming"   # <-- будущие
+  drop_statuses:
+    - "live"                     # <-- лайв пока выкидываем
+
+outputs:
+  train_filename: "train.parquet"
+  inference_filename: "inference.parquet"
+  all_filename: "dataset.parquet"   # опционально; можно отключить флагом ниже
+  save_all: false
+
 features:
   # Базовые фичи: разность и сумма очков
   basic:

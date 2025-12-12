@@ -4,7 +4,7 @@ paths:
 
 data:
   tournament: "uel"
-  dataset_filename: "dataset.parquet"
+  dataset_filename: "train.parquet"
 
 training:
   target_column: "target"

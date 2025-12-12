@@ -282,6 +282,68 @@ def _select_final_columns(df: pd.DataFrame, cfg: DictConfig, tournament_name: st
     return df_final
 
 
+def _split_by_status(
+    df: pd.DataFrame, cfg: DictConfig, tournament_name: str
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Разделить данные на train (finished) и inference (upcoming) по статусу."""
+    if not hasattr(cfg, "split"):
+        logger.warning(
+            "Турнир %s: секция 'split' не найдена в конфиге, всё пойдет в train", tournament_name
+        )
+        return df.copy(), df.iloc[0:0].copy()
+
+    status_col = cfg.split.status_column
+    if status_col not in df.columns:
+        logger.error(
+            "Турнир %s: колонка статуса '%s' не найдена. Колонки: %s",
+            tournament_name,
+            status_col,
+            list(df.columns),
+        )
+        return df.iloc[0:0].copy(), df.iloc[0:0].copy()
+
+    drop_statuses = set(cfg.split.get("drop_statuses", []) or [])
+    if drop_statuses:
+        before = len(df)
+        df = df[~df[status_col].isin(drop_statuses)].copy()
+        logger.info(
+            "Турнир %s: отброшено по статусам %s: %d строк",
+            tournament_name,
+            sorted(drop_statuses),
+            before - len(df),
+        )
+
+    train_status = cfg.split.train_status
+    inference_status = cfg.split.inference_status
+
+    train_df = df[df[status_col] == train_status].copy()
+    inference_df = df[df[status_col] == inference_status].copy()
+
+    logger.info(
+        "Турнир %s: split по '%s': train=%d (%s), inference=%d (%s)",
+        tournament_name,
+        status_col,
+        len(train_df),
+        train_status,
+        len(inference_df),
+        inference_status,
+    )
+
+    return train_df, inference_df
+
+
+def _drop_target_for_inference(
+    df: pd.DataFrame, cfg: DictConfig, tournament_name: str
+) -> pd.DataFrame:
+    """Удалить таргет из inference-датасета."""
+    if hasattr(cfg.features, "target"):
+        target_name = cfg.features.target.name
+        if target_name in df.columns:
+            df = df.drop(columns=[target_name])
+            logger.info("Турнир %s: удалён таргет '%s' из inference", tournament_name, target_name)
+    return df
+
+
 def process_tournament(tournament_dir: Path, cfg: DictConfig) -> None:
     """Обработать один турнир: interim → processed.
 
@@ -316,26 +378,67 @@ def process_tournament(tournament_dir: Path, cfg: DictConfig) -> None:
     # Добавляем лаговые фичи
     df = _add_lag_features(df, cfg, tournament_name)
 
-    # Добавляем таргет
-    df = _add_target_column(df, cfg, tournament_name)
+    # >>> НОВОЕ: делим на train/inference до создания таргета и до финальной селекции
+    train_df, inference_df = _split_by_status(df, cfg, tournament_name)
 
-    # Выбираем только нужные колонки
-    df = _select_final_columns(df, cfg, tournament_name)
+    # Таргет нужен только для train (finished)
+    train_df = _add_target_column(train_df, cfg, tournament_name)
+
+    # На всякий случай гарантируем, что в inference таргета нет
+    inference_df = _drop_target_for_inference(inference_df, cfg, tournament_name)
+
+    # Финальная селекция колонок — отдельно
+    train_df = _select_final_columns(train_df, cfg, tournament_name)
+    inference_df = _select_final_columns(inference_df, cfg, tournament_name)
 
     # Сохраняем результат
     processed_root = PROJECT_ROOT / cfg.paths.processed_dir
     out_dir = processed_root / tournament_name
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / "dataset.parquet"
 
-    logger.info(
-        "Турнир %s: записываю processed (%d записей, %d колонок) → %s",
-        tournament_name,
-        len(df),
-        df.shape[1],
-        out_path,
-    )
-    df.to_parquet(out_path, index=False)
+    # Имена файлов берём из конфига (если есть), иначе дефолты
+    train_name = getattr(getattr(cfg, "outputs", {}), "train_filename", "train.parquet")
+    inf_name = getattr(getattr(cfg, "outputs", {}), "inference_filename", "inference.parquet")
+    save_all = bool(getattr(getattr(cfg, "outputs", {}), "save_all", False))
+    all_name = getattr(getattr(cfg, "outputs", {}), "all_filename", "dataset.parquet")
+
+    train_path = out_dir / train_name
+    inf_path = out_dir / inf_name
+
+    if not train_df.empty:
+        logger.info(
+            "Турнир %s: записываю train (%d записей, %d колонок) → %s",
+            tournament_name,
+            len(train_df),
+            train_df.shape[1],
+            train_path,
+        )
+        train_df.to_parquet(train_path, index=False)
+    else:
+        logger.warning("Турнир %s: train пустой, файл не записан", tournament_name)
+
+    if not inference_df.empty:
+        logger.info(
+            "Турнир %s: записываю inference (%d записей, %d колонок) → %s",
+            tournament_name,
+            len(inference_df),
+            inference_df.shape[1],
+            inf_path,
+        )
+        inference_df.to_parquet(inf_path, index=False)
+    else:
+        logger.warning("Турнир %s: inference пустой, файл не записан", tournament_name)
+
+    if save_all:
+        all_path = out_dir / all_name
+        logger.info(
+            "Турнир %s: записываю dataset (all) (%d записей, %d колонок) → %s",
+            tournament_name,
+            len(df),
+            df.shape[1],
+            all_path,
+        )
+        df.to_parquet(all_path, index=False)
 
 
 @hydra.main(config_path="../../conf", config_name="features_basic", version_base="1.3")
