@@ -37,6 +37,11 @@ Thumbs.db
 *.log
 logs/
 
+# Hydra outputs
+outputs/
+multirun/
+.hydra/
+
 # Data - исключаем ВСЕ данные
 data/raw/**
 data/interim/**
