@@ -1,0 +1,48 @@
+
+paths:
+  raw_dir: "data/raw"
+  interim_dir: "data/interim"
+
+clean:
+  # Обязательные колонки, без которых матч считаем некорректным
+  required_columns:
+    - id
+    - datetime  # Обязательное поле с датой и временем матча
+
+  # По этим колонкам дропаем строки с NaN
+  drop_na_columns:
+    - id
+    - datetime
+    - home_points  # После маппинга
+    - away_points  # После маппинга
+
+  # Маппинг колонок: унифицируем названия из разных турниров
+  column_mapping:
+    h_m_s: home_points
+    a_m_s: away_points
+    _hmps: home_points
+    _amps: away_points
+
+  # Колонки для финального датасета (после маппинга)
+  select_columns:
+    - id
+    - datetime
+    - home_points
+    - away_points
+
+  # Типизация колонок
+  dtype_mapping:
+    # Числовые колонки
+    numeric:
+      home_points: int
+      away_points: int
+
+    # Строковые колонки
+    string:
+      - id
+
+    # Datetime колонки
+    datetime:
+      datetime:
+        format: null  # Автоопределение формата (можно указать "%Y-%m-%d %H:%M:%S" если известен)
+        errors: "coerce"  # Невалидные даты → NaT

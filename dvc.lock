@@ -5,52 +5,60 @@ stages:
     deps:
     - path: data/source
       hash: md5
-      md5: 1022cd2c19734344a57b6417d84df57d.dir
-      size: 1377086890
-      nfiles: 4
+      md5: 4984367cfa40dacbfe14789251420d4c.dir
+      size: 474621059
+      nfiles: 9
     - path: sports_forecast/data/ingest.py
       hash: md5
-      md5: 24890a7f473925b3099f679ba1c5e2ef
-      size: 6506
+      md5: 7b534b2ed50b5b1589746125148e1f68
+      size: 9535
     outs:
     - path: data/raw
       hash: md5
-      md5: a8a2ac5727e69e1c99e86f6730ee1c2f.dir
-      size: 176341472
+      md5: a42dd10913621b46be5af78fec0dd84f.dir
+      size: 185907196
       nfiles: 4
   features:
-    cmd: uv run python -m sports_forecast.features.clean
+    cmd: uv run python -m sports_forecast.features.features_build
     deps:
-    - path: data/raw
+    - path: conf/features_basic.yaml
       hash: md5
-      md5: a8a2ac5727e69e1c99e86f6730ee1c2f.dir
-      size: 176341472
+      md5: b17f41d94ed8ff3f37a15168433f779a
+      size: 2003
+    - path: data/interim
+      hash: md5
+      md5: 045ca91444a9b07435227b196f3a0245.dir
+      size: 3185205
       nfiles: 4
-    - path: sports_forecast/features/clean.py
+    - path: sports_forecast/features/features_build.py
       hash: md5
-      md5: 2cabedc1172815dffecd58f10e96c6da
-      size: 2413
+      md5: 5a3997a51ab8439f6557735b0b796d52
+      size: 13469
     outs:
     - path: data/processed
       hash: md5
-      md5: b1ef2629effb10835ea13f88c95a33f0.dir
-      size: 176341472
+      md5: 884efbc1e6337dc4bc8f6b70309ea2b1.dir
+      size: 754112
       nfiles: 4
   clean:
     cmd: uv run python -m sports_forecast.data.clean
     deps:
+    - path: conf/data_clean.yaml
+      hash: md5
+      md5: edd64848d9cac131de7a4e3c27be051c
+      size: 1389
     - path: data/raw
       hash: md5
-      md5: a8a2ac5727e69e1c99e86f6730ee1c2f.dir
-      size: 176341472
+      md5: a42dd10913621b46be5af78fec0dd84f.dir
+      size: 185907196
       nfiles: 4
     - path: sports_forecast/data/clean.py
       hash: md5
-      md5: a8f7a90b2f80c21d4447dfd13751359e
-      size: 5803
+      md5: f9c860fbdfdbc970beb5d13fe707c25f
+      size: 13258
     outs:
     - path: data/interim
       hash: md5
-      md5: b1ef2629effb10835ea13f88c95a33f0.dir
-      size: 176341472
+      md5: 045ca91444a9b07435227b196f3a0245.dir
+      size: 3185205
       nfiles: 4

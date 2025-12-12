@@ -11,6 +11,16 @@ stages:
     cmd: uv run python -m sports_forecast.data.clean
     deps:
       - sports_forecast/data/clean.py
+      - conf/data_clean.yaml
       - data/raw
     outs:
       - data/interim
+
+  features:
+    cmd: uv run python -m sports_forecast.features.features_build
+    deps:
+      - sports_forecast/features/features_build.py
+      - conf/features_basic.yaml
+      - data/interim
+    outs:
+      - data/processed

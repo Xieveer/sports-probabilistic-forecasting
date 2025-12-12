@@ -1,0 +1,44 @@
+paths:
+  interim_dir: "data/interim"
+  processed_dir: "data/processed"
+
+features:
+  # Базовые фичи: разность и сумма очков
+  basic:
+    # Разность очков (home - away)
+    diff:
+      name: "points_diff"                    # имя фичи разности
+      home_column: "home_points"             # колонка очков хозяев
+      away_column: "away_points"             # колонка очков гостей
+
+    # Сумма очков (home + away)
+    total:
+      name: "points_total"                   # имя фичи суммы
+      home_column: "home_points"             # колонка очков хозяев
+      away_column: "away_points"             # колонка очков гостей
+
+  # Лаговые фичи на основе базовых
+  lag:
+    # Лаг разности очков
+    diff:
+      source_column: "points_diff"           # колонка, по которой считаем лаг
+      new_column: "points_diff_lag1"         # имя новой фичи
+      periods: 1                             # shift(1)
+
+    # Лаг суммы очков
+    total:
+      source_column: "points_total"          # колонка, по которой считаем лаг
+      new_column: "points_total_lag1"        # имя новой фичи
+      periods: 1                             # shift(1)
+
+  # Таргет: победа хозяев
+  target:
+    name: "target"                           # имя таргет-колонки
+    home_column: "home_points"               # колонка с очками хозяев
+    away_column: "away_points"               # колонка с очками гостей
+
+  # Финальные колонки для датасета (готового к обучению)
+  final_columns:
+    - "points_diff_lag1"     # лаг разности
+    - "points_total_lag1"    # лаг суммы
+    - "target"               # таргет
