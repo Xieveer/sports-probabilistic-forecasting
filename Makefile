@@ -173,3 +173,10 @@ dvc-repro:
 	@echo "🔄 Запуск DVC pipeline..."
 	uv run dvc repro
 	@echo "✅ DVC pipeline завершен"
+
+# ---------- Демо доступ ----------
+download-demo-data:
+	uv run python -m sports_forecast.data.download_demo \
+		--url "$(URL)" \
+		--tournament "uel" \
+		--filename "source.csv"
