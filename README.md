@@ -1,6 +1,7 @@
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![DVC](https://img.shields.io/badge/DVC-3.0+-orange.svg)
 ![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 # Sports Probabilistic Forecasting
 
