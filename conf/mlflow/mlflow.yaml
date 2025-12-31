@@ -1,0 +1,3 @@
+tracking_uri: "file:./mlruns"
+experiment_name: "sports_forecast"
+registry_uri: null

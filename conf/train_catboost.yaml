@@ -1,3 +1,7 @@
+defaults:
+  - mlflow: mlflow
+  - _self_
+
 paths:
   processed_dir: "data/processed"
   models_dir: "models"
@@ -9,7 +13,6 @@ data:
 training:
   target_column: "target"
 
-  # Укажи свои 2 лаговые фичи из processed
   feature_columns:
     - "points_diff_lag1"
     - "points_total_lag1"
@@ -17,9 +20,6 @@ training:
   test_size: 0.2
   random_state: 42
   stratify: true
-
-  # Если есть колонка даты/времени — позже можно сделать time-split.
-  # Сейчас оставляем random split.
   time_column: null
 
 model:
@@ -35,12 +35,10 @@ model:
     depth: 6
     l2_leaf_reg: 3.0
 
-    # Важно для скорости/стабильности
     random_seed: 42
     verbose: 100
     allow_writing_files: false
 
-    # Ранний стоп по валидации
     od_type: "Iter"
     od_wait: 200
 

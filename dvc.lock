@@ -67,8 +67,8 @@ stages:
     deps:
     - path: conf/train_catboost.yaml
       hash: md5
-      md5: 4f9f9ef3d12d9700896cf414bca9d0e9
-      size: 1033
+      md5: ce76881d7cb6e69b864886b75740bbd5
+      size: 726
     - path: data/processed
       hash: md5
       md5: f33eeb96b6e95c386540bb77fae9f5c9.dir
@@ -76,11 +76,11 @@ stages:
       nfiles: 3
     - path: sports_forecast/train.py
       hash: md5
-      md5: 88d8427eec713c6b8ad02eb420502cbe
-      size: 4158
+      md5: 0161a40b6f079c38055a341032467146
+      size: 7399
     outs:
     - path: models
       hash: md5
-      md5: 5d2fec32f57b4f6b07aa2c25b2e76790.dir
+      md5: f0da3cf60d12533153dc77eb024e0e62.dir
       size: 221264
       nfiles: 1
