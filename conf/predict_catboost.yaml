@@ -1,0 +1,21 @@
+paths:
+  processed_dir: "data/processed"
+  predictions_dir: "data/predictions"
+  models_dir: "models"
+
+data:
+  tournament: "uel"
+  inference_filename: "inference.parquet"
+
+model:
+  name: "catboost_baseline"
+  load_format: "cbm"
+
+inference:
+  feature_columns:
+    - "points_diff_lag1"
+    - "points_total_lag1"
+  proba_column: "proba_home_win"
+
+logging:
+  level: "INFO"

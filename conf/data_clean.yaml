@@ -15,8 +15,6 @@ clean:
     - id
     - datetime
     - status
-    - home_points  # После маппинга
-    - away_points  # После маппинга
 
   # Маппинг колонок: унифицируем названия из разных турниров
   column_mapping:
@@ -37,8 +35,8 @@ clean:
   dtype_mapping:
     # Числовые колонки
     numeric:
-      home_points: int
-      away_points: int
+      home_points: float
+      away_points: float
 
     # Строковые колонки
     string:

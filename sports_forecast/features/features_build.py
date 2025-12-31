@@ -234,33 +234,46 @@ def _add_target_column(df: pd.DataFrame, cfg: DictConfig, tournament_name: str) 
     return df
 
 
-def _select_final_columns(df: pd.DataFrame, cfg: DictConfig, tournament_name: str) -> pd.DataFrame:
-    """Выбрать только необходимые колонки для финального датасета.
+def _select_final_columns(
+    df: pd.DataFrame,
+    cfg: DictConfig,
+    tournament_name: str,
+    *,
+    include_target: bool,
+) -> pd.DataFrame:
+    """Выбрать колонки для финального датасета (meta + features [+ target]).
 
     Args:
         df: Датафрейм с подготовленными фичами.
         cfg: Hydra-конфиг с параметрами финальных колонок.
         tournament_name: Название турнира (для логирования).
+        include_target: Добавлять ли таргет в итоговый набор (True для train, False для inference).
 
     Returns:
         Датафрейм с только необходимыми колонками.
     """
-    if not hasattr(cfg.features, "final_columns"):
-        logger.warning(
-            "Турнир %s: секция 'final_columns' не найдена в конфиге, использую все колонки",
-            tournament_name,
-        )
-        return df
+    features_cfg = getattr(cfg, "features", {})
 
-    final_cols = cfg.features.final_columns
-    available_cols = [col for col in final_cols if col in df.columns]
+    meta_cols = list(getattr(features_cfg, "meta_columns", []) or [])
+    feature_cols = list(getattr(features_cfg, "final_columns", []) or [])
 
-    if len(available_cols) != len(final_cols):
-        missing_cols = set(final_cols) - set(df.columns)
+    cols: list[str] = []
+    cols.extend(meta_cols)
+    cols.extend(feature_cols)
+
+    target_name: str | None = None
+    if include_target and hasattr(features_cfg, "target"):
+        target_name = features_cfg.target.name
+        cols.append(target_name)
+
+    available_cols = [c for c in cols if c in df.columns]
+
+    if len(available_cols) != len(cols):
+        missing = set(cols) - set(df.columns)
         logger.warning(
-            "Турнир %s: не все финальные колонки найдены: отсутствуют %s",
+            "Турнир %s: не все финальные колонки найдены, отсутствуют %s",
             tournament_name,
-            missing_cols,
+            missing,
         )
 
     if not available_cols:
@@ -272,10 +285,9 @@ def _select_final_columns(df: pd.DataFrame, cfg: DictConfig, tournament_name: st
 
     df_final = df[available_cols].copy()
     logger.info(
-        "Турнир %s: выбраны финальные колонки (%d/%d): %s",
+        "Турнир %s: выбраны финальные колонки (%d): %s",
         tournament_name,
         len(available_cols),
-        len(final_cols),
         ", ".join(available_cols),
     )
 
@@ -378,7 +390,7 @@ def process_tournament(tournament_dir: Path, cfg: DictConfig) -> None:
     # Добавляем лаговые фичи
     df = _add_lag_features(df, cfg, tournament_name)
 
-    # >>> НОВОЕ: делим на train/inference до создания таргета и до финальной селекции
+    # Делим на train/inference до финальной селекции
     train_df, inference_df = _split_by_status(df, cfg, tournament_name)
 
     # Таргет нужен только для train (finished)
@@ -387,9 +399,16 @@ def process_tournament(tournament_dir: Path, cfg: DictConfig) -> None:
     # На всякий случай гарантируем, что в inference таргета нет
     inference_df = _drop_target_for_inference(inference_df, cfg, tournament_name)
 
-    # Финальная селекция колонок — отдельно
-    train_df = _select_final_columns(train_df, cfg, tournament_name)
-    inference_df = _select_final_columns(inference_df, cfg, tournament_name)
+    # Финальная селекция колонок:
+    # - train: meta + features + target
+    # - inference: meta + features (без таргета)
+    train_df = _select_final_columns(train_df, cfg, tournament_name, include_target=True)
+    inference_df = _select_final_columns(
+        inference_df,
+        cfg,
+        tournament_name,
+        include_target=False,
+    )
 
     # Сохраняем результат
     processed_root = PROJECT_ROOT / cfg.paths.processed_dir
