@@ -1,0 +1,4 @@
+[core]
+    remote = yacloud
+['remote "yacloud"']
+    url = s3://sports-probabilistic-forecasting/dvc

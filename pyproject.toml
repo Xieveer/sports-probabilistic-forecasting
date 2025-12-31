@@ -7,6 +7,7 @@ requires-python = ">=3.10"
 dependencies = [
     "catboost",
     "dvc",
+    "dvc-s3>=3.2.2",
     "hydra-core",
     "mlflow",
     "numpy>=2.2.6",

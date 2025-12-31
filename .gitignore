@@ -114,6 +114,7 @@ dmypy.json
 .dvc/cache
 .dvc/tmp
 .dvc/plots
+.dvc/config.local
 
 # OS
 .DS_Store
