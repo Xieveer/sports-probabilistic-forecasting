@@ -2,15 +2,15 @@
 Обучение модели CatBoost на processed-датасете с динамическим вычислением таргета.
 
 Поток:
-    1. Загрузка датасета: data/processed/{tournament}/train.parquet
+    1. Загрузка датасета: data/processed/{tournament}/train_{long|wide}.parquet
     2. Динамическое вычисление таргета на основе:
        - tournament.target_sources (турнир-специфичные источники)
        - model.target_config (какой таргет использовать для этой модели)
-    3. Выбор фичей из model.features
-    4. Train/valid split
+    3. Автоматический отбор фичей с префиксом f_ (или home_f_/away_f_ для wide)
+    4. Train/valid split (временной ряд: последние 20% для валидации)
     5. Обучение CatBoostClassifier
     6. Сохранение модели: models/{tournament}/{model_name}.cbm
-    7. Логирование в MLflow
+    7. Логирование метрик и артефактов в MLflow
 
 Запуск:
     # Обучить модель is_home_win для турнира uel
@@ -165,7 +165,7 @@ def compute_target(df: pd.DataFrame, cfg: DictConfig) -> pd.Series:
     # Вычисляем таргет на основе типа
     target: pd.Series
     if hasattr(target_spec, "comparison"):
-        # Бинарная классификация: comparison (greater, less, equal)
+        # Бинарная классификация: comparison (greater, less, equal, total_over, total_under)
         comparison = target_spec.comparison
 
         if comparison == "greater":
@@ -174,10 +174,21 @@ def compute_target(df: pd.DataFrame, cfg: DictConfig) -> pd.Series:
             target = (df[col_a] < df[col_b]).astype(int)
         elif comparison == "equal":
             target = (df[col_a] == df[col_b]).astype(int)
+        elif comparison == "total_over":
+            # Тотал больше базы: (home + away) > base
+            base = target_spec.get("base", 0)
+            target = ((df[col_a] + df[col_b]) > base).astype(int)
+            logger.info("Таргет: (%s + %s) > %.1f (формат: %s)", col_a, col_b, base, data_format)
+        elif comparison == "total_under":
+            # Тотал меньше базы: (home + away) < base
+            base = target_spec.get("base", 0)
+            target = ((df[col_a] + df[col_b]) < base).astype(int)
+            logger.info("Таргет: (%s + %s) < %.1f (формат: %s)", col_a, col_b, base, data_format)
         else:
             raise ValueError(f"Неизвестный тип comparison: {comparison}")
 
-        logger.info("Таргет: %s %s %s (формат: %s)", col_a, comparison, col_b, data_format)
+        if comparison not in ["total_over", "total_under"]:
+            logger.info("Таргет: %s %s %s (формат: %s)", col_a, comparison, col_b, data_format)
 
     elif hasattr(target_spec, "aggregation"):
         # Регрессия или threshold: aggregation (sum, diff, etc.)
@@ -223,6 +234,84 @@ def compute_target(df: pd.DataFrame, cfg: DictConfig) -> pd.Series:
     return target
 
 
+def select_features(df: pd.DataFrame, model_cfg: DictConfig) -> list[str]:
+    """Автоматический отбор фичей на основе конфигурации модели.
+
+    Args:
+        df: Датафрейм с данными (содержит все колонки, включая фичи).
+        model_cfg: Конфиг модели с настройками feature_selection.
+
+    Returns:
+        Список названий колонок-фичей для обучения.
+
+    Raises:
+        ValueError: Если не найдено ни одной фичи с указанными префиксами.
+
+    Examples:
+        >>> # Long format (f_*)
+        >>> features = select_features(df, model_cfg)
+        >>> # ['f_pl_ewm_10', 'f_opp_ewm_10', 'f_h2h_count', ...]
+
+        >>> # Wide format (home_f_*, away_f_*)
+        >>> features = select_features(df, model_cfg)
+        >>> # ['home_f_pl_ewm_10', 'away_f_pl_ewm_10', ...]
+    """
+    # Проверяем, есть ли новая секция feature_selection
+    if hasattr(model_cfg, "feature_selection"):
+        selection_cfg = model_cfg.feature_selection
+        mode = selection_cfg.get("mode", "auto")
+
+        if mode == "auto":
+            # Автоматический отбор по префиксам
+            prefixes = []
+
+            # Поддержка единичного prefix (для long) и множественных prefixes (для wide)
+            if hasattr(selection_cfg, "prefix"):
+                prefixes.append(selection_cfg.prefix)
+            elif hasattr(selection_cfg, "prefixes"):
+                prefixes.extend(selection_cfg.prefixes)
+            else:
+                # Fallback: стандартный префикс
+                prefixes.append("f_")
+
+            # Собираем все колонки с указанными префиксами
+            features = []
+            for col in df.columns:
+                if any(col.startswith(prefix) for prefix in prefixes):
+                    features.append(col)
+
+            # Исключаем колонки из exclude списка (если указан)
+            exclude = selection_cfg.get("exclude", [])
+            if exclude:
+                features = [f for f in features if f not in exclude]
+
+            if not features:
+                raise ValueError(
+                    f"Не найдено ни одной фичи с префиксами {prefixes}. "
+                    f"Доступные колонки: {list(df.columns)}"
+                )
+
+            logger.info("Автоматически отобрано %d фичей с префиксами %s", len(features), prefixes)
+            return sorted(features)
+
+        if mode == "explicit":
+            # Явное указание списка фичей (для обратной совместимости)
+            if not hasattr(selection_cfg, "features"):
+                raise ValueError("Для mode='explicit' нужно указать список features")
+            return list(selection_cfg.features)
+
+        raise ValueError(f"Неизвестный mode для feature_selection: {mode}")
+
+    # Обратная совместимость: если есть старое поле features
+    if hasattr(model_cfg, "features"):
+        logger.warning(
+            "Используется устаревшее поле 'features'. Рекомендуется перейти на 'feature_selection'"
+        )
+        return list(model_cfg.features)
+
+    raise ValueError("Конфиг модели должен содержать 'feature_selection' или 'features'")
+
+
 def determine_data_format(model_name: str) -> str:
     """
     Определить формат данных (wide или long) по типу модели.
@@ -256,7 +345,6 @@ def load_dataset(
     processed_root: Path,
     tournament: str,
     model_name: str,
-    feature_columns: list[str],
 ) -> pd.DataFrame | None:
     """Загрузить датасет из processed-слоя с автоматическим определением формата.
 
@@ -271,7 +359,6 @@ def load_dataset(
         processed_root: Путь к директории processed.
         tournament: Название турнира.
         model_name: Название модели (для определения формата).
-        feature_columns: Список фичей для модели.
 
     Returns:
         DataFrame с данными (фичи + мета, без таргета) или None при ошибке.
@@ -307,26 +394,15 @@ def load_dataset(
         logger.error("Датасет пустой")
         return None
 
-    # Проверка наличия фичей (с поддержкой префикса f_)
-    missing = []
-    for col in feature_columns:
-        # Проверяем и с префиксом f_ и без
-        if col not in df.columns and f"f_{col}" not in df.columns:
-            missing.append(col)
-
-    if missing:
-        logger.error(
-            "Отсутствуют фичи из конфига: %s.\nДоступные колонки: %s",
-            missing,
-            list(df.columns)[:20],  # Первые 20 для краткости
-        )
-        return None
-
     logger.info("Датасет загружен: %d записей, %d колонок", len(df), df.shape[1])
     logger.info("Формат данных: %s", data_format)
 
-    # Показываем примеры фичей
-    feature_cols_in_df = [col for col in df.columns if col.startswith("f_")]
+    # Показываем примеры доступных фичей
+    feature_cols_in_df = [
+        col
+        for col in df.columns
+        if col.startswith("f_") or col.startswith("home_f_") or col.startswith("away_f_")
+    ]
     if feature_cols_in_df:
         logger.info("Фичей с префиксом f_: %d", len(feature_cols_in_df))
         logger.info("Примеры фичей: %s", feature_cols_in_df[:5])
@@ -419,7 +495,6 @@ def train_single_tournament(tournament_name: str, model_cfg: DictConfig, cfg: Di
         processed_root=processed_root,
         tournament=tournament_cfg.tournament.name,
         model_name=tournament_cfg.model.name,
-        feature_columns=list(tournament_cfg.model.features),
     )
     if df is None:
         logger.error("Турнир %s: не удалось подготовить датасет — пропускаю", tournament_name)
@@ -435,8 +510,15 @@ def train_single_tournament(tournament_name: str, model_cfg: DictConfig, cfg: Di
         logger.error("Traceback:\n%s", traceback.format_exc())
         return False
 
+    # Автоматически отбираем фичи на основе конфига модели
+    try:
+        feature_names = select_features(df, tournament_cfg.model)
+    except Exception as e:
+        logger.error("Турнир %s: не удалось отобрать фичи - %s", tournament_name, e)
+        return False
+
     # Извлекаем фичи
-    X = df[list(tournament_cfg.model.features)]
+    X = df[feature_names]
 
     # ---------- ВРЕМЕННЫЕ РЯДЫ: Сортировка по времени ----------
     time_column = tournament_cfg.training.get("time_column", "datetime")
@@ -489,8 +571,7 @@ def train_single_tournament(tournament_name: str, model_cfg: DictConfig, cfg: Di
             mlflow.log_param("n_features", X.shape[1])
 
             # Список фичей отдельным артефактом
-            feature_columns = list(tournament_cfg.model.features)
-            mlflow.log_text("\n".join(feature_columns), "features.txt")
+            mlflow.log_text("\n".join(feature_names), "features.txt")
 
             # Гиперпараметры модели
             if "params" in tournament_cfg.model:

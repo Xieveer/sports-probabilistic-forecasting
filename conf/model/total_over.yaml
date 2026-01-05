@@ -21,53 +21,16 @@ target_config:
   description: "1 если (home_points + away_points) > base, 0 иначе"
 
 # Фичи для этой модели (wide format)
-# Используются фичи обеих команд после long_to_wide трансформации
-features:
-  # Home team - EWM features
-  - "home_f_pl_global_ewm_10"
-  - "home_f_opp_global_ewm_10"
-  - "home_f_all_global_ewm_10_diff"
-  - "home_f_h2h_ewm_10_diff"
+# Автоматически используются ВСЕ фичи с префиксами home_f_* и away_f_*
+# (генерируются Feature Pipeline после long_to_wide трансформации)
+feature_selection:
+  mode: "auto"              # Автоматический отбор всех *_f_* колонок
+  prefixes:                 # Для wide формата два префикса
+    - "home_f_"
+    - "away_f_"
 
-  # Home team - Count features
-  - "home_f_pl_global_count"
-  - "home_f_opp_global_count"
-  - "home_f_h2h_count"
-
-  # Home team - Form features
-  - "home_f_pl_is_dp"
-  - "home_f_pl_is_fg"
-  - "home_f_pl_is_form"
-  - "home_f_opp_is_dp"
-  - "home_f_opp_is_fg"
-  - "home_f_opp_is_form"
-  - "home_f_pl_mins_prev_match"
-  - "home_f_opp_mins_prev_match"
-  - "home_f_diff_mins_prev_match"
-  - "home_f_match_state"
-
-  # Away team - EWM features
-  - "away_f_pl_global_ewm_10"
-  - "away_f_opp_global_ewm_10"
-  - "away_f_all_global_ewm_10_diff"
-  - "away_f_h2h_ewm_10_diff"
-
-  # Away team - Count features
-  - "away_f_pl_global_count"
-  - "away_f_opp_global_count"
-  - "away_f_h2h_count"
-
-  # Away team - Form features
-  - "away_f_pl_is_dp"
-  - "away_f_pl_is_fg"
-  - "away_f_pl_is_form"
-  - "away_f_opp_is_dp"
-  - "away_f_opp_is_fg"
-  - "away_f_opp_is_form"
-  - "away_f_pl_mins_prev_match"
-  - "away_f_opp_mins_prev_match"
-  - "away_f_diff_mins_prev_match"
-  - "away_f_match_state"
+  # Опционально: можно явно исключить проблемные фичи
+  # exclude: []
 
 # Гиперпараметры CatBoost
 params:

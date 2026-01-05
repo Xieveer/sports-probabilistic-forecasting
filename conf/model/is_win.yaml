@@ -21,30 +21,14 @@ target_config:
   description: "1 если pl побеждает opp, 0 иначе"
 
 # Фичи для этой модели
-# Используются фичи, сгенерированные Feature Pipeline (conf/features/basic.yaml)
-features:
-  # Скользящие средние (EWM)
-  - "f_pl_global_ewm_10"           # EWM игрока (global context)
-  - "f_opp_global_ewm_10"          # EWM оппонента (global context)
-  - "f_all_global_ewm_10_diff"     # Разница EWM: pl - opp
-  - "f_h2h_ewm_10_diff"            # Разница EWM в H2H матчах
+# Автоматически используются ВСЕ фичи с префиксом f_ из датасета
+# (генерируются Feature Pipeline согласно conf/features/basic.yaml)
+feature_selection:
+  mode: "auto"              # Автоматический отбор всех f_* колонок
+  prefix: "f_"              # Префикс фичей для автоматического отбора
 
-  # Счётчики матчей (Count)
-  - "f_pl_global_count"            # Количество матчей игрока
-  - "f_opp_global_count"           # Количество матчей оппонента
-  - "f_h2h_count"                  # Количество H2H встреч
-
-  # Form фичи (состояние игроков)
-  - "f_pl_is_dp"                   # Игрок играет double play
-  - "f_pl_is_fg"                   # Игрок играет first game
-  - "f_pl_is_form"                 # Игрок в форме
-  - "f_opp_is_dp"                  # Оппонент играет double play
-  - "f_opp_is_fg"                  # Оппонент играет first game
-  - "f_opp_is_form"                # Оппонент в форме
-  - "f_pl_mins_prev_match"         # Минуты с предыдущего матча игрока
-  - "f_opp_mins_prev_match"        # Минуты с предыдущего матча оппонента
-  - "f_diff_mins_prev_match"       # Разница в минутах
-  - "f_match_state"                # Состояние матча (комбинированное)
+  # Опционально: можно явно исключить проблемные фичи
+  # exclude: []
 
 # Гиперпараметры CatBoost
 params:
