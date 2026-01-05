@@ -32,7 +32,7 @@ generators:
   - type: "ewm"
     enabled: true
     metric: "diff_ps"
-    spans: [10, 20, 50]  # Только 3 размера окна для быстрой генерации
+    spans: [10]  # Только 1 размер окна для БЫСТРОГО тестирования
     shift: 1
     min_periods: 3
     adjust: false
