@@ -61,7 +61,7 @@ target_sources:
     opponent_column: "opp_points"
     comparison: "greater"
     format: "long"
-  
+
   # === WIDE FORMAT MODELS (train_wide.parquet) ===
   is_home_win:
     home_column: "home_points"
@@ -80,14 +80,14 @@ target_sources:
     away_column: "away_points"
     comparison: "equal"
     format: "wide"
-  
+
   total_over:
     home_column: "home_points"
     away_column: "away_points"
     comparison: "total_over"
     base: 5.5
     format: "wide"
-  
+
   total_under:
     home_column: "home_points"
     away_column: "away_points"

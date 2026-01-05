@@ -1,6 +1,6 @@
 # 📊 Модели и таргеты: Архитектура
 
-**Дата:** 2026-01-05  
+**Дата:** 2026-01-05
 **Версия:** 2.0 (с поддержкой long/wide форматов)
 
 ---
@@ -81,7 +81,7 @@ target_sources:
     opponent_column: "opp_points"
     comparison: "greater"  # pl_points > opp_points
     format: "long"
-  
+
   # === WIDE FORMAT MODELS ===
   total_over:
     home_column: "home_points"
@@ -89,7 +89,7 @@ target_sources:
     comparison: "total_over"  # sum > base
     base: 5.5
     format: "wide"
-  
+
   total_under:
     home_column: "home_points"
     away_column: "away_points"
@@ -297,4 +297,3 @@ lp_*.yaml:  21.5  (настольный теннис)
 ---
 
 *Обновлено: 2026-01-05*
-

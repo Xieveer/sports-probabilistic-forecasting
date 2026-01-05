@@ -32,7 +32,7 @@ features:
   - "opp_is_form"
   - "match_state"
   - "diff_mins_prev_match"
-  
+
   # Count features
   - "pl_global_count"
   - "opp_global_count"
@@ -45,11 +45,10 @@ params:
   learning_rate: 0.05
   depth: 6
   l2_leaf_reg: 3.0
-  
+
   random_seed: 42
   verbose: 100
   allow_writing_files: false
-  
+
   od_type: "Iter"
   od_wait: 200
-

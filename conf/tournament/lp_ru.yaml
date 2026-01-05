@@ -70,23 +70,23 @@ total_ranges:
 
 target_sources:
   # === LONG FORMAT MODELS (train_long.parquet) ===
-  
+
   # Модель is_win: победа по СЕТАМ (правильная логика для настольного тенниса)
   is_win:
     player_column: "pl_sets"      # Используем счет по сетам!
     opponent_column: "opp_sets"
     comparison: "greater"  # pl_sets > opp_sets
     format: "long"
-  
+
   # === WIDE FORMAT MODELS (train_wide.parquet) ===
-  
+
   # Legacy: победа по сетам
   is_home_win:
     home_column: "home_sets"      # Используем счет по сетам!
     away_column: "away_sets"
     comparison: "greater"
     format: "wide"
-  
+
   # Тотал по ПОИНТАМ (сумма всех очков во всех сетах)
   total_over:
     home_column: "home_points"    # Сумма поинтов
@@ -94,7 +94,7 @@ target_sources:
     comparison: "total_over"
     base: 70.5  # Берется из total_ranges.default
     format: "wide"
-  
+
   total_under:
     home_column: "home_points"
     away_column: "away_points"

@@ -1,6 +1,6 @@
 # 📊 Архитектура хранения букмекерских коэффициентов
 
-**Дата:** 2026-01-05  
+**Дата:** 2026-01-05
 **Версия:** 1.0
 
 ---
@@ -36,9 +36,9 @@ data/
 
 ### Преимущества отдельного файла:
 
-✅ **Быстрый джойн** по `match_id`  
-✅ **Независимая обработка** - можно обновлять odds отдельно  
-✅ **Опциональность** - турниры без odds не ломают пайплайн  
+✅ **Быстрый джойн** по `match_id`
+✅ **Независимая обработка** - можно обновлять odds отдельно
+✅ **Опциональность** - турниры без odds не ломают пайплайн
 ✅ **Расширяемость** - легко добавить коэффициенты от других букмекеров
 
 ---
@@ -81,8 +81,8 @@ data/
 
 ### UEL (киберхоккей):
 
-**Колонка:** `fon_bet_odds_feed`  
-**Формат:** Python dict в строковом виде  
+**Колонка:** `fon_bet_odds_feed`
+**Формат:** Python dict в строковом виде
 **Заполненность:** ~65%
 
 **Пример:**
@@ -104,8 +104,8 @@ data/
 
 ### LP (настольный теннис):
 
-**Колонка:** `sdf_odds_feed`  
-**Формат:** Python dict в строковом виде  
+**Колонка:** `sdf_odds_feed`
+**Формат:** Python dict в строковом виде
 **Заполненность:** ~27-28%
 
 **Пример:**
@@ -134,26 +134,26 @@ import pandas as pd
 def parse_odds(odds_str: str) -> dict:
     """
     Парсит строку с коэффициентами в структурированный dict.
-    
+
     Args:
         odds_str: Python dict в строковом виде
-        
+
     Returns:
         dict с нормализованными ключами
     """
     if pd.isna(odds_str):
         return {}
-    
+
     # Безопасный парсинг Python dict
     odds_raw = ast.literal_eval(odds_str)
-    
+
     # Нормализация ключей
     odds = {
         'odds_home_win': odds_raw.get('1'),
         'odds_draw': odds_raw.get('x'),
         'odds_away_win': odds_raw.get('2'),
     }
-    
+
     # Парсинг тоталов
     for key, val in odds_raw.items():
         if key.startswith('to_'):  # Total Over
@@ -168,7 +168,7 @@ def parse_odds(odds_str: str) -> dict:
         elif key.startswith('f2'):  # Away Handicap
             hcap = key.replace('f2', '')
             odds[f'odds_handicap_away{hcap}'] = val
-    
+
     return odds
 ```
 
@@ -184,7 +184,7 @@ def parse_odds(odds_str: str) -> dict:
 def odds_to_probability(odds: float) -> float:
     """
     Коэффициент → implied probability (с учетом маржи букмекера).
-    
+
     Examples:
         odds=2.0 → 50%
         odds=4.0 → 25%
@@ -198,14 +198,14 @@ def odds_to_probability(odds: float) -> float:
 def calculate_ev(model_prob: float, odds: float) -> float:
     """
     Расчет expected value ставки.
-    
+
     EV > 0 → ставка выгодна
     EV < 0 → ставка невыгодна
-    
+
     Args:
         model_prob: Вероятность по нашей модели (0-1)
         odds: Коэффициент букмекера
-        
+
     Returns:
         Expected value (в долях ставки)
     """
@@ -230,22 +230,22 @@ ev = calculate_ev(model_prob, odds)
 def calculate_roi(predictions: pd.DataFrame, odds: pd.DataFrame) -> float:
     """
     Расчет ROI стратегии на исторических данных.
-    
+
     Returns:
         ROI в процентах
     """
     df = predictions.merge(odds, on='match_id')
-    
+
     # Фильтруем только ставки с положительным EV
     df['ev'] = df.apply(
         lambda row: calculate_ev(row['pred_prob'], row['odds']),
         axis=1
     )
     df_bets = df[df['ev'] > 0]
-    
+
     # Считаем прибыль
     df_bets['profit'] = df_bets['is_win'] * df_bets['odds'] - 1.0
-    
+
     roi = df_bets['profit'].sum() / len(df_bets) * 100
     return roi
 ```
@@ -286,7 +286,7 @@ odds:
 
 def process_tournament(source_dir: Path, raw_root: Path) -> None:
     # ... существующая обработка matches ...
-    
+
     # Парсинг коэффициентов (если есть)
     odds_df = parse_tournament_odds(df, tournament_cfg)
     if not odds_df.empty:
@@ -310,18 +310,18 @@ def predict_with_odds_analysis(
     if not odds_path.exists():
         logger.warning("No odds data available")
         return predictions
-    
+
     odds = pd.read_parquet(odds_path)
     enriched = predictions.merge(odds, on='match_id', how='left')
-    
+
     # Добавляем implied probability
     enriched['bookmaker_prob'] = 1.0 / enriched['odds_home_win']
-    
+
     # Добавляем EV
     enriched['expected_value'] = (
         enriched['pred_prob'] * enriched['odds_home_win'] - 1.0
     )
-    
+
     return enriched
 ```
 
@@ -367,4 +367,3 @@ predictions.parquet:
 ---
 
 *Создано: 2026-01-05*
-

@@ -1,6 +1,6 @@
 # 📊 Диапазоны тоталов и правила определения победителей
 
-**Дата:** 2026-01-05  
+**Дата:** 2026-01-05
 **Версия:** 2.0 (исправлена критическая ошибка для настольного тенниса)
 
 ---
@@ -226,7 +226,7 @@ total_over:
 def generate_total_models(tournament_name: str):
     config = load_tournament_config(tournament_name)
     ranges = config['total_ranges']
-    
+
     for base in range(ranges['min'], ranges['max'] + ranges['step'], ranges['step']):
         model_name = f"total_over_{base}"
         # Создаем и обучаем модель
@@ -300,4 +300,3 @@ grep -A 4 "total_ranges:" conf/tournament/*.yaml
 ---
 
 *Обновлено: 2026-01-05 (исправлена критическая ошибка для настольного тенниса)*
-

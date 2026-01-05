@@ -27,12 +27,12 @@ features:
   - "home_f_pl_is_dp"
   - "home_f_pl_is_fg"
   - "home_f_pl_is_form"
-  
+
   # Away team form
   - "away_f_pl_is_dp"
   - "away_f_pl_is_fg"
   - "away_f_pl_is_form"
-  
+
   # Match context
   - "home_f_match_state"
   - "away_f_match_state"
@@ -45,11 +45,10 @@ params:
   learning_rate: 0.05
   depth: 6
   l2_leaf_reg: 3.0
-  
+
   random_seed: 42
   verbose: 100
   allow_writing_files: false
-  
+
   od_type: "Iter"
   od_wait: 200
-
