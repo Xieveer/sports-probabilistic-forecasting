@@ -177,18 +177,26 @@ dvc-repro:
 # ---------- MLflow UI ----------
 mlflow-ui:  ## Запустить MLflow UI на порту 5000
 	@echo "🚀 Запуск MLflow UI..."
-	@pkill -f "mlflow ui" || true
+	@-pkill -f "mlflow ui" 2>/dev/null || true
 	@sleep 1
-	@nohup uv run mlflow ui --host 127.0.0.1 --port 5000 > mlflow_ui.log 2>&1 &
-	@sleep 2
-	@echo "✅ MLflow UI запущен!"
-	@echo "📊 URL: http://127.0.0.1:5000"
-	@echo "📝 Логи: mlflow_ui.log"
+	@bash -c "nohup uv run mlflow ui --host 127.0.0.1 --port 5000 > mlflow_ui.log 2>&1 & echo \$$!" > mlflow_ui.pid
+	@sleep 3
+	@if pgrep -f "mlflow ui" > /dev/null; then \
+		echo "✅ MLflow UI запущен!"; \
+		echo "📊 URL: http://127.0.0.1:5000"; \
+		echo "📝 Логи: mlflow_ui.log"; \
+		echo "🆔 PID: $$(cat mlflow_ui.pid)"; \
+	else \
+		echo "❌ Ошибка запуска MLflow UI"; \
+		echo "Логи:"; \
+		tail -10 mlflow_ui.log; \
+		exit 1; \
+	fi
 
 mlflow-stop:  ## Остановить MLflow UI
 	@echo "🛑 Остановка MLflow UI..."
-	@pkill -f "mlflow ui" || echo "MLflow UI не запущен"
-	@echo "✅ MLflow UI остановлен"
+	@-pkill -f "mlflow ui" 2>/dev/null && echo "✅ MLflow UI остановлен" || echo "ℹ️  MLflow UI не был запущен"
+	@rm -f mlflow_ui.pid
 
 # ---------- Демо доступ ----------
 download-demo-data:
