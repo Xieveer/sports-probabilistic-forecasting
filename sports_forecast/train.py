@@ -214,13 +214,46 @@ def compute_target(df: pd.DataFrame, cfg: DictConfig) -> pd.Series:
     return target
 
 
+def determine_data_format(model_name: str) -> str:
+    """
+    Определить формат данных (wide или long) по типу модели.
+
+    Args:
+        model_name: Название модели (is_home_win, total_over_X, etc.)
+
+    Returns:
+        "wide" или "long"
+
+    Examples:
+        >>> determine_data_format("is_home_win")
+        'long'
+        >>> determine_data_format("total_over_4.5")
+        'wide'
+    """
+    # Модели победителя используют long format
+    winner_models = ["is_home_win", "is_away_win", "is_draw"]
+
+    # Модели тотала и других метрик используют wide format
+    # total_over_X, total_under_X, handicap_X, etc.
+
+    if model_name in winner_models:
+        return "long"
+
+    # По умолчанию - wide format
+    return "wide"
+
+
 def load_dataset(
     processed_root: Path,
     tournament: str,
-    dataset_filename: str,
+    model_name: str,
     feature_columns: list[str],
 ) -> pd.DataFrame | None:
-    """Загрузить датасет из processed-слоя.
+    """Загрузить датасет из processed-слоя с автоматическим определением формата.
+
+    Автоматически определяет нужный формат (wide или long) по типу модели:
+    - Модели победителя (is_home_win, is_away_win) → long format
+    - Модели тотала (total_over_X) → wide format
 
     Таргет НЕ загружается из датасета, так как он вычисляется динамически
     на основе модель-специфичного конфига.
@@ -228,15 +261,34 @@ def load_dataset(
     Args:
         processed_root: Путь к директории processed.
         tournament: Название турнира.
-        dataset_filename: Имя файла датасета (train.parquet).
+        model_name: Название модели (для определения формата).
         feature_columns: Список фичей для модели.
 
     Returns:
         DataFrame с данными (фичи + мета, без таргета) или None при ошибке.
     """
+    # Определение формата по типу модели
+    data_format = determine_data_format(model_name)
+    logger.info("Модель '%s' требует формат: %s", model_name, data_format)
+
+    # Формирование имени файла
+    dataset_filename = f"train_{data_format}.parquet"
     dataset_path = processed_root / tournament / dataset_filename
+
+    # Fallback на старый формат train.parquet (для совместимости)
+    if not dataset_path.exists():
+        logger.warning(
+            "Файл %s не найден, пытаюсь загрузить train.parquet (старый формат)",
+            dataset_filename,
+        )
+        dataset_path = processed_root / tournament / "train.parquet"
+
     if not dataset_path.exists():
         logger.error("Файл датасета не найден: %s", dataset_path)
+        logger.info(
+            "Подсказка: запустите генерацию фичей:\n"
+            "  uv run python -m sports_forecast.features.features_build features=basic"
+        )
         return None
 
     logger.info("Читаю датасет: %s", dataset_path)
@@ -246,13 +298,29 @@ def load_dataset(
         logger.error("Датасет пустой")
         return None
 
-    missing = [c for c in feature_columns if c not in df.columns]
+    # Проверка наличия фичей (с поддержкой префикса f_)
+    missing = []
+    for col in feature_columns:
+        # Проверяем и с префиксом f_ и без
+        if col not in df.columns and f"f_{col}" not in df.columns:
+            missing.append(col)
+
     if missing:
-        logger.error("Отсутствуют фичи из конфига: %s. Колонки: %s", missing, list(df.columns))
+        logger.error(
+            "Отсутствуют фичи из конфига: %s.\nДоступные колонки: %s",
+            missing,
+            list(df.columns)[:20],  # Первые 20 для краткости
+        )
         return None
 
     logger.info("Датасет загружен: %d записей, %d колонок", len(df), df.shape[1])
-    logger.info("Доступные колонки: %s", list(df.columns))
+    logger.info("Формат данных: %s", data_format)
+
+    # Показываем примеры фичей
+    feature_cols_in_df = [col for col in df.columns if col.startswith("f_")]
+    if feature_cols_in_df:
+        logger.info("Фичей с префиксом f_: %d", len(feature_cols_in_df))
+        logger.info("Примеры фичей: %s", feature_cols_in_df[:5])
 
     return df
 
@@ -333,10 +401,11 @@ def train_single_tournament(tournament_name: str, model_cfg: DictConfig, cfg: Di
     models_root.mkdir(parents=True, exist_ok=True)
 
     # Загружаем датасет (БЕЗ таргета)
+    # Формат данных (wide/long) определяется автоматически по типу модели
     df = load_dataset(
         processed_root=processed_root,
         tournament=tournament_cfg.tournament.name,
-        dataset_filename=tournament_cfg.data.dataset_filename,
+        model_name=tournament_cfg.model.name,
         feature_columns=list(tournament_cfg.model.features),
     )
     if df is None:

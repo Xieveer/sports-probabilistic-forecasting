@@ -136,6 +136,28 @@ def wide_to_long(
     # Объединяем
     long = pd.concat([home_rows, away_rows], ignore_index=True)
 
+    # Создаем алиасы для колонок игроков (для генераторов фичей)
+    # pl_name → pl, opp_name → opp
+    if f"{player_name}_name" in long.columns:
+        long["pl"] = long[f"{player_name}_name"]
+    if f"{opponent_name}_name" in long.columns:
+        long["opp"] = long[f"{opponent_name}_name"]
+
+    # Если имен игроков нет, создаем синтетические идентификаторы
+    # на основе id матча (для группировки по истории команды)
+    if "pl" not in long.columns and "id" in long.columns:
+        # Для home строк: pl="h_{id}", opp="a_{id}"
+        # Для away строк: pl="a_{id}", opp="h_{id}"
+        long["pl"] = long.apply(
+            lambda row: f"{'h' if row['side'] == 'h' else 'a'}_{row['id']}", axis=1
+        )
+        long["opp"] = long.apply(
+            lambda row: f"{'a' if row['side'] == 'h' else 'h'}_{row['id']}", axis=1
+        )
+        logger.debug(
+            "Созданы синтетические идентификаторы pl/opp на основе id матча"
+        )
+
     # Сортируем по datetime и id для правильной последовательности
     if "datetime" in long.columns and "id" in long.columns:
         long = long.sort_values(

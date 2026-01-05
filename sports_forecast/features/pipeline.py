@@ -19,7 +19,7 @@ import time
 from typing import Any, Dict, List, Tuple
 
 import pandas as pd
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from sports_forecast.features.column_utils import get_feature_columns
 from sports_forecast.features.generators.count_generator import CountFeatureGenerator
@@ -93,7 +93,11 @@ class FeaturePipeline:
         generators = []
         gen_configs = self.config["generators"]
 
-        if not isinstance(gen_configs, (list, tuple)):
+        # Поддержка OmegaConf ListConfig
+        if hasattr(gen_configs, "__iter__") and not isinstance(gen_configs, (str, dict)):
+            # Это list-подобный объект (list, tuple, ListConfig)
+            pass
+        else:
             raise ValueError(
                 "FeaturePipeline: 'generators' должен быть списком"
             )
@@ -126,7 +130,9 @@ class FeaturePipeline:
 
             # Инициализация генератора
             try:
-                generator = generator_class(dict(gen_config))
+                # Конвертируем OmegaConf в обычный dict (рекурсивно)
+                gen_config_dict = OmegaConf.to_container(gen_config, resolve=True)
+                generator = generator_class(gen_config_dict)
                 generators.append(generator)
 
                 feature_count = len(generator.get_feature_names())
@@ -184,22 +190,24 @@ class FeaturePipeline:
             logger.info("Трансформация: wide → long...")
 
             # Параметры для трансформации
-            context_columns = self.config.get("long_format_context_columns", [])
+            context_columns_config = self.config.get("long_format_context_columns", [])
+
+            # Фильтруем только те колонки, которые действительно есть в данных
+            context_columns = [col for col in context_columns_config if col in df.columns]
+
+            # Если ничего не указано, автоматически ищем
             if not context_columns:
-                # Автоматическое определение контекстных колонок
-                context_columns = [
-                    col
-                    for col in df.columns
-                    if col
-                    in [
-                        "tour_num",
-                        "tour_match_num",
-                        "weekday",
-                        "hour",
-                        "time_of_day",
-                        "tour_name",
-                    ]
+                possible_context = [
+                    "tour_num",
+                    "tour_match_num",
+                    "weekday",
+                    "hour",
+                    "time_of_day",
+                    "tour_name",
                 ]
+                context_columns = [col for col in possible_context if col in df.columns]
+
+            logger.info(f"  Контекстные колонки: {context_columns if context_columns else 'нет'}")
 
             df_long = wide_to_long(df, context_columns=context_columns)
             validate_long_format(df_long)

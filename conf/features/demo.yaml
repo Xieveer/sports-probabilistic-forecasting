@@ -1,0 +1,25 @@
+# Минимальный конфиг для демонстрации (БЕЗ медленных генераторов)
+# Только Form и Count фичи
+
+feature_prefix: "f_"
+requires_long: true
+create_metrics: ["diff", "total"]
+long_format_context_columns: []
+
+generators:
+  # 1. Player Form features
+  - type: "form"
+    enabled: true
+    fg_trigger_minutes: 480
+    dp_trigger_minutes: 30
+    players: ["pl", "opp"]
+
+  # 2. Count features (быстрые)
+  - type: "count"
+    enabled: true
+    shift: 1
+    contexts:
+      - name: "global"
+        keys: ["pl"]
+        players: ["pl", "opp"]
+
