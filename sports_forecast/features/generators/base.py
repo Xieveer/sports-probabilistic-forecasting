@@ -25,6 +25,7 @@ class BaseFeatureGenerator(ABC):
     2. Генерировать фичи на основе конфига
     3. Возвращать список сгенерированных имен фичей
     4. Автоматически добавлять префикс f_ к именам фичей
+    5. Быть вызываемым (callable): generator(df) → df_with_features
 
     Пример наследования:
         class EWMFeatureGenerator(BaseFeatureGenerator):
@@ -36,6 +37,10 @@ class BaseFeatureGenerator(ABC):
 
             def get_feature_names(self) -> List[str]:
                 return ["pl_global_ewm_10", "pl_global_ewm_20"]
+
+        # Использование:
+        generator = EWMFeatureGenerator(config)
+        df_with_features = generator(df)  # Вызов как функции!
 
     Args:
         config: Конфигурация генератора из YAML
@@ -151,10 +156,11 @@ class BaseFeatureGenerator(ABC):
             return [add_feature_prefix(name) for name in names]
         return names
 
-    def apply(self, df: pd.DataFrame) -> pd.DataFrame:
+    def __call__(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Применить генератор к датафрейму.
+        Применить генератор к датафрейму (callable interface).
 
+        Позволяет использовать генератор как функцию: generator(df).
         Обертка вокруг generate(), которая:
         1. Проверяет что генератор включен
         2. Вызывает generate()
@@ -167,9 +173,14 @@ class BaseFeatureGenerator(ABC):
         Returns:
             Датафрейм с добавленными фичами (с префиксом f_)
 
+        Notes:
+            Используется __call__ вместо apply/transform для избежания:
+            - Конфликтов с pandas.DataFrame.apply()
+            - Ложных ожиданий от sklearn (нет наследования от BaseEstimator)
+
         Examples:
             >>> generator = EWMFeatureGenerator(config)
-            >>> df_with_features = generator.apply(df)
+            >>> df_with_features = generator(df)  # Вызов как функции
         """
         if not self.enabled:
             logger.info(f"{self.name}: пропущен (disabled)")

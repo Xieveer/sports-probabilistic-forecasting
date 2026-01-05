@@ -218,7 +218,7 @@ class FeaturePipeline:
             logger.info(f"\n[{i}/{len(self.generators)}] {generator.name}...")
 
             try:
-                result_df = generator.apply(result_df)
+                result_df = generator(result_df)
 
                 # Собираем имена сгенерированных фичей (с префиксом)
                 gen_features = generator.get_prefixed_feature_names()

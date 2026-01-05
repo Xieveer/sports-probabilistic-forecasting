@@ -6,4 +6,3 @@
     - test_generators.py - тесты для генераторов фичей (TODO)
     - test_train.py - тесты для обучения моделей (TODO)
 """
-

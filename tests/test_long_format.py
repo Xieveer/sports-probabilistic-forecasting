@@ -238,9 +238,7 @@ class TestWideToLong:
     def test_empty_dataframe(self):
         """Пустой датафрейм должен вернуть пустой long формат."""
         # Arrange
-        df = pd.DataFrame(
-            {"id": [], "datetime": [], "home_points": [], "away_points": []}
-        )
+        df = pd.DataFrame({"id": [], "datetime": [], "home_points": [], "away_points": []})
 
         # Act
         long = wide_to_long(df)
@@ -394,4 +392,3 @@ class TestRoundTrip:
         # Assert
         assert len(restored) == len(original)
         assert list(restored["id"].unique()) == [1, 2, 3]
-
