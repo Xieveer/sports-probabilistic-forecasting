@@ -20,21 +20,53 @@ target_config:
   name: "target_total_under"      # имя колонки в датасете
   description: "1 если (home_points + away_points) < base, 0 иначе"
 
-# Фичи для этой модели
-# Для тотала используем агрегированные фичи обеих команд
+# Фичи для этой модели (wide format)
+# Используются фичи обеих команд после long_to_wide трансформации
 features:
-  # Home team form
+  # Home team - EWM features
+  - "home_f_pl_global_ewm_10"
+  - "home_f_opp_global_ewm_10"
+  - "home_f_all_global_ewm_10_diff"
+  - "home_f_h2h_ewm_10_diff"
+
+  # Home team - Count features
+  - "home_f_pl_global_count"
+  - "home_f_opp_global_count"
+  - "home_f_h2h_count"
+
+  # Home team - Form features
   - "home_f_pl_is_dp"
   - "home_f_pl_is_fg"
   - "home_f_pl_is_form"
+  - "home_f_opp_is_dp"
+  - "home_f_opp_is_fg"
+  - "home_f_opp_is_form"
+  - "home_f_pl_mins_prev_match"
+  - "home_f_opp_mins_prev_match"
+  - "home_f_diff_mins_prev_match"
+  - "home_f_match_state"
 
-  # Away team form
+  # Away team - EWM features
+  - "away_f_pl_global_ewm_10"
+  - "away_f_opp_global_ewm_10"
+  - "away_f_all_global_ewm_10_diff"
+  - "away_f_h2h_ewm_10_diff"
+
+  # Away team - Count features
+  - "away_f_pl_global_count"
+  - "away_f_opp_global_count"
+  - "away_f_h2h_count"
+
+  # Away team - Form features
   - "away_f_pl_is_dp"
   - "away_f_pl_is_fg"
   - "away_f_pl_is_form"
-
-  # Match context
-  - "home_f_match_state"
+  - "away_f_opp_is_dp"
+  - "away_f_opp_is_fg"
+  - "away_f_opp_is_form"
+  - "away_f_pl_mins_prev_match"
+  - "away_f_opp_mins_prev_match"
+  - "away_f_diff_mins_prev_match"
   - "away_f_match_state"
 
 # Гиперпараметры CatBoost
