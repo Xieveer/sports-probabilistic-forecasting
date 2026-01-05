@@ -1,0 +1,53 @@
+# Базовые фичи для всех моделей
+# @package _global_.features
+
+# Метаданные матча, которые хотим протащить до processed и до предиктов
+meta_columns:
+  - "match_id"
+  - "datetime"
+  - "home_team"
+  - "away_team"
+  - "status"
+  - "home_points"  # Нужны для динамического вычисления таргета
+  - "away_points"  # Нужны для динамического вычисления таргета
+
+# Базовые фичи: разность и сумма очков
+basic:
+  diff:
+    home_column: "home_points"
+    away_column: "away_points"
+    name: "points_diff"
+  total:
+    home_column: "home_points"
+    away_column: "away_points"
+    name: "points_total"
+
+# Лаговые фичи
+lag:
+  diff:
+    source_column: "points_diff"
+    new_column: "points_diff_lag1"
+    periods: 5
+  total:
+    source_column: "points_total"
+    new_column: "points_total_lag1"
+    periods: 5
+
+# Фичи, которые реально кормим модели
+final_columns:
+  - "points_diff_lag1"
+  - "points_total_lag1"
+
+# Сплит на train/inference
+split:
+  status_column: "status"
+  train_status: "finished"
+  inference_status: "upcoming"
+  drop_statuses: ["live"]
+
+# Настройки выходных файлов
+outputs:
+  train_filename: "train.parquet"
+  inference_filename: "inference.parquet"
+  save_all: true
+  all_filename: "dataset.parquet"

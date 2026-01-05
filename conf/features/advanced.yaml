@@ -1,0 +1,161 @@
+# Продвинутый набор фичей (на основе feature_pipeline_v2.py)
+# Генерирует ~1000+ фичей для максимального качества модели
+
+# Префикс для всех генерируемых фичей
+feature_prefix: "f_"
+
+# Требуется ли long format для генерации
+requires_long: true
+
+# Автоматическое создание базовых метрик
+create_metrics:
+  - "diff"    # diff_ps = pl_points - opp_points
+  - "total"   # total_ps = pl_points + opp_points
+
+# Контекстные колонки для long format
+long_format_context_columns:
+  - "tour_num"
+  - "tour_match_num"
+  - "weekday"
+  - "hour"
+
+# Генераторы фичей
+generators:
+  # 1. Player Form - создает match_state и базовые индикаторы
+  - type: "form"
+    enabled: true
+    fg_trigger_minutes: 480  # 8 часов
+    dp_trigger_minutes: 30
+    players: ["pl", "opp"]
+
+  # 2. EWM features - ПОЛНЫЙ набор скользящих средних
+  - type: "ewm"
+    enabled: true
+    metric: "diff_ps"
+    # Spans как в v2: от 5 до 200 с шагом 5 (40 значений)
+    spans: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180, 185, 190, 195, 200]
+    shift: 1
+    min_periods: 3
+    adjust: false
+
+    contexts:
+      # Глобальная форма игрока
+      - name: "global"
+        keys: ["pl"]
+        players: ["pl", "opp"]
+        compute_diff: true
+
+      # Форма в зависимости от состояния (fg/dp/form)
+      - name: "match_state"
+        keys: ["pl", "match_state"]
+        players: ["pl", "opp"]
+        compute_diff: true
+
+      # Форма в зависимости от номера матча в турнире
+      - name: "match_num"
+        keys: ["pl", "tour_match_num"]
+        players: ["pl", "opp"]
+        compute_diff: true
+
+      # Форма по дням недели
+      - name: "weekday"
+        keys: ["pl", "weekday"]
+        players: ["pl", "opp"]
+        compute_diff: true
+
+      # Форма в зависимости от номера турнира
+      - name: "tour_num"
+        keys: ["pl", "tour_num"]
+        players: ["pl", "opp"]
+        compute_diff: true
+
+      # Форма в зависимости от стороны (home/away)
+      - name: "tour_side"
+        keys: ["pl", "side"]
+        players: ["pl", "opp"]
+        compute_diff: true
+
+      # ===== H2H контексты =====
+
+      # H2H базовый
+      - name: "h2h"
+        keys: ["pl", "opp"]
+        h2h: true
+        output_suffix: "_diff"
+
+      # H2H + match_state
+      - name: "h2h_match_state"
+        keys: ["pl", "opp", "match_state"]
+        h2h: true
+        output_suffix: "_diff"
+
+      # H2H + match_num
+      - name: "h2h_match_num"
+        keys: ["pl", "opp", "tour_match_num"]
+        h2h: true
+        output_suffix: "_diff"
+
+      # H2H + side
+      - name: "h2h_side"
+        keys: ["pl", "opp", "side", "pl_team", "opp_team"]
+        h2h: true
+        output_suffix: "_diff"
+
+  # 3. Count features - полный набор count фичей
+  - type: "count"
+    enabled: true
+    shift: 1
+
+    contexts:
+      # Общее количество матчей игрока
+      - name: "global"
+        keys: ["pl"]
+        players: ["pl", "opp"]
+
+      # Количество матчей в match_state
+      - name: "match_state"
+        keys: ["pl", "match_state"]
+        players: ["pl", "opp"]
+
+      # Количество матчей с tour_match_num
+      - name: "match_num"
+        keys: ["pl", "tour_match_num"]
+        players: ["pl", "opp"]
+
+      # Количество матчей по weekday
+      - name: "weekday"
+        keys: ["pl", "weekday"]
+        players: ["pl", "opp"]
+
+      # Количество матчей в tour_num
+      - name: "tour_num"
+        keys: ["pl", "tour_num"]
+        players: ["pl", "opp"]
+
+      # Количество матчей на side
+      - name: "tour_side"
+        keys: ["pl", "side"]
+        players: ["pl", "opp"]
+
+      # ===== H2H count =====
+
+      # H2H базовый
+      - name: "h2h"
+        keys: ["pl", "opp"]
+        h2h: true
+
+      # H2H + match_state
+      - name: "h2h_match_state"
+        keys: ["pl", "opp", "match_state"]
+        h2h: true
+
+      # H2H + match_num
+      - name: "h2h_match_num"
+        keys: ["pl", "opp", "tour_match_num"]
+        h2h: true
+
+      # H2H + side
+      - name: "h2h_side"
+        keys: ["pl", "opp", "side", "pl_team", "opp_team"]
+        h2h: true
+
