@@ -1,0 +1,8 @@
+# Общие пути для всех стадий пайплайна
+paths:
+  raw_dir: "data/raw"
+  interim_dir: "data/interim"
+  processed_dir: "data/processed"
+  predictions_dir: "data/predictions"
+  models_dir: "models"
+

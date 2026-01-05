@@ -1,0 +1,70 @@
+# UEL - Киберхоккей
+# @package _global_.tournament
+
+name: "uel"
+sport: "cyberhockey"
+description: "Киберспортивный хоккей"
+
+# Настройки очистки данных (специфичны для UEL)
+data_clean:
+  # Маппинг колонок: приводим к унифицированным названиям
+  column_mapping:
+    h_m_s: home_points
+    a_m_s: away_points
+
+  # Обязательные колонки
+  required_columns:
+    - id
+    - status
+    - datetime
+
+  # По этим колонкам дропаем строки с NaN
+  drop_na_columns:
+    - id
+    - datetime
+    - status
+
+  # Колонки для финального датасета (после маппинга)
+  select_columns:
+    - id
+    - datetime
+    - status
+    - home_points
+    - away_points
+
+  # Типизация колонок
+  dtype_mapping:
+    numeric:
+      home_points: float
+      away_points: float
+    string:
+      - id
+      - status
+    datetime:
+      datetime:
+        format: null
+        errors: "coerce"
+
+# Источники данных для вычисления различных таргетов
+target_sources:
+  # Таргет: победа хозяев
+  is_home_win:
+    home_column: "home_points"    # шайбы
+    away_column: "away_points"
+    comparison: "greater"          # home > away
+    description: "Победа хозяев (по шайбам)"
+
+  # Таргет: победа гостей
+  is_away_win:
+    home_column: "home_points"
+    away_column: "away_points"
+    comparison: "less"             # home < away
+    description: "Победа гостей (по шайбам)"
+
+  # Источник для таргетов типа total_under/total_over
+  total:
+    home_column: "home_points"
+    away_column: "away_points"
+    aggregation: "sum"             # home + away
+    description: "Общее количество шайб"
+

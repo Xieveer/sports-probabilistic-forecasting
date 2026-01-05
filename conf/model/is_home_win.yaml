@@ -1,0 +1,34 @@
+# Модель: Победа хозяев (бинарная классификация)
+# @package _global_.model
+
+name: "is_home_win"
+type: "catboost"
+description: "Binary classification: home team wins"
+save_format: "cbm"
+
+# Конфигурация таргета
+target_config:
+  source_key: "is_home_win"       # ссылка на tournament.target_sources.is_home_win
+  name: "target_home_win"         # имя колонки в датасете
+
+# Фичи для этой модели
+features:
+  - "points_diff_lag1"
+  - "points_total_lag1"
+
+# Гиперпараметры CatBoost
+params:
+  loss_function: "Logloss"
+  eval_metric: "AUC"
+  iterations: 300
+  learning_rate: 0.05
+  depth: 6
+  l2_leaf_reg: 3.0
+
+  random_seed: 42
+  verbose: 100
+  allow_writing_files: false
+
+  od_type: "Iter"
+  od_wait: 200
+

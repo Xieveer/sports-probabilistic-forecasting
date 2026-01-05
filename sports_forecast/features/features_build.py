@@ -1,36 +1,38 @@
 """
-Модуль генерации базовых фичей и таргета (processed-слой).
+Модуль генерации базовых фичей (processed-слой).
 
 Назначение:
-    Преобразовать промежуточные данные (interim) в датасет для обучения моделей,
-    добавив базовые фичи (разность и сумма очков), их лаги и колонку таргета.
-    Финальный датасет содержит только необходимые для обучения колонки.
+    Преобразовать промежуточные данные (interim) в датасеты для обучения и инференса,
+    добавив базовые фичи (разность и сумма очков) и их лаги.
+    Таргет НЕ вычисляется на этом этапе - он создаётся динамически в train.py.
 
 Слой данных:
     Вход:  data/interim/{tournament}/matches_interim.parquet
-    Выход: data/processed/{tournament}/dataset.parquet
+    Выход:
+        - data/processed/{tournament}/train.parquet (finished матчи, без таргета)
+        - data/processed/{tournament}/inference.parquet (upcoming матчи, без таргета)
+        - data/processed/{tournament}/dataset.parquet (все матчи, опционально)
 
 Логика фичей:
     - Базовые фичи:
         * points_diff = home_points - away_points (разность очков)
         * points_total = home_points + away_points (сумма очков)
     - Лаговые фичи:
-        * points_diff_lag1 = points_diff.shift(1)
-        * points_total_lag1 = points_total.shift(1)
-    - Таргет: бинарный флаг победы хозяев (home_points > away_points)
+        * points_diff_lag1 = points_diff.shift(periods)
+        * points_total_lag1 = points_total.shift(periods)
 
-    Финальный датасет содержит только: points_diff, points_total,
-    points_diff_lag1, points_total_lag1, target
+    Финальный датасет содержит: meta + базовые фичи + лаговые фичи (БЕЗ таргета).
 
 Конфигурация:
-    Управляется через Hydra-конфиг ``conf/features_basic.yaml``.
+    Управляется через Hydra-конфиги:
+    - ``conf/features/basic.yaml`` - настройки фичей
+    - ``conf/paths.yaml`` - пути к данным
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import hydra
 import pandas as pd
 from omegaconf import DictConfig
 
@@ -181,76 +183,23 @@ def _add_lag_features(df: pd.DataFrame, cfg: DictConfig, tournament_name: str) -
     return df
 
 
-def _add_target_column(df: pd.DataFrame, cfg: DictConfig, tournament_name: str) -> pd.DataFrame:
-    """Добавить таргет-колонку: победа хозяев.
-
-    Args:
-        df: Датафрейм с данными турнира.
-        cfg: Hydra-конфиг с параметрами таргета.
-        tournament_name: Название турнира (для логирования).
-
-    Returns:
-        Датафрейм с добавленной таргет-колонкой.
-    """
-    if not hasattr(cfg.features, "target"):
-        logger.warning(
-            "Турнир %s: секция 'target' не найдена в конфиге, пропускаю создание таргета",
-            tournament_name,
-        )
-        return df
-
-    target_cfg = cfg.features.target
-    target_name = target_cfg.name
-    home_col = target_cfg.home_column
-    away_col = target_cfg.away_column
-
-    if home_col not in df.columns or away_col not in df.columns:
-        logger.warning(
-            "Турнир %s: колонки '%s' или '%s' не найдены, пропускаю создание таргета",
-            tournament_name,
-            home_col,
-            away_col,
-        )
-        return df
-
-    # Таргет: 1 если хозяева выиграли, 0 иначе
-    df[target_name] = (df[home_col] > df[away_col]).astype(int)
-
-    wins = df[target_name].sum()
-    total = len(df)
-    win_rate = (wins / total * 100) if total > 0 else 0
-
-    logger.info(
-        "Турнир %s: создан таргет '%s' (победа хозяев: %s > %s). Побед хозяев: %d/%d (%.1f%%)",
-        tournament_name,
-        target_name,
-        home_col,
-        away_col,
-        wins,
-        total,
-        win_rate,
-    )
-
-    return df
-
-
 def _select_final_columns(
     df: pd.DataFrame,
     cfg: DictConfig,
     tournament_name: str,
-    *,
-    include_target: bool,
 ) -> pd.DataFrame:
-    """Выбрать колонки для финального датасета (meta + features [+ target]).
+    """Выбрать колонки для финального датасета (meta + features).
+
+    Таргет теперь НЕ включается в датасет, так как он вычисляется динамически
+    в train.py на основе модель-специфичного конфига.
 
     Args:
         df: Датафрейм с подготовленными фичами.
         cfg: Hydra-конфиг с параметрами финальных колонок.
         tournament_name: Название турнира (для логирования).
-        include_target: Добавлять ли таргет в итоговый набор (True для train, False для inference).
 
     Returns:
-        Датафрейм с только необходимыми колонками.
+        Датафрейм с только необходимыми колонками (мета + фичи).
     """
     features_cfg = getattr(cfg, "features", {})
 
@@ -261,12 +210,14 @@ def _select_final_columns(
     cols.extend(meta_cols)
     cols.extend(feature_cols)
 
-    target_name: str | None = None
-    if include_target and hasattr(features_cfg, "target"):
-        target_name = features_cfg.target.name
-        cols.append(target_name)
-
+    # Фильтруем только те мета-колонки, которые реально есть
+    # home_points и away_points должны быть в interim всегда
     available_cols = [c for c in cols if c in df.columns]
+
+    # Гарантируем наличие home_points и away_points для вычисления таргетов
+    for required in ["home_points", "away_points"]:
+        if required in df.columns and required not in available_cols:
+            available_cols.append(required)
 
     if len(available_cols) != len(cols):
         missing = set(cols) - set(df.columns)
@@ -344,19 +295,7 @@ def _split_by_status(
     return train_df, inference_df
 
 
-def _drop_target_for_inference(
-    df: pd.DataFrame, cfg: DictConfig, tournament_name: str
-) -> pd.DataFrame:
-    """Удалить таргет из inference-датасета."""
-    if hasattr(cfg.features, "target"):
-        target_name = cfg.features.target.name
-        if target_name in df.columns:
-            df = df.drop(columns=[target_name])
-            logger.info("Турнир %s: удалён таргет '%s' из inference", tournament_name, target_name)
-    return df
-
-
-def process_tournament(tournament_dir: Path, cfg: DictConfig) -> None:
+def process_tournament(tournament_dir: Path, cfg: DictConfig, processed_root: Path) -> None:
     """Обработать один турнир: interim → processed.
 
     Args:
@@ -393,25 +332,12 @@ def process_tournament(tournament_dir: Path, cfg: DictConfig) -> None:
     # Делим на train/inference до финальной селекции
     train_df, inference_df = _split_by_status(df, cfg, tournament_name)
 
-    # Таргет нужен только для train (finished)
-    train_df = _add_target_column(train_df, cfg, tournament_name)
-
-    # На всякий случай гарантируем, что в inference таргета нет
-    inference_df = _drop_target_for_inference(inference_df, cfg, tournament_name)
-
-    # Финальная селекция колонок:
-    # - train: meta + features + target
-    # - inference: meta + features (без таргета)
-    train_df = _select_final_columns(train_df, cfg, tournament_name, include_target=True)
-    inference_df = _select_final_columns(
-        inference_df,
-        cfg,
-        tournament_name,
-        include_target=False,
-    )
+    # Финальная селекция колонок: meta + features (таргет НЕ включаем!)
+    # Таргет теперь вычисляется динамически в train.py на основе модель-специфичного конфига
+    train_df = _select_final_columns(train_df, cfg, tournament_name)
+    inference_df = _select_final_columns(inference_df, cfg, tournament_name)
 
     # Сохраняем результат
-    processed_root = PROJECT_ROOT / cfg.paths.processed_dir
     out_dir = processed_root / tournament_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -460,11 +386,30 @@ def process_tournament(tournament_dir: Path, cfg: DictConfig) -> None:
         df.to_parquet(all_path, index=False)
 
 
-@hydra.main(config_path="../../conf", config_name="features_basic", version_base="1.3")
-def run(cfg: DictConfig) -> None:
-    """Запустить генерацию фичей и таргета для всех турниров из interim-слоя."""
-    interim_root = PROJECT_ROOT / cfg.paths.interim_dir
-    processed_root = PROJECT_ROOT / cfg.paths.processed_dir
+def run() -> None:
+    """Запустить генерацию фичей для всех турниров из interim-слоя."""
+    # Загружаем конфиги напрямую
+    from hydra import compose, initialize_config_dir
+    from omegaconf import OmegaConf
+
+    config_dir = str((PROJECT_ROOT / "conf").resolve())
+    with initialize_config_dir(config_dir=config_dir, version_base="1.3"):
+        # Загружаем paths
+        paths_cfg = compose(config_name="paths", return_hydra_config=False)
+
+    # Загружаем features напрямую из файла
+    features_file = OmegaConf.load(PROJECT_ROOT / "conf" / "features" / "basic.yaml")
+    # Создаём конфиг с теми же ключами, что ожидает process_tournament
+    features_cfg = OmegaConf.create(
+        {
+            "features": features_file,
+            "split": features_file.split,
+            "outputs": features_file.outputs,
+        }
+    )
+
+    interim_root = PROJECT_ROOT / paths_cfg.paths.interim_dir
+    processed_root = PROJECT_ROOT / paths_cfg.paths.processed_dir
 
     if not interim_root.exists():
         raise RuntimeError(f"Папка с interim-данными не найдена: {interim_root}")
@@ -478,7 +423,7 @@ def run(cfg: DictConfig) -> None:
 
     logger.info("Найдено турниров в interim: %d", len(tournaments))
     for tournament_dir in tournaments:
-        process_tournament(tournament_dir, cfg)
+        process_tournament(tournament_dir, features_cfg, processed_root)
 
 
 if __name__ == "__main__":

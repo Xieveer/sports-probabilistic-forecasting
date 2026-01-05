@@ -11,7 +11,8 @@ stages:
     cmd: uv run python -m sports_forecast.data.clean
     deps:
       - sports_forecast/data/clean.py
-      - conf/data_clean.yaml
+      - conf/tournament
+      - conf/paths.yaml
       - data/raw
     outs:
       - data/interim
@@ -20,16 +21,20 @@ stages:
     cmd: uv run python -m sports_forecast.features.features_build
     deps:
       - sports_forecast/features/features_build.py
-      - conf/features_basic.yaml
+      - conf/features
+      - conf/paths.yaml
       - data/interim
     outs:
       - data/processed
 
   train:
-    cmd: uv run python -m sports_forecast.train --config-name train_catboost
+    cmd: uv run python -m sports_forecast.train tournament=all model=is_home_win
     deps:
       - sports_forecast/train.py
-      - conf/train_catboost.yaml
+      - conf/config.yaml
+      - conf/paths.yaml
+      - conf/tournament
+      - conf/model
       - data/processed
     outs:
       - models

@@ -1,0 +1,70 @@
+# LP EU - Лига Про Настольный Теннис (Европа)
+# @package _global_.tournament
+
+name: "lp_eu"
+sport: "table_tennis"
+description: "Лига Про: Настольный теннис (Европа)"
+
+# Настройки очистки данных (специфичны для LP EU)
+data_clean:
+  # Маппинг колонок: приводим к унифицированным названиям
+  column_mapping:
+    _hmps: home_points
+    _amps: away_points
+
+  # Обязательные колонки
+  required_columns:
+    - id
+    - datetime
+
+  # По этим колонкам дропаем строки с NaN
+  drop_na_columns:
+    - id
+    - datetime
+
+  # Колонки для финального датасета (после маппинга)
+  select_columns:
+    - id
+    - datetime
+    - home_points
+    - away_points
+  
+  # LP турниры: все матчи finished, добавляем колонку status
+  default_status: "finished"
+
+  # Типизация колонок
+  dtype_mapping:
+    numeric:
+      home_points: float
+      away_points: float
+    string:
+      - id
+      - status
+    datetime:
+      datetime:
+        format: null
+        errors: "coerce"
+
+# Источники данных для вычисления различных таргетов
+target_sources:
+  # Таргет: победа хозяев (по поинтам, не сетам - упрощенная версия)
+  is_home_win:
+    home_column: "home_points"    # поинты
+    away_column: "away_points"
+    comparison: "greater"          # home > away
+    description: "Победа хозяев (по поинтам)"
+
+  # Таргет: победа гостей
+  is_away_win:
+    home_column: "home_points"
+    away_column: "away_points"
+    comparison: "less"             # home < away
+    description: "Победа гостей (по поинтам)"
+
+  # Источник для таргетов типа total_under/total_over
+  total:
+    home_column: "home_points"
+    away_column: "away_points"
+    aggregation: "sum"             # home + away
+    description: "Общее количество поинтов"
+

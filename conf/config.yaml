@@ -1,0 +1,39 @@
+# Корневой конфиг для обучения и инференса
+# Использует Hydra config groups для композиции настроек
+
+defaults:
+  - paths
+  - mlflow: mlflow
+  - features: basic
+  - tournament: ???              # обязательно из CLI: tournament=uel
+  - model: ???                   # обязательно из CLI: model=is_home_win
+  - _self_
+
+# Общие настройки обучения
+training:
+  test_size: 0.2
+  time_column: "datetime"  # Колонка для сортировки временных рядов
+  
+  # Временные ряды: НЕ перемешиваем, НЕ используем stratify
+  # Валидация всегда на более поздних данных
+  shuffle: false
+  
+  # Основная метрика для временных рядов
+  primary_metric: "logloss"  # LogLoss - основная метрика
+  secondary_metrics:
+    - "auc"  # AUC - дополнительная метрика для мониторинга
+
+# Настройки для датасетов
+data:
+  dataset_filename: "train.parquet"
+  inference_filename: "inference.parquet"
+
+# Настройки логирования
+logging:
+  level: "INFO"
+
+# Настройки Hydra
+hydra:
+  run:
+    dir: .
+
