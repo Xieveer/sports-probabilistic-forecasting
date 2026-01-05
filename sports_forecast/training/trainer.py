@@ -186,7 +186,7 @@ class ModelTrainer:
 
         if model_class_name in model_classes:
             model_class = model_classes[model_class_name]
-            return model_class(name=model_name, config=model_config)
+            return model_class(name=model_name, config=model_config)  # type: ignore[abstract]
 
         # Ансамбли
         if model_config.get("type") == "ensemble":
@@ -564,8 +564,9 @@ class ModelTrainer:
         """
         tournaments = []
         for item in self.processed_root.iterdir():
-            if item.is_dir():
-                if (item / "train_long.parquet").exists() or (item / "train_wide.parquet").exists():
-                    tournaments.append(item.name)
+            if item.is_dir() and (
+                (item / "train_long.parquet").exists() or (item / "train_wide.parquet").exists()
+            ):
+                tournaments.append(item.name)
 
         return sorted(tournaments)

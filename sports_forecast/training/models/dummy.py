@@ -94,7 +94,7 @@ class DummyModel(BaseSingleModel):
         self,
         X: pd.DataFrame,
         y: pd.Series,
-        **fit_kwargs,  # noqa: ARG002
+        **fit_kwargs,
     ) -> None:
         """
         Обучить DummyClassifier.

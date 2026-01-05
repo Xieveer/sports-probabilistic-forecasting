@@ -19,11 +19,13 @@ ignore = [
     "E203",         # конфликт с Black
     "E501",         # длина строки контролируется line-length
     "N806",         # variable in function should be lowercase (для X, y в ML)
+    "N803",         # argument name should be lowercase (для X, y, X_train и т.д. в ML - стандартная конвенция)
 ]
 
 [lint.per-file-ignores]
 "__init__.py" = ["F401"]  # разрешить неиспользуемые импорты
 "tests/**/*.py" = ["ARG"]  # в тестах могут быть неиспользуемые аргументы (fixtures)
+"sports_forecast/training/**/*.py" = ["ARG002"]  # абстрактные методы могут иметь неиспользуемые аргументы
 
 [lint.isort]
 known-first-party = ["sports_forecast"]

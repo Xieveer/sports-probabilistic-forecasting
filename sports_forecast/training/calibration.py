@@ -90,9 +90,9 @@ class ModelCalibrator:
     def calibrate_if_needed(
         self,
         model: Any,
-        X_cal: pd.DataFrame | np.ndarray,  # noqa: N803
+        X_cal: pd.DataFrame | np.ndarray,
         y_cal: pd.Series | np.ndarray,
-        X_val: pd.DataFrame | np.ndarray,  # noqa: N803
+        X_val: pd.DataFrame | np.ndarray,
         y_val: pd.Series | np.ndarray,
     ) -> tuple[Any, bool, float, float]:
         """
@@ -167,7 +167,7 @@ class ModelCalibrator:
     def calibrate(
         self,
         model: Any,
-        X_cal: pd.DataFrame | np.ndarray,  # noqa: N803
+        X_cal: pd.DataFrame | np.ndarray,
         y_cal: pd.Series | np.ndarray,
     ) -> Any:
         """

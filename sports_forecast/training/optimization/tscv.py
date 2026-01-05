@@ -78,8 +78,8 @@ class TimeSeriesCrossValidator:
 
     def split(
         self,
-        X: pd.DataFrame | np.ndarray,  # noqa: N803
-        y: pd.Series | np.ndarray | None = None,  # noqa: ARG002
+        X: pd.DataFrame | np.ndarray,
+        y: pd.Series | np.ndarray | None = None,
     ) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
         """
         Генерирует индексы train/validation для каждого фолда.
@@ -113,7 +113,7 @@ class TimeSeriesCrossValidator:
     def cross_validate(
         self,
         model: Any,
-        X: pd.DataFrame,  # noqa: N803
+        X: pd.DataFrame,
         y: pd.Series,
         fit_kwargs: dict | None = None,
     ) -> dict[str, Any]:

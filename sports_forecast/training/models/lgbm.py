@@ -107,7 +107,7 @@ class LGBMModel(BaseSingleModel):
 
     def _fit_implementation(
         self,
-        X: pd.DataFrame,  # noqa: N803
+        X: pd.DataFrame,
         y: pd.Series,
         **fit_kwargs,
     ) -> None:

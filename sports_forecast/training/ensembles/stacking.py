@@ -255,9 +255,7 @@ class StackingEnsemble(BaseModel):
         )
 
         # Предсказания мета-модели
-        final_proba = self.meta_model.predict_proba(meta_features)
-
-        return final_proba
+        return self.meta_model.predict_proba(meta_features)
 
     def save(self, path: Path, version: str = "prod") -> None:
         """

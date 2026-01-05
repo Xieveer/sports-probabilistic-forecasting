@@ -71,7 +71,7 @@ class BaseModel(ABC):
         self.is_calibrated_ = False
 
     @abstractmethod
-    def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs) -> BaseModel:  # noqa: N803
+    def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs) -> BaseModel:
         """
         Обучить модель на данных.
 
@@ -89,7 +89,7 @@ class BaseModel(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:  # noqa: N803
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         """
         Предсказать вероятности классов.
 
@@ -232,7 +232,7 @@ class BaseSingleModel(BaseModel):
     @abstractmethod
     def _fit_implementation(
         self,
-        X: pd.DataFrame,  # noqa: N803
+        X: pd.DataFrame,
         y: pd.Series,
         **fit_kwargs,
     ) -> None:
@@ -255,7 +255,7 @@ class BaseSingleModel(BaseModel):
         """
         raise NotImplementedError
 
-    def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs) -> BaseSingleModel:  # noqa: N803
+    def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs) -> BaseSingleModel:
         """
         Обучить модель на данных.
 
@@ -293,7 +293,7 @@ class BaseSingleModel(BaseModel):
 
         return self
 
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:  # noqa: N803
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         """
         Предсказать вероятности классов.
 
