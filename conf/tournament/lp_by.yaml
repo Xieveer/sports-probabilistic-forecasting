@@ -1,94 +1,67 @@
-# LP BY - Лига Про Настольный Теннис (Беларусь)
+# LP Lp By - Лига Про Настольный Теннис
 # @package _global_.tournament
 
-name: "lp_by"
-sport: "table_tennis"
-description: "Лига Про: Настольный теннис (Беларусь)"
-
-# Настройки очистки данных (специфичны для LP BY)
+name: lp_by
+sport: table_tennis
+description: 'Лига Про: Настольный теннис (Беларусь)'
 data_clean:
-  # Маппинг колонок: приводим к унифицированным названиям
   column_mapping:
-    _hmps: home_points
-    _amps: away_points
-
-  # Обязательные колонки
+    home_score: home_sets
+    away_score: away_sets
   required_columns:
-    - id
-    - datetime
-
-  # По этим колонкам дропаем строки с NaN
+  - id
+  - datetime
   drop_na_columns:
-    - id
-    - datetime
-
-  # Колонки для финального датасета (после маппинга)
+  - id
+  - datetime
   select_columns:
-    - id
-    - datetime
-    - home_points
-    - away_points
-
-  # LP турниры: все матчи finished, добавляем колонку status
-  default_status: "finished"
-
-  # Типизация колонок
+  - id
+  - datetime
+  - status
+  - home_sets
+  - away_sets
+  - home_points
+  - away_points
+  - scores
+  default_status: finished
   dtype_mapping:
     numeric:
+      home_sets: int
+      away_sets: int
       home_points: float
       away_points: float
     string:
-      - id
-      - status
+    - id
+    - status
     datetime:
       datetime:
         format: null
-        errors: "coerce"
-
-# Источники данных для вычисления различных таргетов
-# База для тотала (типичное значение для настольного тенниса)
-total_base: 21.5
-
+        errors: coerce
+total_ranges:
+  min: 60.5
+  max: 80.5
+  step: 1.0
+  default: 70.5
 target_sources:
-  # === LONG FORMAT MODELS (train_long.parquet) ===
   is_win:
-    player_column: "pl_points"
-    opponent_column: "opp_points"
-    comparison: "greater"
-    format: "long"
-  
-  # === WIDE FORMAT MODELS (train_wide.parquet) ===
+    player_column: pl_sets
+    opponent_column: opp_sets
+    comparison: greater
+    format: long
   is_home_win:
-    home_column: "home_points"
-    away_column: "away_points"
-    comparison: "greater"
-    format: "wide"
-  
+    home_column: home_sets
+    away_column: away_sets
+    comparison: greater
+    format: wide
   total_over:
-    home_column: "home_points"
-    away_column: "away_points"
-    comparison: "total_over"
-    base: 21.5
-    format: "wide"
-  
+    home_column: home_points
+    away_column: away_points
+    comparison: total_over
+    base: 70.5
+    format: wide
   total_under:
-    home_column: "home_points"
-    away_column: "away_points"
-    comparison: "total_under"
-    base: 21.5
-    format: "wide"
-    description: "Победа хозяев (по поинтам)"
-
-  # Таргет: победа гостей
-  is_away_win:
-    home_column: "home_points"
-    away_column: "away_points"
-    comparison: "less"             # home < away
-    description: "Победа гостей (по поинтам)"
-
-  # Источник для таргетов типа total_under/total_over
-  total:
-    home_column: "home_points"
-    away_column: "away_points"
-    aggregation: "sum"             # home + away
-    description: "Общее количество поинтов"
+    home_column: home_points
+    away_column: away_points
+    comparison: total_under
+    base: 70.5
+    format: wide

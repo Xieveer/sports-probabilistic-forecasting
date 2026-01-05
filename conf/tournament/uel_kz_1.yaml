@@ -45,8 +45,12 @@ data_clean:
         format: null        # Автоопределение формата pandas
         errors: "coerce"    # Невалидные даты → NaT
 
-# База для тотала (типичное значение для киберхоккея)
-total_base: 5.5  # Базовая линия тотала для over/under моделей
+# Диапазоны тоталов (для автоматической генерации моделей)
+total_ranges:
+  min: 3.5
+  max: 9.5
+  step: 1.0
+  default: 5.5  # Базовое значение для демо
 
 # Конфигурация источников таргета для разных моделей
 # Используется в train.py для динамического вычисления таргета
@@ -88,14 +92,14 @@ target_sources:
   total_over:
     home_column: "home_points"
     away_column: "away_points"
-    comparison: "total_over"  # (home_points + away_points) > total_base
-    base: 5.5  # Берется из tournament.total_base если не указано
+    comparison: "total_over"
+    base: 5.5  # Берется из total_ranges.default
     format: "wide"
   
   # Модель total_under: тотал меньше базы
   total_under:
     home_column: "home_points"
     away_column: "away_points"
-    comparison: "total_under"  # (home_points + away_points) < total_base
-    base: 5.5  # Берется из tournament.total_base если не указано
+    comparison: "total_under"
+    base: 5.5  # Берется из total_ranges.default
     format: "wide"

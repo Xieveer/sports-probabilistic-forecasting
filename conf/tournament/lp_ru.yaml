@@ -9,8 +9,9 @@ description: "Лига Про: Настольный теннис (Россия)"
 data_clean:
   # Маппинг колонок: приводим к унифицированным названиям
   column_mapping:
-    _hmps: home_points
-    _amps: away_points
+    home_score: home_sets    # Счет по СЕТАМ (для определения победителя)
+    away_score: away_sets    # Счет по СЕТАМ
+    # NOTE: home_points, away_points будут извлечены из scores.parts в clean.py
 
   # Обязательные колонки
   required_columns:
@@ -26,8 +27,12 @@ data_clean:
   select_columns:
     - id
     - datetime
-    - home_points
+    - status
+    - home_sets      # Счет по сетам (для is_win)
+    - away_sets
+    - home_points    # Сумма поинтов (для total и фичей)
     - away_points
+    - scores         # JSON с деталями (для парсинга)
 
   # LP турниры: все матчи finished, добавляем колонку status
   default_status: "finished"
@@ -35,7 +40,9 @@ data_clean:
   # Типизация колонок
   dtype_mapping:
     numeric:
-      home_points: float
+      home_sets: int       # Счет по сетам
+      away_sets: int
+      home_points: float   # Сумма поинтов (будет вычислено из scores)
       away_points: float
     string:
       - id
@@ -46,49 +53,43 @@ data_clean:
         errors: "coerce"
 
 # Источники данных для вычисления различных таргетов
-# База для тотала (типичное значение для настольного тенниса)
-total_base: 21.5  # Обычно матчи до 11 очков × 3-5 сетов
+# Диапазоны тоталов (для автоматической генерации моделей)
+total_ranges:
+  min: 60.5
+  max: 80.5
+  step: 1.0
+  default: 70.5  # Базовое значение для демо
 
 target_sources:
   # === LONG FORMAT MODELS (train_long.parquet) ===
+  
+  # Модель is_win: победа по СЕТАМ (правильная логика для настольного тенниса)
   is_win:
-    player_column: "pl_points"
-    opponent_column: "opp_points"
-    comparison: "greater"
+    player_column: "pl_sets"      # Используем счет по сетам!
+    opponent_column: "opp_sets"
+    comparison: "greater"  # pl_sets > opp_sets
     format: "long"
   
   # === WIDE FORMAT MODELS (train_wide.parquet) ===
+  
+  # Legacy: победа по сетам
   is_home_win:
-    home_column: "home_points"
-    away_column: "away_points"
+    home_column: "home_sets"      # Используем счет по сетам!
+    away_column: "away_sets"
     comparison: "greater"
     format: "wide"
   
+  # Тотал по ПОИНТАМ (сумма всех очков во всех сетах)
   total_over:
-    home_column: "home_points"
+    home_column: "home_points"    # Сумма поинтов
     away_column: "away_points"
     comparison: "total_over"
-    base: 21.5
+    base: 70.5  # Берется из total_ranges.default
     format: "wide"
   
   total_under:
     home_column: "home_points"
     away_column: "away_points"
     comparison: "total_under"
-    base: 21.5
+    base: 70.5
     format: "wide"
-    description: "Победа хозяев (по поинтам)"
-
-  # Таргет: победа гостей
-  is_away_win:
-    home_column: "home_points"
-    away_column: "away_points"
-    comparison: "less"             # home < away
-    description: "Победа гостей (по поинтам)"
-
-  # Источник для таргетов типа total_under/total_over
-  total:
-    home_column: "home_points"
-    away_column: "away_points"
-    aggregation: "sum"             # home + away
-    description: "Общее количество поинтов"
