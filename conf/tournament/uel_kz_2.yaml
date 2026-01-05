@@ -1,0 +1,68 @@
+# Конфигурация турнира UEL Kazakhstan Stream 2 (Cyberhockey)
+# Подтурнир UEL, разделенный на этапе ingest по полю tour_name_en
+
+name: "uel_kz_2"
+sport: "cyberhockey"
+region: "kazakhstan"
+stream: "stream_2"
+
+data_clean:
+  # Маппинг колонок: исходное название → унифицированное
+  column_mapping:
+    h_m_s: home_points  # home match score (очки/голы домашней команды)
+    a_m_s: away_points  # away match score (очки/голы гостевой команды)
+
+  # Обязательные колонки (проверка наличия)
+  required_columns:
+    - id
+    - status
+    - datetime
+
+  # Колонки для dropna (удаление строк с пропусками)
+  drop_na_columns:
+    - id
+    - datetime
+    - status
+
+  # Финальный набор колонок для interim слоя
+  select_columns:
+    - id
+    - datetime
+    - status
+    - home_points
+    - away_points
+
+  # Типизация колонок
+  dtype_mapping:
+    numeric:
+      home_points: float
+      away_points: float
+    string:
+      - id
+      - status
+    datetime:
+      datetime:
+        format: null        # Автоопределение формата pandas
+        errors: "coerce"    # Невалидные даты → NaT
+
+# Конфигурация источников таргета для разных моделей
+# Используется в train.py для динамического вычисления таргета
+target_sources:
+  # Модель is_home_win: победа домашней команды
+  is_home_win:
+    home_column: "home_points"
+    away_column: "away_points"
+    comparison: "greater"  # home_points > away_points
+
+  # Модель is_away_win: победа гостевой команды
+  is_away_win:
+    home_column: "home_points"
+    away_column: "away_points"
+    comparison: "less"  # home_points < away_points
+
+  # Модель is_draw: ничья
+  is_draw:
+    home_column: "home_points"
+    away_column: "away_points"
+    comparison: "equal"  # home_points == away_points
+

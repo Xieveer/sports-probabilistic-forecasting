@@ -5,4 +5,3 @@ paths:
   processed_dir: "data/processed"
   predictions_dir: "data/predictions"
   models_dir: "models"
-

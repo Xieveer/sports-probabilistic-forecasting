@@ -51,4 +51,3 @@ outputs:
   inference_filename: "inference.parquet"
   save_all: true
   all_filename: "dataset.parquet"
-

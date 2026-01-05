@@ -13,11 +13,11 @@ defaults:
 training:
   test_size: 0.2
   time_column: "datetime"  # Колонка для сортировки временных рядов
-  
+
   # Временные ряды: НЕ перемешиваем, НЕ используем stratify
   # Валидация всегда на более поздних данных
   shuffle: false
-  
+
   # Основная метрика для временных рядов
   primary_metric: "logloss"  # LogLoss - основная метрика
   secondary_metrics:
@@ -36,4 +36,3 @@ logging:
 hydra:
   run:
     dir: .
-

@@ -35,6 +35,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from sports_forecast.utils.log_config import get_logger
@@ -51,6 +52,107 @@ DATA_RAW_DIR = PROJECT_ROOT / "data" / "raw"
 
 #: Логгер модуля для отслеживания процесса загрузки
 logger = get_logger(__name__)
+
+
+def get_uel_subtournament(tour_name_en: pd.Series) -> pd.Series:
+    """Определить подтурнир UEL по названию стрима.
+
+    UEL фактически состоит из трех отдельных турниров:
+    - kz_1: Kazakhstan Stream 1
+    - kz_2: Kazakhstan Stream 2
+    - cz: Czech Republic (все остальные)
+
+    Args:
+        tour_name_en: Series с названиями турниров на английском.
+
+    Returns:
+        Series с названиями подтурниров ('kz_1', 'kz_2', 'cz').
+
+    Examples:
+        >>> tour_names = pd.Series(['Stream 1', 'Stream 2', 'Other'])
+        >>> get_uel_subtournament(tour_names)
+        0    kz_1
+        1    kz_2
+        2      cz
+        dtype: object
+    """
+    return pd.Series(
+        np.select(
+            [
+                tour_name_en.str.contains("stream 1", case=False, na=False),
+                tour_name_en.str.contains("stream 2", case=False, na=False),
+            ],
+            ["kz_1", "kz_2"],
+            default="cz",
+        ),
+        index=tour_name_en.index,
+    )
+
+
+def split_uel_tournament(df: pd.DataFrame, raw_root: Path, tournament_name: str) -> None:
+    """Разделить турнир UEL на три подтурнира и сохранить отдельно.
+
+    Args:
+        df: DataFrame с данными турнира UEL.
+        raw_root: Корневая директория для сохранения Parquet файлов.
+        tournament_name: Имя исходного турнира (обычно 'uel').
+
+    Returns:
+        None
+
+    Note:
+        Создает три отдельных директории и файла:
+        - data/raw/uel_kz_1/matches.parquet
+        - data/raw/uel_kz_2/matches.parquet
+        - data/raw/uel_cz/matches.parquet
+    """
+    if "tour_name_en" not in df.columns:
+        logger.warning(
+            "Турнир %s: колонка 'tour_name_en' не найдена, не могу разделить на подтурниры",
+            tournament_name,
+        )
+        return
+
+    # Определяем подтурнир для каждого матча
+    df["subtournament"] = get_uel_subtournament(df["tour_name_en"])
+
+    # Группируем и сохраняем по подтурнирам
+    for subtournament_name in ["kz_1", "kz_2", "cz"]:
+        sub_df = df[df["subtournament"] == subtournament_name].copy()
+
+        if sub_df.empty:
+            logger.warning(
+                "Турнир %s: подтурнир %s пустой, пропускаю", tournament_name, subtournament_name
+            )
+            continue
+
+        # Удаляем служебную колонку
+        sub_df = sub_df.drop(columns=["subtournament"])
+
+        # Формируем путь: uel_kz_1, uel_kz_2, uel_cz
+        full_tournament_name = f"{tournament_name}_{subtournament_name}"
+        output_parquet = raw_root / full_tournament_name / "matches.parquet"
+
+        # Создаем директорию
+        output_parquet.parent.mkdir(parents=True, exist_ok=True)
+
+        # Сохраняем
+        sub_df.to_parquet(
+            output_parquet,
+            index=False,
+            engine="pyarrow",
+            compression="snappy",
+        )
+
+        file_size = output_parquet.stat().st_size
+        logger.info(
+            "Турнир %s → подтурнир %s: сохранено %d записей → %s (%.2f MB)",
+            tournament_name,
+            subtournament_name,
+            len(sub_df),
+            output_parquet,
+            file_size / (1024 * 1024),
+        )
 
 
 def process_tournament(source_dir: Path, raw_root: Path) -> None:
@@ -128,6 +230,16 @@ def process_tournament(source_dir: Path, raw_root: Path) -> None:
             len(df.columns),
         )
 
+        # БИЗНЕС-ЛОГИКА: Разделение UEL на подтурниры
+        if tournament_name == "uel":
+            logger.info(
+                "Турнир %s: обнаружен UEL, разделяю на подтурниры (kz_1, kz_2, cz)", tournament_name
+            )
+            split_uel_tournament(df, raw_root, tournament_name)
+            logger.info("Турнир %s: разделение завершено", tournament_name)
+            return  # UEL обработан через split, не нужно сохранять единым файлом
+
+        # Стандартная обработка для остальных турниров
         # Создаем директорию для выходного файла
         logger.info("Турнир %s: создаю директорию %s", tournament_name, output_parquet.parent)
         output_parquet.parent.mkdir(parents=True, exist_ok=True)

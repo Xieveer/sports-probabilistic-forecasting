@@ -67,4 +67,3 @@ target_sources:
     away_column: "away_points"
     aggregation: "sum"             # home + away
     description: "Общее количество шайб"
-

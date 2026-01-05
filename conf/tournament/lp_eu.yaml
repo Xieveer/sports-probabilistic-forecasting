@@ -28,7 +28,7 @@ data_clean:
     - datetime
     - home_points
     - away_points
-  
+
   # LP турниры: все матчи finished, добавляем колонку status
   default_status: "finished"
 
@@ -67,4 +67,3 @@ target_sources:
     away_column: "away_points"
     aggregation: "sum"             # home + away
     description: "Общее количество поинтов"
-
