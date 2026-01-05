@@ -89,6 +89,75 @@ def get_uel_subtournament(tour_name_en: pd.Series) -> pd.Series:
     )
 
 
+def split_lp_eu_tournament(df: pd.DataFrame, raw_root: Path, tournament_name: str) -> None:
+    """Разделить турнир LP_EU на два подтурнира и сохранить отдельно.
+
+    Разделение по полю tour_name_g:
+    - a18 → lp_eu_a18
+    - остальные (a12, a14, a16, a17, ...) → lp_eu
+
+    Args:
+        df: DataFrame с данными турнира LP_EU.
+        raw_root: Корневая директория для сохранения Parquet файлов.
+        tournament_name: Имя исходного турнира (обычно 'lp_eu').
+
+    Returns:
+        None
+
+    Note:
+        Создает два отдельных директории и файла:
+        - data/raw/lp_eu_a18/matches.parquet
+        - data/raw/lp_eu/matches.parquet
+    """
+    if "tour_name_g" not in df.columns:
+        logger.warning(
+            "Турнир %s: колонка 'tour_name_g' не найдена, не могу разделить на подтурниры",
+            tournament_name,
+        )
+        return
+
+    # Определяем подтурнир для каждого матча
+    df["subtournament"] = df["tour_name_g"].apply(lambda x: "a18" if x == "a18" else "main")
+
+    # Группируем и сохраняем по подтурнирам
+    for subtournament_key, subtournament_suffix in [("a18", "_a18"), ("main", "")]:
+        sub_df = df[df["subtournament"] == subtournament_key].copy()
+
+        if sub_df.empty:
+            logger.warning(
+                "Турнир %s: подтурнир %s пустой, пропускаю", tournament_name, subtournament_key
+            )
+            continue
+
+        # Удаляем служебную колонку
+        sub_df = sub_df.drop(columns=["subtournament"])
+
+        # Формируем путь: lp_eu_a18 или lp_eu
+        full_tournament_name = f"{tournament_name}{subtournament_suffix}"
+        output_parquet = raw_root / full_tournament_name / "matches.parquet"
+
+        # Создаем директорию
+        output_parquet.parent.mkdir(parents=True, exist_ok=True)
+
+        # Сохраняем
+        sub_df.to_parquet(
+            output_parquet,
+            index=False,
+            engine="pyarrow",
+            compression="snappy",
+        )
+
+        file_size = output_parquet.stat().st_size
+        logger.info(
+            "Турнир %s → подтурнир %s: сохранено %d записей → %s (%.2f MB)",
+            tournament_name,
+            subtournament_key,
+            len(sub_df),
+            output_parquet,
+            file_size / (1024 * 1024),
+        )
+
+
 def split_uel_tournament(df: pd.DataFrame, raw_root: Path, tournament_name: str) -> None:
     """Разделить турнир UEL на три подтурнира и сохранить отдельно.
 
@@ -230,7 +299,7 @@ def process_tournament(source_dir: Path, raw_root: Path) -> None:
             len(df.columns),
         )
 
-        # БИЗНЕС-ЛОГИКА: Разделение UEL на подтурниры
+        # БИЗНЕС-ЛОГИКА: Разделение турниров на подтурниры
         if tournament_name == "uel":
             logger.info(
                 "Турнир %s: обнаружен UEL, разделяю на подтурниры (kz_1, kz_2, cz)", tournament_name
@@ -238,6 +307,14 @@ def process_tournament(source_dir: Path, raw_root: Path) -> None:
             split_uel_tournament(df, raw_root, tournament_name)
             logger.info("Турнир %s: разделение завершено", tournament_name)
             return  # UEL обработан через split, не нужно сохранять единым файлом
+
+        if tournament_name == "lp_eu":
+            logger.info(
+                "Турнир %s: обнаружен LP_EU, разделяю на подтурниры (a18, main)", tournament_name
+            )
+            split_lp_eu_tournament(df, raw_root, tournament_name)
+            logger.info("Турнир %s: разделение завершено", tournament_name)
+            return  # LP_EU обработан через split, не нужно сохранять единым файлом
 
         # Стандартная обработка для остальных турниров
         # Создаем директорию для выходного файла
