@@ -8,13 +8,34 @@ save_format: "cbm"
 
 # Конфигурация таргета
 target_config:
-  source_key: "is_home_win"       # ссылка на tournament.target_sources.is_home_win
+  source_key: "is_win"            # ссылка на tournament.target_sources.is_win (long format)
   name: "target_home_win"         # имя колонки в датасете
 
 # Фичи для этой модели
+# Используются фичи, сгенерированные Feature Pipeline (conf/features/basic.yaml)
 features:
-  - "points_diff_lag1"
-  - "points_total_lag1"
+  # Скользящие средние (EWM)
+  - "f_pl_global_ewm_10"           # EWM игрока (global context)
+  - "f_opp_global_ewm_10"          # EWM оппонента (global context)
+  - "f_all_global_ewm_10_diff"     # Разница EWM: pl - opp
+  - "f_h2h_ewm_10_diff"            # Разница EWM в H2H матчах
+
+  # Счётчики матчей (Count)
+  - "f_pl_global_count"            # Количество матчей игрока
+  - "f_opp_global_count"           # Количество матчей оппонента
+  - "f_h2h_count"                  # Количество H2H встреч
+
+  # Form фичи (состояние игроков)
+  - "f_pl_is_dp"                   # Игрок играет double play
+  - "f_pl_is_fg"                   # Игрок играет first game
+  - "f_pl_is_form"                 # Игрок в форме
+  - "f_opp_is_dp"                  # Оппонент играет double play
+  - "f_opp_is_fg"                  # Оппонент играет first game
+  - "f_opp_is_form"                # Оппонент в форме
+  - "f_pl_mins_prev_match"         # Минуты с предыдущего матча игрока
+  - "f_opp_mins_prev_match"        # Минуты с предыдущего матча оппонента
+  - "f_diff_mins_prev_match"       # Разница в минутах
+  - "f_match_state"                # Состояние матча (комбинированное)
 
 # Гиперпараметры CatBoost
 params:

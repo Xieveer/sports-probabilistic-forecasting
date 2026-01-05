@@ -140,17 +140,26 @@ def compute_target(df: pd.DataFrame, cfg: DictConfig) -> pd.Series:
         cfg.tournament.name,
     )
 
-    # Проверяем наличие колонок в датафрейме
-    home_col = target_spec.home_column
-    away_col = target_spec.away_column
+    # Определяем формат данных и соответствующие колонки
+    data_format = target_spec.get("format", "wide")
 
-    if home_col not in df.columns:
+    if data_format == "long":
+        # Long format: используем player/opponent колонки
+        col_a = target_spec.player_column
+        col_b = target_spec.opponent_column
+    else:
+        # Wide format: используем home/away колонки
+        col_a = target_spec.home_column
+        col_b = target_spec.away_column
+
+    # Проверяем наличие колонок в датафрейме
+    if col_a not in df.columns:
         raise ValueError(
-            f"Колонка '{home_col}' не найдена в датафрейме. Доступные: {list(df.columns)}"
+            f"Колонка '{col_a}' не найдена в датафрейме. Доступные: {list(df.columns)}"
         )
-    if away_col not in df.columns:
+    if col_b not in df.columns:
         raise ValueError(
-            f"Колонка '{away_col}' не найдена в датафрейме. Доступные: {list(df.columns)}"
+            f"Колонка '{col_b}' не найдена в датафрейме. Доступные: {list(df.columns)}"
         )
 
     # Вычисляем таргет на основе типа
@@ -160,28 +169,28 @@ def compute_target(df: pd.DataFrame, cfg: DictConfig) -> pd.Series:
         comparison = target_spec.comparison
 
         if comparison == "greater":
-            target = (df[home_col] > df[away_col]).astype(int)
+            target = (df[col_a] > df[col_b]).astype(int)
         elif comparison == "less":
-            target = (df[home_col] < df[away_col]).astype(int)
+            target = (df[col_a] < df[col_b]).astype(int)
         elif comparison == "equal":
-            target = (df[home_col] == df[away_col]).astype(int)
+            target = (df[col_a] == df[col_b]).astype(int)
         else:
             raise ValueError(f"Неизвестный тип comparison: {comparison}")
 
-        logger.info("Таргет: %s %s %s", home_col, comparison, away_col)
+        logger.info("Таргет: %s %s %s (формат: %s)", col_a, comparison, col_b, data_format)
 
     elif hasattr(target_spec, "aggregation"):
         # Регрессия или threshold: aggregation (sum, diff, etc.)
         aggregation = target_spec.aggregation
 
         if aggregation == "sum":
-            target = df[home_col] + df[away_col]
+            target = df[col_a] + df[col_b]
         elif aggregation == "diff":
-            target = df[home_col] - df[away_col]
+            target = df[col_a] - df[col_b]
         else:
             raise ValueError(f"Неизвестный тип aggregation: {aggregation}")
 
-        logger.info("Таргет: %s %s %s", home_col, aggregation, away_col)
+        logger.info("Таргет: %s %s %s (формат: %s)", col_a, aggregation, col_b, data_format)
 
     else:
         raise ValueError(
@@ -340,9 +349,13 @@ def get_available_tournaments(processed_root: Path) -> list[str]:
     tournaments = []
     for item in processed_root.iterdir():
         if item.is_dir():
-            # Проверяем, что есть train.parquet
+            # Проверяем, что есть train.parquet (старый формат)
+            # или train_long.parquet / train_wide.parquet (новый формат)
             train_file = item / "train.parquet"
-            if train_file.exists():
+            train_long = item / "train_long.parquet"
+            train_wide = item / "train_wide.parquet"
+
+            if train_file.exists() or train_long.exists() or train_wide.exists():
                 tournaments.append(item.name)
 
     return sorted(tournaments)
@@ -510,9 +523,20 @@ def train_single_tournament(tournament_name: str, model_cfg: DictConfig, cfg: Di
         mlflow.log_param("n_train", len(X_train))
         mlflow.log_param("n_valid", len(X_valid))
 
+        # Определяем категориальные фичи (строковые типы)
+        cat_features = [col for col in X_train.columns if X_train[col].dtype == "object"]
+        if cat_features:
+            logger.info("Найдены категориальные фичи: %s", cat_features)
+
         model = CatBoostClassifier(**tournament_cfg.model.params)
         logger.info("Начинаю обучение CatBoost...")
-        model.fit(X_train, y_train, eval_set=(X_valid, y_valid), use_best_model=True)
+        model.fit(
+            X_train,
+            y_train,
+            eval_set=(X_valid, y_valid),
+            cat_features=cat_features,
+            use_best_model=True,
+        )
 
         # ---------- Метрики на валидации ----------
         proba = model.predict_proba(X_valid)[:, 1]

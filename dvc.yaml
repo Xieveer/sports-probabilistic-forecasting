@@ -18,7 +18,7 @@ stages:
       - data/interim
 
   features:
-    cmd: uv run python -m sports_forecast.features.features_build
+    cmd: uv run python -m sports_forecast.features.features_build tournament=all model=is_home_win
     deps:
       - sports_forecast/features/features_build.py
       - conf/features

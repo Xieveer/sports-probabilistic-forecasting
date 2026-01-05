@@ -84,3 +84,4 @@ Thumbs.db
 *.bak
 *.swp
 *~
+/models
