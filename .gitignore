@@ -64,6 +64,9 @@ outputs/
 
 # MLflow
 /mlruns/
+
+# CatBoost
+catboost_info/
 mlflow_ui.log
 mlflow_ui.pid
 mlruns.backup.*
