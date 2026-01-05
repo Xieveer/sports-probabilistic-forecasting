@@ -179,11 +179,12 @@ mlflow-ui:  ## Запустить MLflow UI на порту 5000
 	@echo "🚀 Запуск MLflow UI..."
 	@-pkill -f "mlflow ui" 2>/dev/null || true
 	@sleep 1
-	@bash -c "nohup uv run mlflow ui --host 127.0.0.1 --port 5000 > mlflow_ui.log 2>&1 & echo \$$!" > mlflow_ui.pid
+	@bash -c "cd $(shell pwd) && nohup uv run mlflow ui --backend-store-uri file:$(shell pwd)/mlruns --host 127.0.0.1 --port 5000 > mlflow_ui.log 2>&1 & echo \$$!" > mlflow_ui.pid
 	@sleep 3
 	@if pgrep -f "mlflow ui" > /dev/null; then \
 		echo "✅ MLflow UI запущен!"; \
 		echo "📊 URL: http://127.0.0.1:5000"; \
+		echo "📂 Tracking: $(shell pwd)/mlruns"; \
 		echo "📝 Логи: mlflow_ui.log"; \
 		echo "🆔 PID: $$(cat mlflow_ui.pid)"; \
 	else \

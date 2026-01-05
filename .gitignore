@@ -1,133 +1,81 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-*$py.class
-*.so
-.Python
-*.egg
-*.egg-info/
-dist/
-build/
-*.whl
-
-# Virtual environments
-.venv/
-venv/
-ENV/
-env/
-.virtualenv/
-.python-version
-
-# Environment variables
-.env
-.env.*
-!.env.example
-
 # IDE
 .idea/
 .vscode/
 .cursor/
-*.swp
-*.swo
-*~
-.DS_Store
-Thumbs.db
+.python-version
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Jupyter
+.ipynb_checkpoints
+
+# Environment
+.env
+.env.local
+
+# DVC
+/data/raw
+/data/interim
+/data/processed
+/data/predictions
+/models/*.cbm
+/models/*/*.cbm
+.dvc/tmp
+.dvc/cache
+
+# MLflow
+/mlruns/
+mlflow_ui.log
+mlflow_ui.pid
+mlruns.backup.*
 
 # Logs
 *.log
-logs/
 
-# Hydra outputs
-outputs/
-multirun/
-.hydra/
-
-# Data - исключаем ВСЕ данные, но показываем структуру слоев
-data/**
-!data/.gitkeep
-!data/README.md
-
-# Разрешаем только структуру основных слоев
-!data/source/
-!data/source/.gitkeep
-!data/source/README.md
-
-!data/raw/
-!data/raw/.gitkeep
-!data/raw/README.md
-
-!data/interim/
-!data/interim/.gitkeep
-!data/interim/README.md
-
-!data/processed/
-!data/processed/.gitkeep
-!data/processed/README.md
-
-# Исключаем все содержимое внутри слоев (турниры и файлы)
-/data/source/**
-/data/raw/**
-/data/interim/**
-/data/processed/**
-
-# Sphinx documentation
-docs/build/
-docs/_build/
-docs/source/_static/.buildinfo
-docs/source/.doctrees/
-
-# Coverage reports
-htmlcov/
-.coverage
-.coverage.*
-coverage.xml
-*.cover
-.hypothesis/
-.pytest_cache/
-
-# MLflow
-mlruns/
-mlartifacts/
-
-# Models
-models/
-*.pkl
-*.bin
-*.h5
-*.onnx
-*.pt
-*.pth
-
-# Jupyter
-.ipynb_checkpoints/
-*.ipynb
-
-# Cache
-*.cache
-.cache/
-.mypy_cache/
-.ruff_cache/
-.dmypy.json
-dmypy.json
-
-# DVC
-.dvc/cache
-.dvc/tmp
-.dvc/plots
-.dvc/config.local
+# Documentation
+/docs/_build/
+/docs/_autosummary/
 
 # OS
 .DS_Store
 Thumbs.db
-desktop.ini
 
-# Temporary files
+# Temporary
 *.tmp
-*.temp
 *.bak
 *.swp
 *~
-/models
-quick_convert.py
