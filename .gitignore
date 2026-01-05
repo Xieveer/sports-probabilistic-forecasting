@@ -47,11 +47,16 @@ htmlcov/
 .env
 .env.local
 
+# Hydra
+.hydra/
+outputs/
+
 # DVC
 /data/raw
 /data/interim
 /data/processed
 /data/predictions
+/data/source
 /models/*.cbm
 /models/*/*.cbm
 .dvc/tmp
