@@ -174,6 +174,22 @@ dvc-repro:
 	uv run dvc repro
 	@echo "✅ DVC pipeline завершен"
 
+# ---------- MLflow UI ----------
+mlflow-ui:  ## Запустить MLflow UI на порту 5000
+	@echo "🚀 Запуск MLflow UI..."
+	@pkill -f "mlflow ui" || true
+	@sleep 1
+	@nohup uv run mlflow ui --host 127.0.0.1 --port 5000 > mlflow_ui.log 2>&1 &
+	@sleep 2
+	@echo "✅ MLflow UI запущен!"
+	@echo "📊 URL: http://127.0.0.1:5000"
+	@echo "📝 Логи: mlflow_ui.log"
+
+mlflow-stop:  ## Остановить MLflow UI
+	@echo "🛑 Остановка MLflow UI..."
+	@pkill -f "mlflow ui" || echo "MLflow UI не запущен"
+	@echo "✅ MLflow UI остановлен"
+
 # ---------- Демо доступ ----------
 download-demo-data:
 	uv run python -m sports_forecast.data.download_demo \
