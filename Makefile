@@ -8,7 +8,7 @@ TESTS := tests
 DOCS_SOURCE := docs/source
 DOCS_BUILD := docs/build
 
-.PHONY: help init install lint format fix test pre-commit train clean dvc-repro
+.PHONY: help init install lint format fix test test-unit test-cov test-watch test-file pre-commit train clean dvc-repro
 .PHONY: docs docs-serve docs-clean docs-open docs-coverage docs-linkcheck tree
 
 # ---------- Справка ----------
@@ -27,7 +27,10 @@ help:
 	@echo "  make pre-commit   - прогнать все pre-commit хуки на всех файлах"
 	@echo ""
 	@echo "Тесты:"
-	@echo "  make test         - запустить pytest"
+	@echo "  make test         - запустить все тесты"
+	@echo "  make test-unit    - запустить только юнит-тесты (быстрые)"
+	@echo "  make test-cov     - запустить тесты с coverage отчетом"
+	@echo "  make test-watch   - запустить тесты в watch mode"
 	@echo ""
 	@echo "Документация:"
 	@echo "  make docs              - собрать HTML документацию"
@@ -78,8 +81,27 @@ pre-commit:
 # ---------- Тесты ----------
 
 # Юнит-тесты (на будущее, когда появится папка tests/)
+# ---------- Тесты ----------
+
 test:
+	@echo "🧪 Запуск всех тестов..."
 	uv run pytest
+
+test-unit:
+	@echo "🧪 Запуск юнит-тестов..."
+	uv run pytest -m unit -v
+
+test-cov:
+	@echo "🧪 Запуск тестов с coverage..."
+	uv run pytest --cov=$(SRC) --cov-report=html --cov-report=term-missing
+
+test-watch:
+	@echo "🧪 Запуск тестов в watch mode..."
+	uv run pytest-watch
+
+test-file:
+	@echo "🧪 Запуск конкретного файла: $(FILE)"
+	uv run pytest $(FILE) -v
 
 # ---------- Документация ----------
 
