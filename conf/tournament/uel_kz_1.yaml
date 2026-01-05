@@ -45,23 +45,57 @@ data_clean:
         format: null        # Автоопределение формата pandas
         errors: "coerce"    # Невалидные даты → NaT
 
+# База для тотала (типичное значение для киберхоккея)
+total_base: 5.5  # Базовая линия тотала для over/under моделей
+
 # Конфигурация источников таргета для разных моделей
 # Используется в train.py для динамического вычисления таргета
 target_sources:
-  # Модель is_home_win: победа домашней команды
+  # === LONG FORMAT MODELS (train_long.parquet) ===
+  
+  # Модель is_win: победа текущего игрока (pl vs opp)
+  # Работает для обеих сторон благодаря long формату
+  is_win:
+    player_column: "pl_points"
+    opponent_column: "opp_points"
+    comparison: "greater"  # pl_points > opp_points
+    format: "long"
+  
+  # === WIDE FORMAT MODELS (train_wide.parquet) ===
+  
+  # Модель is_home_win: победа домашней команды (legacy)
   is_home_win:
     home_column: "home_points"
     away_column: "away_points"
     comparison: "greater"  # home_points > away_points
+    format: "wide"
 
-  # Модель is_away_win: победа гостевой команды
+  # Модель is_away_win: победа гостевой команды (legacy)
   is_away_win:
     home_column: "home_points"
     away_column: "away_points"
     comparison: "less"  # home_points < away_points
+    format: "wide"
 
   # Модель is_draw: ничья
   is_draw:
     home_column: "home_points"
     away_column: "away_points"
     comparison: "equal"  # home_points == away_points
+    format: "wide"
+  
+  # Модель total_over: тотал больше базы
+  total_over:
+    home_column: "home_points"
+    away_column: "away_points"
+    comparison: "total_over"  # (home_points + away_points) > total_base
+    base: 5.5  # Берется из tournament.total_base если не указано
+    format: "wide"
+  
+  # Модель total_under: тотал меньше базы
+  total_under:
+    home_column: "home_points"
+    away_column: "away_points"
+    comparison: "total_under"  # (home_points + away_points) < total_base
+    base: 5.5  # Берется из tournament.total_base если не указано
+    format: "wide"

@@ -1,0 +1,55 @@
+# Модель: Победа игрока (для long format)
+# @package _global_.model
+#
+# Эта модель работает с long format данными, где один матч = две строки.
+# Предсказывает победу текущего игрока в строке (pl vs opp).
+#
+# Использование:
+#   train_long.parquet - для обучения
+#   inference_long.parquet - для предсказаний
+
+name: "is_win"
+type: "catboost"
+description: "Binary classification: player wins (long format)"
+save_format: "cbm"
+data_format: "long"  # Явно указываем формат данных
+
+# Конфигурация таргета
+target_config:
+  source_key: "is_win"            # ссылка на tournament.target_sources.is_win
+  name: "target_win"              # имя колонки в датасете
+  description: "1 если pl побеждает opp, 0 иначе"
+
+# Фичи для этой модели (с префиксом f_)
+# NOTE: Здесь указываем БЕЗ префикса f_, он добавится автоматически
+features:
+  # Form features
+  - "pl_is_dp"
+  - "pl_is_fg"
+  - "pl_is_form"
+  - "opp_is_dp"
+  - "opp_is_fg"
+  - "opp_is_form"
+  - "match_state"
+  - "diff_mins_prev_match"
+  
+  # Count features
+  - "pl_global_count"
+  - "opp_global_count"
+
+# Гиперпараметры CatBoost
+params:
+  loss_function: "Logloss"
+  eval_metric: "Logloss"
+  iterations: 300
+  learning_rate: 0.05
+  depth: 6
+  l2_leaf_reg: 3.0
+  
+  random_seed: 42
+  verbose: 100
+  allow_writing_files: false
+  
+  od_type: "Iter"
+  od_wait: 200
+

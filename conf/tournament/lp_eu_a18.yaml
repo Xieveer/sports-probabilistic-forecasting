@@ -46,12 +46,37 @@ data_clean:
 
 # Конфигурация источников таргета для разных моделей
 # Используется в train.py для динамического вычисления таргета
+# База для тотала (типичное значение для настольного тенниса)
+total_base: 21.5
+
 target_sources:
-  # Модель is_home_win: победа домашней команды
+  # === LONG FORMAT MODELS (train_long.parquet) ===
+  is_win:
+    player_column: "pl_points"
+    opponent_column: "opp_points"
+    comparison: "greater"
+    format: "long"
+  
+  # === WIDE FORMAT MODELS (train_wide.parquet) ===
   is_home_win:
     home_column: "home_points"
     away_column: "away_points"
-    comparison: "greater"  # home_points > away_points
+    comparison: "greater"
+    format: "wide"
+  
+  total_over:
+    home_column: "home_points"
+    away_column: "away_points"
+    comparison: "total_over"
+    base: 21.5
+    format: "wide"
+  
+  total_under:
+    home_column: "home_points"
+    away_column: "away_points"
+    comparison: "total_under"
+    base: 21.5
+    format: "wide"
 
   # Модель is_away_win: победа гостевой команды
   is_away_win:
