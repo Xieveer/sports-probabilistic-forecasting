@@ -66,3 +66,9 @@ target_sources:
     comparison: total_under
     base: 70.5
     format: wide
+odds:
+  enabled: true
+  source_column: sdf_odds_feed
+  bookmaker: sdf
+  parse_format: python_dict
+  coverage: 27.4

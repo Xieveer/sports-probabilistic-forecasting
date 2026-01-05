@@ -52,6 +52,14 @@ data_clean:
         format: null
         errors: "coerce"
 
+# Букмекерские коэффициенты
+odds:
+  enabled: true
+  source_column: "sdf_odds_feed"  # Колонка в source.csv
+  bookmaker: "sdf"
+  parse_format: "python_dict"
+  coverage: 27.4  # ~27% матчей имеют коэффициенты
+
 # Источники данных для вычисления различных таргетов
 # Диапазоны тоталов (для автоматической генерации моделей)
 total_ranges:

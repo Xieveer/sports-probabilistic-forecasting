@@ -94,3 +94,10 @@ target_sources:
     comparison: "total_under"
     base: 5.5
     format: "wide"
+
+# Букмекерские коэффициенты
+odds:
+  enabled: true
+  source_column: "fon_bet_odds_feed"
+  bookmaker: "fonbet"
+  parse_format: "python_dict"

@@ -6,6 +6,13 @@ sport: "cyberhockey"
 region: "kazakhstan"
 stream: "stream_1"
 
+# Букмекерские коэффициенты
+odds:
+  enabled: true
+  source_column: "fon_bet_odds_feed"  # Колонка в source.csv
+  bookmaker: "fonbet"
+  parse_format: "python_dict"  # ast.literal_eval()
+
 data_clean:
   # Маппинг колонок: исходное название → унифицированное
   column_mapping:
