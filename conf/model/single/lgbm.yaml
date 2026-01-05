@@ -45,4 +45,3 @@ calibration:
   enabled: true
   threshold_ece: 0.1
   method: isotonic
-

@@ -10,8 +10,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -52,12 +50,14 @@ def sample_data_with_cat():
 
     n_samples = 200
 
-    X = pd.DataFrame({
-        "f_numeric_1": np.random.randn(n_samples),
-        "f_numeric_2": np.random.randn(n_samples),
-        "f_cat_1": np.random.choice(["A", "B", "C"], n_samples),
-        "f_cat_2": np.random.choice(["X", "Y"], n_samples),
-    })
+    X = pd.DataFrame(
+        {
+            "f_numeric_1": np.random.randn(n_samples),
+            "f_numeric_2": np.random.randn(n_samples),
+            "f_cat_1": np.random.choice(["A", "B", "C"], n_samples),
+            "f_cat_2": np.random.choice(["X", "Y"], n_samples),
+        }
+    )
 
     y = pd.Series(np.random.randint(0, 2, n_samples))
 
@@ -231,11 +231,11 @@ def test_calibrator_no_calibration_needed(sample_data):
     # Разбиваем данные
     split_idx = int(len(X) * 0.6)
     X_train = X.iloc[:split_idx]
-    X_cal = X.iloc[split_idx:int(len(X) * 0.8)]
-    X_val = X.iloc[int(len(X) * 0.8):]
+    X_cal = X.iloc[split_idx : int(len(X) * 0.8)]
+    X_val = X.iloc[int(len(X) * 0.8) :]
     y_train = y.iloc[:split_idx]
-    y_cal = y.iloc[split_idx:int(len(y) * 0.8)]
-    y_val = y.iloc[int(len(y) * 0.8):]
+    y_cal = y.iloc[split_idx : int(len(y) * 0.8)]
+    y_val = y.iloc[int(len(y) * 0.8) :]
 
     # Обучаем LogReg (обычно хорошо откалиброван)
     model = LogRegModel()
@@ -306,4 +306,3 @@ def test_tscv_cross_validate(sample_data):
     for fold_idx in range(1, 5):
         assert f"fold_{fold_idx}_logloss" in results
         assert f"fold_{fold_idx}_auc" in results
-

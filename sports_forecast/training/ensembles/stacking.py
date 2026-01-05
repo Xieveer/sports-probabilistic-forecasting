@@ -32,6 +32,7 @@ from sports_forecast.training.base import BaseModel, BaseSingleModel
 from sports_forecast.training.optimization.tscv import TimeSeriesCrossValidator
 from sports_forecast.utils.log_config import get_logger
 
+
 logger = get_logger(__name__)
 
 
@@ -151,7 +152,12 @@ class StackingEnsemble(BaseModel):
 
         # Обучаем базовые модели через TSCV
         for model_idx, base_model in enumerate(self.base_models):
-            logger.info("--- Базовая модель %d/%d: %s ---", model_idx + 1, len(self.base_models), base_model.get_name())
+            logger.info(
+                "--- Базовая модель %d/%d: %s ---",
+                model_idx + 1,
+                len(self.base_models),
+                base_model.get_name(),
+            )
 
             # Out-of-fold предсказания для этой модели
             oof_model = np.zeros(n_samples)
@@ -195,7 +201,9 @@ class StackingEnsemble(BaseModel):
         )
 
         # Обучаем мета-модель
-        logger.info("Обучаю мета-модель '%s' на out-of-fold предсказаниях...", self.meta_model.get_name())
+        logger.info(
+            "Обучаю мета-модель '%s' на out-of-fold предсказаниях...", self.meta_model.get_name()
+        )
         self.meta_model.fit(meta_features, y)
 
         self.is_fitted_ = True
@@ -229,7 +237,9 @@ class StackingEnsemble(BaseModel):
             >>> proba[:, 1]  # Вероятность класса 1
         """
         if not self.is_fitted_:
-            raise ValueError(f"Ансамбль '{self.name}' не обучен. Вызовите fit() перед predict_proba()")
+            raise ValueError(
+                f"Ансамбль '{self.name}' не обучен. Вызовите fit() перед predict_proba()"
+            )
 
         # Получаем предсказания от базовых моделей
         base_predictions = np.zeros((len(X), len(self.base_models)))
@@ -312,7 +322,9 @@ class StackingEnsemble(BaseModel):
             # Ищем файл модели (расширение зависит от типа модели)
             model_files = list(path.glob(f"{base_model.get_name()}*"))
             if not model_files:
-                raise FileNotFoundError(f"Файл базовой модели '{base_model.get_name()}' не найден в {path}")
+                raise FileNotFoundError(
+                    f"Файл базовой модели '{base_model.get_name()}' не найден в {path}"
+                )
 
             model_path = model_files[0]
             base_model.load(model_path)
@@ -330,4 +342,3 @@ class StackingEnsemble(BaseModel):
         logger.info("✓ Stacking Ensemble '%s' загружен", self.name)
 
         return self
-

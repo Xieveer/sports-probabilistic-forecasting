@@ -17,19 +17,18 @@ Time Series Cross-Validation для обучения моделей на вре�
 
 from __future__ import annotations
 
-from typing import Generator
+from collections.abc import Generator
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
 from sklearn.model_selection import TimeSeriesSplit
 
-from typing import Any
-
-from sports_forecast.utils.log_config import get_logger
-
 # Используем ECE из train.py
 from sports_forecast.train import compute_expected_calibration_error
+from sports_forecast.utils.log_config import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -230,9 +229,19 @@ class TimeSeriesCrossValidator:
 
         logger.info("=" * 60)
         logger.info("TSCV ЗАВЕРШЕНА")
-        logger.info("Mean LogLoss: %.4f ± %.4f", results.get("mean_logloss", 0), results.get("std_logloss", 0))
-        logger.info("Mean AUC:     %.4f ± %.4f", results.get("mean_auc", 0), results.get("std_auc", 0))
-        logger.info("Mean Acc:     %.4f ± %.4f", results.get("mean_accuracy", 0), results.get("std_accuracy", 0))
+        logger.info(
+            "Mean LogLoss: %.4f ± %.4f",
+            results.get("mean_logloss", 0),
+            results.get("std_logloss", 0),
+        )
+        logger.info(
+            "Mean AUC:     %.4f ± %.4f", results.get("mean_auc", 0), results.get("std_auc", 0)
+        )
+        logger.info(
+            "Mean Acc:     %.4f ± %.4f",
+            results.get("mean_accuracy", 0),
+            results.get("std_accuracy", 0),
+        )
         logger.info("=" * 60)
 
         return results
@@ -245,4 +254,3 @@ class TimeSeriesCrossValidator:
             Количество фолдов.
         """
         return self.n_splits
-

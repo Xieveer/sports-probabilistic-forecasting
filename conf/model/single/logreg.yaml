@@ -37,4 +37,3 @@ optuna:
 # Калибровка (LogReg обычно не нужна)
 calibration:
   enabled: false  # LogReg калиброван по умолчанию
-

@@ -25,6 +25,7 @@ from omegaconf import DictConfig
 from sports_forecast.training.base import BaseSingleModel
 from sports_forecast.utils.log_config import get_logger
 
+
 logger = get_logger(__name__)
 
 
@@ -215,10 +216,13 @@ class LGBMModel(BaseSingleModel):
         importances = self.model_.feature_importances_
         feature_names = self.model_.feature_name_
 
-        return pd.DataFrame(
-            {
-                "feature": feature_names,
-                "importance": importances,
-            }
-        ).sort_values("importance", ascending=False).reset_index(drop=True)
-
+        return (
+            pd.DataFrame(
+                {
+                    "feature": feature_names,
+                    "importance": importances,
+                }
+            )
+            .sort_values("importance", ascending=False)
+            .reset_index(drop=True)
+        )

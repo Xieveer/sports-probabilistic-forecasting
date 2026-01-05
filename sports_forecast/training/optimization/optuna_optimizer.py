@@ -20,15 +20,15 @@ Optuna оптимизатор для подбора гиперпараметро
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
-import numpy as np
 import optuna
-from omegaconf import DictConfig, OmegaConf
 
 from sports_forecast.training.optimization.tscv import TimeSeriesCrossValidator
 from sports_forecast.utils.log_config import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -210,15 +210,14 @@ class OptunaOptimizer:
         """
         if model_name == "catboost":
             return self._catboost_param_space
-        elif model_name == "lgbm" or model_name == "lightgbm":
+        if model_name == "lgbm" or model_name == "lightgbm":
             return self._lgbm_param_space
-        elif model_name == "logreg" or model_name == "logistic":
+        if model_name == "logreg" or model_name == "logistic":
             return self._logreg_param_space
-        else:
-            raise ValueError(
-                f"Дефолтное пространство параметров для '{model_name}' не определено. "
-                f"Передайте param_space явно в optimize()."
-            )
+        raise ValueError(
+            f"Дефолтное пространство параметров для '{model_name}' не определено. "
+            f"Передайте param_space явно в optimize()."
+        )
 
     @staticmethod
     def _catboost_param_space(trial: optuna.Trial) -> dict[str, Any]:
@@ -335,4 +334,3 @@ class OptunaOptimizer:
 
         logger.info("Лучшие параметры загружены из: %s", load_path)
         return dict(data["best_params"])
-

@@ -23,4 +23,3 @@ target_config:
 feature_selection:
   mode: auto
   prefix: "f_"
-

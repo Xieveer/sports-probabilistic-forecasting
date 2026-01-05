@@ -43,4 +43,3 @@ tscv:
 # Калибровка мета-модели (обычно не нужна для LogReg)
 calibration:
   enabled: false
-

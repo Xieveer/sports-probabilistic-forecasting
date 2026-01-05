@@ -34,6 +34,7 @@ from omegaconf import DictConfig
 from sports_forecast.training.trainer import ModelTrainer
 from sports_forecast.utils.log_config import configure_logging, get_logger
 
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 logger = get_logger(__name__)
 
@@ -121,4 +122,3 @@ def main(cfg: DictConfig) -> None:
 
 if __name__ == "__main__":
     main()
-

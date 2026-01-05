@@ -22,20 +22,23 @@ from pathlib import Path
 from typing import Any
 
 import mlflow
-import numpy as np
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 
-from sports_forecast.train import compute_expected_calibration_error, compute_target, select_features
+from sports_forecast.train import (
+    compute_target,
+    select_features,
+)
 from sports_forecast.training.calibration import ModelCalibrator
+from sports_forecast.training.ensembles.stacking import StackingEnsemble
 from sports_forecast.training.models.catboost import CatBoostModel
 from sports_forecast.training.models.dummy import DummyModel
 from sports_forecast.training.models.lgbm import LGBMModel
 from sports_forecast.training.models.logreg import LogRegModel
-from sports_forecast.training.ensembles.stacking import StackingEnsemble
 from sports_forecast.training.optimization.optuna_optimizer import OptunaOptimizer
 from sports_forecast.training.optimization.tscv import TimeSeriesCrossValidator
 from sports_forecast.utils.log_config import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -131,10 +134,12 @@ class ModelTrainer:
         tournament_cfg = OmegaConf.load(tournament_config_path)
 
         # Создаём полный конфиг (tournament + model)
-        full_cfg = OmegaConf.create({
-            "tournament": tournament_cfg,
-            "model": model_config,
-        })
+        full_cfg = OmegaConf.create(
+            {
+                "tournament": tournament_cfg,
+                "model": model_config,
+            }
+        )
 
         # Вычисляем таргет
         try:
@@ -204,7 +209,9 @@ class ModelTrainer:
         # Загружаем базовые модели
         base_models = []
         for base_model_path in ensemble_config.base_models:
-            base_model_config_path = self.project_root / "conf" / "model" / f"{base_model_path}.yaml"
+            base_model_config_path = (
+                self.project_root / "conf" / "model" / f"{base_model_path}.yaml"
+            )
             base_model_config = OmegaConf.load(base_model_config_path)
             base_model = self.create_model(base_model_config)
             base_models.append(base_model)
@@ -279,9 +286,13 @@ class ModelTrainer:
         y_train = y.iloc[:split_idx]
         y_test = y.iloc[split_idx:]
 
-        logger.info("Split: train=%d (%.1f%%), test=%d (%.1f%%)",
-                    len(X_train), (1 - test_size) * 100,
-                    len(X_test), test_size * 100)
+        logger.info(
+            "Split: train=%d (%.1f%%), test=%d (%.1f%%)",
+            len(X_train),
+            (1 - test_size) * 100,
+            len(X_test),
+            test_size * 100,
+        )
 
         # Создаём модель
         model = self.create_model(model_config)
@@ -402,9 +413,11 @@ class ModelTrainer:
 
             # Shadow метрики (TSCV)
             for metric_name, value in tscv_results.items():
-                if metric_name.startswith("mean_") or metric_name.startswith("std_"):
-                    mlflow.log_metric(f"shadow_{metric_name}", value)
-                elif metric_name.startswith("fold_"):
+                if (
+                    metric_name.startswith("mean_")
+                    or metric_name.startswith("std_")
+                    or metric_name.startswith("fold_")
+                ):
                     mlflow.log_metric(f"shadow_{metric_name}", value)
 
             # Калибровка
@@ -447,7 +460,9 @@ class ModelTrainer:
         logger.info("=" * 60)
 
         # Загружаем конфиг ансамбля
-        ensemble_config_path = self.project_root / "conf" / "model" / "ensemble" / f"{ensemble_name}.yaml"
+        ensemble_config_path = (
+            self.project_root / "conf" / "model" / "ensemble" / f"{ensemble_name}.yaml"
+        )
         if not ensemble_config_path.exists():
             logger.error("Конфиг ансамбля не найден: %s", ensemble_config_path)
             return False
@@ -554,4 +569,3 @@ class ModelTrainer:
                     tournaments.append(item.name)
 
         return sorted(tournaments)
-

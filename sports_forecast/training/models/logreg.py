@@ -24,6 +24,7 @@ from sklearn.linear_model import LogisticRegression
 from sports_forecast.training.base import BaseSingleModel
 from sports_forecast.utils.log_config import get_logger
 
+
 logger = get_logger(__name__)
 
 
@@ -147,7 +148,9 @@ class LogRegModel(BaseSingleModel):
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
         joblib.dump(self.model_, save_path)
-        logger.info("LogisticRegression модель '%s' (%s) сохранена: %s", self.name, version, save_path)
+        logger.info(
+            "LogisticRegression модель '%s' (%s) сохранена: %s", self.name, version, save_path
+        )
 
     def load(self, path: Path) -> LogRegModel:
         """
@@ -195,10 +198,13 @@ class LogRegModel(BaseSingleModel):
         coeffs = self.model_.coef_[0]
         feature_names = self.model_.feature_names_in_
 
-        return pd.DataFrame(
-            {
-                "feature": feature_names,
-                "importance": coeffs,  # Можно взять abs(coeffs) для модуля
-            }
-        ).sort_values("importance", ascending=False, key=abs).reset_index(drop=True)
-
+        return (
+            pd.DataFrame(
+                {
+                    "feature": feature_names,
+                    "importance": coeffs,  # Можно взять abs(coeffs) для модуля
+                }
+            )
+            .sort_values("importance", ascending=False, key=abs)
+            .reset_index(drop=True)
+        )
