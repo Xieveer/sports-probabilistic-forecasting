@@ -18,5 +18,5 @@
 
 from sports_forecast.training.base import BaseModel, BaseSingleModel
 
-__all__ = ["BaseModel", "BaseSingleModel"]
 
+__all__ = ["BaseModel", "BaseSingleModel"]

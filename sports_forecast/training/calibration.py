@@ -25,6 +25,7 @@ from sklearn.calibration import CalibratedClassifierCV
 from sports_forecast.train import compute_expected_calibration_error
 from sports_forecast.utils.log_config import get_logger
 
+
 logger = get_logger(__name__)
 
 
@@ -89,9 +90,9 @@ class ModelCalibrator:
     def calibrate_if_needed(
         self,
         model: Any,
-        X_cal: pd.DataFrame | np.ndarray,
+        X_cal: pd.DataFrame | np.ndarray,  # noqa: N803
         y_cal: pd.Series | np.ndarray,
-        X_val: pd.DataFrame | np.ndarray,
+        X_val: pd.DataFrame | np.ndarray,  # noqa: N803
         y_val: pd.Series | np.ndarray,
     ) -> tuple[Any, bool, float, float]:
         """
@@ -124,9 +125,7 @@ class ModelCalibrator:
         """
         # Предсказания на валидации ДО калибровки
         proba_before = model.predict_proba(X_val)[:, 1]
-        ece_before = compute_expected_calibration_error(
-            np.array(y_val), proba_before
-        )
+        ece_before = compute_expected_calibration_error(np.array(y_val), proba_before)
 
         logger.info("ECE до калибровки: %.4f (порог: %.2f)", ece_before, self.threshold_ece)
 
@@ -136,7 +135,9 @@ class ModelCalibrator:
             return model, False, ece_before, None
 
         # Применяем калибровку
-        logger.info("⚠ Калибровка нужна (ECE > %.2f). Применяю метод: %s", self.threshold_ece, self.method)
+        logger.info(
+            "⚠ Калибровка нужна (ECE > %.2f). Применяю метод: %s", self.threshold_ece, self.method
+        )
 
         calibrated_model = CalibratedClassifierCV(
             model,
@@ -148,9 +149,7 @@ class ModelCalibrator:
 
         # Предсказания на валидации ПОСЛЕ калибровки
         proba_after = calibrated_model.predict_proba(X_val)[:, 1]
-        ece_after = compute_expected_calibration_error(
-            np.array(y_val), proba_after
-        )
+        ece_after = compute_expected_calibration_error(np.array(y_val), proba_after)
 
         logger.info("ECE после калибровки: %.4f", ece_after)
 
@@ -158,18 +157,17 @@ class ModelCalibrator:
         if ece_after < ece_before:
             logger.info("✓ Калибровка улучшила ECE: %.4f -> %.4f", ece_before, ece_after)
             return calibrated_model, True, ece_before, ece_after
-        else:
-            logger.warning(
-                "⚠ Калибровка НЕ улучшила ECE: %.4f -> %.4f. Используем исходную модель.",
-                ece_before,
-                ece_after,
-            )
-            return model, False, ece_before, None
+        logger.warning(
+            "⚠ Калибровка НЕ улучшила ECE: %.4f -> %.4f. Используем исходную модель.",
+            ece_before,
+            ece_after,
+        )
+        return model, False, ece_before, None
 
     def calibrate(
         self,
         model: Any,
-        X_cal: pd.DataFrame | np.ndarray,
+        X_cal: pd.DataFrame | np.ndarray,  # noqa: N803
         y_cal: pd.Series | np.ndarray,
     ) -> Any:
         """
@@ -201,4 +199,3 @@ class ModelCalibrator:
         logger.info("Калибровка применена")
 
         return calibrated_model
-

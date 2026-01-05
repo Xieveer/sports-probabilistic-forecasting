@@ -26,6 +26,7 @@ from omegaconf import DictConfig
 from sports_forecast.training.base import BaseSingleModel
 from sports_forecast.utils.log_config import get_logger
 
+
 logger = get_logger(__name__)
 
 
@@ -109,7 +110,7 @@ class CatBoostModel(BaseSingleModel):
 
     def _fit_implementation(
         self,
-        X: pd.DataFrame,
+        X: pd.DataFrame,  # noqa: N803
         y: pd.Series,
         **fit_kwargs,
     ) -> None:
@@ -225,10 +226,13 @@ class CatBoostModel(BaseSingleModel):
         importances = self.model_.get_feature_importance()
         feature_names = self.model_.feature_names_
 
-        return pd.DataFrame(
-            {
-                "feature": feature_names,
-                "importance": importances,
-            }
-        ).sort_values("importance", ascending=False).reset_index(drop=True)
-
+        return (
+            pd.DataFrame(
+                {
+                    "feature": feature_names,
+                    "importance": importances,
+                }
+            )
+            .sort_values("importance", ascending=False)
+            .reset_index(drop=True)
+        )

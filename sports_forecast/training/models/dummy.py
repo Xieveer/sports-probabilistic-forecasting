@@ -21,6 +21,7 @@ from sklearn.dummy import DummyClassifier
 from sports_forecast.training.base import BaseSingleModel
 from sports_forecast.utils.log_config import get_logger
 
+
 logger = get_logger(__name__)
 
 
@@ -76,7 +77,9 @@ class DummyModel(BaseSingleModel):
 
         super().__init__(name=name, config=config or {}, params=params)
 
-        logger.info("Инициализирован DummyModel (baseline) с strategy='%s'", self.params.get("strategy"))
+        logger.info(
+            "Инициализирован DummyModel (baseline) с strategy='%s'", self.params.get("strategy")
+        )
 
     def _create_model(self) -> DummyClassifier:
         """
@@ -89,9 +92,9 @@ class DummyModel(BaseSingleModel):
 
     def _fit_implementation(
         self,
-        X: pd.DataFrame,
+        X: pd.DataFrame,  # noqa: N803
         y: pd.Series,
-        **fit_kwargs,
+        **fit_kwargs,  # noqa: ARG002
     ) -> None:
         """
         Обучить DummyClassifier.
@@ -109,4 +112,3 @@ class DummyModel(BaseSingleModel):
         logger.info("DummyModel обучен на распределении классов:")
         for class_idx, prior in enumerate(class_prior):
             logger.info("  Класс %d: %.4f (%.1f%%)", class_idx, prior, prior * 100)
-

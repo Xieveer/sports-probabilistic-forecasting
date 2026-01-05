@@ -1,0 +1,46 @@
+# Stacking Ensemble для предсказания победы
+# Базовые модели: CatBoost, LightGBM, LogReg
+# Мета-модель: LogisticRegression
+
+name: stacking_win
+description: "Stacking ensemble для предсказания победы"
+type: ensemble
+ensemble_method: stacking
+
+# Базовые модели (ссылки на single/ конфиги)
+base_models:
+  - single/catboost
+  - single/lgbm
+  - single/logreg
+
+# Мета-модель
+meta_model:
+  type: logreg
+  params:
+    C: 1.0
+    penalty: l2
+    solver: saga
+    max_iter: 1000
+    random_state: 777
+
+# Формат данных
+data_format: long
+
+# Конфигурация таргета
+target_config:
+  source_key: is_win
+  name: target_is_win
+
+# Отбор фичей (для базовых моделей)
+feature_selection:
+  mode: auto
+  prefix: "f_"
+
+# TSCV для базовых моделей
+tscv:
+  n_splits: 4
+
+# Калибровка мета-модели (обычно не нужна для LogReg)
+calibration:
+  enabled: false
+

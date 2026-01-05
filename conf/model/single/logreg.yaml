@@ -1,0 +1,40 @@
+# Logistic Regression модель
+# Простая линейная модель, отлично откалиброванная
+
+name: logreg
+description: "Logistic Regression (линейная модель)"
+type: single
+model_class: LogRegModel
+
+# Параметры модели
+params:
+  penalty: l2
+  C: 1.0
+  solver: saga
+  max_iter: 1000
+  random_state: 777
+  verbose: 0
+  n_jobs: -1
+
+# Формат данных
+data_format: long
+
+# Конфигурация таргета
+target_config:
+  source_key: is_win
+  name: target_is_win
+
+# Отбор фичей
+feature_selection:
+  mode: auto
+  prefix: "f_"
+
+# Optuna оптимизация
+optuna:
+  enabled: true
+  n_trials: 20
+
+# Калибровка (LogReg обычно не нужна)
+calibration:
+  enabled: false  # LogReg калиброван по умолчанию
+

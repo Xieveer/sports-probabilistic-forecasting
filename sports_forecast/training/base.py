@@ -27,6 +27,7 @@ from omegaconf import DictConfig
 
 from sports_forecast.utils.log_config import get_logger
 
+
 logger = get_logger(__name__)
 
 
@@ -70,7 +71,7 @@ class BaseModel(ABC):
         self.is_calibrated_ = False
 
     @abstractmethod
-    def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs) -> BaseModel:
+    def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs) -> BaseModel:  # noqa: N803
         """
         Обучить модель на данных.
 
@@ -88,7 +89,7 @@ class BaseModel(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:  # noqa: N803
         """
         Предсказать вероятности классов.
 
@@ -231,7 +232,7 @@ class BaseSingleModel(BaseModel):
     @abstractmethod
     def _fit_implementation(
         self,
-        X: pd.DataFrame,
+        X: pd.DataFrame,  # noqa: N803
         y: pd.Series,
         **fit_kwargs,
     ) -> None:
@@ -254,7 +255,7 @@ class BaseSingleModel(BaseModel):
         """
         raise NotImplementedError
 
-    def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs) -> BaseSingleModel:
+    def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs) -> BaseSingleModel:  # noqa: N803
         """
         Обучить модель на данных.
 
@@ -292,7 +293,7 @@ class BaseSingleModel(BaseModel):
 
         return self
 
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:  # noqa: N803
         """
         Предсказать вероятности классов.
 
@@ -311,7 +312,9 @@ class BaseSingleModel(BaseModel):
             >>> proba[:, 1]  # Вероятность класса 1
         """
         if not self.is_fitted_:
-            raise ValueError(f"Модель '{self.name}' не обучена. Вызовите fit() перед predict_proba()")
+            raise ValueError(
+                f"Модель '{self.name}' не обучена. Вызовите fit() перед predict_proba()"
+            )
 
         proba = self.model_.predict_proba(X)
 
@@ -319,7 +322,7 @@ class BaseSingleModel(BaseModel):
         if proba.ndim == 1:
             proba = np.column_stack([1 - proba, proba])
 
-        return proba
+        return np.asarray(proba)
 
     def save(self, path: Path, version: str = "prod") -> None:
         """
@@ -417,7 +420,9 @@ class BaseSingleModel(BaseModel):
             # CatBoost, LightGBM, RandomForest
             return pd.DataFrame(
                 {
-                    "feature": self.model_.feature_names_ if hasattr(self.model_, "feature_names_") else range(len(self.model_.feature_importances_)),
+                    "feature": self.model_.feature_names_
+                    if hasattr(self.model_, "feature_names_")
+                    else range(len(self.model_.feature_importances_)),
                     "importance": self.model_.feature_importances_,
                 }
             ).sort_values("importance", ascending=False)
@@ -433,4 +438,3 @@ class BaseSingleModel(BaseModel):
 
         logger.debug("Модель '%s' не поддерживает feature_importance", self.name)
         return None
-

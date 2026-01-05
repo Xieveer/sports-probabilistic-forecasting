@@ -1,0 +1,62 @@
+# CatBoost модель (основная)
+# Поддерживает categorical features, early stopping, feature importance
+
+name: catboost
+description: "CatBoost классификатор (основная модель)"
+type: single
+model_class: CatBoostModel
+
+# Параметры модели
+params:
+  loss_function: Logloss
+  eval_metric: Logloss
+  iterations: 500
+  learning_rate: 0.1
+  depth: 6
+  l2_leaf_reg: 3
+  random_seed: 777
+  verbose: False
+
+# Формат данных (long/wide)
+data_format: long
+
+# Конфигурация таргета
+target_config:
+  source_key: is_win
+  name: target_is_win
+
+# Отбор фичей
+feature_selection:
+  mode: auto
+  prefix: "f_"
+
+# Optuna оптимизация (опционально)
+optuna:
+  enabled: true
+  n_trials: 30
+  timeout: null
+  param_space:
+    learning_rate:
+      type: float
+      low: 0.01
+      high: 0.3
+      log: true
+    depth:
+      type: int
+      low: 4
+      high: 12
+    l2_leaf_reg:
+      type: int
+      low: 1
+      high: 10
+    iterations:
+      type: int
+      low: 100
+      high: 1000
+
+# Калибровка (опционально)
+calibration:
+  enabled: true
+  threshold_ece: 0.1
+  method: isotonic  # или sigmoid
+

@@ -199,7 +199,7 @@ Parent Run: uel_kz_1_stacking_win_2025-01-05
 with mlflow.start_run(run_name=f"{tournament}_stacking_{target}") as parent_run:
     mlflow.set_tag("run_type", "ensemble")
     mlflow.set_tag("ensemble_method", "stacking")
-    
+
     # Обучаем базовые модели
     for model_name in base_models:
         with mlflow.start_run(run_name=f"{tournament}_{model_name}_shadow", nested=True):
@@ -208,7 +208,7 @@ with mlflow.start_run(run_name=f"{tournament}_stacking_{target}") as parent_run:
         with mlflow.start_run(run_name=f"{tournament}_{model_name}_prod", nested=True):
             # Prod модель
             ...
-    
+
     # Обучаем мета-модель
     with mlflow.start_run(run_name=f"{tournament}_stacking_meta", nested=True):
         ...
@@ -234,14 +234,14 @@ def objective(trial):
         'l2_leaf_reg': trial.suggest_int('l2_leaf_reg', 1, 10),
         'iterations': trial.suggest_int('iterations', 100, 1000),
     }
-    
+
     # TSCV на train
     fold_losses = []
     for train_idx, val_idx in tscv.split(X_train):
         model.fit(X_train[train_idx], y_train[train_idx], **params)
         proba = model.predict_proba(X_train[val_idx])
         fold_losses.append(log_loss(y_train[val_idx], proba))
-    
+
     return np.mean(fold_losses)
 
 # Для каждого турнира отдельное study
@@ -260,13 +260,13 @@ study.optimize(objective, n_trials=30)
 ```
 sports_forecast/training/
   __init__.py
-  
+
   # Базовые классы
   base.py
     - BaseModel (abstract)
     - BaseSingleModel
     - BaseEnsembleModel
-  
+
   # Конкретные модели
   models/
     __init__.py
@@ -274,23 +274,23 @@ sports_forecast/training/
     catboost.py    → CatBoostModel(BaseSingleModel)
     lgbm.py        → LGBMModel(BaseSingleModel)
     logreg.py      → LogRegModel(BaseSingleModel)
-  
+
   # Ансамбли
   ensembles/
     __init__.py
     voting.py      → VotingEnsemble(BaseEnsembleModel)
     weighted.py    → WeightedEnsemble(BaseEnsembleModel)
     stacking.py    → StackingEnsemble(BaseEnsembleModel)
-  
+
   # Оптимизация
   optimization/
     __init__.py
     optuna_optimizer.py  → OptunaOptimizer
     tscv.py              → TimeSeriesCrossValidator
-  
+
   # Калибровка
   calibration.py  → ModelCalibrator
-  
+
   # Основной трейнер
   trainer.py      → ModelTrainer (оркестратор)
 ```
@@ -367,7 +367,6 @@ trainer.train_all_tournaments(
 
 ---
 
-**Автор:** AI Assistant + User  
-**Дата:** 2025-01-05  
+**Автор:** AI Assistant + User
+**Дата:** 2025-01-05
 **Статус:** ✅ УТВЕРЖДЕНО - Готово к реализации
-

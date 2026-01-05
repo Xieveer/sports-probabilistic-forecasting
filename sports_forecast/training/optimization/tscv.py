@@ -17,17 +17,18 @@ Time Series Cross-Validation для обучения моделей на вре�
 
 from __future__ import annotations
 
-from typing import Generator
+from collections.abc import Generator
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
 from sklearn.model_selection import TimeSeriesSplit
 
-from sports_forecast.utils.log_config import get_logger
-
 # Используем ECE из train.py
 from sports_forecast.train import compute_expected_calibration_error
+from sports_forecast.utils.log_config import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -77,8 +78,8 @@ class TimeSeriesCrossValidator:
 
     def split(
         self,
-        X: pd.DataFrame | np.ndarray,
-        y: pd.Series | np.ndarray | None = None,
+        X: pd.DataFrame | np.ndarray,  # noqa: N803
+        y: pd.Series | np.ndarray | None = None,  # noqa: ARG002
     ) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
         """
         Генерирует индексы train/validation для каждого фолда.
@@ -112,7 +113,7 @@ class TimeSeriesCrossValidator:
     def cross_validate(
         self,
         model: Any,
-        X: pd.DataFrame,
+        X: pd.DataFrame,  # noqa: N803
         y: pd.Series,
         fit_kwargs: dict | None = None,
     ) -> dict[str, Any]:
@@ -156,7 +157,7 @@ class TimeSeriesCrossValidator:
             "accuracy": [],
             "brier": [],
             "ece": [],
-        }
+        }  # type: ignore[assignment]
 
         # Проходим по фолдам
         for fold_idx, (train_idx, val_idx) in enumerate(self.split(X, y), 1):
@@ -177,21 +178,21 @@ class TimeSeriesCrossValidator:
 
             # Метрики
             try:
-                logloss = log_loss(y_val, proba)
+                logloss = float(log_loss(y_val, proba))
                 fold_metrics["logloss"].append(logloss)
                 logger.info("  LogLoss:  %.4f", logloss)
             except Exception as e:
                 logger.warning("  LogLoss:  Ошибка - %s", e)
 
             try:
-                auc = roc_auc_score(y_val, proba)
+                auc = float(roc_auc_score(y_val, proba))
                 fold_metrics["auc"].append(auc)
                 logger.info("  AUC:      %.4f", auc)
             except Exception as e:
                 logger.warning("  AUC:      Ошибка - %s", e)
 
             try:
-                accuracy = accuracy_score(y_val, y_pred)
+                accuracy = float(accuracy_score(y_val, y_pred))
                 fold_metrics["accuracy"].append(accuracy)
                 logger.info("  Accuracy: %.4f", accuracy)
             except Exception as e:
@@ -220,17 +221,27 @@ class TimeSeriesCrossValidator:
             if values:
                 # Метрики по фолдам
                 for fold_idx, value in enumerate(values, 1):
-                    results[f"fold_{fold_idx}_{metric_name}"] = value
+                    results[f"fold_{fold_idx}_{metric_name}"] = value  # type: ignore[assignment]
 
                 # Усреднённые метрики
-                results[f"mean_{metric_name}"] = np.mean(values)
-                results[f"std_{metric_name}"] = np.std(values)
+                results[f"mean_{metric_name}"] = float(np.mean(values))  # type: ignore[assignment]
+                results[f"std_{metric_name}"] = float(np.std(values))  # type: ignore[assignment]
 
         logger.info("=" * 60)
         logger.info("TSCV ЗАВЕРШЕНА")
-        logger.info("Mean LogLoss: %.4f ± %.4f", results.get("mean_logloss", 0), results.get("std_logloss", 0))
-        logger.info("Mean AUC:     %.4f ± %.4f", results.get("mean_auc", 0), results.get("std_auc", 0))
-        logger.info("Mean Acc:     %.4f ± %.4f", results.get("mean_accuracy", 0), results.get("std_accuracy", 0))
+        logger.info(
+            "Mean LogLoss: %.4f ± %.4f",
+            results.get("mean_logloss", 0),
+            results.get("std_logloss", 0),
+        )
+        logger.info(
+            "Mean AUC:     %.4f ± %.4f", results.get("mean_auc", 0), results.get("std_auc", 0)
+        )
+        logger.info(
+            "Mean Acc:     %.4f ± %.4f",
+            results.get("mean_accuracy", 0),
+            results.get("std_accuracy", 0),
+        )
         logger.info("=" * 60)
 
         return results
@@ -243,4 +254,3 @@ class TimeSeriesCrossValidator:
             Количество фолдов.
         """
         return self.n_splits
-

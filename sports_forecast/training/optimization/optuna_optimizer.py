@@ -20,15 +20,15 @@ Optuna оптимизатор для подбора гиперпараметро
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
-import numpy as np
 import optuna
-from omegaconf import DictConfig, OmegaConf
 
 from sports_forecast.training.optimization.tscv import TimeSeriesCrossValidator
 from sports_forecast.utils.log_config import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -96,7 +96,7 @@ class OptunaOptimizer:
     def optimize(
         self,
         model: Any,
-        X_train: Any,
+        X_train: Any,  # noqa: N803
         y_train: Any,
         param_space: Callable[[optuna.Trial], dict[str, Any]] | None = None,
         n_trials: int = 30,
@@ -169,7 +169,7 @@ class OptunaOptimizer:
                 )
 
                 # Возвращаем средний log loss
-                return results.get("mean_logloss", 1e6)
+                return float(results.get("mean_logloss", 1e6))
 
             except Exception as e:
                 logger.error("Trial %d failed: %s", trial.number, e)
@@ -190,7 +190,7 @@ class OptunaOptimizer:
         logger.info("Best params: %s", study.best_params)
         logger.info("=" * 60)
 
-        return study.best_params
+        return dict(study.best_params)
 
     def _get_default_param_space(
         self,
@@ -210,15 +210,14 @@ class OptunaOptimizer:
         """
         if model_name == "catboost":
             return self._catboost_param_space
-        elif model_name == "lgbm" or model_name == "lightgbm":
+        if model_name == "lgbm" or model_name == "lightgbm":
             return self._lgbm_param_space
-        elif model_name == "logreg" or model_name == "logistic":
+        if model_name == "logreg" or model_name == "logistic":
             return self._logreg_param_space
-        else:
-            raise ValueError(
-                f"Дефолтное пространство параметров для '{model_name}' не определено. "
-                f"Передайте param_space явно в optimize()."
-            )
+        raise ValueError(
+            f"Дефолтное пространство параметров для '{model_name}' не определено. "
+            f"Передайте param_space явно в optimize()."
+        )
 
     @staticmethod
     def _catboost_param_space(trial: optuna.Trial) -> dict[str, Any]:
@@ -312,7 +311,7 @@ class OptunaOptimizer:
         }
 
         save_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(save_path, "w", encoding="utf-8") as f:
+        with save_path.open("w", encoding="utf-8") as f:
             json.dump(best_params, f, indent=2, ensure_ascii=False)
 
         logger.info("Лучшие параметры сохранены: %s", save_path)
@@ -330,9 +329,8 @@ class OptunaOptimizer:
         Examples:
             >>> best_params = optimizer.load_best_params(Path("optuna/uel_kz_1_catboost_best.json"))
         """
-        with open(load_path, encoding="utf-8") as f:
+        with load_path.open(encoding="utf-8") as f:
             data = json.load(f)
 
         logger.info("Лучшие параметры загружены из: %s", load_path)
-        return data["best_params"]
-
+        return dict(data["best_params"])

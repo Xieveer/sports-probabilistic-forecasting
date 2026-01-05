@@ -1,0 +1,204 @@
+"""
+Logistic Regression модель с поддержкой L1/L2 регуляризации.
+
+Простая линейная модель, отлично калиброванная по умолчанию.
+Используется как:
+- Baseline для сравнения
+- Мета-модель в стэкинге
+
+Примеры:
+    >>> logreg = LogRegModel(name="logreg", config=cfg)
+    >>> logreg.fit(X_train, y_train)
+    >>> proba = logreg.predict_proba(X_test)
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+from omegaconf import DictConfig
+from sklearn.linear_model import LogisticRegression
+
+from sports_forecast.training.base import BaseSingleModel
+from sports_forecast.utils.log_config import get_logger
+
+logger = get_logger(__name__)
+
+
+class LogRegModel(BaseSingleModel):
+    """
+    Logistic Regression модель для бинарной классификации.
+
+    Использует sklearn.linear_model.LogisticRegression с:
+    - L1/L2 регуляризацией
+    - Solver 'saga' (поддерживает и L1, и L2)
+    - Отличной калибровкой по умолчанию
+
+    Args:
+        name: Название модели (по умолчанию "logreg").
+        config: Конфигурация модели из Hydra.
+        params: Гиперпараметры LogisticRegression.
+
+    Attributes:
+        model_: LogisticRegression.
+
+    Examples:
+        >>> logreg = LogRegModel(name="logreg", config=cfg.model)
+        >>> logreg.fit(X_train, y_train)
+        >>> proba = logreg.predict_proba(X_test)
+
+    Notes:
+        LogisticRegression хорошо откалиброван по умолчанию.
+        ECE обычно < 0.1, калибровка не требуется.
+    """
+
+    def __init__(
+        self,
+        name: str = "logreg",
+        config: DictConfig | dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+    ):
+        """
+        Инициализация Logistic Regression модели.
+
+        Args:
+            name: Название модели.
+            config: Конфигурация модели.
+            params: Гиперпараметры LogisticRegression.
+        """
+        # Параметры по умолчанию для LogisticRegression
+        default_params = {
+            "penalty": "l2",
+            "C": 1.0,
+            "solver": "saga",  # Поддерживает и L1, и L2
+            "max_iter": 1000,
+            "random_state": 777,
+            "verbose": 0,
+            "n_jobs": -1,  # Используем все ядра
+        }
+
+        if params is None and config is not None and hasattr(config, "params"):
+            params = dict(config.params)
+        elif params is None:
+            params = default_params
+        else:
+            params = {**default_params, **params}
+
+        super().__init__(name=name, config=config or {}, params=params)
+
+        logger.info("Инициализирован LogRegModel с параметрами: %s", self.params)
+
+    def _create_model(self) -> LogisticRegression:
+        """
+        Создать экземпляр LogisticRegression.
+
+        Returns:
+            Экземпляр LogisticRegression с параметрами из self.params.
+        """
+        return LogisticRegression(**self.params)
+
+    def _fit_implementation(
+        self,
+        X: pd.DataFrame,  # noqa: N803
+        y: pd.Series,
+        **fit_kwargs,
+    ) -> None:
+        """
+        Обучить Logistic Regression модель.
+
+        Args:
+            X: Фичи для обучения.
+            y: Таргет.
+            **fit_kwargs: Дополнительные параметры (игнорируются для LogReg).
+
+        Examples:
+            >>> model._fit_implementation(X_train, y_train)
+        """
+        # LogReg не поддерживает eval_set, поэтому игнорируем fit_kwargs
+        logger.info("Начинаю обучение LogisticRegression...")
+        self.model_.fit(X, y)
+
+        logger.info("LogisticRegression обучена: %d итераций", self.model_.n_iter_[0])
+
+    def save(self, path: Path, version: str = "prod") -> None:
+        """
+        Сохранить LogisticRegression модель.
+
+        Args:
+            path: Путь для сохранения (без расширения).
+            version: Версия модели ('shadow' или 'prod').
+
+        Examples:
+            >>> model.save(Path("models/uel_kz_1/is_win"), version="shadow")
+            >>> # Сохранено в: models/uel_kz_1/is_win_shadow.pkl
+        """
+        if not self.is_fitted_:
+            raise ValueError(f"Модель '{self.name}' не обучена. Сохранять нечего.")
+
+        if version not in ["shadow", "prod"]:
+            raise ValueError(f"Версия должна быть 'shadow' или 'prod', получено: {version}")
+
+        # sklearn модели используем joblib для сохранения
+        import joblib
+
+        save_path = path.parent / f"{path.stem}_{version}.pkl"
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+
+        joblib.dump(self.model_, save_path)
+        logger.info("LogisticRegression модель '%s' (%s) сохранена: %s", self.name, version, save_path)
+
+    def load(self, path: Path) -> LogRegModel:
+        """
+        Загрузить LogisticRegression модель.
+
+        Args:
+            path: Путь к файлу модели (.pkl).
+
+        Returns:
+            self: Для chaining.
+
+        Examples:
+            >>> model.load(Path("models/uel_kz_1/is_win_shadow.pkl"))
+        """
+        if not path.exists():
+            raise FileNotFoundError(f"Файл модели не найден: {path}")
+
+        import joblib
+
+        self.model_ = joblib.load(path)
+        self.is_fitted_ = True
+
+        logger.info("LogisticRegression модель '%s' загружена из: %s", self.name, path)
+        return self
+
+    def get_feature_importance(self) -> pd.DataFrame:
+        """
+        Получить важность фичей из LogisticRegression (коэффициенты).
+
+        Returns:
+            DataFrame с колонками ['feature', 'importance'],
+            отсортированный по убыванию важности (по модулю коэффициентов).
+
+        Raises:
+            ValueError: Если модель не обучена.
+
+        Examples:
+            >>> importance = model.get_feature_importance()
+            >>> print(importance.head(10))  # Топ-10 фичей по важности
+        """
+        if not self.is_fitted_:
+            raise ValueError(f"Модель '{self.name}' не обучена. Важность фичей недоступна.")
+
+        # Коэффициенты (берём по модулю для важности)
+        coeffs = self.model_.coef_[0]
+        feature_names = self.model_.feature_names_in_
+
+        return pd.DataFrame(
+            {
+                "feature": feature_names,
+                "importance": coeffs,  # Можно взять abs(coeffs) для модуля
+            }
+        ).sort_values("importance", ascending=False, key=abs).reset_index(drop=True)
+
