@@ -64,4 +64,3 @@ target_sources:
     home_column: "home_points"
     away_column: "away_points"
     comparison: "equal"  # home_points == away_points
-

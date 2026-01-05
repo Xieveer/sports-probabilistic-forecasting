@@ -33,16 +33,71 @@ from pathlib import Path
 import hydra
 import mlflow
 import mlflow.catboost
+import numpy as np
 import pandas as pd
 from catboost import CatBoostClassifier
 from omegaconf import DictConfig, OmegaConf
-from sklearn.metrics import log_loss, roc_auc_score
+from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
 
 from sports_forecast.utils.log_config import configure_logging, get_logger
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 logger = get_logger(__name__)
+
+
+def compute_expected_calibration_error(
+    y_true: np.ndarray, y_proba: np.ndarray, n_bins: int = 10
+) -> float:
+    """Вычислить Expected Calibration Error (ECE) для оценки калибровки модели.
+
+    ECE измеряет среднее расхождение между предсказанными вероятностями
+    и фактической частотой положительных исходов.
+
+    Args:
+        y_true: Истинные метки классов (0 или 1).
+        y_proba: Предсказанные вероятности класса 1.
+        n_bins: Количество бинов для разбиения вероятностей.
+
+    Returns:
+        Значение ECE (от 0 до 1, чем ближе к 0, тем лучше калибровка).
+
+    Examples:
+        >>> y_true = np.array([0, 0, 1, 1])
+        >>> y_proba = np.array([0.1, 0.2, 0.8, 0.9])
+        >>> ece = compute_expected_calibration_error(y_true, y_proba)
+        >>> print(f"ECE: {ece:.4f}")
+        ECE: 0.0000
+
+    Note:
+        Идеально откалиброванная модель имеет ECE = 0.
+        ECE > 0.1 может указывать на проблемы с калибровкой.
+    """
+    # Разбиваем вероятности на бины
+    bins = np.linspace(0, 1, n_bins + 1)
+    bin_indices = np.digitize(y_proba, bins[:-1]) - 1
+    bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+    ece = 0.0
+    for bin_idx in range(n_bins):
+        # Находим все предсказания в текущем бине
+        in_bin = bin_indices == bin_idx
+        if not np.any(in_bin):
+            continue
+
+        # Средняя предсказанная вероятность в бине
+        mean_predicted = y_proba[in_bin].mean()
+
+        # Фактическая частота положительных исходов в бине
+        mean_actual = y_true[in_bin].mean()
+
+        # Размер бина (для взвешивания)
+        bin_size = in_bin.sum()
+
+        # Добавляем к ECE взвешенную разницу
+        ece += (bin_size / len(y_true)) * np.abs(mean_predicted - mean_actual)
+
+    return float(ece)
 
 
 def compute_target(df: pd.DataFrame, cfg: DictConfig) -> pd.Series:
@@ -392,25 +447,60 @@ def train_single_tournament(tournament_name: str, model_cfg: DictConfig, cfg: Di
 
         # ---------- Метрики на валидации ----------
         proba = model.predict_proba(X_valid)[:, 1]
+        y_pred = (proba >= 0.5).astype(int)  # Бинарные предсказания для accuracy
+
+        logger.info("=" * 60)
+        logger.info("МЕТРИКИ НА ВАЛИДАЦИИ")
+        logger.info("=" * 60)
 
         # 1. LogLoss - основная метрика для временных рядов и вероятностных прогнозов
         try:
             logloss = log_loss(y_valid, proba)
-            logger.info("Valid LogLoss: %.4f (основная метрика)", logloss)
+            logger.info("LogLoss:  %.4f (основная метрика)", logloss)
             mlflow.log_metric("valid_logloss", logloss)
             mlflow.log_metric("primary_metric", logloss)  # Основная метрика для сравнения моделей
         except Exception as e:
             logger.error("Не удалось посчитать LogLoss: %s", e)
             mlflow.set_tag("logloss_error", str(e))
 
-        # 2. AUC - дополнительная метрика для мониторинга
+        # 2. AUC - способность модели различать классы
         try:
             auc = roc_auc_score(y_valid, proba)
-            logger.info("Valid AUC: %.4f (дополнительная метрика)", auc)
+            logger.info("AUC:      %.4f (дискриминация)", auc)
             mlflow.log_metric("valid_auc", auc)
         except Exception as e:
             logger.warning("Не удалось посчитать AUC: %s", e)
             mlflow.set_tag("auc_error", str(e))
+
+        # 3. Accuracy - точность бинарных предсказаний
+        try:
+            accuracy = accuracy_score(y_valid, y_pred)
+            logger.info("Accuracy: %.4f (точность предсказаний)", accuracy)
+            mlflow.log_metric("valid_accuracy", accuracy)
+        except Exception as e:
+            logger.warning("Не удалось посчитать Accuracy: %s", e)
+            mlflow.set_tag("accuracy_error", str(e))
+
+        # 4. Brier Score - качество вероятностных прогнозов
+        try:
+            brier_score = brier_score_loss(y_valid, proba)
+            logger.info("Brier:    %.4f (калибровка вероятностей)", brier_score)
+            mlflow.log_metric("valid_brier_score", brier_score)
+        except Exception as e:
+            logger.warning("Не удалось посчитать Brier Score: %s", e)
+            mlflow.set_tag("brier_error", str(e))
+
+        # 5. Expected Calibration Error (ECE) - калибровка модели
+        try:
+            y_valid_array = np.array(y_valid)
+            ece = compute_expected_calibration_error(y_valid_array, proba)
+            logger.info("ECE:      %.4f (калибровка по бинам)", ece)
+            mlflow.log_metric("valid_ece", ece)
+        except Exception as e:
+            logger.warning("Не удалось посчитать ECE: %s", e)
+            mlflow.set_tag("ece_error", str(e))
+
+        logger.info("=" * 60)
 
         # ---------- Сохранение модели ----------
         # Сохраняем модель: models/{tournament}/{model_name}.cbm
