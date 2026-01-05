@@ -11,7 +11,8 @@ data_clean:
   column_mapping:
     home_score: home_sets    # Счет по СЕТАМ (для определения победителя)
     away_score: away_sets    # Счет по СЕТАМ
-    # NOTE: home_points, away_points будут извлечены из scores.parts в clean.py
+    _hmps: home_points       # Сумма ПОИНТОВ хозяев (для тотала и фичей)
+    _amps: away_points       # Сумма ПОИНТОВ гостей (для тотала и фичей)
 
   # Обязательные колонки
   required_columns:
@@ -32,7 +33,6 @@ data_clean:
     - away_sets
     - home_points    # Сумма поинтов (для total и фичей)
     - away_points
-    - scores         # JSON с деталями (для парсинга)
 
   # LP турниры: все матчи finished, добавляем колонку status
   default_status: "finished"

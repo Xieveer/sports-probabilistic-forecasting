@@ -84,7 +84,19 @@ total_ranges:
 ```
 home_score  - Счет по СЕТАМ хозяев (например: 3)
 away_score  - Счет по СЕТАМ гостей (например: 1)
+_hmps       - Home Match Points Sum (сумма ПОИНТОВ хозяев)
+_amps       - Away Match Points Sum (сумма ПОИНТОВ гостей)
 scores      - JSON с деталями: {"parts": [[11,9], [8,11], [11,7], [11,6]], "match": [3,1]}
+```
+
+### Column mapping (в конфиге):
+
+```yaml
+column_mapping:
+  home_score: home_sets    # Сеты хозяев
+  away_score: away_sets    # Сеты гостей
+  _hmps: home_points       # Поинты хозяев
+  _amps: away_points       # Поинты гостей
 ```
 
 ### После clean.py (interim):
@@ -94,7 +106,6 @@ home_sets   - Счет по СЕТАМ (для определения побед
 away_sets   - Счет по СЕТАМ
 home_points - Сумма ПОИНТОВ из всех сетов (для тотала и фичей)
 away_points - Сумма ПОИНТОВ
-scores      - JSON (для дополнительного парсинга если нужно)
 ```
 
 ### Пример:
@@ -274,10 +285,10 @@ grep -A 4 "total_ranges:" conf/tournament/*.yaml
    - Документируют допустимые значения
    - Упрощают валидацию
 
-4. **Парсинг scores:**
-   - В clean.py нужно реализовать извлечение поинтов из JSON
-   - `scores.parts` содержит [[h1, a1], [h2, a2], ...]
-   - Сумма всех = home_points + away_points
+4. **Поинты уже в данных:**
+   - В исходных данных есть готовые колонки `_hmps` и `_amps`
+   - Они содержат сумму всех поинтов из всех сетов
+   - Не нужен парсинг JSON, просто делаем маппинг
 
 ---
 

@@ -1,4 +1,4 @@
-# LP Lp Eu - Лига Про Настольный Теннис
+# LP EU - Лига Про Настольный Теннис (Европа)
 # @package _global_.tournament
 
 name: lp_eu
@@ -8,6 +8,8 @@ data_clean:
   column_mapping:
     home_score: home_sets
     away_score: away_sets
+    _hmps: home_points
+    _amps: away_points
   required_columns:
   - id
   - datetime
@@ -22,7 +24,6 @@ data_clean:
   - away_sets
   - home_points
   - away_points
-  - scores
   default_status: finished
   dtype_mapping:
     numeric:

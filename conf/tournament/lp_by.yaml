@@ -1,4 +1,4 @@
-# LP Lp By - Лига Про Настольный Теннис
+# LP BY - Лига Про Настольный Теннис (Беларусь)
 # @package _global_.tournament
 
 name: lp_by
@@ -8,6 +8,8 @@ data_clean:
   column_mapping:
     home_score: home_sets
     away_score: away_sets
+    _hmps: home_points
+    _amps: away_points
   required_columns:
   - id
   - datetime
@@ -22,7 +24,6 @@ data_clean:
   - away_sets
   - home_points
   - away_points
-  - scores
   default_status: finished
   dtype_mapping:
     numeric:
