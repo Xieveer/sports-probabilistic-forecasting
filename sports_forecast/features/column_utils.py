@@ -24,9 +24,8 @@
     ['id', 'datetime']
 """
 
-from typing import List
-
 import pandas as pd
+
 
 # Префиксы для категорий колонок
 FEATURE_PREFIX = "f_"
@@ -56,7 +55,7 @@ META_COLUMNS = {
 }
 
 
-def get_feature_columns(df: pd.DataFrame) -> List[str]:
+def get_feature_columns(df: pd.DataFrame) -> list[str]:
     """
     Получить все колонки-фичи (с префиксом f_).
 
@@ -74,7 +73,7 @@ def get_feature_columns(df: pd.DataFrame) -> List[str]:
     return [col for col in df.columns if col.startswith(FEATURE_PREFIX)]
 
 
-def get_meta_columns(df: pd.DataFrame) -> List[str]:
+def get_meta_columns(df: pd.DataFrame) -> list[str]:
     """
     Получить все мета-колонки (служебные).
 
@@ -92,7 +91,7 @@ def get_meta_columns(df: pd.DataFrame) -> List[str]:
     return [col for col in df.columns if col in META_COLUMNS]
 
 
-def get_target_columns(df: pd.DataFrame) -> List[str]:
+def get_target_columns(df: pd.DataFrame) -> list[str]:
     """
     Получить все таргет-колонки (с префиксом target_).
 
@@ -110,7 +109,7 @@ def get_target_columns(df: pd.DataFrame) -> List[str]:
     return [col for col in df.columns if col.startswith(TARGET_PREFIX)]
 
 
-def get_source_columns(df: pd.DataFrame) -> List[str]:
+def get_source_columns(df: pd.DataFrame) -> list[str]:
     """
     Получить исходные колонки (не мета, не фичи, не таргеты).
 
@@ -261,7 +260,7 @@ def exclude_feature_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df[[col for col in df.columns if col not in feature_cols]]
 
 
-def validate_required_columns(df: pd.DataFrame, required: List[str]) -> None:
+def validate_required_columns(df: pd.DataFrame, required: list[str]) -> None:
     """
     Проверить наличие обязательных колонок в датафрейме.
 
@@ -283,4 +282,3 @@ def validate_required_columns(df: pd.DataFrame, required: List[str]) -> None:
     missing = [col for col in required if col not in df.columns]
     if missing:
         raise ValueError(f"Отсутствуют обязательные колонки: {missing}")
-

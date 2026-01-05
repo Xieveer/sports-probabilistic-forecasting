@@ -5,12 +5,13 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any
 
 import pandas as pd
 
 from sports_forecast.features.column_utils import add_feature_prefix
 from sports_forecast.utils.log_config import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -51,7 +52,7 @@ class BaseFeatureGenerator(ABC):
         name: Имя класса генератора
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Инициализация генератора.
 
@@ -96,7 +97,7 @@ class BaseFeatureGenerator(ABC):
         )
 
     @abstractmethod
-    def get_feature_names(self) -> List[str]:
+    def get_feature_names(self) -> list[str]:
         """
         Возвращает список имен сгенерированных фичей.
 
@@ -133,7 +134,7 @@ class BaseFeatureGenerator(ABC):
         if "type" not in self.config:
             raise ValueError(f"{self.name}: отсутствует обязательное поле 'type'")
 
-    def get_prefixed_feature_names(self) -> List[str]:
+    def get_prefixed_feature_names(self) -> list[str]:
         """
         Возвращает список имен фичей С префиксом f_.
 
@@ -191,9 +192,7 @@ class BaseFeatureGenerator(ABC):
 
             if existing_renames:
                 result = result.rename(columns=existing_renames)
-                logger.debug(
-                    f"{self.name}: добавлен префикс f_ к {len(existing_renames)} колонкам"
-                )
+                logger.debug(f"{self.name}: добавлен префикс f_ к {len(existing_renames)} колонкам")
 
         features_count = len(self.get_feature_names())
         logger.info(f"{self.name}: сгенерировано {features_count} фичей")
@@ -204,4 +203,3 @@ class BaseFeatureGenerator(ABC):
         """Строковое представление генератора."""
         status = "enabled" if self.enabled else "disabled"
         return f"{self.name}(type={self.config.get('type')}, status={status})"
-

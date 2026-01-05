@@ -10,5 +10,5 @@
 
 from sports_forecast.features.generators.base import BaseFeatureGenerator
 
-__all__ = ["BaseFeatureGenerator"]
 
+__all__ = ["BaseFeatureGenerator"]

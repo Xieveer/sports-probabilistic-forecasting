@@ -42,6 +42,7 @@ from sports_forecast.features.long_format import long_to_wide
 from sports_forecast.features.pipeline import FeaturePipeline
 from sports_forecast.utils.log_config import configure_logging, get_logger
 
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 logger = get_logger(__name__)
 
@@ -57,9 +58,7 @@ def use_feature_pipeline(cfg: DictConfig) -> bool:
         True если использовать FeaturePipeline, False если старую логику
     """
     # Проверяем наличие секции generators в features
-    if hasattr(cfg, "features") and hasattr(cfg.features, "generators"):
-        return True
-    return False
+    return hasattr(cfg, "features") and hasattr(cfg.features, "generators")
 
 
 def process_tournament_new(
@@ -194,7 +193,6 @@ def process_tournament_old(
     interim_root: Path,
     processed_root: Path,
     features_cfg: DictConfig,
-    paths_cfg: DictConfig,
 ) -> None:
     """
     Обработка турнира со СТАРОЙ логикой (для совместимости).
@@ -206,7 +204,6 @@ def process_tournament_old(
         interim_root: Корневая директория interim данных
         processed_root: Корневая директория processed данных
         features_cfg: Конфигурация фичей (basic_old.yaml)
-        paths_cfg: Конфигурация путей
     """
     logger.warning("Используется СТАРАЯ система генерации фичей для турнира %s", tournament_name)
     logger.warning("Рекомендуется мигрировать на новый Feature Generation System")
@@ -216,7 +213,9 @@ def process_tournament_old(
         process_tournament as process_tournament_legacy,
     )
 
-    process_tournament_legacy(tournament_name, interim_root, processed_root, features_cfg)
+    # Старая функция принимает tournament_dir (Path), а не tournament_name (str)
+    tournament_dir = interim_root / tournament_name
+    process_tournament_legacy(tournament_dir, features_cfg, processed_root)
 
 
 def process_all_tournaments(cfg: DictConfig) -> None:
@@ -273,14 +272,12 @@ def process_all_tournaments(cfg: DictConfig) -> None:
                     interim_root,
                     processed_root,
                     cfg.features,
-                    paths_cfg,
                 )
         except Exception as e:
             logger.error("Ошибка обработки турнира %s: %s", tournament_name, e, exc_info=True)
             continue
 
 
-@configure_logging
 def run(cfg: DictConfig) -> None:
     """
     Entry point для генерации фичей.
@@ -292,7 +289,7 @@ def run(cfg: DictConfig) -> None:
         # Базовый набор фичей
         python -m sports_forecast.features.features_build features=basic
 
-        # Продвинутый набор фичей  
+        # Продвинутый набор фичей
         python -m sports_forecast.features.features_build features=advanced
 
         # Старая система
@@ -329,6 +326,7 @@ if __name__ == "__main__":
 
     @hydra.main(version_base=None, config_path="../../conf", config_name="config")
     def main(cfg: DictConfig) -> None:
+        configure_logging("INFO")
         run(cfg)
 
     main()

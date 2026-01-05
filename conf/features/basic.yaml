@@ -65,4 +65,3 @@ generators:
       - name: "h2h"
         keys: ["pl", "opp"]
         h2h: true
-

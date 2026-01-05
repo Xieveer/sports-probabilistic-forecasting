@@ -14,12 +14,13 @@
 - h2h_count: Количество встреч pl vs opp
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
 import pandas as pd
 
 from sports_forecast.features.generators.base import BaseFeatureGenerator
 from sports_forecast.utils.log_config import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -62,20 +63,14 @@ class CountFeatureGenerator(BaseFeatureGenerator):
 
         contexts = self.config["contexts"]
         if not isinstance(contexts, list) or len(contexts) == 0:
-            raise ValueError(
-                f"{self.name}: 'contexts' должен быть непустым списком"
-            )
+            raise ValueError(f"{self.name}: 'contexts' должен быть непустым списком")
 
         # Проверка каждого контекста
         for i, ctx in enumerate(contexts):
             if "name" not in ctx:
-                raise ValueError(
-                    f"{self.name}: context[{i}] не содержит обязательное поле 'name'"
-                )
+                raise ValueError(f"{self.name}: context[{i}] не содержит обязательное поле 'name'")
             if "keys" not in ctx:
-                raise ValueError(
-                    f"{self.name}: context[{i}] не содержит обязательное поле 'keys'"
-                )
+                raise ValueError(f"{self.name}: context[{i}] не содержит обязательное поле 'keys'")
 
     def generate(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -103,9 +98,7 @@ class CountFeatureGenerator(BaseFeatureGenerator):
 
         return long
 
-    def _generate_context_count(
-        self, df: pd.DataFrame, ctx: Dict[str, Any], shift: int
-    ) -> None:
+    def _generate_context_count(self, df: pd.DataFrame, ctx: dict[str, Any], shift: int) -> None:
         """
         Генерация count фичей для одного контекста (in-place).
 
@@ -122,17 +115,14 @@ class CountFeatureGenerator(BaseFeatureGenerator):
         missing = [col for col in keys if col not in df.columns]
         if missing:
             logger.warning(
-                f"{self.name}: контекст '{name}' пропущен, "
-                f"отсутствуют колонки: {missing}"
+                f"{self.name}: контекст '{name}' пропущен, отсутствуют колонки: {missing}"
             )
             return
 
         if is_h2h:
             # H2H count (один признак на пару игроков)
             df[f"{name}_count"] = self._calculate_count(df, keys, shift)
-            logger.debug(
-                f"{self.name}: {name}_count создан (h2h, keys={keys})"
-            )
+            logger.debug(f"{self.name}: {name}_count создан (h2h, keys={keys})")
         else:
             # Count для каждого игрока
             players = ctx.get("players", ["pl", "opp"])
@@ -150,16 +140,10 @@ class CountFeatureGenerator(BaseFeatureGenerator):
                     )
                     continue
 
-                df[f"{player}_{name}_count"] = self._calculate_count(
-                    df, player_keys, shift
-                )
-                logger.debug(
-                    f"{self.name}: {player}_{name}_count создан (keys={player_keys})"
-                )
+                df[f"{player}_{name}_count"] = self._calculate_count(df, player_keys, shift)
+                logger.debug(f"{self.name}: {player}_{name}_count создан (keys={player_keys})")
 
-    def _calculate_count(
-        self, df: pd.DataFrame, group_keys: List[str], shift: int
-    ) -> pd.Series:
+    def _calculate_count(self, df: pd.DataFrame, group_keys: list[str], shift: int) -> pd.Series:
         """
         Вычисление count для группы.
 
@@ -173,7 +157,7 @@ class CountFeatureGenerator(BaseFeatureGenerator):
         """
         return df.groupby(group_keys, dropna=False).cumcount() + 1 - shift
 
-    def get_feature_names(self) -> List[str]:
+    def get_feature_names(self) -> list[str]:
         """
         Возвращает список имен фичей (без префикса f_).
 
@@ -195,4 +179,3 @@ class CountFeatureGenerator(BaseFeatureGenerator):
                     features.append(f"{player}_{name}_count")
 
         return features
-

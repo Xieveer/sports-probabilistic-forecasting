@@ -113,7 +113,7 @@ generators:
     enabled: true
     fg_trigger_minutes: 480
     dp_trigger_minutes: 30
-  
+
   - type: "ewm"
     enabled: true
     metric: "diff_ps"
@@ -123,7 +123,7 @@ generators:
         keys: ["pl"]
         players: ["pl", "opp"]
         compute_diff: true
-  
+
   - type: "count"
     enabled: true
     shift: 1
@@ -273,7 +273,6 @@ make pre-commit
 
 ---
 
-**Дата:** 2026-01-05  
-**Статус:** 75% готово (9/12 задач)  
+**Дата:** 2026-01-05
+**Статус:** 75% готово (9/12 задач)
 **Следующий шаг:** Обновление train.py
-

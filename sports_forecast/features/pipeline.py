@@ -16,7 +16,7 @@ Feature Pipeline - оркестратор генерации фичей.
 """
 
 import time
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf
@@ -31,6 +31,7 @@ from sports_forecast.features.long_format import (
     wide_to_long,
 )
 from sports_forecast.utils.log_config import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -63,7 +64,7 @@ class FeaturePipeline:
         "count": CountFeatureGenerator,
     }
 
-    def __init__(self, config: Dict[str, Any] | DictConfig):
+    def __init__(self, config: dict[str, Any] | DictConfig):
         """
         Инициализация pipeline.
 
@@ -73,11 +74,9 @@ class FeaturePipeline:
         self.config = config
         self.generators = self._init_generators()
 
-        logger.info(
-            f"FeaturePipeline инициализирован: {len(self.generators)} генераторов"
-        )
+        logger.info(f"FeaturePipeline инициализирован: {len(self.generators)} генераторов")
 
-    def _init_generators(self) -> List:
+    def _init_generators(self) -> list:
         """
         Инициализация генераторов из конфига.
 
@@ -98,25 +97,19 @@ class FeaturePipeline:
             # Это list-подобный объект (list, tuple, ListConfig)
             pass
         else:
-            raise ValueError(
-                "FeaturePipeline: 'generators' должен быть списком"
-            )
+            raise ValueError("FeaturePipeline: 'generators' должен быть списком")
 
         for i, gen_config in enumerate(gen_configs):
             # Валидация конфига генератора
             if "type" not in gen_config:
-                logger.warning(
-                    f"FeaturePipeline: generators[{i}] не содержит 'type', пропускаем"
-                )
+                logger.warning(f"FeaturePipeline: generators[{i}] не содержит 'type', пропускаем")
                 continue
 
             gen_type = gen_config["type"]
             enabled = gen_config.get("enabled", True)
 
             if not enabled:
-                logger.info(
-                    f"FeaturePipeline: генератор {gen_type} отключен (enabled=False)"
-                )
+                logger.info(f"FeaturePipeline: генератор {gen_type} отключен (enabled=False)")
                 continue
 
             # Получение класса генератора
@@ -132,29 +125,25 @@ class FeaturePipeline:
             try:
                 # Конвертируем OmegaConf в обычный dict (рекурсивно)
                 gen_config_dict = OmegaConf.to_container(gen_config, resolve=True)
-                generator = generator_class(gen_config_dict)
+                if gen_config_dict is None:
+                    gen_config_dict = {}
+                generator = generator_class(gen_config_dict)  # type: ignore[abstract]
                 generators.append(generator)
 
                 feature_count = len(generator.get_feature_names())
-                logger.info(
-                    f"FeaturePipeline: ✓ {gen_type} ({feature_count} фичей)"
-                )
+                logger.info(f"FeaturePipeline: ✓ {gen_type} ({feature_count} фичей)")
             except Exception as e:
-                logger.error(
-                    f"FeaturePipeline: ошибка инициализации {gen_type}: {e}"
-                )
+                logger.error(f"FeaturePipeline: ошибка инициализации {gen_type}: {e}")
                 raise
 
         if len(generators) == 0:
-            logger.warning(
-                "FeaturePipeline: ни один генератор не был инициализирован!"
-            )
+            logger.warning("FeaturePipeline: ни один генератор не был инициализирован!")
 
         return generators
 
     def generate_features(
         self, df: pd.DataFrame, format: str = "wide"
-    ) -> Tuple[pd.DataFrame, List[str]]:
+    ) -> tuple[pd.DataFrame, list[str]]:
         """
         Генерация всех фичей.
 
@@ -212,9 +201,7 @@ class FeaturePipeline:
             df_long = wide_to_long(df, context_columns=context_columns)
             validate_long_format(df_long)
 
-            logger.info(
-                f"  ✓ wide → long: {df.shape[0]} матчей → {df_long.shape[0]} строк"
-            )
+            logger.info(f"  ✓ wide → long: {df.shape[0]} матчей → {df_long.shape[0]} строк")
 
         # 2. Создание базовых метрик (diff_ps, total_ps)
         create_metrics = self.config.get("create_metrics", ["diff", "total"])
@@ -237,9 +224,7 @@ class FeaturePipeline:
                 gen_features = generator.get_prefixed_feature_names()
                 all_features.extend(gen_features)
 
-                logger.info(
-                    f"  ✓ Сгенерировано {len(gen_features)} фичей"
-                )
+                logger.info(f"  ✓ Сгенерировано {len(gen_features)} фичей")
             except Exception as e:
                 logger.error(f"  ✗ Ошибка в {generator.name}: {e}")
                 raise
@@ -254,13 +239,14 @@ class FeaturePipeline:
         logger.info(f"Время выполнения: {elapsed:.2f} секунд")
         logger.info(f"Генераторов применено: {len(self.generators)}")
         logger.info(f"Фичей сгенерировано: {len(actual_features)}")
-        logger.info(f"Итоговый датафрейм: {result_df.shape[0]} строк × {result_df.shape[1]} колонок")
+        logger.info(
+            f"Итоговый датафрейм: {result_df.shape[0]} строк × {result_df.shape[1]} колонок"
+        )
 
         # Проверка на расхождение
         if len(actual_features) != len(all_features):
             logger.warning(
-                f"Расхождение: ожидалось {len(all_features)} фичей, "
-                f"создано {len(actual_features)}"
+                f"Расхождение: ожидалось {len(all_features)} фичей, создано {len(actual_features)}"
             )
 
         logger.info("=" * 70)
@@ -279,7 +265,7 @@ class FeaturePipeline:
             total += len(generator.get_feature_names())
         return total
 
-    def get_generator_summary(self) -> Dict[str, int]:
+    def get_generator_summary(self) -> dict[str, int]:
         """
         Получить сводку по генераторам.
 
@@ -297,8 +283,5 @@ class FeaturePipeline:
         """Строковое представление pipeline."""
         total_features = self.get_total_feature_count()
         return (
-            f"FeaturePipeline("
-            f"generators={len(self.generators)}, "
-            f"total_features={total_features})"
+            f"FeaturePipeline(generators={len(self.generators)}, total_features={total_features})"
         )
-

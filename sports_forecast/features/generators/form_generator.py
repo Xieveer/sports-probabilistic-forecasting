@@ -14,13 +14,12 @@
 - diff_mins_prev_match: разница во времени между игроками
 """
 
-from typing import Any, Dict, List
-
 import numpy as np
 import pandas as pd
 
 from sports_forecast.features.generators.base import BaseFeatureGenerator
 from sports_forecast.utils.log_config import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -53,14 +52,10 @@ class FormFeatureGenerator(BaseFeatureGenerator):
 
         # Проверка обязательных параметров
         if "fg_trigger_minutes" not in self.config:
-            logger.warning(
-                f"{self.name}: fg_trigger_minutes не указан, используется 480 (8 часов)"
-            )
+            logger.warning(f"{self.name}: fg_trigger_minutes не указан, используется 480 (8 часов)")
 
         if "dp_trigger_minutes" not in self.config:
-            logger.warning(
-                f"{self.name}: dp_trigger_minutes не указан, используется 30 минут"
-            )
+            logger.warning(f"{self.name}: dp_trigger_minutes не указан, используется 30 минут")
 
     def generate(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -82,9 +77,7 @@ class FormFeatureGenerator(BaseFeatureGenerator):
         required_cols = ["datetime", "pl", "opp"]
         missing = [col for col in required_cols if col not in df.columns]
         if missing:
-            raise ValueError(
-                f"{self.name}: отсутствуют обязательные колонки: {missing}"
-            )
+            raise ValueError(f"{self.name}: отсутствуют обязательные колонки: {missing}")
 
         long = df.copy()
 
@@ -94,8 +87,7 @@ class FormFeatureGenerator(BaseFeatureGenerator):
         players = self.config.get("players", ["pl", "opp"])
 
         logger.debug(
-            f"{self.name}: fg_trigger={fg_trigger}м, dp_trigger={dp_trigger}м, "
-            f"players={players}"
+            f"{self.name}: fg_trigger={fg_trigger}м, dp_trigger={dp_trigger}м, players={players}"
         )
 
         # Генерация фичей для каждого игрока
@@ -104,18 +96,14 @@ class FormFeatureGenerator(BaseFeatureGenerator):
 
         # Комбинированное состояние матча
         if "pl" in players and "opp" in players:
-            long["match_state"] = (
-                long["pl_state"].astype(str) + "|" + long["opp_state"].astype(str)
-            )
+            pl_state_str = long["pl_state"].astype(str)
+            opp_state_str = long["opp_state"].astype(str)
+            long["match_state"] = pl_state_str.str.cat(opp_state_str, sep="|")
 
             # Разница во времени между игроками
-            long["diff_mins_prev_match"] = (
-                long["pl_mins_prev_match"] - long["opp_mins_prev_match"]
-            )
+            long["diff_mins_prev_match"] = long["pl_mins_prev_match"] - long["opp_mins_prev_match"]
 
-            logger.debug(
-                f"{self.name}: создано match_state и diff_mins_prev_match"
-            )
+            logger.debug(f"{self.name}: создано match_state и diff_mins_prev_match")
 
         return long
 
@@ -146,9 +134,10 @@ class FormFeatureGenerator(BaseFeatureGenerator):
         is_fg = m.isna() | (m >= fg_trigger)
 
         # Категориальное состояние (для внутреннего использования)
-        df[f"{player}_state"] = pd.Series(
-            np.select([is_dp, is_fg], ["dp", "fg"], default="form"), index=df.index
-        ).astype("category")
+        state_values = np.select([is_dp, is_fg], ["dp", "fg"], default="form")
+        df[f"{player}_state"] = pd.Series(state_values, index=df.index, dtype=str).astype(
+            "category"
+        )
 
         # Бинарные индикаторы (для обучения)
         df[f"{player}_is_dp"] = is_dp.astype("int8")
@@ -160,7 +149,7 @@ class FormFeatureGenerator(BaseFeatureGenerator):
             f"DP={is_dp.sum()}, FG={is_fg.sum()}, Form={(~(is_dp | is_fg)).sum()}"
         )
 
-    def get_feature_names(self) -> List[str]:
+    def get_feature_names(self) -> list[str]:
         """
         Возвращает список имен фичей (без префикса f_).
 
@@ -185,4 +174,3 @@ class FormFeatureGenerator(BaseFeatureGenerator):
             features.extend(["match_state", "diff_mins_prev_match"])
 
         return features
-

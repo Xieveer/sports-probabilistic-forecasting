@@ -17,12 +17,13 @@
 - h2h_ewm_10_diff, ...: Head-to-head EWM
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
 import pandas as pd
 
 from sports_forecast.features.generators.base import BaseFeatureGenerator
 from sports_forecast.utils.log_config import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -75,9 +76,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
         required = ["metric", "spans", "contexts"]
         missing = [field for field in required if field not in self.config]
         if missing:
-            raise ValueError(
-                f"{self.name}: отсутствуют обязательные поля: {missing}"
-            )
+            raise ValueError(f"{self.name}: отсутствуют обязательные поля: {missing}")
 
         spans = self.config["spans"]
         if not isinstance(spans, list) or len(spans) == 0:
@@ -85,9 +84,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
 
         contexts = self.config["contexts"]
         if not isinstance(contexts, list) or len(contexts) == 0:
-            raise ValueError(
-                f"{self.name}: 'contexts' должен быть непустым списком"
-            )
+            raise ValueError(f"{self.name}: 'contexts' должен быть непустым списком")
 
     def generate(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -117,9 +114,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
 
         # Валидация наличия метрики
         if metric_col not in long.columns:
-            raise ValueError(
-                f"{self.name}: отсутствует колонка с метрикой: '{metric_col}'"
-            )
+            raise ValueError(f"{self.name}: отсутствует колонка с метрикой: '{metric_col}'")
 
         logger.debug(
             f"{self.name}: metric={metric_col}, spans={spans}, "
@@ -146,7 +141,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
     def _generate_context_features(
         self,
         df: pd.DataFrame,
-        ctx: Dict[str, Any],
+        ctx: dict[str, Any],
         metric: str,
         span: int,
         shift: int,
@@ -191,9 +186,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
                 df, keys, metric, span, shift, min_periods, adjust
             )
             features_created = 1
-            logger.debug(
-                f"{self.name}: {feature_name} создан (h2h, keys={keys})"
-            )
+            logger.debug(f"{self.name}: {feature_name} создан (h2h, keys={keys})")
         else:
             # Фичи для каждого игрока
             players = ctx.get("players", ["pl", "opp"])
@@ -216,9 +209,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
                     df, player_keys, metric, span, shift, min_periods, adjust
                 )
                 features_created += 1
-                logger.debug(
-                    f"{self.name}: {feature_name} создан (keys={player_keys})"
-                )
+                logger.debug(f"{self.name}: {feature_name} создан (keys={player_keys})")
 
             # Разница между игроками
             if ctx.get("compute_diff", False) and "pl" in players and "opp" in players:
@@ -229,16 +220,14 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
                     diff_feat = f"all_{name}_ewm_{span}_diff"
                     df[diff_feat] = df[pl_feat] - df[opp_feat]
                     features_created += 1
-                    logger.debug(
-                        f"{self.name}: {diff_feat} создан (diff: {pl_feat} - {opp_feat})"
-                    )
+                    logger.debug(f"{self.name}: {diff_feat} создан (diff: {pl_feat} - {opp_feat})")
 
         return features_created
 
     def _calculate_ewm(
         self,
         df: pd.DataFrame,
-        group_keys: List[str],
+        group_keys: list[str],
         metric: str,
         span: int,
         shift: int,
@@ -268,7 +257,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
             .mean()
         )
 
-    def get_feature_names(self) -> List[str]:
+    def get_feature_names(self) -> list[str]:
         """
         Возвращает список имен фичей (без префикса f_).
 
@@ -293,12 +282,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
                         features.append(f"{player}_{name}_ewm_{span}")
 
                     # Diff фича
-                    if (
-                        ctx.get("compute_diff", False)
-                        and "pl" in players
-                        and "opp" in players
-                    ):
+                    if ctx.get("compute_diff", False) and "pl" in players and "opp" in players:
                         features.append(f"all_{name}_ewm_{span}_diff")
 
         return features
-

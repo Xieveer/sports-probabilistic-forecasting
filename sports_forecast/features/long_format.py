@@ -14,22 +14,21 @@ Long format используется для:
 
 Примеры:
     Wide → Long:
-    
+
     id | datetime   | home_name | away_name | home_points | away_points | tour_num
     1  | 2024-01-01 | Team A    | Team B    | 10          | 8           | 5
-    
+
     →
-    
+
     id | datetime   | pl     | opp    | pl_points | opp_points | side | is_home | tour_num
     1  | 2024-01-01 | Team A | Team B | 10        | 8          | h    | 1       | 5
     1  | 2024-01-01 | Team B | Team A | 8         | 10         | a    | 0       | 5
 """
 
-from typing import Dict, List, Optional
-
 import pandas as pd
 
 from sports_forecast.utils.log_config import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -40,7 +39,7 @@ def wide_to_long(
     away_prefix: str = "away_",
     player_name: str = "pl",
     opponent_name: str = "opp",
-    context_columns: Optional[List[str]] = None,
+    context_columns: list[str] | None = None,
 ) -> pd.DataFrame:
     """
     Трансформация wide → long format.
@@ -105,9 +104,7 @@ def wide_to_long(
     meta_cols = [
         col
         for col in df.columns
-        if col not in home_cols
-        and col not in away_cols
-        and col not in context_columns
+        if col not in home_cols and col not in away_cols and col not in context_columns
     ]
 
     # Создаем строки для home (side='h', is_home=1)
@@ -154,9 +151,7 @@ def wide_to_long(
         long["opp"] = long.apply(
             lambda row: f"{'a' if row['side'] == 'h' else 'h'}_{row['id']}", axis=1
         )
-        logger.debug(
-            "Созданы синтетические идентификаторы pl/opp на основе id матча"
-        )
+        logger.debug("Созданы синтетические идентификаторы pl/opp на основе id матча")
 
     # Сортируем по datetime и id для правильной последовательности
     if "datetime" in long.columns and "id" in long.columns:
@@ -269,9 +264,7 @@ def long_to_wide(
     return wide
 
 
-def create_player_metrics(
-    df: pd.DataFrame, metrics: List[str], player_col: str = "pl"
-) -> pd.DataFrame:
+def create_player_metrics(df: pd.DataFrame, metrics: list[str]) -> pd.DataFrame:
     """
     Создать метрики для long format (diff_ps, total_ps, etc.).
 
@@ -280,7 +273,6 @@ def create_player_metrics(
     Args:
         df: Long format датафрейм
         metrics: Список метрик для создания ('diff', 'total')
-        player_col: Имя колонки игрока (default: "pl")
 
     Returns:
         Датафрейм с добавленными метриками
@@ -298,17 +290,15 @@ def create_player_metrics(
     """
     result = df.copy()
 
-    if "diff" in metrics:
+    if "diff" in metrics and "pl_points" in df.columns and "opp_points" in df.columns:
         # Разница очков (pl - opp)
-        if "pl_points" in df.columns and "opp_points" in df.columns:
-            result["diff_ps"] = df["pl_points"] - df["opp_points"]
-            logger.debug("Создана метрика: diff_ps = pl_points - opp_points")
+        result["diff_ps"] = df["pl_points"] - df["opp_points"]
+        logger.debug("Создана метрика: diff_ps = pl_points - opp_points")
 
-    if "total" in metrics:
+    if "total" in metrics and "pl_points" in df.columns and "opp_points" in df.columns:
         # Сумма очков
-        if "pl_points" in df.columns and "opp_points" in df.columns:
-            result["total_ps"] = df["pl_points"] + df["opp_points"]
-            logger.debug("Создана метрика: total_ps = pl_points + opp_points")
+        result["total_ps"] = df["pl_points"] + df["opp_points"]
+        logger.debug("Создана метрика: total_ps = pl_points + opp_points")
 
     return result
 
@@ -366,15 +356,10 @@ def validate_long_format(df: pd.DataFrame) -> None:
     # Проверка соответствия side и is_home
     mismatches = df[(df["side"] == "h") & (df["is_home"] != 1)]
     if len(mismatches) > 0:
-        raise ValueError(
-            f"Long format: найдено {len(mismatches)} строк где side='h' но is_home!=1"
-        )
+        raise ValueError(f"Long format: найдено {len(mismatches)} строк где side='h' но is_home!=1")
 
     mismatches = df[(df["side"] == "a") & (df["is_home"] != 0)]
     if len(mismatches) > 0:
-        raise ValueError(
-            f"Long format: найдено {len(mismatches)} строк где side='a' но is_home!=0"
-        )
+        raise ValueError(f"Long format: найдено {len(mismatches)} строк где side='a' но is_home!=0")
 
     logger.debug(f"Long format валидация пройдена: {len(df)} строк")
-

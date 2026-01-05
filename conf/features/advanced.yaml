@@ -158,4 +158,3 @@ generators:
       - name: "h2h_side"
         keys: ["pl", "opp", "side", "pl_team", "opp_team"]
         h2h: true
-
