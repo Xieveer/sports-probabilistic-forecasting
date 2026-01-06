@@ -88,3 +88,4 @@ Thumbs.db
 *.swp
 *~
 /models
+train_all_models.*
