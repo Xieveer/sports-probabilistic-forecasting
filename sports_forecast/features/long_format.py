@@ -134,11 +134,32 @@ def wide_to_long(
     long = pd.concat([home_rows, away_rows], ignore_index=True)
 
     # Создаем алиасы для колонок игроков (для генераторов фичей)
-    # pl_name → pl, opp_name → opp
-    if f"{player_name}_name" in long.columns:
-        long["pl"] = long[f"{player_name}_name"]
-    if f"{opponent_name}_name" in long.columns:
-        long["opp"] = long[f"{opponent_name}_name"]
+    # Ищем первую колонку с идентификатором игрока
+    # Возможные варианты: pl_name, pl_short_name_en, pl_team, etc.
+    if "pl" not in long.columns:
+        # Ищем колонку с именем игрока (приоритет: name > short_name_en > team)
+        player_id_candidates = [
+            f"{player_name}_name",
+            f"{player_name}_short_name_en",
+            f"{player_name}_team",
+        ]
+        for candidate in player_id_candidates:
+            if candidate in long.columns:
+                long["pl"] = long[candidate]
+                logger.debug(f"Используем {candidate} как идентификатор игрока (pl)")
+                break
+    
+    if "opp" not in long.columns:
+        opponent_id_candidates = [
+            f"{opponent_name}_name",
+            f"{opponent_name}_short_name_en",
+            f"{opponent_name}_team",
+        ]
+        for candidate in opponent_id_candidates:
+            if candidate in long.columns:
+                long["opp"] = long[candidate]
+                logger.debug(f"Используем {candidate} как идентификатор оппонента (opp)")
+                break
 
     # Если имен игроков нет, создаем синтетические идентификаторы
     # на основе id матча (для группировки по истории команды)
