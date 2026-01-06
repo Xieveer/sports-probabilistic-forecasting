@@ -116,3 +116,11 @@ target_sources:
     comparison: "total_under"
     base: 5.5  # Берется из total_ranges.default
     format: "wide"
+
+  # Модель total_over_6_5: тотал больше 6.5
+  total_over_6_5:
+    home_column: "home_points"
+    away_column: "away_points"
+    comparison: "total_over"
+    base: 6.5
+    format: "wide"
