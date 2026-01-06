@@ -427,7 +427,7 @@ class ModelTrainer:
         logger.info("=" * 60)
 
         # Загружаем конфиг модели
-        model_config_path = self.project_root / "conf" / "model" / "single" / f"{model_name}.yaml"
+        model_config_path = self.project_root / "conf" / "model" / f"{model_name}.yaml"
         if not model_config_path.exists():
             logger.error("Конфиг модели не найден: %s", model_config_path)
             return False, None, None
