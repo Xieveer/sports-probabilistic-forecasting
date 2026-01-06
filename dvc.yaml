@@ -28,9 +28,10 @@ stages:
       - data/processed
 
   train:
-    cmd: uv run python -m sports_forecast.train tournament=all model=is_home_win
+    cmd: uv run python -m sports_forecast.train_v2 model=single/catboost tournament=all
     deps:
-      - sports_forecast/train.py
+      - sports_forecast/train_v2.py
+      - sports_forecast/training/
       - conf/config.yaml
       - conf/paths.yaml
       - conf/tournament
