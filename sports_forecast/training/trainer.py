@@ -354,6 +354,24 @@ class ModelTrainer:
         prod_path = self.models_root / tournament / model_name
         model.save(prod_path, version="prod")
 
+        # Вычисляем метрики prod модели на test set
+        from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
+
+        y_pred_proba = model.predict_proba(X_test)
+
+        prod_metrics = {
+            "logloss": log_loss(y_test, y_pred_proba),
+            "auc": roc_auc_score(y_test, y_pred_proba[:, 1]) if len(set(y_test)) > 1 else 0.5,
+            "accuracy": accuracy_score(y_test, y_pred_proba.argmax(axis=1)),
+            "brier": brier_score_loss(y_test, y_pred_proba[:, 1]),
+        }
+
+        logger.info("Prod метрики (test set):")
+        logger.info("  LogLoss:  %.4f", prod_metrics["logloss"])
+        logger.info("  AUC:      %.4f", prod_metrics["auc"])
+        logger.info("  Accuracy: %.4f", prod_metrics["accuracy"])
+        logger.info("  Brier:    %.4f", prod_metrics["brier"])
+
         # MLflow логирование
         self._log_to_mlflow_single(
             model_name=model_name,
@@ -364,6 +382,7 @@ class ModelTrainer:
             is_calibrated=is_calibrated,
             ece_before=ece_before,
             ece_after=ece_after,
+            prod_metrics=prod_metrics,
         )
 
         logger.info("=" * 60)
@@ -382,27 +401,33 @@ class ModelTrainer:
         is_calibrated: bool,
         ece_before: float | None,
         ece_after: float | None,
+        prod_metrics: dict | None = None,
     ) -> None:
         """
-        Логировать одиночную модель в MLflow.
+        Логировать одиночную модель в MLflow (shadow и prod отдельно).
 
         Args:
             model_name: Название модели.
             tournament: Название турнира.
-            tscv_results: Результаты TSCV.
+            tscv_results: Результаты TSCV (для shadow).
             model_config: Конфигурация модели.
             feature_names: Список фичей.
             is_calibrated: Была ли применена калибровка.
             ece_before: ECE до калибровки.
             ece_after: ECE после калибровки.
+            prod_metrics: Метрики prod модели на test set (опционально).
         """
-        run_name = f"{tournament}_{model_name}"
+        # ============================================================
+        # RUN 1: SHADOW MODEL (TSCV метрики)
+        # ============================================================
+        run_name_shadow = f"{tournament}_{model_name}_shadow"
 
-        with mlflow.start_run(run_name=run_name):
+        with mlflow.start_run(run_name=run_name_shadow):
             # Теги
             mlflow.set_tag("tournament", tournament)
             mlflow.set_tag("model_name", model_name)
             mlflow.set_tag("model_type", "single")
+            mlflow.set_tag("version", "shadow")
 
             # Параметры
             mlflow.log_param("n_features", len(feature_names))
@@ -411,29 +436,129 @@ class ModelTrainer:
                 for key, value in model_config.params.items():
                     mlflow.log_param(f"model__{key}", value)
 
-            # Shadow метрики (TSCV)
+            # Shadow метрики (только агрегированные mean/std, без фолдов!)
             for metric_name, value in tscv_results.items():
-                if (
-                    metric_name.startswith("mean_")
-                    or metric_name.startswith("std_")
-                    or metric_name.startswith("fold_")
-                ):
-                    mlflow.log_metric(f"shadow_{metric_name}", value)
-
-            # Калибровка
-            if is_calibrated:
-                mlflow.set_tag("calibrated", "true")
-                if ece_before is not None:
-                    mlflow.log_metric("ece_before_calibration", ece_before)
-                if ece_after is not None:
-                    mlflow.log_metric("ece_after_calibration", ece_after)
-            else:
-                mlflow.set_tag("calibrated", "false")
+                if metric_name.startswith("mean_"):
+                    # Убираем префикс "mean_" для основных метрик
+                    clean_name = metric_name.replace("mean_", "")
+                    mlflow.log_metric(clean_name, value)
+                elif metric_name.startswith("std_"):
+                    # Для std оставляем как есть
+                    mlflow.log_metric(metric_name, value)
 
             # Фичи
             mlflow.log_text("\n".join(feature_names), "features.txt")
 
+        # ============================================================
+        # RUN 2: PROD MODEL (Test set метрики)
+        # ============================================================
+        if prod_metrics is not None:
+            run_name_prod = f"{tournament}_{model_name}_prod"
+
+            with mlflow.start_run(run_name=run_name_prod):
+                # Теги
+                mlflow.set_tag("tournament", tournament)
+                mlflow.set_tag("model_name", model_name)
+                mlflow.set_tag("model_type", "single")
+                mlflow.set_tag("version", "prod")
+
+                # Параметры (те же, что у shadow)
+                mlflow.log_param("n_features", len(feature_names))
+
+                if hasattr(model_config, "params"):
+                    for key, value in model_config.params.items():
+                        mlflow.log_param(f"model__{key}", value)
+
+                # Prod метрики
+                for metric_name, value in prod_metrics.items():
+                    mlflow.log_metric(metric_name, value)
+
+                # Калибровка (только для prod)
+                if is_calibrated:
+                    mlflow.set_tag("calibrated", "true")
+                    if ece_before is not None:
+                        mlflow.log_metric("ece_before_calibration", ece_before)
+                    if ece_after is not None:
+                        mlflow.log_metric("ece_after_calibration", ece_after)
+                else:
+                    mlflow.set_tag("calibrated", "false")
+
+                # Фичи
+                mlflow.log_text("\n".join(feature_names), "features.txt")
+
             logger.info("MLflow: run зарегистрирован")
+
+    def _log_to_mlflow_ensemble(
+        self,
+        ensemble_name: str,
+        tournament: str,
+        shadow_metrics: dict,
+        prod_metrics: dict,
+        ensemble_config: DictConfig,
+        feature_names: list[str],
+    ) -> None:
+        """
+        Логировать ансамбль в MLflow (shadow и prod отдельно).
+
+        Args:
+            ensemble_name: Название ансамбля.
+            tournament: Название турнира.
+            shadow_metrics: Метрики shadow модели (train set).
+            prod_metrics: Метрики prod модели (test set).
+            ensemble_config: Конфигурация ансамбля.
+            feature_names: Список фичей.
+        """
+        # ============================================================
+        # RUN 1: SHADOW MODEL
+        # ============================================================
+        run_name_shadow = f"{tournament}_{ensemble_name}_shadow"
+
+        with mlflow.start_run(run_name=run_name_shadow):
+            # Теги
+            mlflow.set_tag("tournament", tournament)
+            mlflow.set_tag("model_name", ensemble_name)
+            mlflow.set_tag("model_type", "ensemble")
+            mlflow.set_tag("ensemble_method", ensemble_config.get("ensemble_method", "stacking"))
+            mlflow.set_tag("version", "shadow")
+
+            # Параметры
+            mlflow.log_param("n_features", len(feature_names))
+            mlflow.log_param("n_base_models", len(ensemble_config.base_models))
+            mlflow.log_param("base_models", ", ".join(ensemble_config.base_models))
+
+            # Shadow метрики
+            for metric_name, value in shadow_metrics.items():
+                mlflow.log_metric(metric_name, value)
+
+            # Фичи
+            mlflow.log_text("\n".join(feature_names), "features.txt")
+
+        # ============================================================
+        # RUN 2: PROD MODEL
+        # ============================================================
+        run_name_prod = f"{tournament}_{ensemble_name}_prod"
+
+        with mlflow.start_run(run_name=run_name_prod):
+            # Теги
+            mlflow.set_tag("tournament", tournament)
+            mlflow.set_tag("model_name", ensemble_name)
+            mlflow.set_tag("model_type", "ensemble")
+            mlflow.set_tag("ensemble_method", ensemble_config.get("ensemble_method", "stacking"))
+            mlflow.set_tag("version", "prod")
+
+            # Параметры
+            mlflow.log_param("n_features", len(feature_names))
+            mlflow.log_param("n_base_models", len(ensemble_config.base_models))
+            mlflow.log_param("base_models", ", ".join(ensemble_config.base_models))
+
+            # Prod метрики
+            for metric_name, value in prod_metrics.items():
+                mlflow.log_metric(metric_name, value)
+
+            # Фичи
+            mlflow.log_text("\n".join(feature_names), "features.txt")
+
+        logger.info("MLflow: ансамбль зарегистрирован (shadow + prod)")
 
     def train_ensemble(
         self,
@@ -504,6 +629,50 @@ class ModelTrainer:
         # Сохраняем Prod
         prod_path = self.models_root / tournament / ensemble_name
         ensemble.save(prod_path, version="prod")
+
+        # Вычисляем метрики на test set
+        from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
+
+        # Shadow метрики (взять из последнего обучения)
+        # Для ансамбля мы не делаем полноценный TSCV, поэтому используем train метрики
+        y_train_pred = ensemble.predict_proba(X_train)
+        shadow_metrics = {
+            "logloss": log_loss(y_train, y_train_pred),
+            "auc": roc_auc_score(y_train, y_train_pred[:, 1]) if len(set(y_train)) > 1 else 0.5,
+            "accuracy": accuracy_score(y_train, y_train_pred.argmax(axis=1)),
+            "brier": brier_score_loss(y_train, y_train_pred[:, 1]),
+        }
+
+        # Prod метрики (test set)
+        y_test_pred = ensemble.predict_proba(X_test)
+        prod_metrics = {
+            "logloss": log_loss(y_test, y_test_pred),
+            "auc": roc_auc_score(y_test, y_test_pred[:, 1]) if len(set(y_test)) > 1 else 0.5,
+            "accuracy": accuracy_score(y_test, y_test_pred.argmax(axis=1)),
+            "brier": brier_score_loss(y_test, y_test_pred[:, 1]),
+        }
+
+        logger.info("Shadow метрики (train set):")
+        logger.info("  LogLoss:  %.4f", shadow_metrics["logloss"])
+        logger.info("  AUC:      %.4f", shadow_metrics["auc"])
+        logger.info("  Accuracy: %.4f", shadow_metrics["accuracy"])
+        logger.info("  Brier:    %.4f", shadow_metrics["brier"])
+
+        logger.info("Prod метрики (test set):")
+        logger.info("  LogLoss:  %.4f", prod_metrics["logloss"])
+        logger.info("  AUC:      %.4f", prod_metrics["auc"])
+        logger.info("  Accuracy: %.4f", prod_metrics["accuracy"])
+        logger.info("  Brier:    %.4f", prod_metrics["brier"])
+
+        # MLflow логирование
+        self._log_to_mlflow_ensemble(
+            ensemble_name=ensemble_name,
+            tournament=tournament,
+            shadow_metrics=shadow_metrics,
+            prod_metrics=prod_metrics,
+            ensemble_config=ensemble_config,
+            feature_names=feature_names,
+        )
 
         logger.info("=" * 60)
         logger.info("✓ АНСАМБЛЬ ОБУЧЕН")
