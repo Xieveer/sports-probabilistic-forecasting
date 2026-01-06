@@ -88,9 +88,7 @@ class TestWideToLong:
                 "id": [1],
                 "datetime": pd.to_datetime(["2024-01-01"]),
                 "home_name": ["Player1"],
-
                 "away_name": ["Player2"],
-
                 "home_points": [10],
                 "away_points": [8],
                 "tour_num": [5],
@@ -259,7 +257,16 @@ class TestWideToLong:
     def test_empty_dataframe(self):
         """Пустой датафрейм должен вернуть пустой long формат."""
         # Arrange
-        df = pd.DataFrame({"id": [], "datetime": [], "home_name": [], "away_name": [], "home_points": [], "away_points": []})
+        df = pd.DataFrame(
+            {
+                "id": [],
+                "datetime": [],
+                "home_name": [],
+                "away_name": [],
+                "home_points": [],
+                "away_points": [],
+            }
+        )
 
         # Act
         long = wide_to_long(df, player_id_attr="name")
@@ -405,8 +412,6 @@ class TestRoundTrip:
             {
                 "id": [1, 2, 3],
                 "datetime": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]),
-                "home_name": ["A", "B", "C"],
-                "away_name": ["X", "Y", "Z"],
                 "home_name": ["A", "B", "C"],
                 "away_name": ["X", "Y", "Z"],
                 "home_points": [10, 12, 8],

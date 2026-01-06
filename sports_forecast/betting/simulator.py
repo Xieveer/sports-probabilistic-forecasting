@@ -22,6 +22,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -94,9 +95,7 @@ class BettingSimulator:
             min_value_threshold * 100,
         )
 
-    def calculate_expected_value(
-        self, predicted_prob: float, odds: float
-    ) -> tuple[float, float]:
+    def calculate_expected_value(self, predicted_prob: float, odds: float) -> tuple[float, float]:
         """
         Вычислить Expected Value (EV) и долю Kelly.
 
@@ -128,9 +127,7 @@ class BettingSimulator:
 
         return ev, kelly
 
-    def calculate_stake(
-        self, predicted_prob: float, odds: float, current_bankroll: float
-    ) -> float:
+    def calculate_stake(self, predicted_prob: float, odds: float, current_bankroll: float) -> float:
         """
         Вычислить размер ставки согласно выбранной стратегии.
 
@@ -201,7 +198,7 @@ class BettingSimulator:
 
         logger.info("Начинаю симуляцию ставок на %d событиях", len(y_true))
 
-        for i, (outcome, prob, odd) in enumerate(zip(y_true, y_pred_proba, odds)):
+        for outcome, prob, odd in zip(y_true, y_pred_proba, odds, strict=True):
             # Вычисляем EV
             ev, _ = self.calculate_expected_value(prob, odd)
 
@@ -239,8 +236,8 @@ class BettingSimulator:
         net_profit = bankroll - self.initial_bankroll
         roi = (net_profit / total_staked * 100) if total_staked > 0 else 0.0
         win_rate = (num_wins / num_bets) if num_bets > 0 else 0.0
-        avg_odds = np.mean(bets_odds) if bets_odds else 0.0
-        avg_value = np.mean(bets_values) if bets_values else 0.0
+        avg_odds = float(np.mean(bets_odds)) if bets_odds else 0.0
+        avg_value = float(np.mean(bets_values)) if bets_values else 0.0
 
         # Sharpe Ratio (упрощённая версия)
         if len(bankroll_history) > 1:
@@ -284,4 +281,3 @@ class BettingSimulator:
         logger.info("  Final bankroll: %.2f", bankroll)
 
         return metrics
-

@@ -174,8 +174,7 @@ def wide_to_long(
     long["opp"] = long[opp_id_col]
 
     logger.debug(
-        f"Создали алиасы pl/opp на основе атрибута '{player_id_attr}' "
-        f"({pl_id_col}, {opp_id_col})"
+        f"Создали алиасы pl/opp на основе атрибута '{player_id_attr}' ({pl_id_col}, {opp_id_col})"
     )
 
     # Сортируем по datetime и id для правильной последовательности

@@ -342,11 +342,11 @@ class BaseSingleModel(BaseModel):
         self._fit_implementation(X_processed, y_processed, **kwargs)
 
         self.is_fitted_ = True
-        
+
         # Сохраняем classes_ для sklearn совместимости (для калибровки)
         if hasattr(self.model_, "classes_"):
             self.classes_ = self.model_.classes_
-        
+
         logger.info("Модель '%s' успешно обучена", self.name)
 
         return self
