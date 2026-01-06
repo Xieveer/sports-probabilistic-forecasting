@@ -38,6 +38,12 @@ data_clean:
     - status
     - home_points
     - away_points
+    - home_short_name_en  # для wide_to_long (создает pl_name/opp_name)
+    - away_short_name_en  # для wide_to_long (создает pl_name/opp_name)
+    - tour_match_num  # номер матча в турнире
+    - tour_num  # создается в clean.py из tour_name_en
+    - weekday  # создается в clean.py из datetime
+    - hour  # создается в clean.py из datetime
 
   # Типизация колонок
   dtype_mapping:

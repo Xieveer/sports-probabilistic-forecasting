@@ -306,6 +306,18 @@ def process_tournament(
             clean_cfg.default_status,
         )
 
+    # 5.5. Добавляем контекстные колонки для feature engineering
+    # tour_num - номер турнира (последний символ tour_name_en)
+    if "tour_name_en" in df.columns:
+        df["tour_num"] = df["tour_name_en"].str[-1].astype(str)
+        logger.info("Турнир %s: добавлена колонка tour_num", tournament_name)
+
+    # weekday и hour - из datetime
+    if "datetime" in df.columns:
+        df["weekday"] = pd.to_datetime(df["datetime"]).dt.dayofweek
+        df["hour"] = pd.to_datetime(df["datetime"]).dt.hour
+        logger.info("Турнир %s: добавлены колонки weekday, hour", tournament_name)
+
     # 6. Выбираем нужные колонки
     select_cols = clean_cfg.select_columns or []
     if select_cols:
@@ -317,6 +329,7 @@ def process_tournament(
         ):
             select_cols = list(select_cols) + ["status"]
 
+        # Фильтруем только существующие колонки (tour_num/weekday/hour уже созданы выше)
         existing_cols = [c for c in select_cols if c in df.columns]
         if not existing_cols:
             logger.warning(
@@ -327,9 +340,10 @@ def process_tournament(
             return
         df = df[existing_cols]
         logger.info(
-            "Турнир %s: оставлены колонки: %s",
+            "Турнир %s: оставлены колонки (%d): %s",
             tournament_name,
-            existing_cols,
+            len(existing_cols),
+            existing_cols[:10],  # Показываем только первые 10
         )
 
     if df.empty:

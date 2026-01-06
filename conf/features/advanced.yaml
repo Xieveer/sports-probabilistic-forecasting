@@ -98,7 +98,7 @@ generators:
 
       # H2H + side
       - name: "h2h_side"
-        keys: ["pl", "opp", "side", "pl_team", "opp_team"]
+        keys: ["pl", "opp", "side", "pl_name", "opp_name"]
         h2h: true
         output_suffix: "_diff"
 
