@@ -1,5 +1,4 @@
 # Модель: Тотал больше 6.5 (для wide format)
-# @package _global_.model
 
 name: "total_over_6_5"
 type: "catboost"
