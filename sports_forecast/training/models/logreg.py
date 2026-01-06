@@ -25,7 +25,9 @@ from typing import Any
 import pandas as pd
 from omegaconf import DictConfig
 from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from sports_forecast.training.base import BaseSingleModel
@@ -150,16 +152,24 @@ class LogRegModel(BaseSingleModel):
             transformers = []
 
             if self.numeric_features_:
-                transformers.append(("num", StandardScaler(), self.numeric_features_))
+                # Pipeline для числовых фичей: Imputer → Scaler
+                numeric_pipeline = Pipeline(
+                    [
+                        ("imputer", SimpleImputer(strategy="mean")),
+                        ("scaler", StandardScaler()),
+                    ]
+                )
+                transformers.append(("num", numeric_pipeline, self.numeric_features_))
 
             if self.categorical_features_:
-                transformers.append(
-                    (
-                        "cat",
-                        OneHotEncoder(handle_unknown="ignore", sparse_output=False),
-                        self.categorical_features_,
-                    )
+                # Pipeline для категориальных фичей: Imputer → OneHot
+                categorical_pipeline = Pipeline(
+                    [
+                        ("imputer", SimpleImputer(strategy="constant", fill_value="missing")),
+                        ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+                    ]
                 )
+                transformers.append(("cat", categorical_pipeline, self.categorical_features_))
 
             if not transformers:
                 # Нет фичей для обработки (странно, но обработаем)
