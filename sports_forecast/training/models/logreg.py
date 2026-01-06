@@ -6,6 +6,11 @@ Logistic Regression модель с поддержкой L1/L2 регуляри�
 - Baseline для сравнения
 - Мета-модель в стэкинге
 
+Важно:
+    LogReg требует предобработки данных:
+    - StandardScaler для числовых фичей
+    - OneHotEncoder для категориальных фичей
+
 Примеры:
     >>> logreg = LogRegModel(name="logreg", config=cfg)
     >>> logreg.fit(X_train, y_train)
@@ -19,7 +24,9 @@ from typing import Any
 
 import pandas as pd
 from omegaconf import DictConfig
+from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from sports_forecast.training.base import BaseSingleModel
 from sports_forecast.utils.log_config import get_logger
@@ -89,6 +96,10 @@ class LogRegModel(BaseSingleModel):
 
         super().__init__(name=name, config=config or {}, params=params)
 
+        # Храним имена числовых и категориальных фичей
+        self.numeric_features_: list[str] = []
+        self.categorical_features_: list[str] = []
+
         logger.info("Инициализирован LogRegModel с параметрами: %s", self.params)
 
     def _create_model(self) -> LogisticRegression:
@@ -99,6 +110,98 @@ class LogRegModel(BaseSingleModel):
             Экземпляр LogisticRegression с параметрами из self.params.
         """
         return LogisticRegression(**self.params)
+
+    def _preprocess_data(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series | None = None,
+        fit: bool = True,
+    ) -> tuple[pd.DataFrame, pd.Series | None]:
+        """
+        Предобработка данных для LogisticRegression.
+
+        Применяет:
+        - StandardScaler для числовых фичей
+        - OneHotEncoder для категориальных фичей
+
+        Args:
+            X: Фичи.
+            y: Таргет (для fit=True).
+            fit: Если True, обучаем preprocessor. Если False, только трансформируем.
+
+        Returns:
+            Кортеж (X_transformed, y).
+
+        Examples:
+            >>> X_transformed, y = model._preprocess_data(X_train, y_train, fit=True)
+        """
+        if fit:
+            # Определяем типы фичей
+            self.numeric_features_ = [col for col in X.columns if X[col].dtype != "object"]
+            self.categorical_features_ = [col for col in X.columns if X[col].dtype == "object"]
+
+            logger.debug(
+                "LogReg preprocessing: %d числовых, %d категориальных фичей",
+                len(self.numeric_features_),
+                len(self.categorical_features_),
+            )
+
+            # Создаём preprocessor
+            transformers = []
+
+            if self.numeric_features_:
+                transformers.append(("num", StandardScaler(), self.numeric_features_))
+
+            if self.categorical_features_:
+                transformers.append(
+                    (
+                        "cat",
+                        OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+                        self.categorical_features_,
+                    )
+                )
+
+            if not transformers:
+                # Нет фичей для обработки (странно, но обработаем)
+                logger.warning("LogReg: не найдено фичей для предобработки!")
+                return X, y
+
+            self.preprocessor_ = ColumnTransformer(
+                transformers=transformers,
+                remainder="drop",  # Остальные колонки удаляем
+            )
+
+            # Обучаем preprocessor
+            X_transformed = self.preprocessor_.fit_transform(X)
+
+            logger.debug(
+                "LogReg: данные предобработаны, shape: %s -> %s", X.shape, X_transformed.shape
+            )
+
+        else:
+            # Только трансформируем
+            if self.preprocessor_ is None:
+                raise ValueError("Preprocessor не обучен. Вызовите fit() сначала.")
+
+            X_transformed = self.preprocessor_.transform(X)
+
+        # Преобразуем обратно в DataFrame (для совместимости)
+        # Для LogisticRegression это необязательно, но для других моделей может быть полезно
+        if hasattr(self.preprocessor_, "get_feature_names_out"):
+            feature_names = self.preprocessor_.get_feature_names_out()
+            X_transformed = pd.DataFrame(
+                X_transformed,
+                columns=feature_names,
+                index=X.index,
+            )
+        else:
+            # Fallback (для старых версий sklearn)
+            X_transformed = pd.DataFrame(
+                X_transformed,
+                index=X.index,
+            )
+
+        return X_transformed, y
 
     def _fit_implementation(
         self,
@@ -148,6 +251,13 @@ class LogRegModel(BaseSingleModel):
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
         joblib.dump(self.model_, save_path)
+
+        # Сохраняем preprocessor отдельно (если есть)
+        if self.preprocessor_ is not None:
+            preprocessor_path = path.parent / f"{path.stem}_{version}_preprocessor.pkl"
+            joblib.dump(self.preprocessor_, preprocessor_path)
+            logger.debug("Preprocessor сохранён: %s", preprocessor_path)
+
         logger.info(
             "LogisticRegression модель '%s' (%s) сохранена: %s", self.name, version, save_path
         )
@@ -172,6 +282,12 @@ class LogRegModel(BaseSingleModel):
 
         self.model_ = joblib.load(path)
         self.is_fitted_ = True
+
+        # Загружаем preprocessor (если есть)
+        preprocessor_path = path.parent / f"{path.stem}_preprocessor.pkl"
+        if preprocessor_path.exists():
+            self.preprocessor_ = joblib.load(preprocessor_path)
+            logger.debug("Preprocessor загружен из: %s", preprocessor_path)
 
         logger.info("LogisticRegression модель '%s' загружена из: %s", self.name, path)
         return self

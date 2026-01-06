@@ -17,6 +17,7 @@ import pytest
 from sports_forecast.training.calibration import ModelCalibrator
 from sports_forecast.training.models.catboost import CatBoostModel
 from sports_forecast.training.models.dummy import DummyModel
+from sports_forecast.training.models.lgbm import LGBMModel
 from sports_forecast.training.models.logreg import LogRegModel
 from sports_forecast.training.optimization.tscv import TimeSeriesCrossValidator
 
@@ -205,13 +206,103 @@ def test_catboost_model_feature_importance(sample_data):
 def test_logreg_model_fit_predict(sample_data):
     """Тест обучения и предсказания LogRegModel."""
     X, y = sample_data
-    model = LogRegModel(params={"max_iter": 100})
+    model = LogRegModel(params={"max_iter": 100, "solver": "lbfgs"})
 
     model.fit(X, y)
     assert model.is_fitted()
 
     proba = model.predict_proba(X)
     assert proba.shape == (len(X), 2)
+
+
+def test_logreg_preprocessing_numeric_only(sample_data):
+    """Тест preprocessing LogReg с только числовыми фичами."""
+    X, y = sample_data
+    model = LogRegModel(params={"max_iter": 100})
+
+    # Обучение
+    model.fit(X, y)
+
+    # Preprocessor должен быть создан
+    assert model.preprocessor_ is not None
+    assert len(model.numeric_features_) == X.shape[1]
+    assert len(model.categorical_features_) == 0
+
+
+def test_logreg_preprocessing_with_categorical(sample_data_with_cat):
+    """Тест preprocessing LogReg с категориальными фичами."""
+    X, y = sample_data_with_cat
+    model = LogRegModel(params={"max_iter": 100})
+
+    # Обучение
+    model.fit(X, y)
+
+    # Preprocessor должен быть создан
+    assert model.preprocessor_ is not None
+    assert len(model.numeric_features_) == 2
+    assert len(model.categorical_features_) == 2
+
+    # Предсказание должно работать (даже с новыми категориями)
+    X_test = X.copy()
+    X_test.loc[0, "f_cat_1"] = "NEW_CATEGORY"  # Новая категория
+
+    proba = model.predict_proba(X_test)
+    assert proba.shape == (len(X_test), 2)
+
+
+def test_logreg_save_load_with_preprocessor(sample_data_with_cat, tmp_path):
+    """Тест сохранения/загрузки LogReg с preprocessor."""
+    X, y = sample_data_with_cat
+    model = LogRegModel(params={"max_iter": 100})
+
+    # Обучение
+    model.fit(X, y)
+    proba_before = model.predict_proba(X)
+
+    # Сохранение
+    save_path = tmp_path / "logreg_test"
+    model.save(save_path, version="shadow")
+
+    # Загрузка в новую модель
+    model_loaded = LogRegModel()
+    model_loaded.load(save_path.parent / "logreg_test_shadow.pkl")
+
+    # Preprocessor должен быть загружен
+    assert model_loaded.preprocessor_ is not None
+
+    # Предсказания должны совпадать
+    proba_after = model_loaded.predict_proba(X)
+    np.testing.assert_array_almost_equal(proba_before, proba_after)
+
+
+# ==================== LGBMModel Tests ====================
+
+
+def test_lgbm_preprocessing_converts_object_to_category(sample_data_with_cat):
+    """Тест что LGBM конвертирует object -> category."""
+    X, y = sample_data_with_cat
+    model = LGBMModel(params={"n_estimators": 10, "verbose": -1})
+
+    # Обучение
+    model.fit(X, y)
+
+    # Категориальные фичи должны быть найдены
+    assert len(model.cat_features_) == 2
+
+
+def test_lgbm_fit_predict(sample_data_with_cat):
+    """Тест обучения и предсказания LGBMModel."""
+    X, y = sample_data_with_cat
+    model = LGBMModel(params={"n_estimators": 10, "verbose": -1})
+
+    # Обучение
+    model.fit(X, y)
+    assert model.is_fitted()
+
+    # Предсказание
+    proba = model.predict_proba(X)
+    assert proba.shape == (len(X), 2)
+    assert np.allclose(proba.sum(axis=1), 1.0)
 
 
 # ==================== ModelCalibrator Tests ====================

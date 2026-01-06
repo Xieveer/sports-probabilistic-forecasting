@@ -3,9 +3,16 @@ LightGBM модель с поддержкой TSCV, Optuna, калибровки
 
 Быстрая альтернатива CatBoost для экспериментов.
 Поддерживает:
-- Categorical features (через category dtype)
+- Categorical features (через category dtype или индексы)
 - Early stopping
 - Feature importance
+
+Важно:
+    LightGBM требует, чтобы категориальные фичи были либо:
+    - С типом 'category' (dtype='category')
+    - Указаны в categorical_feature параметре
+
+    Автоматически конвертируем object -> category в _preprocess_data().
 
 Примеры:
     >>> lgbm = LGBMModel(name="lgbm", config=cfg)
@@ -104,6 +111,38 @@ class LGBMModel(BaseSingleModel):
             Экземпляр LGBMClassifier с параметрами из self.params.
         """
         return LGBMClassifier(**self.params)
+
+    def _preprocess_data(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series | None = None,
+        fit: bool = True,
+    ) -> tuple[pd.DataFrame, pd.Series | None]:
+        """
+        Предобработка данных для LightGBM.
+
+        Конвертирует object dtype -> category dtype для категориальных фичей.
+        LightGBM требует, чтобы категории были явно указаны.
+
+        Args:
+            X: Фичи.
+            y: Таргет.
+            fit: Если True, определяем категориальные фичи. Если False, применяем.
+
+        Returns:
+            Кортеж (X_transformed, y).
+
+        Examples:
+            >>> X_transformed, y = model._preprocess_data(X_train, y_train, fit=True)
+        """
+        X = X.copy()
+
+        # Конвертируем object -> category
+        for col in X.columns:
+            if X[col].dtype == "object":
+                X[col] = X[col].astype("category")
+
+        return X, y
 
     def _fit_implementation(
         self,

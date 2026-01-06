@@ -210,6 +210,9 @@ class BaseSingleModel(BaseModel):
         # Категориальные фичи (для CatBoost, LightGBM)
         self.cat_features_: list[str] = []
 
+        # Preprocessor для моделей, требующих предобработки (LogReg, Neural Networks)
+        self.preprocessor_: Any = None
+
         logger.debug("Инициализирована модель '%s' с параметрами: %s", name, self.params)
 
     @abstractmethod
@@ -255,6 +258,41 @@ class BaseSingleModel(BaseModel):
         """
         raise NotImplementedError
 
+    def _preprocess_data(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series | None = None,
+        fit: bool = True,
+    ) -> tuple[pd.DataFrame, pd.Series | None]:
+        """
+        Предобработка данных перед обучением/предсказанием.
+
+        По умолчанию ничего не делает (CatBoost, Dummy).
+        Переопределяется в наследниках для моделей, требующих
+        предобработки (LogReg, Neural Networks).
+
+        Args:
+            X: Фичи.
+            y: Таргет (для fit=True).
+            fit: Если True, обучаем preprocessor. Если False, только трансформируем.
+
+        Returns:
+            Кортеж (X_transformed, y).
+
+        Examples:
+            >>> # CatBoostModel - ничего не делает
+            >>> def _preprocess_data(self, X, y=None, fit=True):
+            ...     return X, y
+            >>>
+            >>> # LogRegModel - StandardScaler + OneHotEncoder
+            >>> def _preprocess_data(self, X, y=None, fit=True):
+            ...     if fit:
+            ...         self.preprocessor_.fit(X)
+            ...     X_transformed = self.preprocessor_.transform(X)
+            ...     return X_transformed, y
+        """
+        return X, y
+
     def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs) -> BaseSingleModel:
         """
         Обучить модель на данных.
@@ -278,15 +316,27 @@ class BaseSingleModel(BaseModel):
             self.model_ = self._create_model()
             logger.debug("Создан экземпляр модели: %s", type(self.model_).__name__)
 
-        # Определяем категориальные фичи (для CatBoost, LightGBM)
-        if "cat_features" not in kwargs:
-            self.cat_features_ = [col for col in X.columns if X[col].dtype == "object"]
-            if self.cat_features_:
-                kwargs["cat_features"] = self.cat_features_
+        # Определяем категориальные фичи (для CatBoost)
+        # Для LightGBM это делается в _preprocess_data()
+        if "cat_features" not in kwargs and "categorical_feature" not in kwargs:
+            cat_cols = [col for col in X.columns if X[col].dtype == "object"]
+            if cat_cols:
+                self.cat_features_ = cat_cols
+                # CatBoost использует 'cat_features', LightGBM - 'categorical_feature'
+                # Определяем тип модели по классу
+                if hasattr(self, "model_") and self.model_ is not None:
+                    model_type = type(self.model_).__name__
+                    if "CatBoost" in model_type:
+                        kwargs["cat_features"] = self.cat_features_
+                    elif "LGBM" in model_type:
+                        kwargs["categorical_feature"] = self.cat_features_
                 logger.debug("Найдены категориальные фичи: %s", self.cat_features_)
 
+        # Предобработка данных (переопределяется в наследниках)
+        X_processed, y_processed = self._preprocess_data(X, y, fit=True)
+
         # Обучение
-        self._fit_implementation(X, y, **kwargs)
+        self._fit_implementation(X_processed, y_processed, **kwargs)
 
         self.is_fitted_ = True
         logger.info("Модель '%s' успешно обучена", self.name)
@@ -316,7 +366,10 @@ class BaseSingleModel(BaseModel):
                 f"Модель '{self.name}' не обучена. Вызовите fit() перед predict_proba()"
             )
 
-        proba = self.model_.predict_proba(X)
+        # Предобработка данных (если нужна)
+        X_processed, _ = self._preprocess_data(X, y=None, fit=False)
+
+        proba = self.model_.predict_proba(X_processed)
 
         # Для sklearn моделей может вернуться только один столбец для бинарной классификации
         if proba.ndim == 1:
@@ -359,6 +412,14 @@ class BaseSingleModel(BaseModel):
 
             joblib.dump(self.model_, save_path)
 
+        # Сохраняем preprocessor отдельно (если есть)
+        if self.preprocessor_ is not None:
+            import joblib
+
+            preprocessor_path = path.parent / f"{path.name}_{version}_preprocessor.pkl"
+            joblib.dump(self.preprocessor_, preprocessor_path)
+            logger.debug("Preprocessor сохранён: %s", preprocessor_path)
+
         logger.info("Модель '%s' (%s) сохранена: %s", self.name, version, save_path)
 
     def load(self, path: Path) -> BaseSingleModel:
@@ -393,6 +454,14 @@ class BaseSingleModel(BaseModel):
             import joblib
 
             self.model_ = joblib.load(path)
+
+        # Загружаем preprocessor (если есть)
+        preprocessor_path = path.parent / f"{path.stem}_preprocessor.pkl"
+        if preprocessor_path.exists():
+            import joblib
+
+            self.preprocessor_ = joblib.load(preprocessor_path)
+            logger.debug("Preprocessor загружен из: %s", preprocessor_path)
 
         self.is_fitted_ = True
         logger.info("Модель '%s' загружена из: %s", self.name, path)
