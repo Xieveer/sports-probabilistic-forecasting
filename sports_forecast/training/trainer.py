@@ -521,7 +521,12 @@ class ModelTrainer:
         # Вычисляем метрики prod модели на test set
         from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
 
-        y_pred_proba = model.predict_proba(X_test)
+        # Используем калиброванную модель если она есть
+        if hasattr(model, "calibrated_model_") and model.calibrated_model_ is not None:
+            X_processed, _ = model._preprocess_data(X_test, y=None, fit=False)
+            y_pred_proba = model.calibrated_model_.predict_proba(X_processed)
+        else:
+            y_pred_proba = model.predict_proba(X_test)
 
         prod_metrics = {
             "logloss": log_loss(y_test, y_pred_proba),

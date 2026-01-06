@@ -377,11 +377,9 @@ class BaseSingleModel(BaseModel):
         # Предобработка данных (если нужна)
         X_processed, _ = self._preprocess_data(X, y=None, fit=False)
 
-        # Используем калиброванную модель если она есть
-        if hasattr(self, "calibrated_model_") and self.calibrated_model_ is not None:
-            proba = self.calibrated_model_.predict_proba(X_processed)
-        else:
-            proba = self.model_.predict_proba(X_processed)
+        # ВАЖНО: НЕ используем calibrated_model_ здесь чтобы избежать рекурсии!
+        # CalibratedClassifierCV сам вызовет этот метод predict_proba
+        proba = self.model_.predict_proba(X_processed)
 
         # Для sklearn моделей может вернуться только один столбец для бинарной классификации
         if proba.ndim == 1:
