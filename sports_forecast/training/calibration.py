@@ -156,7 +156,10 @@ class ModelCalibrator:
         # Проверяем, что калибровка действительно улучшила ECE
         if ece_after < ece_before:
             logger.info("✓ Калибровка улучшила ECE: %.4f -> %.4f", ece_before, ece_after)
-            return calibrated_model, True, ece_before, ece_after
+            # Сохраняем калиброванную модель как атрибут оригинальной модели
+            model.calibrated_model_ = calibrated_model
+            model.is_calibrated_ = True
+            return model, True, ece_before, ece_after
         logger.warning(
             "⚠ Калибровка НЕ улучшила ECE: %.4f -> %.4f. Используем исходную модель.",
             ece_before,

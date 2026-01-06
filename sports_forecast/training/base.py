@@ -377,7 +377,11 @@ class BaseSingleModel(BaseModel):
         # Предобработка данных (если нужна)
         X_processed, _ = self._preprocess_data(X, y=None, fit=False)
 
-        proba = self.model_.predict_proba(X_processed)
+        # Используем калиброванную модель если она есть
+        if hasattr(self, "calibrated_model_") and self.calibrated_model_ is not None:
+            proba = self.calibrated_model_.predict_proba(X_processed)
+        else:
+            proba = self.model_.predict_proba(X_processed)
 
         # Для sklearn моделей может вернуться только один столбец для бинарной классификации
         if proba.ndim == 1:
@@ -428,6 +432,14 @@ class BaseSingleModel(BaseModel):
             joblib.dump(self.preprocessor_, preprocessor_path)
             logger.debug("Preprocessor сохранён: %s", preprocessor_path)
 
+        # Сохраняем calibrated_model отдельно (если есть)
+        if hasattr(self, "calibrated_model_") and self.calibrated_model_ is not None:
+            import joblib
+
+            calibrated_path = path.parent / f"{path.name}_{version}_calibrated.pkl"
+            joblib.dump(self.calibrated_model_, calibrated_path)
+            logger.debug("Calibrated model сохранён: %s", calibrated_path)
+
         logger.info("Модель '%s' (%s) сохранена: %s", self.name, version, save_path)
 
     def load(self, path: Path) -> BaseSingleModel:
@@ -470,6 +482,15 @@ class BaseSingleModel(BaseModel):
 
             self.preprocessor_ = joblib.load(preprocessor_path)
             logger.debug("Preprocessor загружен из: %s", preprocessor_path)
+
+        # Загружаем calibrated_model (если есть)
+        calibrated_path = path.parent / f"{path.stem}_calibrated.pkl"
+        if calibrated_path.exists():
+            import joblib
+
+            self.calibrated_model_ = joblib.load(calibrated_path)
+            self.is_calibrated_ = True
+            logger.debug("Calibrated model загружен из: %s", calibrated_path)
 
         self.is_fitted_ = True
         logger.info("Модель '%s' загружена из: %s", self.name, path)
