@@ -40,6 +40,7 @@ def wide_to_long(
     player_name: str = "pl",
     opponent_name: str = "opp",
     context_columns: list[str] | None = None,
+    player_id_attr: str | None = None,
 ) -> pd.DataFrame:
     """
     Трансформация wide → long format.
@@ -54,25 +55,33 @@ def wide_to_long(
         opponent_name: Имя для колонки оппонента (default: "opp")
         context_columns: Колонки контекста (tour_num, weekday, etc.), которые
                         копируются в обе строки без изменений
+        player_id_attr: ОБЯЗАТЕЛЬНЫЙ атрибут для идентификации участника.
+                       Это основной идентификатор (например, "short_name_en" для ника игрока,
+                       "name" для имени теннисиста, "team" для футбольной команды).
+                       Должен существовать как home_{attr} и away_{attr} в исходных данных.
+                       Если не указан, выбрасывается ошибка.
 
     Returns:
         Long format датафрейм (в 2 раза больше строк)
+
+    Raises:
+        ValueError: Если player_id_attr не указан или отсутствует в данных
 
     Examples:
         >>> df = pd.DataFrame({
         ...     'id': [1],
         ...     'datetime': ['2024-01-01'],
-        ...     'home_name': ['Team A'],
-        ...     'away_name': ['Team B'],
+        ...     'home_short_name_en': ['ovi'],
+        ...     'away_short_name_en': ['iceman'],
         ...     'home_points': [10],
         ...     'away_points': [8],
         ...     'tour_num': [5]
         ... })
-        >>> long = wide_to_long(df, context_columns=['tour_num'])
+        >>> long = wide_to_long(df, player_id_attr='short_name_en', context_columns=['tour_num'])
         >>> len(long)
         2
         >>> long.loc[long['side'] == 'h', 'pl'].iloc[0]
-        'Team A'
+        'ovi'
     """
     if context_columns is None:
         context_columns = []
@@ -133,46 +142,41 @@ def wide_to_long(
     # Объединяем
     long = pd.concat([home_rows, away_rows], ignore_index=True)
 
-    # Создаем алиасы для колонок игроков (для генераторов фичей)
-    # Ищем первую колонку с идентификатором игрока
-    # Возможные варианты: pl_name, pl_short_name_en, pl_team, etc.
-    if "pl" not in long.columns:
-        # Ищем колонку с именем игрока (приоритет: name > short_name_en > team)
-        player_id_candidates = [
-            f"{player_name}_name",
-            f"{player_name}_short_name_en",
-            f"{player_name}_team",
-        ]
-        for candidate in player_id_candidates:
-            if candidate in long.columns:
-                long["pl"] = long[candidate]
-                logger.debug(f"Используем {candidate} как идентификатор игрока (pl)")
-                break
-    
-    if "opp" not in long.columns:
-        opponent_id_candidates = [
-            f"{opponent_name}_name",
-            f"{opponent_name}_short_name_en",
-            f"{opponent_name}_team",
-        ]
-        for candidate in opponent_id_candidates:
-            if candidate in long.columns:
-                long["opp"] = long[candidate]
-                logger.debug(f"Используем {candidate} как идентификатор оппонента (opp)")
-                break
+    # Создаем алиасы pl/opp для основного идентификатора участника
+    # player_id_attr должен быть ОБЯЗАТЕЛЬНО указан в конфиге
+    if player_id_attr is None:
+        raise ValueError(
+            "Параметр player_id_attr обязателен для wide_to_long. "
+            "Укажите атрибут для идентификации участника (например, 'short_name_en', 'name', 'team')"
+        )
 
-    # Если имен игроков нет, создаем синтетические идентификаторы
-    # на основе id матча (для группировки по истории команды)
-    if "pl" not in long.columns and "id" in long.columns:
-        # Для home строк: pl="h_{id}", opp="a_{id}"
-        # Для away строк: pl="a_{id}", opp="h_{id}"
-        long["pl"] = long.apply(
-            lambda row: f"{'h' if row['side'] == 'h' else 'a'}_{row['id']}", axis=1
+    # Проверяем наличие колонок с идентификатором
+    pl_id_col = f"{player_name}_{player_id_attr}"
+    opp_id_col = f"{opponent_name}_{player_id_attr}"
+
+    if pl_id_col not in long.columns:
+        raise ValueError(
+            f"Колонка '{pl_id_col}' не найдена в long format. "
+            f"Убедитесь, что '{home_prefix}{player_id_attr}' и '{away_prefix}{player_id_attr}' "
+            f"присутствуют в исходном wide датафрейме. "
+            f"Доступные колонки: {list(long.columns)}"
         )
-        long["opp"] = long.apply(
-            lambda row: f"{'a' if row['side'] == 'h' else 'h'}_{row['id']}", axis=1
+
+    if opp_id_col not in long.columns:
+        raise ValueError(
+            f"Колонка '{opp_id_col}' не найдена в long format. "
+            f"Убедитесь, что '{home_prefix}{player_id_attr}' и '{away_prefix}{player_id_attr}' "
+            f"присутствуют в исходном wide датафрейме."
         )
-        logger.debug("Созданы синтетические идентификаторы pl/opp на основе id матча")
+
+    # Создаем алиасы для удобства использования генераторами
+    long["pl"] = long[pl_id_col]
+    long["opp"] = long[opp_id_col]
+
+    logger.debug(
+        f"Создали алиасы pl/opp на основе атрибута '{player_id_attr}' "
+        f"({pl_id_col}, {opp_id_col})"
+    )
 
     # Сортируем по datetime и id для правильной последовательности
     if "datetime" in long.columns and "id" in long.columns:

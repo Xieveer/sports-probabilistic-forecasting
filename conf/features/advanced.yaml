@@ -19,6 +19,14 @@ long_format_context_columns:
   - "weekday"
   - "hour"
 
+# ОБЯЗАТЕЛЬНЫЙ атрибут для идентификации участника (игрока/команды)
+# Это основной идентификатор участника:
+#   - "short_name_en" для ников в киберспорте (ovi, iceman, griezmann)
+#   - "name" для имён в теннисе (Nadal, Federer)
+#   - "team" для команд в футболе (Barcelona, Real Madrid)
+# Должен существовать как home_{attr} и away_{attr} в исходных данных
+player_id_attr: "short_name_en"
+
 # Генераторы фичей
 generators:
   # 1. Player Form - создает match_state и базовые индикаторы
