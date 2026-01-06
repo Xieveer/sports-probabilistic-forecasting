@@ -18,6 +18,7 @@ ModelTrainer - главный оркестратор обучения модел
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -234,27 +235,190 @@ class ModelTrainer:
             n_splits=ensemble_config.get("tscv", {}).get("n_splits", 4),
         )
 
-    def train_single(
+    def train_tournament(
+        self,
+        tournament: str,
+        models: list[str] | None = None,
+        ensembles: list[str] | None = None,
+        use_optuna: bool = False,
+        use_calibration: bool = True,
+    ) -> dict[str, bool]:
+        """
+        Обучить все модели для турнира с иерархическим MLflow логированием.
+
+        Создаёт Parent Run для турнира и обучает все модели как Nested Runs.
+
+        Args:
+            tournament: Название турнира.
+            models: Список моделей для обучения (default: ["dummy", "catboost", "lgbm", "logreg"]).
+            ensembles: Список ансамблей для обучения (default: ["stacking_win"]).
+            use_optuna: Использовать Optuna для оптимизации.
+            use_calibration: Использовать калибровку.
+
+        Returns:
+            Словарь {model_name: success}.
+
+        Examples:
+            >>> trainer.train_tournament("uel_kz_1")
+            >>> trainer.train_tournament("uel_kz_1", models=["catboost", "lgbm"])
+        """
+        if models is None:
+            models = ["dummy", "catboost", "lgbm", "logreg"]
+        if ensembles is None:
+            ensembles = ["stacking_win"]
+
+        logger.info("=" * 80)
+        logger.info("ОБУЧЕНИЕ ТУРНИРА С MLFLOW PARENT RUN")
+        logger.info("Tournament: %s", tournament)
+        logger.info("Models: %s", ", ".join(models))
+        logger.info("Ensembles: %s", ", ".join(ensembles))
+        logger.info("=" * 80)
+
+        # Определяем experiment (по типу таргета)
+        # TODO: извлекать target_type из конфига модели
+        experiment_name = "sports_forecast_match_winner"
+        mlflow.set_experiment(experiment_name)
+
+        # Parent Run Name
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        parent_run_name = f"{tournament}_match_winner_{timestamp}"
+
+        results = {}
+        models_summary = []
+
+        # Создаём Parent Run
+        with mlflow.start_run(run_name=parent_run_name) as parent_run:
+            logger.info("MLflow Parent Run: %s", parent_run.info.run_id)
+
+            # Логируем общую информацию в Parent Run
+            mlflow.set_tag("tournament", tournament)
+            mlflow.set_tag("target_type", "match_winner")
+            mlflow.set_tag("run_type", "parent")
+            mlflow.log_param("timestamp", timestamp)
+            mlflow.log_param("n_models", len(models))
+            mlflow.log_param("n_ensembles", len(ensembles))
+
+            # Обучаем все single модели
+            for model_name in models:
+                logger.info("")
+                logger.info("=" * 80)
+                logger.info("Обучение модели: %s", model_name)
+                logger.info("=" * 80)
+
+                success, shadow_metrics, prod_metrics = self._train_single_internal(
+                    model_name=model_name,
+                    tournament=tournament,
+                    use_optuna=use_optuna,
+                    use_calibration=use_calibration,
+                    parent_run_id=parent_run.info.run_id,
+                )
+
+                results[model_name] = success
+
+                if success and prod_metrics:
+                    models_summary.append(
+                        {
+                            "model": model_name,
+                            "type": "single",
+                            "logloss": prod_metrics.get("logloss", 0),
+                            "auc": prod_metrics.get("auc", 0),
+                            "accuracy": prod_metrics.get("accuracy", 0),
+                            "brier": prod_metrics.get("brier", 0),
+                        }
+                    )
+
+            # Обучаем все ансамбли
+            for ensemble_name in ensembles:
+                logger.info("")
+                logger.info("=" * 80)
+                logger.info("Обучение ансамбля: %s", ensemble_name)
+                logger.info("=" * 80)
+
+                success, shadow_metrics, prod_metrics = self._train_ensemble_internal(
+                    ensemble_name=ensemble_name,
+                    tournament=tournament,
+                    parent_run_id=parent_run.info.run_id,
+                )
+
+                results[ensemble_name] = success
+
+                if success and prod_metrics:
+                    models_summary.append(
+                        {
+                            "model": ensemble_name,
+                            "type": "ensemble",
+                            "logloss": prod_metrics.get("logloss", 0),
+                            "auc": prod_metrics.get("auc", 0),
+                            "accuracy": prod_metrics.get("accuracy", 0),
+                            "brier": prod_metrics.get("brier", 0),
+                        }
+                    )
+
+            # Логируем сравнительную таблицу в Parent Run
+            if models_summary:
+                summary_df = pd.DataFrame(models_summary)
+                summary_df = summary_df.sort_values("logloss")
+
+                # Сохраняем как артефакт
+                summary_path = self.models_root / tournament / "models_comparison.csv"
+                summary_path.parent.mkdir(parents=True, exist_ok=True)
+                summary_df.to_csv(summary_path, index=False)
+                mlflow.log_artifact(str(summary_path), "comparison")
+
+                # Логируем лучшую модель
+                best_model = summary_df.iloc[0]
+                mlflow.set_tag("best_model", best_model["model"])
+                mlflow.log_metric("best_logloss", best_model["logloss"])
+                mlflow.log_metric("best_auc", best_model["auc"])
+
+                logger.info("")
+                logger.info("=" * 80)
+                logger.info("СРАВНЕНИЕ МОДЕЛЕЙ (по LogLoss):")
+                logger.info("=" * 80)
+                for _, row in summary_df.iterrows():
+                    logger.info(
+                        "  %s (%s): LogLoss=%.4f, AUC=%.4f, Acc=%.4f",
+                        row["model"],
+                        row["type"],
+                        row["logloss"],
+                        row["auc"],
+                        row["accuracy"],
+                    )
+                logger.info("=" * 80)
+                logger.info(
+                    "✓ Лучшая модель: %s (LogLoss=%.4f)", best_model["model"], best_model["logloss"]
+                )
+
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("✓ ОБУЧЕНИЕ ТУРНИРА ЗАВЕРШЕНО")
+        logger.info("=" * 80)
+
+        return results
+
+    def _train_single_internal(
         self,
         model_name: str,
         tournament: str,
         use_optuna: bool = False,
         use_calibration: bool = True,
-    ) -> bool:
+        parent_run_id: str | None = None,
+    ) -> tuple[bool, dict | None, dict | None]:
         """
-        Обучить одиночную модель для турнира.
+        Внутренний метод обучения одиночной модели.
 
         Args:
             model_name: Название модели (catboost, lgbm, logreg, dummy).
             tournament: Название турнира.
             use_optuna: Использовать Optuna для оптимизации.
             use_calibration: Использовать калибровку.
+            parent_run_id: ID parent run для nested logging (опционально).
 
         Returns:
-            True если успешно, False иначе.
+            Tuple[success, shadow_metrics, prod_metrics].
 
         Examples:
-            >>> trainer.train_single("catboost", "uel_kz_1", use_optuna=True)
+            >>> success, shadow, prod = trainer._train_single_internal("catboost", "uel_kz_1")
         """
         logger.info("=" * 60)
         logger.info("ОБУЧЕНИЕ ОДИНОЧНОЙ МОДЕЛИ")
@@ -266,14 +430,14 @@ class ModelTrainer:
         model_config_path = self.project_root / "conf" / "model" / "single" / f"{model_name}.yaml"
         if not model_config_path.exists():
             logger.error("Конфиг модели не найден: %s", model_config_path)
-            return False
+            return False, None, None
 
         model_config = OmegaConf.load(model_config_path)
 
         # Загружаем датасет
         result = self.load_dataset_and_target(tournament, model_config)
         if result is None:
-            return False
+            return False, None, None
 
         X, y, feature_names = result
 
@@ -372,24 +536,88 @@ class ModelTrainer:
         logger.info("  Accuracy: %.4f", prod_metrics["accuracy"])
         logger.info("  Brier:    %.4f", prod_metrics["brier"])
 
+        # Подготавливаем shadow метрики (агрегированные TSCV)
+        shadow_metrics = {
+            "logloss": tscv_results.get("mean_logloss", 0),
+            "auc": tscv_results.get("mean_auc", 0),
+            "accuracy": tscv_results.get("mean_accuracy", 0),
+            "brier": tscv_results.get("mean_brier", 0),
+            "ece": tscv_results.get("mean_ece", 0),
+            "std_logloss": tscv_results.get("std_logloss", 0),
+            "std_auc": tscv_results.get("std_auc", 0),
+            "std_accuracy": tscv_results.get("std_accuracy", 0),
+            "std_brier": tscv_results.get("std_brier", 0),
+            "std_ece": tscv_results.get("std_ece", 0),
+        }
+
         # MLflow логирование
-        self._log_to_mlflow_single(
-            model_name=model_name,
-            tournament=tournament,
-            tscv_results=tscv_results,
-            model_config=model_config,
-            feature_names=feature_names,
-            is_calibrated=is_calibrated,
-            ece_before=ece_before,
-            ece_after=ece_after,
-            prod_metrics=prod_metrics,
-        )
+        if parent_run_id:
+            # Nested Run внутри Parent
+            self._log_to_mlflow_single_nested(
+                model_name=model_name,
+                tournament=tournament,
+                shadow_metrics=shadow_metrics,
+                prod_metrics=prod_metrics,
+                model_config=model_config,
+                feature_names=feature_names,
+                is_calibrated=is_calibrated,
+                ece_before=ece_before,
+                ece_after=ece_after,
+                parent_run_id=parent_run_id,
+            )
+        else:
+            # Старый способ (обратная совместимость)
+            self._log_to_mlflow_single(
+                model_name=model_name,
+                tournament=tournament,
+                tscv_results=tscv_results,
+                model_config=model_config,
+                feature_names=feature_names,
+                is_calibrated=is_calibrated,
+                ece_before=ece_before,
+                ece_after=ece_after,
+                prod_metrics=prod_metrics,
+            )
 
         logger.info("=" * 60)
         logger.info("✓ ОБУЧЕНИЕ ЗАВЕРШЕНО")
         logger.info("=" * 60)
 
-        return True
+        return True, shadow_metrics, prod_metrics
+
+    def train_single(
+        self,
+        model_name: str,
+        tournament: str,
+        use_optuna: bool = False,
+        use_calibration: bool = True,
+    ) -> bool:
+        """
+        Обучить одиночную модель для турнира (обратная совместимость).
+
+        Использует старый способ логирования (2 отдельных run'а: shadow + prod).
+        Для иерархического логирования используйте train_tournament().
+
+        Args:
+            model_name: Название модели (catboost, lgbm, logreg, dummy).
+            tournament: Название турнира.
+            use_optuna: Использовать Optuna для оптимизации.
+            use_calibration: Использовать калибровку.
+
+        Returns:
+            True если успешно, False иначе.
+
+        Examples:
+            >>> trainer.train_single("catboost", "uel_kz_1", use_optuna=True)
+        """
+        success, _, _ = self._train_single_internal(
+            model_name=model_name,
+            tournament=tournament,
+            use_optuna=use_optuna,
+            use_calibration=use_calibration,
+            parent_run_id=None,  # Старый способ логирования
+        )
+        return success
 
     def _log_to_mlflow_single(
         self,
@@ -488,6 +716,72 @@ class ModelTrainer:
 
             logger.info("MLflow: run зарегистрирован")
 
+    def _log_to_mlflow_single_nested(
+        self,
+        model_name: str,
+        tournament: str,
+        shadow_metrics: dict,
+        prod_metrics: dict,
+        model_config: DictConfig,
+        feature_names: list[str],
+        is_calibrated: bool,
+        ece_before: float | None,
+        ece_after: float | None,
+        parent_run_id: str,
+    ) -> None:
+        """
+        Логировать single модель как Nested Run внутри Parent Run.
+
+        Args:
+            model_name: Название модели.
+            tournament: Название турнира.
+            shadow_metrics: Shadow метрики (TSCV).
+            prod_metrics: Prod метрики (test set).
+            model_config: Конфигурация модели.
+            feature_names: Список фичей.
+            is_calibrated: Была ли применена калибровка.
+            ece_before: ECE до калибровки.
+            ece_after: ECE после калибровки.
+            parent_run_id: ID parent run.
+        """
+        # Создаём Nested Run для этой модели
+        with mlflow.start_run(run_name=model_name, nested=True):
+            # Теги
+            mlflow.set_tag("tournament", tournament)
+            mlflow.set_tag("model_name", model_name)
+            mlflow.set_tag("model_type", "single")
+            mlflow.set_tag("parent_run_id", parent_run_id)
+
+            # Параметры
+            mlflow.log_param("n_features", len(feature_names))
+
+            if hasattr(model_config, "params"):
+                for key, value in model_config.params.items():
+                    mlflow.log_param(f"model__{key}", value)
+
+            # Shadow метрики (TSCV)
+            for metric_name, value in shadow_metrics.items():
+                mlflow.log_metric(f"shadow_{metric_name}", value)
+
+            # Prod метрики (test set)
+            for metric_name, value in prod_metrics.items():
+                mlflow.log_metric(f"prod_{metric_name}", value)
+
+            # Калибровка
+            if is_calibrated:
+                mlflow.set_tag("calibrated", "true")
+                if ece_before is not None:
+                    mlflow.log_metric("ece_before_calibration", ece_before)
+                if ece_after is not None:
+                    mlflow.log_metric("ece_after_calibration", ece_after)
+            else:
+                mlflow.set_tag("calibrated", "false")
+
+            # Фичи
+            mlflow.log_text("\n".join(feature_names), "features.txt")
+
+            logger.info("MLflow: nested run зарегистрирован (%s)", model_name)
+
     def _log_to_mlflow_ensemble(
         self,
         ensemble_name: str,
@@ -560,13 +854,65 @@ class ModelTrainer:
 
         logger.info("MLflow: ансамбль зарегистрирован (shadow + prod)")
 
+    def _log_to_mlflow_ensemble_nested(
+        self,
+        ensemble_name: str,
+        tournament: str,
+        shadow_metrics: dict,
+        prod_metrics: dict,
+        ensemble_config: DictConfig,
+        feature_names: list[str],
+        parent_run_id: str,
+    ) -> None:
+        """
+        Логировать ансамбль как Nested Run внутри Parent Run.
+
+        Args:
+            ensemble_name: Название ансамбля.
+            tournament: Название турнира.
+            shadow_metrics: Shadow метрики (train set).
+            prod_metrics: Prod метрики (test set).
+            ensemble_config: Конфигурация ансамбля.
+            feature_names: Список фичей.
+            parent_run_id: ID parent run.
+        """
+        # Создаём Nested Run для ансамбля
+        with mlflow.start_run(run_name=ensemble_name, nested=True):
+            # Теги
+            mlflow.set_tag("tournament", tournament)
+            mlflow.set_tag("model_name", ensemble_name)
+            mlflow.set_tag("model_type", "ensemble")
+            mlflow.set_tag("ensemble_method", ensemble_config.get("ensemble_method", "stacking"))
+            mlflow.set_tag("parent_run_id", parent_run_id)
+
+            # Параметры
+            mlflow.log_param("n_features", len(feature_names))
+            mlflow.log_param("n_base_models", len(ensemble_config.base_models))
+            mlflow.log_param("base_models", ", ".join(ensemble_config.base_models))
+
+            # Shadow метрики
+            for metric_name, value in shadow_metrics.items():
+                mlflow.log_metric(f"shadow_{metric_name}", value)
+
+            # Prod метрики
+            for metric_name, value in prod_metrics.items():
+                mlflow.log_metric(f"prod_{metric_name}", value)
+
+            # Фичи
+            mlflow.log_text("\n".join(feature_names), "features.txt")
+
+            logger.info("MLflow: nested run зарегистрирован (%s)", ensemble_name)
+
     def train_ensemble(
         self,
         ensemble_name: str,
         tournament: str,
     ) -> bool:
         """
-        Обучить ансамбль для турнира.
+        Обучить ансамбль для турнира (обратная совместимость).
+
+        Использует старый способ логирования (2 отдельных run'а: shadow + prod).
+        Для иерархического логирования используйте train_tournament().
 
         Args:
             ensemble_name: Название ансамбля (stacking_win).
@@ -577,6 +923,33 @@ class ModelTrainer:
 
         Examples:
             >>> trainer.train_ensemble("stacking_win", "uel_kz_1")
+        """
+        success, _, _ = self._train_ensemble_internal(
+            ensemble_name=ensemble_name,
+            tournament=tournament,
+            parent_run_id=None,  # Старый способ логирования
+        )
+        return success
+
+    def _train_ensemble_internal(
+        self,
+        ensemble_name: str,
+        tournament: str,
+        parent_run_id: str | None = None,
+    ) -> tuple[bool, dict | None, dict | None]:
+        """
+        Внутренний метод обучения ансамбля.
+
+        Args:
+            ensemble_name: Название ансамбля (stacking_win).
+            tournament: Название турнира.
+            parent_run_id: ID parent run для nested logging (опционально).
+
+        Returns:
+            Tuple[success, shadow_metrics, prod_metrics].
+
+        Examples:
+            >>> success, shadow, prod = trainer._train_ensemble_internal("stacking_win", "uel_kz_1")
         """
         logger.info("=" * 60)
         logger.info("ОБУЧЕНИЕ АНСАМБЛЯ")
@@ -590,14 +963,14 @@ class ModelTrainer:
         )
         if not ensemble_config_path.exists():
             logger.error("Конфиг ансамбля не найден: %s", ensemble_config_path)
-            return False
+            return False, None, None
 
         ensemble_config = OmegaConf.load(ensemble_config_path)
 
         # Загружаем датасет
         result = self.load_dataset_and_target(tournament, ensemble_config)
         if result is None:
-            return False
+            return False, None, None
 
         X, y, feature_names = result
 
@@ -665,20 +1038,33 @@ class ModelTrainer:
         logger.info("  Brier:    %.4f", prod_metrics["brier"])
 
         # MLflow логирование
-        self._log_to_mlflow_ensemble(
-            ensemble_name=ensemble_name,
-            tournament=tournament,
-            shadow_metrics=shadow_metrics,
-            prod_metrics=prod_metrics,
-            ensemble_config=ensemble_config,
-            feature_names=feature_names,
-        )
+        if parent_run_id:
+            # Nested Run внутри Parent
+            self._log_to_mlflow_ensemble_nested(
+                ensemble_name=ensemble_name,
+                tournament=tournament,
+                shadow_metrics=shadow_metrics,
+                prod_metrics=prod_metrics,
+                ensemble_config=ensemble_config,
+                feature_names=feature_names,
+                parent_run_id=parent_run_id,
+            )
+        else:
+            # Старый способ (обратная совместимость)
+            self._log_to_mlflow_ensemble(
+                ensemble_name=ensemble_name,
+                tournament=tournament,
+                shadow_metrics=shadow_metrics,
+                prod_metrics=prod_metrics,
+                ensemble_config=ensemble_config,
+                feature_names=feature_names,
+            )
 
         logger.info("=" * 60)
         logger.info("✓ АНСАМБЛЬ ОБУЧЕН")
         logger.info("=" * 60)
 
-        return True
+        return True, shadow_metrics, prod_metrics
 
     def train_all_tournaments(
         self,
