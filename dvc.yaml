@@ -1,44 +1,64 @@
+# ============================================================================
+# DVC Pipeline: Data Processing
+# ============================================================================
+# Обработка данных от источников до готовых фичей
+# Запуск: dvc repro
+# Результат: data/processed/ готов для обучения моделей
+
 stages:
+  # Шаг 1: Ingest (source → raw)
+  # Читает CSV, разделяет на подтурниры, извлекает odds
   ingest:
     cmd: uv run python -m sports_forecast.data.ingest
     deps:
       - sports_forecast/data/ingest.py
-      - data/source
+      - conf/source/
+      - conf/bookmaker/
+      - data/source/
     outs:
-      - data/raw
+      - data/raw/:
+          cache: true
+          persist: true
 
+  # Шаг 2: Clean (raw → interim)
+  # Очистка, типизация, валидация, генерация derived_columns
   clean:
     cmd: uv run python -m sports_forecast.data.clean
     deps:
       - sports_forecast/data/clean.py
-      - conf/tournament
+      - conf/tournament/
       - conf/paths.yaml
-      - data/raw
+      - data/raw/
     outs:
-      - data/interim
+      - data/interim/:
+          cache: true
+          persist: true
 
+  # Шаг 3: Features (interim → processed)
+  # Генерация фичей для обучения
   features:
-    cmd: uv run python -m sports_forecast.features.features_build tournament=all model=is_home_win
+    cmd: uv run python -m sports_forecast.features.features_build tournament=all
     deps:
       - sports_forecast/features/features_build.py
-      - conf/features
+      - conf/features/
       - conf/paths.yaml
-      - data/interim
+      - data/interim/
     outs:
-      - data/processed
+      - data/processed/:
+          cache: true
+          persist: true
 
-  train:
-    cmd: uv run python -m sports_forecast.train tournament=uel_kz_1 market=total market_spec=total_over market_spec.line=6.5 recipe=total_baseline features=basic algorithm=dummy
-    deps:
-      - sports_forecast/train.py
-      - sports_forecast/training/
-      - conf/config.yaml
-      - conf/paths.yaml
-      - conf/tournament
-      - conf/algorithm
-      - conf/market
-      - conf/market_spec
-      - conf/recipe
-      - data/processed
-    outs:
-      - models
+# ============================================================================
+# ВАЖНО: Train НЕ включен в DVC pipeline
+# ============================================================================
+# Обучение моделей запускается отдельно через:
+#   uv run python -m sports_forecast.train <params>
+#
+# Модели сохраняются в:
+#   - models/ (локально, для DVC tracking)
+#   - MLflow (для версионирования и сравнения)
+#   - S3 (через DVC remote для продакшена)
+#
+# Для сохранения моделей в S3:
+#   dvc add models/
+#   dvc push
