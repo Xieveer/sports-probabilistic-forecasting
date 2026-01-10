@@ -1,4 +1,4 @@
-"""Модуль загрузки и первичной обработки данных матчей.
+"""Модуль загрузки и первичной обработки данных матчей (ingest layer).
 
 Этот модуль отвечает за преобразование исходных данных из CSV формата
 в оптимизированный Parquet формат для дальнейшей обработки.
@@ -6,17 +6,24 @@
 Основные функции:
     - Чтение CSV файлов с данными матчей
     - Конвертация в Parquet формат
+    - Извлечение и парсинг букмекерских коэффициентов (odds)
+    - Разделение турниров на подтурниры (если задано в конфиге)
     - Валидация структуры данных
     - Логирование процесса обработки
 
 Структура данных:
     - Входные данные: data/source/{tournament_name}/source.csv
-    - Выходные данные: data/raw/{tournament_name}/matches.parquet
+    - Выходные данные:
+        - data/raw/{tournament_name}/matches.parquet (основные данные)
+        - data/raw/{tournament_name}/odds.parquet (букмекерские коэффициенты, опционально)
+
+Конфигурация:
+    Управляется через Hydra-конфиги:
+        - conf/paths.yaml: пути к директориям
+        - conf/tournament/*.yaml: настройки турниров (odds, split_strategy)
 
 Attributes:
     PROJECT_ROOT (Path): Корневая директория проекта
-    DATA_SOURCE_DIR (Path): Директория с исходными данными
-    DATA_RAW_DIR (Path): Директория для сырых данных в Parquet формате
     logger (Logger): Логгер модуля
 
 Example:
@@ -29,6 +36,8 @@ Example:
         $ dvc repro ingest
 
 .. versionadded:: 0.1.0
+.. versionchanged:: 0.2.0
+    Добавлена поддержка извлечения букмекерских коэффициентов
 """
 
 from __future__ import annotations
@@ -38,7 +47,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import yaml
+from hydra import compose, initialize_config_dir
+from omegaconf import DictConfig
 
 from sports_forecast.utils.log_config import get_logger
 
@@ -46,81 +56,195 @@ from sports_forecast.utils.log_config import get_logger
 #: Корневая директория проекта
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-#: Директория с исходными CSV файлами
-DATA_SOURCE_DIR = PROJECT_ROOT / "data" / "source"
-
-#: Директория для сырых данных в Parquet формате
-DATA_RAW_DIR = PROJECT_ROOT / "data" / "raw"
-
 #: Логгер модуля для отслеживания процесса загрузки
 logger = get_logger(__name__)
 
-#: Директория с конфигурациями турниров
-CONF_TOURNAMENT_DIR = PROJECT_ROOT / "conf" / "tournament"
 
-
-def load_tournament_config(tournament_name: str) -> dict:
-    """Загрузить конфигурацию турнира из YAML файла.
+def load_tournament_config(tournament_name: str) -> DictConfig:
+    """Загрузить конфигурацию турнира через Hydra compose.
 
     Args:
         tournament_name: Название турнира (например: 'uel_kz_1', 'lp_ru')
 
     Returns:
-        Dict с конфигурацией турнира или пустой dict если файл не найден
+        DictConfig с конфигурацией турнира
+
+    Raises:
+        FileNotFoundError: Если конфиг турнира не найден
 
     Examples:
         >>> config = load_tournament_config('uel_kz_1')
-        >>> config['odds']['enabled']
+        >>> config.data.odds_feed.enabled
         True
-    """
-    config_path = CONF_TOURNAMENT_DIR / f"{tournament_name}.yaml"
 
-    if not config_path.exists():
-        logger.warning("Конфиг для турнира %s не найден: %s", tournament_name, config_path)
-        return {}
+    Note:
+        Использует Hydra compose вместо прямого чтения YAML для
+        обеспечения единого источника правды.
+    """
+    config_dir = str((PROJECT_ROOT / "conf").resolve())
+    tournament_config_path = PROJECT_ROOT / "conf" / "tournament" / f"{tournament_name}.yaml"
+
+    if not tournament_config_path.exists():
+        raise FileNotFoundError(f"Конфиг турнира не найден: {tournament_config_path}")
 
     try:
-        with config_path.open(encoding="utf-8") as f:
-            config = yaml.safe_load(f)
-        return config if config else {}  # type: ignore[no-any-return]
+        with initialize_config_dir(config_dir=config_dir, version_base="1.3"):
+            return compose(  # type: ignore[no-any-return]
+                config_name=f"tournament/{tournament_name}",
+                return_hydra_config=False,
+            )
     except Exception as e:
-        logger.error("Ошибка чтения конфига %s: %s", config_path, e)
-        return {}
+        logger.error("Ошибка загрузки конфига %s: %s", tournament_name, e)
+        raise
 
 
-def get_uel_subtournament(tour_name_en: pd.Series) -> pd.Series:
-    """Определить подтурнир UEL по названию стрима.
-
-    UEL фактически состоит из трех отдельных турниров:
-    - kz_1: Kazakhstan Stream 1
-    - kz_2: Kazakhstan Stream 2
-    - cz: Czech Republic (все остальные)
+def _apply_split_condition(series: pd.Series, condition: str) -> pd.Series:
+    """Применить условие разделения к Series.
 
     Args:
-        tour_name_en: Series с названиями турниров на английском.
+        series: Series с данными для проверки
+        condition: Условие в виде строки (например: "contains('stream 1', case=False)")
 
     Returns:
-        Series с названиями подтурниров ('kz_1', 'kz_2', 'cz').
+        Series с булевыми значениями (True/False)
 
     Examples:
-        >>> tour_names = pd.Series(['Stream 1', 'Stream 2', 'Other'])
-        >>> get_uel_subtournament(tour_names)
-        0    kz_1
-        1    kz_2
-        2      cz
-        dtype: object
+        >>> s = pd.Series(['Stream 1', 'Stream 2', 'Other'])
+        >>> _apply_split_condition(s, "contains('stream 1', case=False)")
+        0     True
+        1    False
+        2    False
+        dtype: bool
     """
-    return pd.Series(
-        np.select(
-            [
-                tour_name_en.str.contains("stream 1", case=False, na=False),
-                tour_name_en.str.contains("stream 2", case=False, na=False),
-            ],
-            ["kz_1", "kz_2"],
-            default="cz",
-        ),
-        index=tour_name_en.index,
+    # Парсим условие и применяем к Series
+    if condition == "default":
+        # default всегда True (для остальных случаев)
+        return pd.Series([True] * len(series), index=series.index)
+
+    if "contains(" in condition:
+        # Извлекаем аргументы для contains
+        import re
+
+        match = re.search(r"contains\('([^']+)'(?:,\s*case=(\w+))?\)", condition)
+        if match:
+            pattern = match.group(1)
+            case_sensitive = match.group(2) != "False" if match.group(2) else True
+            return series.str.contains(pattern, case=case_sensitive, na=False)
+
+    if "equals(" in condition:
+        # Извлекаем значение для equals
+        import re
+
+        match = re.search(r"equals\('([^']+)'\)", condition)
+        if match:
+            value = match.group(1)
+            return series == value
+
+    # Если условие не распознано, возвращаем False
+    logger.warning("Неизвестное условие split: %s", condition)
+    return pd.Series([False] * len(series), index=series.index)
+
+
+def split_tournament_by_config(
+    df: pd.DataFrame,
+    raw_root: Path,
+    tournament_name: str,
+    split_cfg: DictConfig,
+    odds_cfg: DictConfig | None = None,
+) -> None:
+    """Универсальная функция разделения турнира на подтурниры согласно конфигу.
+
+    Args:
+        df: DataFrame с данными турнира
+        raw_root: Корневая директория для сохранения Parquet файлов
+        tournament_name: Имя исходного турнира
+        split_cfg: Конфигурация разделения из tournament.split_strategy
+        odds_cfg: Конфигурация odds (опционально)
+
+    Note:
+        Конфигурация split_strategy должна содержать:
+            - method: column_based
+            - split_column: название колонки для разделения
+            - rules: список правил с condition и output_tournament
+    """
+    split_column = split_cfg.split_column
+    rules = split_cfg.rules
+
+    if split_column not in df.columns:
+        logger.warning(
+            "Турнир %s: колонка '%s' для split не найдена, пропускаю разделение",
+            tournament_name,
+            split_column,
+        )
+        return
+
+    logger.info(
+        "Турнир %s: разделяю по колонке '%s' на %d подтурниров",
+        tournament_name,
+        split_column,
+        len(rules),
     )
+
+    # Применяем правила разделения
+    for rule in rules:
+        condition = rule.condition
+        output_tournament = rule.output_tournament
+        description = rule.get("description", "")
+
+        # Применяем условие
+        if condition == "default":
+            # default = все что не попало в предыдущие условия
+            # Для этого нужно исключить все уже обработанные строки
+            mask = pd.Series([True] * len(df), index=df.index)
+            for prev_rule in rules:
+                if prev_rule.condition != "default":
+                    prev_mask = _apply_split_condition(df[split_column], prev_rule.condition)
+                    mask = mask & ~prev_mask
+        else:
+            mask = _apply_split_condition(df[split_column], condition)
+
+        sub_df = df[mask].copy()
+
+        if sub_df.empty:
+            logger.warning(
+                "Турнир %s: подтурнир %s пустой, пропускаю",
+                tournament_name,
+                output_tournament,
+            )
+            continue
+
+        # Формируем путь
+        output_parquet = raw_root / output_tournament / "matches.parquet"
+        output_parquet.parent.mkdir(parents=True, exist_ok=True)
+
+        # Сохраняем
+        sub_df.to_parquet(
+            output_parquet,
+            index=False,
+            engine="pyarrow",
+            compression="snappy",
+        )
+
+        file_size = output_parquet.stat().st_size
+        logger.info(
+            "Турнир %s → подтурнир %s (%s): сохранено %d записей → %s (%.2f MB)",
+            tournament_name,
+            output_tournament,
+            description,
+            len(sub_df),
+            output_parquet,
+            file_size / (1024 * 1024),
+        )
+
+        # Сохраняем odds.parquet (если есть конфигурация)
+        if odds_cfg and odds_cfg.get("enabled"):
+            save_odds_if_available(
+                sub_df,
+                output_tournament,
+                output_parquet.parent,
+                odds_column=odds_cfg.get("source_column"),
+                bookmaker=odds_cfg.get("bookmaker"),
+            )
 
 
 def split_lp_eu_tournament(df: pd.DataFrame, raw_root: Path, tournament_name: str) -> None:
@@ -229,8 +353,18 @@ def split_uel_tournament(df: pd.DataFrame, raw_root: Path, tournament_name: str)
         )
         return
 
-    # Определяем подтурнир для каждого матча
-    df["subtournament"] = get_uel_subtournament(df["tour_name_en"])
+    # Определяем подтурнир для каждого матча (deprecated, но оставлено для совместимости)
+    df["subtournament"] = pd.Series(
+        np.select(
+            [
+                df["tour_name_en"].str.contains("stream 1", case=False, na=False),
+                df["tour_name_en"].str.contains("stream 2", case=False, na=False),
+            ],
+            ["kz_1", "kz_2"],
+            default="cz",
+        ),
+        index=df.index,
+    )
 
     # Группируем и сохраняем по подтурнирам
     for subtournament_name in ["kz_1", "kz_2", "cz"]:
@@ -284,15 +418,48 @@ def split_uel_tournament(df: pd.DataFrame, raw_root: Path, tournament_name: str)
             )
 
 
-def parse_odds_from_dict(odds_str: str, bookmaker: str) -> dict:
+def load_bookmaker_config(bookmaker: str) -> DictConfig | None:
+    """Загрузить конфигурацию букмекера.
+
+    Args:
+        bookmaker: Название букмекера (например: 'fonbet', 'sdf')
+
+    Returns:
+        DictConfig с конфигурацией букмекера или None если не найден
+
+    Note:
+        Конфигурация загружается из conf/bookmaker/{bookmaker}.yaml
+    """
+    config_dir = str((PROJECT_ROOT / "conf").resolve())
+    bookmaker_config_path = PROJECT_ROOT / "conf" / "bookmaker" / f"{bookmaker}.yaml"
+
+    if not bookmaker_config_path.exists():
+        logger.warning("Конфиг букмекера %s не найден: %s", bookmaker, bookmaker_config_path)
+        return None
+
+    try:
+        with initialize_config_dir(config_dir=config_dir, version_base="1.3"):
+            return compose(  # type: ignore[no-any-return]
+                config_name=f"bookmaker/{bookmaker}",
+                return_hydra_config=False,
+            )
+    except Exception as e:
+        logger.error("Ошибка загрузки конфига букмекера %s: %s", bookmaker, e)
+        return None
+
+
+def parse_odds_from_dict(
+    odds_str: str, bookmaker: str, bookmaker_cfg: DictConfig | None = None
+) -> dict:
     """Распарсить строку с коэффициентами в нормализованный dict.
 
     Принимает Python dict в строковом виде и преобразует в dict
-    с нормализованными ключами (odds_*).
+    с нормализованными ключами (odds_*) согласно конфигурации букмекера.
 
     Args:
         odds_str: Python dict в строковом виде (например: "{'1': 1.5, '2': 2.5}")
         bookmaker: Название букмекера ('fonbet' или 'sdf')
+        bookmaker_cfg: Конфигурация букмекера (опционально, загружается автоматически)
 
     Returns:
         Dict с нормализованными ключами:
@@ -310,36 +477,42 @@ def parse_odds_from_dict(odds_str: str, bookmaker: str) -> dict:
 
         >>> parse_odds_from_dict("{'1': 4.7, 'x': 5.0, '2': 1.52, 'to_5.5': 2.17}", "fonbet")
         {'odds_home_win': 4.7, 'odds_draw': 5.0, 'odds_away_win': 1.52, 'odds_total_over_5.5': 2.17}
+
+    Note:
+        Маппинги коэффициентов загружаются из conf/bookmaker/{bookmaker}.yaml
     """
     if pd.isna(odds_str) or not odds_str:
         return {}
 
+    # Загружаем конфиг букмекера если не передан
+    if bookmaker_cfg is None:
+        bookmaker_cfg = load_bookmaker_config(bookmaker)
+
     try:
         # Безопасный парсинг Python dict
         odds_raw = ast.literal_eval(odds_str)
+        odds = {}
 
-        # Базовые коэффициенты (есть у всех)
-        odds = {
-            "odds_home_win": odds_raw.get("1"),
-            "odds_draw": odds_raw.get("x"),
-            "odds_away_win": odds_raw.get("2"),
-        }
+        # Применяем базовые маппинги из конфига
+        if bookmaker_cfg and hasattr(bookmaker_cfg, "base_mapping"):
+            base_mapping = dict(bookmaker_cfg.base_mapping)
+            for raw_key, normalized_key in base_mapping.items():
+                if raw_key in odds_raw:
+                    odds[normalized_key] = odds_raw[raw_key]
 
-        # Парсинг дополнительных типов ставок (только для fonbet)
-        if bookmaker == "fonbet":
-            for key, val in odds_raw.items():
-                if key.startswith("to_"):  # Total Over
-                    base = key.replace("to_", "")
-                    odds[f"odds_total_over_{base}"] = val
-                elif key.startswith("tu_"):  # Total Under
-                    base = key.replace("tu_", "")
-                    odds[f"odds_total_under_{base}"] = val
-                elif key.startswith("f1"):  # Home Handicap
-                    hcap = key.replace("f1", "")
-                    odds[f"odds_handicap_home{hcap}"] = val
-                elif key.startswith("f2"):  # Away Handicap
-                    hcap = key.replace("f2", "")
-                    odds[f"odds_handicap_away{hcap}"] = val
+        # Применяем паттерны для дополнительных рынков
+        if bookmaker_cfg and hasattr(bookmaker_cfg, "patterns") and bookmaker_cfg.patterns:
+            for pattern in bookmaker_cfg.patterns:
+                prefix = pattern.prefix
+                template = pattern.template
+
+                for key, val in odds_raw.items():
+                    if key.startswith(prefix):
+                        # Извлекаем значение (например, "5.5" из "to_5.5")
+                        value = key.replace(prefix, "")
+                        # Формируем нормализованный ключ
+                        normalized_key = template.format(value=value)
+                        odds[normalized_key] = val
 
         # Убираем None значения
         return {k: v for k, v in odds.items() if v is not None}
@@ -371,6 +544,8 @@ def extract_odds_from_tournament(
             - id: ID матча (для джойна)
             - bookmaker: источник коэффициентов
             - odds_*: нормализованные коэффициенты
+
+        Маппинги коэффициентов загружаются из conf/bookmaker/{bookmaker}.yaml
     """
     if odds_column not in df.columns:
         logger.warning(
@@ -390,14 +565,20 @@ def extract_odds_from_tournament(
         "Турнир %s: найдено %d коэффициентов (%.1f%%)", tournament_name, odds_count, odds_pct
     )
 
-    # Парсим коэффициенты для каждого матча
-    odds_list = []
-    for _idx, row in df[df[odds_column].notna()].iterrows():
-        parsed = parse_odds_from_dict(row[odds_column], bookmaker)
-        if parsed:
-            parsed["id"] = row["id"]
-            parsed["bookmaker"] = bookmaker
-            odds_list.append(parsed)
+    # Загружаем конфиг букмекера один раз
+    bookmaker_cfg = load_bookmaker_config(bookmaker)
+
+    # Парсим коэффициенты векторизованно
+    mask = df[odds_column].notna()
+    odds_list = [
+        {
+            **parse_odds_from_dict(odds_str, bookmaker, bookmaker_cfg),
+            "id": match_id,
+            "bookmaker": bookmaker,
+        }
+        for odds_str, match_id in zip(df.loc[mask, odds_column], df.loc[mask, "id"], strict=False)
+        if parse_odds_from_dict(odds_str, bookmaker, bookmaker_cfg)  # Пропускаем пустые результаты
+    ]
 
     if not odds_list:
         logger.warning("Турнир %s: не удалось распарсить ни одного коэффициента", tournament_name)
@@ -542,22 +723,29 @@ def process_tournament(source_dir: Path, raw_root: Path) -> None:
             len(df.columns),
         )
 
-        # БИЗНЕС-ЛОГИКА: Разделение турниров на подтурниры
-        if tournament_name == "uel":
-            logger.info(
-                "Турнир %s: обнаружен UEL, разделяю на подтурниры (kz_1, kz_2, cz)", tournament_name
-            )
-            split_uel_tournament(df, raw_root, tournament_name)
-            logger.info("Турнир %s: разделение завершено", tournament_name)
-            return  # UEL обработан через split, не нужно сохранять единым файлом
+        # БИЗНЕС-ЛОГИКА: Разделение турниров на подтурниры (если задано в конфиге)
+        config = load_tournament_config(tournament_name)
 
-        if tournament_name == "lp_eu":
+        if hasattr(config, "split_strategy") and config.split_strategy.get("enabled"):
             logger.info(
-                "Турнир %s: обнаружен LP_EU, разделяю на подтурниры (a18, main)", tournament_name
+                "Турнир %s: обнаружена split_strategy, разделяю на подтурниры",
+                tournament_name,
             )
-            split_lp_eu_tournament(df, raw_root, tournament_name)
+
+            # Получаем odds конфиг (если есть)
+            odds_cfg = config.odds if hasattr(config, "odds") else None
+
+            # Универсальное разделение через конфиг
+            split_tournament_by_config(
+                df,
+                raw_root,
+                tournament_name,
+                config.split_strategy,
+                odds_cfg,
+            )
+
             logger.info("Турнир %s: разделение завершено", tournament_name)
-            return  # LP_EU обработан через split, не нужно сохранять единым файлом
+            return  # Турнир обработан через split, не нужно сохранять единым файлом
 
         # Стандартная обработка для остальных турниров
         # Создаем директорию для выходного файла
@@ -586,16 +774,17 @@ def process_tournament(source_dir: Path, raw_root: Path) -> None:
             logger.error("Турнир %s: ✗ parquet НЕ СОЗДАН → %s", tournament_name, output_parquet)
 
         # Сохраняем odds.parquet (если есть конфигурация)
-        config = load_tournament_config(tournament_name)
-        odds_config = config.get("odds", {})
-
-        if odds_config.get("enabled"):
+        if (
+            hasattr(config, "data")
+            and hasattr(config.data, "odds_feed")
+            and config.data.odds_feed.get("enabled")
+        ):
             save_odds_if_available(
                 df,
                 tournament_name,
                 output_parquet.parent,
-                odds_column=odds_config.get("source_column"),
-                bookmaker=odds_config.get("bookmaker"),
+                odds_column=config.data.odds_feed.get("column"),
+                bookmaker=config.data.odds_feed.get("bookmaker"),
             )
 
     except pd.errors.ParserError as e:
@@ -621,6 +810,8 @@ def run() -> None:
         1. Читает source.csv
         2. Конвертирует в DataFrame
         3. Сохраняет как matches.parquet
+        4. Извлекает букмекерские коэффициенты (если настроено)
+        5. Разделяет на подтурниры (если настроено в split_strategy)
 
     Returns:
         None
@@ -633,8 +824,9 @@ def run() -> None:
 
             >>> run()
             INFO: Найдено турниров: 5
-            INFO: Турнир premier_league_2023: читаю data/source/premier_league_2023/source.csv
-            INFO: Турнир premier_league_2023: загружено 380 записей, 25 колонок
+            INFO: Турнир uel: читаю data/source/uel/source.csv
+            INFO: Турнир uel: загружено 1000 записей, 30 колонок
+            INFO: Турнир uel: разделяю по колонке 'tour_name_en' на 3 подтурниров
 
         Или через Python API::
 
@@ -643,23 +835,32 @@ def run() -> None:
 
     See Also:
         process_tournament: Обработка отдельного турнира
+        split_tournament_by_config: Универсальное разделение на подтурниры
 
     Note:
-        Функция использует pathlib.Path для кросс-платформенной совместимости.
+        Функция использует Hydra для загрузки путей из conf/paths.yaml.
         Все пути разрешаются относительно корня проекта.
     """
-    if not DATA_SOURCE_DIR.exists():
-        raise FileNotFoundError(f"Каталог с источниками не найден: {DATA_SOURCE_DIR}")
+    # Загружаем пути через Hydra
+    config_dir = str((PROJECT_ROOT / "conf").resolve())
+    with initialize_config_dir(config_dir=config_dir, version_base="1.3"):
+        paths_cfg = compose(config_name="paths", return_hydra_config=False)
 
-    tournaments = sorted(p for p in DATA_SOURCE_DIR.iterdir() if p.is_dir())
+    data_source_dir = PROJECT_ROOT / paths_cfg.paths.source_dir
+    data_raw_dir = PROJECT_ROOT / paths_cfg.paths.raw_dir
+
+    if not data_source_dir.exists():
+        raise FileNotFoundError(f"Каталог с источниками не найден: {data_source_dir}")
+
+    tournaments = sorted(p for p in data_source_dir.iterdir() if p.is_dir())
     if not tournaments:
-        logger.warning("В %s не найдено ни одного турнира", DATA_SOURCE_DIR)
+        logger.warning("В %s не найдено ни одного турнира", data_source_dir)
         return
 
     logger.info("Найдено турниров: %d", len(tournaments))
 
     for tournament_dir in tournaments:
-        process_tournament(tournament_dir, DATA_RAW_DIR)
+        process_tournament(tournament_dir, data_raw_dir)
 
 
 if __name__ == "__main__":

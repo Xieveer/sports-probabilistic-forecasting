@@ -1,0 +1,37 @@
+# Tournament: Liga Pro Europe (Table Tennis) - Source
+# Исходный турнир, который разделяется на подтурниры на этапе ingest
+
+name: lp_eu_source
+sport: table_tennis
+region: europe
+description: "Liga Pro Europe - Table Tennis (исходный файл)"
+
+# ============================================================================
+# РАЗДЕЛЕНИЕ НА ПОДТУРНИРЫ (SPLIT STRATEGY)
+# ============================================================================
+# LP_EU разделяется на два подтурнира по полю tour_name_g
+
+split_strategy:
+  enabled: true
+  method: column_based
+  split_column: tour_name_g
+
+  # Правила разделения
+  rules:
+    - condition: "equals('a18')"
+      output_tournament: lp_eu_a18
+      description: "Liga Pro Europe A18"
+
+    - condition: default
+      output_tournament: lp_eu
+      description: "Liga Pro Europe (main)"
+
+# ============================================================================
+# БУКМЕКЕРСКИЕ КОЭФФИЦИЕНТЫ
+# ============================================================================
+
+odds:
+  enabled: true
+  source_column: sdf_odds_feed
+  bookmaker: sdf
+  format: python_dict

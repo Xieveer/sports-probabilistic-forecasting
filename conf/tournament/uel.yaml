@@ -1,0 +1,43 @@
+# Tournament: UEL (Ultimate Esports League) - Cyberhockey
+# Исходный турнир, который разделяется на подтурниры на этапе ingest
+
+name: uel
+sport: cyberhockey
+region: multi  # Kazakhstan + Czech
+description: "UEL - Ultimate Esports League (Cyberhockey)"
+
+# ============================================================================
+# РАЗДЕЛЕНИЕ НА ПОДТУРНИРЫ (SPLIT STRATEGY)
+# ============================================================================
+# UEL фактически состоит из трех отдельных турниров, которые нужно разделить
+# на этапе ingest по полю tour_name_en
+
+split_strategy:
+  enabled: true
+  method: column_based
+  split_column: tour_name_en
+
+  # Правила разделения
+  rules:
+    - condition: "contains('stream 1', case=False)"
+      output_tournament: uel_kz_1
+      description: "Kazakhstan Stream 1"
+
+    - condition: "contains('stream 2', case=False)"
+      output_tournament: uel_kz_2
+      description: "Kazakhstan Stream 2"
+
+    - condition: default
+      output_tournament: uel_cz
+      description: "Czech Republic (все остальные)"
+
+# ============================================================================
+# БУКМЕКЕРСКИЕ КОЭФФИЦИЕНТЫ
+# ============================================================================
+# Настройки для извлечения odds (применяются к подтурнирам после split)
+
+odds:
+  enabled: true
+  source_column: fon_bet_odds_feed
+  bookmaker: fonbet
+  format: python_dict
