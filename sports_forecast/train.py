@@ -36,7 +36,7 @@ from sports_forecast.config import (
     print_config_summary,
     validate_parent_config,
 )
-from sports_forecast.training.trainer_v2 import ExperimentRunner
+from sports_forecast.training.trainer import ExperimentRunner
 from sports_forecast.utils.log_config import configure_logging, get_logger
 
 
