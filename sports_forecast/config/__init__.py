@@ -14,6 +14,7 @@ from sports_forecast.config.validation import (
     validate_parent_config,
 )
 
+
 __all__ = [
     "ConfigValidationError",
     "validate_parent_config",
@@ -23,5 +24,3 @@ __all__ = [
     "get_allowed_lines",
     "print_config_summary",
 ]
-
-

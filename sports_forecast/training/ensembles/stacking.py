@@ -15,8 +15,8 @@ Stacking Ensemble с мета-моделью.
     ...     base_models=[catboost, lgbm, logreg],
     ...     meta_model=logreg_meta,
     ... )
-    >>> stacking.fit(X_train, y_train)
-    >>> proba = stacking.predict_proba(X_test)
+    >>> stacking.fit(train_features, train_target)
+    >>> proba = stacking.predict_proba(test_features)
 """
 
 from __future__ import annotations
@@ -68,8 +68,8 @@ class StackingEnsemble(BaseModel):
         ...     ],
         ...     meta_model=LogRegModel("meta"),
         ... )
-        >>> stacking.fit(X_train, y_train)
-        >>> proba = stacking.predict_proba(X_test)
+        >>> stacking.fit(train_features, train_target)
+        >>> proba = stacking.predict_proba(test_features)
     """
 
     def __init__(
@@ -117,7 +117,7 @@ class StackingEnsemble(BaseModel):
             logger.info("  - Базовая модель: %s", base_model.get_name())
         logger.info("  - Мета-модель: %s", meta_model.get_name())
 
-    def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs) -> StackingEnsemble:
+    def fit(self, features: pd.DataFrame, target: pd.Series, **kwargs) -> StackingEnsemble:
         """
         Обучить Stacking Ensemble.
 
@@ -128,15 +128,15 @@ class StackingEnsemble(BaseModel):
         2. Обучение мета-модели на out-of-fold предсказаниях
 
         Args:
-            X: Фичи для обучения.
-            y: Таргет.
+            features: Фичи для обучения.
+            target: Таргет.
             **kwargs: Дополнительные параметры (игнорируются).
 
         Returns:
             self: Для chaining.
 
         Examples:
-            >>> stacking.fit(X_train, y_train)
+            >>> stacking.fit(train_features, train_target)
         """
         logger.info("=" * 60)
         logger.info("ОБУЧЕНИЕ STACKING ENSEMBLE: %s", self.name)
@@ -144,7 +144,7 @@ class StackingEnsemble(BaseModel):
         logger.info("TSCV фолдов: %d", self.n_splits)
         logger.info("=" * 60)
 
-        n_samples = len(X)
+        n_samples = len(features)
 
         # Матрица для out-of-fold предсказаний
         # Shape: (n_samples, n_base_models)
@@ -163,19 +163,19 @@ class StackingEnsemble(BaseModel):
             oof_model = np.zeros(n_samples)
 
             # TSCV
-            for fold_idx, (train_idx, val_idx) in enumerate(self.tscv.split(X, y), 1):
+            for fold_idx, (train_idx, val_idx) in enumerate(self.tscv.split(features, target), 1):
                 logger.info("  Фолд %d/%d...", fold_idx, self.n_splits)
 
                 # Разбиваем данные
-                X_train = X.iloc[train_idx]
-                X_val = X.iloc[val_idx]
-                y_train = y.iloc[train_idx]
+                train_features = features.iloc[train_idx]
+                val_features = features.iloc[val_idx]
+                train_target = target.iloc[train_idx]
 
                 # Обучаем базовую модель на фолде
-                base_model.fit(X_train, y_train)
+                base_model.fit(train_features, train_target)
 
                 # Предсказания на val (out-of-fold)
-                proba_val = base_model.predict_proba(X_val)[:, 1]
+                proba_val = base_model.predict_proba(val_features)[:, 1]
 
                 # Сохраняем в oof_model
                 oof_model[val_idx] = proba_val
@@ -187,7 +187,7 @@ class StackingEnsemble(BaseModel):
 
             # Теперь обучаем базовую модель на ВСЕХ данных (для prod)
             logger.info("  Обучаю %s на всех данных (prod)...", base_model.get_name())
-            base_model.fit(X, y)
+            base_model.fit(features, target)
             logger.info("  ✓ %s обучена на всех данных", base_model.get_name())
 
         logger.info("=" * 60)
@@ -204,7 +204,7 @@ class StackingEnsemble(BaseModel):
         logger.info(
             "Обучаю мета-модель '%s' на out-of-fold предсказаниях...", self.meta_model.get_name()
         )
-        self.meta_model.fit(meta_features, y)
+        self.meta_model.fit(meta_features, target)
 
         self.is_fitted_ = True
 
@@ -214,7 +214,7 @@ class StackingEnsemble(BaseModel):
 
         return self
 
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+    def predict_proba(self, features: pd.DataFrame) -> np.ndarray:
         """
         Предсказать вероятности через Stacking Ensemble.
 
@@ -224,7 +224,7 @@ class StackingEnsemble(BaseModel):
         3. Вернуть итоговые вероятности
 
         Args:
-            X: Фичи для предсказания.
+            features: Фичи для предсказания.
 
         Returns:
             Массив вероятностей shape (n_samples, 2).
@@ -233,7 +233,7 @@ class StackingEnsemble(BaseModel):
             ValueError: Если ансамбль не обучен.
 
         Examples:
-            >>> proba = stacking.predict_proba(X_test)
+            >>> proba = stacking.predict_proba(test_features)
             >>> proba[:, 1]  # Вероятность класса 1
         """
         if not self.is_fitted_:
@@ -242,10 +242,10 @@ class StackingEnsemble(BaseModel):
             )
 
         # Получаем предсказания от базовых моделей
-        base_predictions = np.zeros((len(X), len(self.base_models)))
+        base_predictions = np.zeros((len(features), len(self.base_models)))
 
         for model_idx, base_model in enumerate(self.base_models):
-            proba = base_model.predict_proba(X)[:, 1]
+            proba = base_model.predict_proba(features)[:, 1]
             base_predictions[:, model_idx] = proba
 
         # Создаём DataFrame для мета-модели

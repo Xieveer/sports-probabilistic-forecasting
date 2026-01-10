@@ -10,7 +10,7 @@
 Примеры:
     >>> calibrator = ModelCalibrator(threshold_ece=0.1)
     >>> calibrated_model = calibrator.calibrate_if_needed(
-    ...     model, X_cal, y_cal, X_val, y_val
+    ...     model, cal_features, cal_target, val_features, val_target
     ... )
 """
 
@@ -50,10 +50,10 @@ class ModelCalibrator:
         >>> calibrator = ModelCalibrator(threshold_ece=0.1, method='isotonic')
         >>> calibrated_model = calibrator.calibrate_if_needed(
         ...     model=catboost_model,
-        ...     X_cal=X_calibration,
-        ...     y_cal=y_calibration,
-        ...     X_val=X_validation,
-        ...     y_val=y_validation,
+        ...     cal_features=X_calibration,
+        ...     cal_target=y_calibration,
+        ...     val_features=X_validation,
+        ...     val_target=y_validation,
         ... )
     """
 
@@ -90,10 +90,10 @@ class ModelCalibrator:
     def calibrate_if_needed(
         self,
         model: Any,
-        X_cal: pd.DataFrame | np.ndarray,
-        y_cal: pd.Series | np.ndarray,
-        X_val: pd.DataFrame | np.ndarray,
-        y_val: pd.Series | np.ndarray,
+        cal_features: pd.DataFrame | np.ndarray,
+        cal_target: pd.Series | np.ndarray,
+        val_features: pd.DataFrame | np.ndarray,
+        val_target: pd.Series | np.ndarray,
     ) -> tuple[Any, bool, float, float]:
         """
         Калибровать модель, если ECE > threshold.
@@ -104,10 +104,10 @@ class ModelCalibrator:
 
         Args:
             model: Модель с методом predict_proba().
-            X_cal: Фичи для калибровки.
-            y_cal: Таргет для калибровки.
-            X_val: Фичи для валидации (проверка ECE).
-            y_val: Таргет для валидации (проверка ECE).
+            cal_features: Фичи для калибровки.
+            cal_target: Таргет для калибровки.
+            val_features: Фичи для валидации (проверка ECE).
+            val_target: Таргет для валидации (проверка ECE).
 
         Returns:
             Tuple:
@@ -118,14 +118,14 @@ class ModelCalibrator:
 
         Examples:
             >>> model, calibrated, ece_before, ece_after = calibrator.calibrate_if_needed(
-            ...     catboost_model, X_cal, y_cal, X_val, y_val
+            ...     catboost_model, cal_features, cal_target, val_features, val_target
             ... )
             >>> if calibrated:
             ...     print(f"ECE improved: {ece_before:.4f} -> {ece_after:.4f}")
         """
         # Предсказания на валидации ДО калибровки
-        proba_before = model.predict_proba(X_val)[:, 1]
-        ece_before = compute_expected_calibration_error(np.array(y_val), proba_before)
+        proba_before = model.predict_proba(val_features)[:, 1]
+        ece_before = compute_expected_calibration_error(np.array(val_target), proba_before)
 
         logger.info("ECE до калибровки: %.4f (порог: %.2f)", ece_before, self.threshold_ece)
 
@@ -145,11 +145,11 @@ class ModelCalibrator:
             cv=self.cv,
         )
 
-        calibrated_model.fit(X_cal, y_cal)
+        calibrated_model.fit(cal_features, cal_target)
 
         # Предсказания на валидации ПОСЛЕ калибровки
-        proba_after = calibrated_model.predict_proba(X_val)[:, 1]
-        ece_after = compute_expected_calibration_error(np.array(y_val), proba_after)
+        proba_after = calibrated_model.predict_proba(val_features)[:, 1]
+        ece_after = compute_expected_calibration_error(np.array(val_target), proba_after)
 
         logger.info("ECE после калибровки: %.4f", ece_after)
 
@@ -170,8 +170,8 @@ class ModelCalibrator:
     def calibrate(
         self,
         model: Any,
-        X_cal: pd.DataFrame | np.ndarray,
-        y_cal: pd.Series | np.ndarray,
+        cal_features: pd.DataFrame | np.ndarray,
+        cal_target: pd.Series | np.ndarray,
     ) -> Any:
         """
         Калибровать модель (без проверки ECE).
@@ -180,14 +180,14 @@ class ModelCalibrator:
 
         Args:
             model: Модель с методом predict_proba().
-            X_cal: Фичи для калибровки.
-            y_cal: Таргет для калибровки.
+            cal_features: Фичи для калибровки.
+            cal_target: Таргет для калибровки.
 
         Returns:
             Калиброванная модель.
 
         Examples:
-            >>> calibrated_model = calibrator.calibrate(model, X_cal, y_cal)
+            >>> calibrated_model = calibrator.calibrate(model, cal_features, cal_target)
         """
         logger.info("Применяю калибровку (метод: %s) БЕЗ проверки ECE", self.method)
 
@@ -197,7 +197,7 @@ class ModelCalibrator:
             cv=self.cv,
         )
 
-        calibrated_model.fit(X_cal, y_cal)
+        calibrated_model.fit(cal_features, cal_target)
 
         logger.info("Калибровка применена")
 

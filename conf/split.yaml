@@ -20,5 +20,3 @@ random_state: 42
 # Time Series Cross-Validation
 tscv_n_splits: 4  # Количество фолдов для TSCV
 tscv_gap: 0       # Разрыв между train и val (в строках)
-
-

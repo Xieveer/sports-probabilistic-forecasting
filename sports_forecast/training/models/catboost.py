@@ -110,16 +110,16 @@ class CatBoostModel(BaseSingleModel):
 
     def _fit_implementation(
         self,
-        X: pd.DataFrame,
-        y: pd.Series,
+        features: pd.DataFrame,
+        target: pd.Series,
         **fit_kwargs,
     ) -> None:
         """
         Обучить CatBoost модель.
 
         Args:
-            X: Фичи для обучения.
-            y: Таргет.
+            features: Фичи для обучения.
+            target: Таргет.
             **fit_kwargs: Дополнительные параметры:
                 - eval_set: Tuple[X_val, y_val] для валидации.
                 - cat_features: Список категориальных фичей.
@@ -141,7 +141,7 @@ class CatBoostModel(BaseSingleModel):
 
         # Обучение
         logger.info("Начинаю обучение CatBoost...")
-        self.model_.fit(X, y, **fit_kwargs)
+        self.model_.fit(features, target, **fit_kwargs)
 
         logger.info("CatBoost обучен: %d итераций", self.model_.tree_count_)
 

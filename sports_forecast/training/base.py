@@ -11,8 +11,8 @@
     ...     def _create_model(self):
     ...         return CatBoostClassifier(**self.params)
     ...
-    ...     def _fit_implementation(self, X, y, **fit_kwargs):
-    ...         self.model_.fit(X, y, **fit_kwargs)
+    ...     def _fit_implementation(self, features, y, **fit_kwargs):
+    ...         self.model_.fit(features, target, **fit_kwargs)
 """
 
 from __future__ import annotations
@@ -71,13 +71,13 @@ class BaseModel(ABC):
         self.is_calibrated_ = False
 
     @abstractmethod
-    def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs) -> BaseModel:
+    def fit(self, features: pd.DataFrame, target: pd.Series, **kwargs) -> BaseModel:
         """
         Обучить модель на данных.
 
         Args:
-            X: Фичи для обучения.
-            y: Таргет.
+            features: Фичи для обучения.
+            target: Таргет.
             **kwargs: Дополнительные параметры для fit().
 
         Returns:
@@ -89,12 +89,12 @@ class BaseModel(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+    def predict_proba(self, features: pd.DataFrame) -> np.ndarray:
         """
         Предсказать вероятности классов.
 
         Args:
-            X: Фичи для предсказания.
+            features: Фичи для предсказания.
 
         Returns:
             Массив вероятностей shape (n_samples, n_classes).
@@ -179,8 +179,8 @@ class BaseSingleModel(BaseModel):
         ...     def _create_model(self):
         ...         return CatBoostClassifier(**self.params)
         ...
-        ...     def _fit_implementation(self, X, y, **fit_kwargs):
-        ...         self.model_.fit(X, y, **fit_kwargs)
+        ...     def _fit_implementation(self, features, y, **fit_kwargs):
+        ...         self.model_.fit(features, target, **fit_kwargs)
     """
 
     # sklearn compatibility: указываем, что это classifier
@@ -238,8 +238,8 @@ class BaseSingleModel(BaseModel):
     @abstractmethod
     def _fit_implementation(
         self,
-        X: pd.DataFrame,
-        y: pd.Series,
+        features: pd.DataFrame,
+        target: pd.Series,
         **fit_kwargs,
     ) -> None:
         """
@@ -248,23 +248,23 @@ class BaseSingleModel(BaseModel):
         Вызывается из fit() после подготовки данных.
 
         Args:
-            X: Фичи для обучения.
-            y: Таргет.
+            features: Фичи для обучения.
+            target: Таргет.
             **fit_kwargs: Дополнительные параметры (eval_set, cat_features, etc.).
 
         Raises:
             NotImplementedError: Должен быть реализован в наследниках.
 
         Examples:
-            >>> def _fit_implementation(self, X, y, **fit_kwargs):
-            ...     self.model_.fit(X, y, **fit_kwargs)
+            >>> def _fit_implementation(self, features, y, **fit_kwargs):
+            ...     self.model_.fit(features, target, **fit_kwargs)
         """
         raise NotImplementedError
 
     def _preprocess_data(
         self,
-        X: pd.DataFrame,
-        y: pd.Series | None = None,
+        features: pd.DataFrame,
+        target: pd.Series | None = None,
         fit: bool = True,
     ) -> tuple[pd.DataFrame, pd.Series | None]:
         """
@@ -275,34 +275,34 @@ class BaseSingleModel(BaseModel):
         предобработки (LogReg, Neural Networks).
 
         Args:
-            X: Фичи.
-            y: Таргет (для fit=True).
+            features: Фичи.
+            target: Таргет (для fit=True).
             fit: Если True, обучаем preprocessor. Если False, только трансформируем.
 
         Returns:
-            Кортеж (X_transformed, y).
+            Кортеж (features_transformed, target).
 
         Examples:
             >>> # CatBoostModel - ничего не делает
-            >>> def _preprocess_data(self, X, y=None, fit=True):
-            ...     return X, y
+            >>> def _preprocess_data(self, features, y=None, fit=True):
+            ...     return features, y
             >>>
             >>> # LogRegModel - StandardScaler + OneHotEncoder
-            >>> def _preprocess_data(self, X, y=None, fit=True):
+            >>> def _preprocess_data(self, features, y=None, fit=True):
             ...     if fit:
-            ...         self.preprocessor_.fit(X)
-            ...     X_transformed = self.preprocessor_.transform(X)
-            ...     return X_transformed, y
+            ...         self.preprocessor_.fit(features)
+            ...     features_transformed = self.preprocessor_.transform(features)
+            ...     return features_transformed, y
         """
-        return X, y
+        return features, target
 
-    def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs) -> BaseSingleModel:
+    def fit(self, features: pd.DataFrame, target: pd.Series, **kwargs) -> BaseSingleModel:
         """
         Обучить модель на данных.
 
         Args:
-            X: Фичи для обучения.
-            y: Таргет.
+            features: Фичи для обучения.
+            target: Таргет.
             **kwargs: Дополнительные параметры для fit()
                 (eval_set, cat_features, early_stopping_rounds, etc.).
 
@@ -312,7 +312,12 @@ class BaseSingleModel(BaseModel):
         Examples:
             >>> model.fit(X_train, y_train, eval_set=(X_val, y_val))
         """
-        logger.info("Обучаю модель '%s' на %d записях с %d фичами", self.name, len(X), X.shape[1])
+        logger.info(
+            "Обучаю модель '%s' на %d записях с %d фичами",
+            self.name,
+            len(features),
+            features.shape[1],
+        )
 
         # Создаём модель если ещё не создана
         if self.model_ is None:
@@ -322,7 +327,7 @@ class BaseSingleModel(BaseModel):
         # Определяем категориальные фичи (для CatBoost)
         # Для LightGBM это делается в _preprocess_data()
         if "cat_features" not in kwargs and "categorical_feature" not in kwargs:
-            cat_cols = [col for col in X.columns if X[col].dtype == "object"]
+            cat_cols = [col for col in features.columns if features[col].dtype == "object"]
             if cat_cols:
                 self.cat_features_ = cat_cols
                 # CatBoost использует 'cat_features', LightGBM - 'categorical_feature'
@@ -336,10 +341,10 @@ class BaseSingleModel(BaseModel):
                 logger.debug("Найдены категориальные фичи: %s", self.cat_features_)
 
         # Предобработка данных (переопределяется в наследниках)
-        X_processed, y_processed = self._preprocess_data(X, y, fit=True)
+        features_processed, target_processed = self._preprocess_data(features, target, fit=True)
 
         # Обучение
-        self._fit_implementation(X_processed, y_processed, **kwargs)
+        self._fit_implementation(features_processed, target_processed, **kwargs)
 
         self.is_fitted_ = True
 
@@ -351,12 +356,12 @@ class BaseSingleModel(BaseModel):
 
         return self
 
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+    def predict_proba(self, features: pd.DataFrame) -> np.ndarray:
         """
         Предсказать вероятности классов.
 
         Args:
-            X: Фичи для предсказания.
+            features: Фичи для предсказания.
 
         Returns:
             Массив вероятностей shape (n_samples, n_classes).
@@ -375,11 +380,11 @@ class BaseSingleModel(BaseModel):
             )
 
         # Предобработка данных (если нужна)
-        X_processed, _ = self._preprocess_data(X, y=None, fit=False)
+        features_processed, _ = self._preprocess_data(features, target=None, fit=False)
 
         # ВАЖНО: НЕ используем calibrated_model_ здесь чтобы избежать рекурсии!
         # CalibratedClassifierCV сам вызовет этот метод predict_proba
-        proba = self.model_.predict_proba(X_processed)
+        proba = self.model_.predict_proba(features_processed)
 
         # Для sklearn моделей может вернуться только один столбец для бинарной классификации
         if proba.ndim == 1:

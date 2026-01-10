@@ -114,8 +114,8 @@ class LGBMModel(BaseSingleModel):
 
     def _preprocess_data(
         self,
-        X: pd.DataFrame,
-        y: pd.Series | None = None,
+        features: pd.DataFrame,
+        target: pd.Series | None = None,
         fit: bool = True,
     ) -> tuple[pd.DataFrame, pd.Series | None]:
         """
@@ -125,37 +125,37 @@ class LGBMModel(BaseSingleModel):
         LightGBM требует, чтобы категории были явно указаны.
 
         Args:
-            X: Фичи.
-            y: Таргет.
+            features: Фичи.
+            target: Таргет.
             fit: Если True, определяем категориальные фичи. Если False, применяем.
 
         Returns:
-            Кортеж (X_transformed, y).
+            Кортеж (X_transformed, target).
 
         Examples:
             >>> X_transformed, y = model._preprocess_data(X_train, y_train, fit=True)
         """
-        X = X.copy()
+        features = features.copy()
 
         # Конвертируем object -> category
-        for col in X.columns:
-            if X[col].dtype == "object":
-                X[col] = X[col].astype("category")
+        for col in features.columns:
+            if features[col].dtype == "object":
+                features[col] = features[col].astype("category")
 
-        return X, y
+        return features, target
 
     def _fit_implementation(
         self,
-        X: pd.DataFrame,
-        y: pd.Series,
+        features: pd.DataFrame,
+        target: pd.Series,
         **fit_kwargs,
     ) -> None:
         """
         Обучить LightGBM модель.
 
         Args:
-            X: Фичи для обучения.
-            y: Таргет.
+            features: Фичи для обучения.
+            target: Таргет.
             **fit_kwargs: Дополнительные параметры:
                 - eval_set: List[Tuple[X_val, y_val]] для валидации.
                 - categorical_feature: Список категориальных фичей или 'auto'.
@@ -174,7 +174,7 @@ class LGBMModel(BaseSingleModel):
 
         # Обучение
         logger.info("Начинаю обучение LightGBM...")
-        self.model_.fit(X, y, **fit_kwargs)
+        self.model_.fit(features, target, **fit_kwargs)
 
         logger.info("LightGBM обучен: %d деревьев", self.model_.n_estimators)
 

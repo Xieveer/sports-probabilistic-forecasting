@@ -59,10 +59,7 @@ def compute_expected_calibration_error(
         actual_frequency = y_true[mask].mean()
 
         # Взвешенная разница
-        bin_ece = (n_samples_in_bin / len(y_true)) * np.abs(
-            avg_predicted_prob - actual_frequency
-        )
+        bin_ece = (n_samples_in_bin / len(y_true)) * np.abs(avg_predicted_prob - actual_frequency)
         ece += bin_ece
 
     return float(ece)
-

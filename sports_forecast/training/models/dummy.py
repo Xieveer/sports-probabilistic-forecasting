@@ -92,20 +92,20 @@ class DummyModel(BaseSingleModel):
 
     def _fit_implementation(
         self,
-        X: pd.DataFrame,
-        y: pd.Series,
+        features: pd.DataFrame,
+        target: pd.Series,
         **fit_kwargs,
     ) -> None:
         """
         Обучить DummyClassifier.
 
         Args:
-            X: Фичи (не используются для dummy).
-            y: Таргет.
+            features: Фичи (не используются для dummy).
+            target: Таргет.
             **fit_kwargs: Дополнительные параметры (игнорируются).
         """
         # DummyClassifier игнорирует X, но требует его для совместимости с sklearn API
-        self.model_.fit(X, y)
+        self.model_.fit(features, target)
 
         # Логируем распределение классов
         class_prior = self.model_.class_prior_

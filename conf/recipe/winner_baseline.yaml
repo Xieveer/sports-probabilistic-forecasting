@@ -29,5 +29,3 @@ seeds:
 tscv:
   n_folds: 4
   expanding_window: true
-
-

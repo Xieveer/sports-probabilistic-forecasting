@@ -25,5 +25,3 @@ feature_prefixes:
 # Премач букмекерские линии (опционально)
 prematch_line:
   enabled: false  # Для winner обычно не нужны линии
-
-

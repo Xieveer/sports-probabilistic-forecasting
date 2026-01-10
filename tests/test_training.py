@@ -33,15 +33,15 @@ def sample_data():
     n_samples = 200
     n_features = 10
 
-    X = pd.DataFrame(
+    features = pd.DataFrame(
         np.random.randn(n_samples, n_features),
         columns=[f"f_{i}" for i in range(n_features)],
     )
 
     # Бинарный таргет (50/50)
-    y = pd.Series(np.random.randint(0, 2, n_samples))
+    target = pd.Series(np.random.randint(0, 2, n_samples))
 
-    return X, y
+    return features, target
 
 
 @pytest.fixture
@@ -51,7 +51,7 @@ def sample_data_with_cat():
 
     n_samples = 200
 
-    X = pd.DataFrame(
+    features = pd.DataFrame(
         {
             "f_numeric_1": np.random.randn(n_samples),
             "f_numeric_2": np.random.randn(n_samples),
@@ -60,9 +60,9 @@ def sample_data_with_cat():
         }
     )
 
-    y = pd.Series(np.random.randint(0, 2, n_samples))
+    target = pd.Series(np.random.randint(0, 2, n_samples))
 
-    return X, y
+    return features, target
 
 
 # ==================== TSCV Tests ====================
@@ -77,10 +77,10 @@ def test_tscv_initialization():
 
 def test_tscv_split(sample_data):
     """Тест разбиения данных на фолды."""
-    X, y = sample_data
+    features, target = sample_data
     tscv = TimeSeriesCrossValidator(n_splits=4)
 
-    folds = list(tscv.split(X, y))
+    folds = list(tscv.split(features, target))
 
     # Должно быть 4 фолда
     assert len(folds) == 4
@@ -95,10 +95,10 @@ def test_tscv_split(sample_data):
 
 def test_tscv_expanding_window(sample_data):
     """Тест expanding window (train растёт с каждым фолдом)."""
-    X, y = sample_data
+    features, target = sample_data
     tscv = TimeSeriesCrossValidator(n_splits=4)
 
-    folds = list(tscv.split(X, y))
+    folds = list(tscv.split(features, target))
 
     # Train должен расти с каждым фолдом
     train_sizes = [len(train_idx) for train_idx, _ in folds]
@@ -117,32 +117,32 @@ def test_dummy_model_initialization():
 
 def test_dummy_model_fit_predict(sample_data):
     """Тест обучения и предсказания DummyModel."""
-    X, y = sample_data
+    features, target = sample_data
     model = DummyModel()
 
     # Обучение
-    model.fit(X, y)
+    model.fit(features, target)
     assert model.is_fitted()
 
     # Предсказание
-    proba = model.predict_proba(X)
-    assert proba.shape == (len(X), 2)
+    proba = model.predict_proba(features)
+    assert proba.shape == (len(features), 2)
     assert np.allclose(proba.sum(axis=1), 1.0)  # Сумма вероятностей = 1
 
 
 def test_dummy_model_predicts_class_frequencies(sample_data):
     """Тест что DummyModel предсказывает частоты классов."""
-    X, y = sample_data
+    features, target = sample_data
     model = DummyModel()
 
-    model.fit(X, y)
-    proba = model.predict_proba(X)
+    model.fit(features, target)
+    proba = model.predict_proba(features)
 
     # Все предсказания должны быть одинаковыми (частоты классов)
     assert np.allclose(proba[0], proba[1])
 
     # Вероятности должны соответствовать частотам в y
-    expected_freq_class_1 = y.mean()
+    expected_freq_class_1 = target.mean()
     assert np.isclose(proba[0, 1], expected_freq_class_1, atol=0.01)
 
 
@@ -158,26 +158,26 @@ def test_catboost_model_initialization():
 
 def test_catboost_model_fit_predict(sample_data):
     """Тест обучения и предсказания CatBoostModel."""
-    X, y = sample_data
+    features, target = sample_data
     model = CatBoostModel(params={"iterations": 10, "verbose": False})
 
     # Обучение
-    model.fit(X, y)
+    model.fit(features, target)
     assert model.is_fitted()
 
     # Предсказание
-    proba = model.predict_proba(X)
-    assert proba.shape == (len(X), 2)
+    proba = model.predict_proba(features)
+    assert proba.shape == (len(features), 2)
     assert np.allclose(proba.sum(axis=1), 1.0)
 
 
 def test_catboost_model_with_categorical_features(sample_data_with_cat):
     """Тест CatBoost с категориальными фичами."""
-    X, y = sample_data_with_cat
+    features, target = sample_data_with_cat
     model = CatBoostModel(params={"iterations": 10, "verbose": False})
 
     # Обучение (автоматически определит категориальные фичи)
-    model.fit(X, y)
+    model.fit(features, target)
     assert model.is_fitted()
 
     # Должны быть найдены категориальные фичи
@@ -188,16 +188,16 @@ def test_catboost_model_with_categorical_features(sample_data_with_cat):
 
 def test_catboost_model_feature_importance(sample_data):
     """Тест получения важности фичей."""
-    X, y = sample_data
+    features, target = sample_data
     model = CatBoostModel(params={"iterations": 10, "verbose": False})
 
-    model.fit(X, y)
+    model.fit(features, target)
 
     importance = model.get_feature_importance()
     assert isinstance(importance, pd.DataFrame)
     assert "feature" in importance.columns
     assert "importance" in importance.columns
-    assert len(importance) == X.shape[1]
+    assert len(importance) == features.shape[1]
 
 
 # ==================== LogRegModel Tests ====================
@@ -205,37 +205,37 @@ def test_catboost_model_feature_importance(sample_data):
 
 def test_logreg_model_fit_predict(sample_data):
     """Тест обучения и предсказания LogRegModel."""
-    X, y = sample_data
+    features, target = sample_data
     model = LogRegModel(params={"max_iter": 100, "solver": "lbfgs"})
 
-    model.fit(X, y)
+    model.fit(features, target)
     assert model.is_fitted()
 
-    proba = model.predict_proba(X)
-    assert proba.shape == (len(X), 2)
+    proba = model.predict_proba(features)
+    assert proba.shape == (len(features), 2)
 
 
 def test_logreg_preprocessing_numeric_only(sample_data):
     """Тест preprocessing LogReg с только числовыми фичами."""
-    X, y = sample_data
+    features, target = sample_data
     model = LogRegModel(params={"max_iter": 100})
 
     # Обучение
-    model.fit(X, y)
+    model.fit(features, target)
 
     # Preprocessor должен быть создан
     assert model.preprocessor_ is not None
-    assert len(model.numeric_features_) == X.shape[1]
+    assert len(model.numeric_features_) == features.shape[1]
     assert len(model.categorical_features_) == 0
 
 
 def test_logreg_preprocessing_with_categorical(sample_data_with_cat):
     """Тест preprocessing LogReg с категориальными фичами."""
-    X, y = sample_data_with_cat
+    features, target = sample_data_with_cat
     model = LogRegModel(params={"max_iter": 100})
 
     # Обучение
-    model.fit(X, y)
+    model.fit(features, target)
 
     # Preprocessor должен быть создан
     assert model.preprocessor_ is not None
@@ -243,21 +243,21 @@ def test_logreg_preprocessing_with_categorical(sample_data_with_cat):
     assert len(model.categorical_features_) == 2
 
     # Предсказание должно работать (даже с новыми категориями)
-    X_test = X.copy()
-    X_test.loc[0, "f_cat_1"] = "NEW_CATEGORY"  # Новая категория
+    test_features = features.copy()
+    test_features.loc[0, "f_cat_1"] = "NEW_CATEGORY"  # Новая категория
 
-    proba = model.predict_proba(X_test)
-    assert proba.shape == (len(X_test), 2)
+    proba = model.predict_proba(test_features)
+    assert proba.shape == (len(test_features), 2)
 
 
 def test_logreg_save_load_with_preprocessor(sample_data_with_cat, tmp_path):
     """Тест сохранения/загрузки LogReg с preprocessor."""
-    X, y = sample_data_with_cat
+    features, target = sample_data_with_cat
     model = LogRegModel(params={"max_iter": 100})
 
     # Обучение
-    model.fit(X, y)
-    proba_before = model.predict_proba(X)
+    model.fit(features, target)
+    proba_before = model.predict_proba(features)
 
     # Сохранение
     save_path = tmp_path / "logreg_test"
@@ -271,7 +271,7 @@ def test_logreg_save_load_with_preprocessor(sample_data_with_cat, tmp_path):
     assert model_loaded.preprocessor_ is not None
 
     # Предсказания должны совпадать
-    proba_after = model_loaded.predict_proba(X)
+    proba_after = model_loaded.predict_proba(features)
     np.testing.assert_array_almost_equal(proba_before, proba_after)
 
 
@@ -280,11 +280,11 @@ def test_logreg_save_load_with_preprocessor(sample_data_with_cat, tmp_path):
 
 def test_lgbm_preprocessing_converts_object_to_category(sample_data_with_cat):
     """Тест что LGBM конвертирует object -> category."""
-    X, y = sample_data_with_cat
+    features, target = sample_data_with_cat
     model = LGBMModel(params={"n_estimators": 10, "verbose": -1})
 
     # Обучение
-    model.fit(X, y)
+    model.fit(features, target)
 
     # Категориальные фичи должны быть найдены
     assert len(model.cat_features_) == 2
@@ -292,16 +292,16 @@ def test_lgbm_preprocessing_converts_object_to_category(sample_data_with_cat):
 
 def test_lgbm_fit_predict(sample_data_with_cat):
     """Тест обучения и предсказания LGBMModel."""
-    X, y = sample_data_with_cat
+    features, target = sample_data_with_cat
     model = LGBMModel(params={"n_estimators": 10, "verbose": -1})
 
     # Обучение
-    model.fit(X, y)
+    model.fit(features, target)
     assert model.is_fitted()
 
     # Предсказание
-    proba = model.predict_proba(X)
-    assert proba.shape == (len(X), 2)
+    proba = model.predict_proba(features)
+    assert proba.shape == (len(features), 2)
     assert np.allclose(proba.sum(axis=1), 1.0)
 
 
@@ -317,26 +317,26 @@ def test_calibrator_initialization():
 
 def test_calibrator_no_calibration_needed(sample_data):
     """Тест что калибровка не применяется если ECE < threshold."""
-    X, y = sample_data
+    features, target = sample_data
 
     # Разбиваем данные
-    split_idx = int(len(X) * 0.6)
-    X_train = X.iloc[:split_idx]
-    X_cal = X.iloc[split_idx : int(len(X) * 0.8)]
-    X_val = X.iloc[int(len(X) * 0.8) :]
-    y_train = y.iloc[:split_idx]
-    y_cal = y.iloc[split_idx : int(len(y) * 0.8)]
-    y_val = y.iloc[int(len(y) * 0.8) :]
+    split_idx = int(len(features) * 0.6)
+    train_features = features.iloc[:split_idx]
+    cal_features = features.iloc[split_idx : int(len(features) * 0.8)]
+    val_features = features.iloc[int(len(features) * 0.8) :]
+    train_target = target.iloc[:split_idx]
+    cal_target = target.iloc[split_idx : int(len(target) * 0.8)]
+    val_target = target.iloc[int(len(target) * 0.8) :]
 
     # Обучаем LogReg (обычно хорошо откалиброван)
     model = LogRegModel()
-    model.fit(X_train, y_train)
+    model.fit(train_features, train_target)
 
     # Калибратор с высоким порогом
     calibrator = ModelCalibrator(threshold_ece=0.5, method="isotonic")
 
     calibrated_model, is_calibrated, ece_before, ece_after = calibrator.calibrate_if_needed(
-        model, X_cal, y_cal, X_val, y_val
+        model, cal_features, cal_target, val_features, val_target
     )
 
     # Калибровка не должна была применяться
@@ -350,14 +350,14 @@ def test_calibrator_no_calibration_needed(sample_data):
 
 def test_model_save_load(sample_data, tmp_path):
     """Тест сохранения и загрузки модели."""
-    X, y = sample_data
+    features, target = sample_data
 
     # Обучаем модель
     model = CatBoostModel(params={"iterations": 10, "verbose": False})
-    model.fit(X, y)
+    model.fit(features, target)
 
     # Предсказания до сохранения
-    proba_before = model.predict_proba(X)
+    proba_before = model.predict_proba(features)
 
     # Сохраняем
     save_path = tmp_path / "test_model"
@@ -368,7 +368,7 @@ def test_model_save_load(sample_data, tmp_path):
     model_loaded.load(save_path.parent / "test_model_shadow.cbm")
 
     # Предсказания после загрузки
-    proba_after = model_loaded.predict_proba(X)
+    proba_after = model_loaded.predict_proba(features)
 
     # Должны быть идентичными
     assert np.allclose(proba_before, proba_after)
@@ -379,12 +379,12 @@ def test_model_save_load(sample_data, tmp_path):
 
 def test_tscv_cross_validate(sample_data):
     """Тест полного цикла TSCV с моделью."""
-    X, y = sample_data
+    features, target = sample_data
 
     model = CatBoostModel(params={"iterations": 10, "verbose": False})
     tscv = TimeSeriesCrossValidator(n_splits=4)
 
-    results = tscv.cross_validate(model, X, y)
+    results = tscv.cross_validate(model, features, target)
 
     # Проверяем наличие метрик
     assert "mean_logloss" in results

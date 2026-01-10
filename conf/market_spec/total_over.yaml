@@ -32,5 +32,3 @@ prematch_line:
   source: "odds_feed"      # Колонка с коэффициентами
   timing: "close"          # close/open/pre_N_minutes
   market_key: "total"      # Ключ для парсинга odds
-
-

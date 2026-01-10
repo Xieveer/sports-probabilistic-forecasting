@@ -17,5 +17,3 @@ available_sides:
   - home    # Победа хозяев (wide format)
   - away    # Победа гостей (wide format)
   - h2h     # Head-to-head без привязки к home/away (long format)
-
-

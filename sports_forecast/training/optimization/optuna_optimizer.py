@@ -11,8 +11,8 @@ Optuna оптимизатор для подбора гиперпараметро
     >>> optimizer = OptunaOptimizer(model_name="catboost", tournament="uel_kz_1")
     >>> best_params = optimizer.optimize(
     ...     model=catboost_model,
-    ...     X_train=X_train,
-    ...     y_train=y_train,
+    ...     train_features=train_features,
+    ...     train_target=train_target,
     ...     n_trials=50,
     ... )
 """
@@ -55,7 +55,7 @@ class OptunaOptimizer:
 
     Examples:
         >>> optimizer = OptunaOptimizer("catboost", "uel_kz_1")
-        >>> best_params = optimizer.optimize(model, X_train, y_train, n_trials=30)
+        >>> best_params = optimizer.optimize(model, train_features, train_target, n_trials=30)
     """
 
     def __init__(
@@ -96,8 +96,8 @@ class OptunaOptimizer:
     def optimize(
         self,
         model: Any,
-        X_train: Any,
-        y_train: Any,
+        train_features: Any,
+        train_target: Any,
         param_space: Callable[[optuna.Trial], dict[str, Any]] | None = None,
         n_trials: int = 30,
         timeout: int | None = None,
@@ -108,8 +108,8 @@ class OptunaOptimizer:
 
         Args:
             model: Модель с методом fit() и predict_proba().
-            X_train: Фичи для обучения.
-            y_train: Таргет.
+            train_features: Фичи для обучения.
+            train_target: Таргет.
             param_space: Функция для генерации пространства параметров
                 (trial -> dict). Если None, используется дефолтное
                 пространство для модели.
@@ -163,8 +163,8 @@ class OptunaOptimizer:
             try:
                 results = self.tscv.cross_validate(
                     model=model,
-                    X=X_train,
-                    y=y_train,
+                    features=train_features,
+                    target=train_target,
                     fit_kwargs={},
                 )
 

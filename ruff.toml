@@ -18,8 +18,6 @@ select = [
 ignore = [
     "E203",         # конфликт с Black
     "E501",         # длина строки контролируется line-length
-    "N806",         # variable in function should be lowercase (для X, y в ML)
-    "N803",         # argument name should be lowercase (для X, y, X_train и т.д. в ML - стандартная конвенция)
 ]
 
 [lint.per-file-ignores]

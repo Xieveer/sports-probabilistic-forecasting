@@ -28,5 +28,3 @@ optuna_space:
   solver:
     type: categorical
     choices: [saga, liblinear]
-
-

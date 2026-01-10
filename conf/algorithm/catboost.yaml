@@ -36,5 +36,3 @@ optuna_space:
     low: 100
     high: 1000
     step: 100
-
-

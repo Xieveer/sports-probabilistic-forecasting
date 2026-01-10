@@ -28,5 +28,3 @@ pruner:
 # Логирование
 verbose: true
 show_progress_bar: true
-
-

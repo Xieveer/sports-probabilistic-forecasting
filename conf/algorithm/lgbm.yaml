@@ -59,5 +59,3 @@ optuna_space:
     type: float
     low: 0.0
     high: 10.0
-
-

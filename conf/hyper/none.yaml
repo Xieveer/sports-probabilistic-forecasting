@@ -6,5 +6,3 @@ description: "No hyperparameter optimization (use defaults)"
 
 # Параметры
 enabled: false
-
-

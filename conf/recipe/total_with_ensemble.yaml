@@ -36,4 +36,3 @@ ensemble_config:
 # Дополнительные настройки
 use_calibration: false
 use_optuna: false
-

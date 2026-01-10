@@ -31,5 +31,3 @@ prematch_line:
   source: "odds_feed"
   timing: "close"
   market_key: "total"
-
-

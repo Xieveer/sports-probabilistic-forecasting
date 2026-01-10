@@ -10,8 +10,8 @@ Time Series Cross-Validation для обучения моделей на вре�
 Примеры:
     >>> tscv = TimeSeriesCrossValidator(n_splits=4)
     >>> for fold_idx, (train_idx, val_idx) in enumerate(tscv.split(X)):
-    ...     X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
-    ...     y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
+    ...     train_features, val_features = features.iloc[train_idx], features.iloc[val_idx]
+    ...     train_target, val_target = y.iloc[train_idx], y.iloc[val_idx]
     ...     # Обучение
 """
 
@@ -56,7 +56,7 @@ class TimeSeriesCrossValidator:
 
     Examples:
         >>> tscv = TimeSeriesCrossValidator(n_splits=4)
-        >>> results = tscv.cross_validate(model, X, y)
+        >>> results = tscv.cross_validate(model, features, y)
         >>> print(results["mean_logloss"])  # Средний log loss
     """
 
@@ -79,43 +79,43 @@ class TimeSeriesCrossValidator:
 
     def split(
         self,
-        X: pd.DataFrame | np.ndarray,
-        y: pd.Series | np.ndarray | None = None,
+        features: pd.DataFrame | np.ndarray,
+        target: pd.Series | np.ndarray | None = None,
     ) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
         """
         Генерирует индексы train/validation для каждого фолда.
 
         Args:
-            X: Данные для разбиения.
-            y: Таргет (не используется, для совместимости со sklearn).
+            features: Данные для разбиения.
+            target: Таргет (не используется, для совместимости со sklearn).
 
         Yields:
             Tuple[train_indices, val_indices]: Индексы для обучения и валидации.
 
         Examples:
             >>> for train_idx, val_idx in tscv.split(X):
-            ...     X_train = X.iloc[train_idx]
-            ...     X_val = X.iloc[val_idx]
+            ...     train_features = features.iloc[train_idx]
+            ...     val_features = features.iloc[val_idx]
         """
         logger.debug("Разбиваю данные на %d фолдов (TSCV)", self.n_splits)
 
-        for fold_idx, (train_idx, val_idx) in enumerate(self.tscv.split(X), 1):
+        for fold_idx, (train_idx, val_idx) in enumerate(self.tscv.split(features), 1):
             logger.debug(
                 "Фолд %d/%d: train=%d записей (%.1f%%), val=%d записей (%.1f%%)",
                 fold_idx,
                 self.n_splits,
                 len(train_idx),
-                len(train_idx) / len(X) * 100,
+                len(train_idx) / len(features) * 100,
                 len(val_idx),
-                len(val_idx) / len(X) * 100,
+                len(val_idx) / len(features) * 100,
             )
             yield train_idx, val_idx
 
     def cross_validate(
         self,
         model: Any,
-        X: pd.DataFrame,
-        y: pd.Series,
+        features: pd.DataFrame,
+        target: pd.Series,
         fit_kwargs: dict | None = None,
     ) -> dict[str, Any]:
         """
@@ -123,8 +123,8 @@ class TimeSeriesCrossValidator:
 
         Args:
             model: Модель с методами fit() и predict_proba().
-            X: Фичи для обучения.
-            y: Таргет.
+            features: Фичи для обучения.
+            target: Таргет.
             fit_kwargs: Дополнительные параметры для model.fit().
 
         Returns:
@@ -143,13 +143,13 @@ class TimeSeriesCrossValidator:
                 - n_folds: Количество фолдов
 
         Examples:
-            >>> results = tscv.cross_validate(catboost_model, X_train, y_train)
+            >>> results = tscv.cross_validate(catboost_model, train_features, train_target)
             >>> print(f"Mean LogLoss: {results['mean_logloss']:.4f}")
         """
         if fit_kwargs is None:
             fit_kwargs = {}
 
-        logger.info("Запуск TSCV: %d фолдов на %d записях", self.n_splits, len(X))
+        logger.info("Запуск TSCV: %d фолдов на %d записях", self.n_splits, len(features))
 
         # Сохраняем метрики для каждого фолда
         fold_metrics: dict[str, list[float]] = {
@@ -161,53 +161,61 @@ class TimeSeriesCrossValidator:
         }  # type: ignore[assignment]
 
         # Проходим по фолдам
-        for fold_idx, (train_idx, val_idx) in enumerate(self.split(X, y), 1):
+        for fold_idx, (train_idx, val_idx) in enumerate(self.split(features, target), 1):
             logger.info("--- Фолд %d/%d ---", fold_idx, self.n_splits)
 
             # Разбиваем данные
-            X_train = X.iloc[train_idx] if isinstance(X, pd.DataFrame) else X[train_idx]
-            X_val = X.iloc[val_idx] if isinstance(X, pd.DataFrame) else X[val_idx]
-            y_train = y.iloc[train_idx] if isinstance(y, pd.Series) else y[train_idx]
-            y_val = y.iloc[val_idx] if isinstance(y, pd.Series) else y[val_idx]
+            train_features = (
+                features.iloc[train_idx]
+                if isinstance(features, pd.DataFrame)
+                else features[train_idx]
+            )
+            val_features = (
+                features.iloc[val_idx] if isinstance(features, pd.DataFrame) else features[val_idx]
+            )
+            train_target = (
+                target.iloc[train_idx] if isinstance(target, pd.Series) else target[train_idx]
+            )
+            val_target = target.iloc[val_idx] if isinstance(target, pd.Series) else target[val_idx]
 
             # Обучаем модель
-            model.fit(X_train, y_train, **fit_kwargs)
+            model.fit(train_features, train_target, **fit_kwargs)
 
             # Предсказания
-            proba = model.predict_proba(X_val)[:, 1]
+            proba = model.predict_proba(val_features)[:, 1]
             y_pred = (proba >= 0.5).astype(int)
 
             # Метрики
             try:
-                logloss = float(log_loss(y_val, proba))
+                logloss = float(log_loss(val_target, proba))
                 fold_metrics["logloss"].append(logloss)
                 logger.info("  LogLoss:  %.4f", logloss)
             except Exception as e:
                 logger.warning("  LogLoss:  Ошибка - %s", e)
 
             try:
-                auc = float(roc_auc_score(y_val, proba))
+                auc = float(roc_auc_score(val_target, proba))
                 fold_metrics["auc"].append(auc)
                 logger.info("  AUC:      %.4f", auc)
             except Exception as e:
                 logger.warning("  AUC:      Ошибка - %s", e)
 
             try:
-                accuracy = float(accuracy_score(y_val, y_pred))
+                accuracy = float(accuracy_score(val_target, y_pred))
                 fold_metrics["accuracy"].append(accuracy)
                 logger.info("  Accuracy: %.4f", accuracy)
             except Exception as e:
                 logger.warning("  Accuracy: Ошибка - %s", e)
 
             try:
-                brier = brier_score_loss(y_val, proba)
+                brier = brier_score_loss(val_target, proba)
                 fold_metrics["brier"].append(brier)
                 logger.info("  Brier:    %.4f", brier)
             except Exception as e:
                 logger.warning("  Brier:    Ошибка - %s", e)
 
             try:
-                ece = compute_expected_calibration_error(np.array(y_val), proba)
+                ece = compute_expected_calibration_error(np.array(val_target), proba)
                 fold_metrics["ece"].append(ece)
                 logger.info("  ECE:      %.4f", ece)
             except Exception as e:

@@ -17,5 +17,3 @@ target_logic:
 available_sides:
   - over   # Больше линии
   - under  # Меньше линии
-
-

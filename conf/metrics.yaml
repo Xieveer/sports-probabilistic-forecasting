@@ -23,5 +23,3 @@ direction:
 thresholds:
   ece_max: 0.15       # Предупреждение если ECE > 0.15
   auc_min: 0.55       # Предупреждение если AUC < 0.55 (хуже чем random + 5%)
-
-

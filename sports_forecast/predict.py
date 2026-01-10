@@ -191,14 +191,14 @@ def predict_single_tournament(
 
         # Извлекаем фичи
         feature_columns = list(tournament_cfg.model.features)
-        X = df[feature_columns]
+        features = df[feature_columns]
 
         logger.info("Фичи для инференса: %s", feature_columns)
-        logger.info("X shape: %s", X.shape)
+        logger.info("X shape: %s", features.shape)
 
         # Предсказания
         logger.info("Считаю predict_proba...")
-        proba = model.predict_proba(X)[:, 1]
+        proba = model.predict_proba(features)[:, 1]
 
         proba_col = f"proba_{tournament_cfg.model.name}"
 

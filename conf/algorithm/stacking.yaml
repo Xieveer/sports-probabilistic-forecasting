@@ -27,4 +27,3 @@ params: {}
 
 # Optuna space (не используется для ансамбля)
 optuna_space: null
-

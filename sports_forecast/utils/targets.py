@@ -5,10 +5,10 @@ Target Computation Module для архитектуры v2.0.
 """
 
 import logging
-from typing import Optional
 
 import pandas as pd
 from omegaconf import DictConfig
+
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class TargetComputationError(Exception):
 
 
 def compute_target_from_market_spec(
-    df: pd.DataFrame, market_spec: DictConfig, line: Optional[float] = None
+    df: pd.DataFrame, market_spec: DictConfig, line: float | None = None
 ) -> pd.Series:
     """
     Вычислить таргет на основе MarketSpec (архитектура v2.0).
@@ -39,7 +39,7 @@ def compute_target_from_market_spec(
     Examples:
         >>> # Winner home
         >>> target = compute_target_from_market_spec(df, cfg.market_spec)
-        
+
         >>> # Total over 6.5
         >>> target = compute_target_from_market_spec(df, cfg.market_spec, line=6.5)
     """
@@ -55,15 +55,14 @@ def compute_target_from_market_spec(
         )
 
     source_columns = market_spec.target.get("source_columns", [])
-    formula = market_spec.target.get("formula")
+    # formula = market_spec.target.get("formula")  # TODO: implement formula-based targets
     target_name = market_spec.target.get("name", "target")
 
     # Проверяем наличие колонок
     for col in source_columns:
         if col not in df.columns:
             raise TargetComputationError(
-                f"Колонка '{col}' не найдена в датафрейме. "
-                f"Доступные: {list(df.columns)[:20]}..."
+                f"Колонка '{col}' не найдена в датафрейме. Доступные: {list(df.columns)[:20]}..."
             )
 
     # Вычисляем таргет в зависимости от market family
@@ -76,8 +75,8 @@ def compute_target_from_market_spec(
             line = market_spec.get("line")
         if line is None or line == "???":
             raise TargetComputationError(
-                f"Line обязательна для total markets! "
-                f"Укажите market_spec.line=6.5 или передайте параметр line"
+                "Line обязательна для total markets! "
+                "Укажите market_spec.line=6.5 или передайте параметр line"
             )
 
         target = _compute_total_target(df, market_spec, line)
@@ -93,8 +92,7 @@ def compute_target_from_market_spec(
 
     else:
         raise TargetComputationError(
-            f"Неизвестный market_family: {market_family}. "
-            f"Поддерживаются: winner, total, handicap"
+            f"Неизвестный market_family: {market_family}. Поддерживаются: winner, total, handicap"
         )
 
     # Логируем
@@ -128,8 +126,7 @@ def _compute_winner_target(df: pd.DataFrame, market_spec: DictConfig) -> pd.Seri
         # Победа хозяев: home_points > away_points
         if len(source_cols) != 2:
             raise TargetComputationError(
-                f"winner_home требует 2 колонки [home_points, away_points], "
-                f"получено: {source_cols}"
+                f"winner_home требует 2 колонки [home_points, away_points], получено: {source_cols}"
             )
         home_col, away_col = source_cols
         target = (df[home_col] > df[away_col]).astype(int)
@@ -138,9 +135,7 @@ def _compute_winner_target(df: pd.DataFrame, market_spec: DictConfig) -> pd.Seri
     elif side == "away":
         # Победа гостей: away_points > home_points
         if len(source_cols) != 2:
-            raise TargetComputationError(
-                f"winner_away требует 2 колонки [home_points, away_points]"
-            )
+            raise TargetComputationError("winner_away требует 2 колонки [home_points, away_points]")
         home_col, away_col = source_cols
         target = (df[away_col] > df[home_col]).astype(int)
         logger.debug("Winner away: %s > %s", away_col, home_col)
@@ -150,12 +145,10 @@ def _compute_winner_target(df: pd.DataFrame, market_spec: DictConfig) -> pd.Seri
             f"Неизвестный side для winner: {side}. Поддерживаются: home, away"
         )
 
-    return target
+    return target  # type: ignore[no-any-return]
 
 
-def _compute_total_target(
-    df: pd.DataFrame, market_spec: DictConfig, line: float
-) -> pd.Series:
+def _compute_total_target(df: pd.DataFrame, market_spec: DictConfig, line: float) -> pd.Series:
     """
     Вычислить таргет для total market.
 
@@ -172,8 +165,7 @@ def _compute_total_target(
 
     if len(source_cols) != 2:
         raise TargetComputationError(
-            f"total markets требуют 2 колонки [home_points, away_points], "
-            f"получено: {source_cols}"
+            f"total markets требуют 2 колонки [home_points, away_points], получено: {source_cols}"
         )
 
     home_col, away_col = source_cols
@@ -195,12 +187,10 @@ def _compute_total_target(
             f"Неизвестный side для total: {side}. Поддерживаются: over, under"
         )
 
-    return target
+    return target  # type: ignore[no-any-return]
 
 
-def _compute_handicap_target(
-    df: pd.DataFrame, market_spec: DictConfig, line: float
-) -> pd.Series:
+def _compute_handicap_target(df: pd.DataFrame, market_spec: DictConfig, line: float) -> pd.Series:
     """
     Вычислить таргет для handicap market.
 
@@ -217,7 +207,7 @@ def _compute_handicap_target(
 
     if len(source_cols) != 2:
         raise TargetComputationError(
-            f"handicap markets требуют 2 колонки [home_points, away_points]"
+            "handicap markets требуют 2 колонки [home_points, away_points]"
         )
 
     home_col, away_col = source_cols
@@ -227,27 +217,23 @@ def _compute_handicap_target(
         # Фора на хозяев: (home + line) > away
         result = df[home_col] + line
         target = (result > df[away_col]).astype(int)
-        logger.debug(
-            "Handicap home %.1f: (%s + %.1f) > %s", line, home_col, line, away_col
-        )
+        logger.debug("Handicap home %.1f: (%s + %.1f) > %s", line, home_col, line, away_col)
 
     elif side == "away":
         # Фора на гостей: (away + line) > home
         result = df[away_col] + line
         target = (result > df[home_col]).astype(int)
-        logger.debug(
-            "Handicap away %.1f: (%s + %.1f) > %s", line, away_col, line, home_col
-        )
+        logger.debug("Handicap away %.1f: (%s + %.1f) > %s", line, away_col, line, home_col)
 
     else:
         raise TargetComputationError(
             f"Неизвестный side для handicap: {side}. Поддерживаются: home, away"
         )
 
-    return target
+    return target  # type: ignore[no-any-return]
 
 
-def get_target_name(market_spec: DictConfig, line: Optional[float] = None) -> str:
+def get_target_name(market_spec: DictConfig, line: float | None = None) -> str:
     """
     Получить имя таргета на основе MarketSpec.
 
@@ -271,5 +257,4 @@ def get_target_name(market_spec: DictConfig, line: Optional[float] = None) -> st
         if line is not None:
             base_name = base_name.replace("{line}", str(line).replace(".", "_"))
 
-    return base_name
-
+    return base_name  # type: ignore[no-any-return]

@@ -266,7 +266,7 @@ generators:
   - type: form
     enabled: true
     fg_trigger_minutes: 480
-    
+
   - type: ewm
     enabled: true
     metric: diff_ps
@@ -360,7 +360,7 @@ line: ???  # Задаётся через CLI: market_spec.line=6.5
 
 target:
   formula: "(home_points + away_points) > line"
-  
+
 prematch_line:
   enabled: true
   source: "odds_feed"
@@ -374,7 +374,7 @@ prematch_line:
 data:
   formats:
     wide: train_wide.parquet
-    
+
   odds_feed:
     column: "fon_bet_odds_feed"
     format: "python_dict"
@@ -388,27 +388,27 @@ data:
 def compute_target(df: pd.DataFrame, market_spec: DictConfig) -> pd.Series:
     """
     Вычислить таргет на основе market_spec.
-    
+
     Args:
         df: DataFrame с данными (home_points, away_points, ...)
         market_spec: cfg.market_spec (side, line, formula)
-    
+
     Returns:
         Series с таргетом (0/1)
     """
     # Получаем параметры
     line = market_spec.line  # 6.5
     formula = market_spec.target.formula  # "(home_points + away_points) > line"
-    
+
     # Вычисляем total
     total = df["home_points"] + df["away_points"]
-    
+
     # Применяем formula
     if market_spec.side == "over":
         y = (total > line).astype(int)
     elif market_spec.side == "under":
         y = (total < line).astype(int)
-    
+
     return y
 ```
 
@@ -423,29 +423,29 @@ def compute_target(df: pd.DataFrame, market_spec: DictConfig) -> pd.Series:
 ```python
 def validate_parent_config(cfg: DictConfig) -> None:
     """Валидация перед запуском parent run."""
-    
+
     # 1. Tournament задан
     assert cfg.tournament.name is not None, "tournament.name обязателен!"
-    
+
     # 2. Market family задан
     assert cfg.market.family is not None, "market.family обязателен!"
-    
+
     # 3. MarketSpec задан и валиден
     assert cfg.market_spec.name is not None, "market_spec.name обязателен!"
-    
+
     # 4. Для total: line обязателен
     if cfg.market.family == "total":
         assert cfg.market_spec.line is not None, \
             "market_spec.line обязателен для total! Укажите: market_spec.line=6.5"
-    
+
     # 5. data_format явно задан
     assert cfg.market_spec.data_format in ["long", "wide"], \
         f"market_spec.data_format должен быть 'long' или 'wide', получено: {cfg.market_spec.data_format}"
-    
+
     # 6. Файл данных существует
     data_path = get_data_path(cfg.tournament, cfg.market_spec.data_format)
     assert data_path.exists(), f"Файл данных не найден: {data_path}"
-    
+
     # 7. Line допустима для турнира
     if cfg.market.family == "total":
         allowed_lines = cfg.tournament.allowed_market_specs.total.lines
@@ -459,15 +459,15 @@ def validate_parent_config(cfg: DictConfig) -> None:
 ```python
 def validate_experiment_config(cfg_experiment: DictConfig) -> None:
     """Валидация перед запуском experiment (nested run)."""
-    
+
     # 1. Algorithm задан
     assert cfg_experiment.algorithm._target_ is not None, \
         "algorithm._target_ обязателен!"
-    
+
     # 2. Featureset задан
     assert cfg_experiment.features.name is not None, \
         "features.name обязателен!"
-    
+
     # 3. Hyper стратегия валидна
     assert cfg_experiment.hyper.strategy in ["none", "grid", "optuna"], \
         f"hyper.strategy должна быть 'none'/'grid'/'optuna', получено: {cfg_experiment.hyper.strategy}"
@@ -498,10 +498,10 @@ uv run python -m sports_forecast.train_v2 \
 def main(cfg: DictConfig) -> None:
     # 1. Валидация parent config
     validate_parent_config(cfg)
-    
+
     # 2. Создаём parent MLflow run
     parent_run_name = f"{cfg.tournament.name}__{cfg.market.family}__{cfg.market_spec.side}_{cfg.market_spec.line}"
-    
+
     with mlflow.start_run(run_name=parent_run_name) as parent_run:
         # Логируем parent tags
         mlflow.set_tags({
@@ -511,7 +511,7 @@ def main(cfg: DictConfig) -> None:
             "line": cfg.market_spec.line,
             "scope": "prematch",
         })
-        
+
         # 3. Запускаем nested runs согласно recipe
         run_experiments(cfg, parent_run.info.run_id)
 ```
@@ -521,14 +521,14 @@ def main(cfg: DictConfig) -> None:
 ```python
 def run_experiments(cfg: DictConfig, parent_run_id: str) -> None:
     """Запуск nested runs согласно recipe."""
-    
+
     recipe = cfg.recipe
-    
+
     # Перебираем все комбинации
     for featureset_name in recipe.featuresets:
         for algorithm_name in recipe.algorithms:
             for seed in recipe.seeds:
-                
+
                 # Компонуем config для эксперимента через Hydra compose
                 with initialize_config_dir(config_dir="conf", version_base="1.3"):
                     cfg_experiment = compose(
@@ -544,10 +544,10 @@ def run_experiments(cfg: DictConfig, parent_run_id: str) -> None:
                             f"seed={seed}",
                         ]
                     )
-                
+
                 # Валидация experiment config
                 validate_experiment_config(cfg_experiment)
-                
+
                 # Запускаем nested run
                 run_experiment(cfg_experiment, parent_run_id)
 ```
@@ -610,12 +610,12 @@ def run_experiments(cfg: DictConfig, parent_run_id: str) -> None:
     "shadow_logloss_mean": 0.6707,
     "shadow_logloss_std": 0.0153,
     "shadow_auc_mean": 0.6025,
-    
+
     # Production (test set)
     "prod_logloss": 0.6671,
     "prod_auc": 0.5996,
     "prod_accuracy": 0.5800,
-    
+
     # Калибровка
     "ece_before": 0.1158,
     "ece_after": 0.0120,
@@ -671,8 +671,6 @@ def run_experiments(cfg: DictConfig, parent_run_id: str) -> None:
 
 ---
 
-**Дата:** 2026-01-07  
-**Статус:** 🟢 В разработке (архитектура спроектирована)  
+**Дата:** 2026-01-07
+**Статус:** 🟢 В разработке (архитектура спроектирована)
 **Next:** Реализация новой структуры конфигов
-
-

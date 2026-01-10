@@ -12,5 +12,3 @@ params:
 
 # Optuna space (не используется для dummy)
 optuna_space: null
-
-

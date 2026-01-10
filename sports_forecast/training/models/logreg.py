@@ -115,8 +115,8 @@ class LogRegModel(BaseSingleModel):
 
     def _preprocess_data(
         self,
-        X: pd.DataFrame,
-        y: pd.Series | None = None,
+        features: pd.DataFrame,
+        target: pd.Series | None = None,
         fit: bool = True,
     ) -> tuple[pd.DataFrame, pd.Series | None]:
         """
@@ -127,20 +127,24 @@ class LogRegModel(BaseSingleModel):
         - OneHotEncoder для категориальных фичей
 
         Args:
-            X: Фичи.
-            y: Таргет (для fit=True).
+            features: Фичи.
+            target: Таргет (для fit=True).
             fit: Если True, обучаем preprocessor. Если False, только трансформируем.
 
         Returns:
-            Кортеж (X_transformed, y).
+            Кортеж (features_transformed, target).
 
         Examples:
-            >>> X_transformed, y = model._preprocess_data(X_train, y_train, fit=True)
+            >>> features_transformed, y = model._preprocess_data(X_train, y_train, fit=True)
         """
         if fit:
             # Определяем типы фичей
-            self.numeric_features_ = [col for col in X.columns if X[col].dtype != "object"]
-            self.categorical_features_ = [col for col in X.columns if X[col].dtype == "object"]
+            self.numeric_features_ = [
+                col for col in features.columns if features[col].dtype != "object"
+            ]
+            self.categorical_features_ = [
+                col for col in features.columns if features[col].dtype == "object"
+            ]
 
             logger.debug(
                 "LogReg preprocessing: %d числовых, %d категориальных фичей",
@@ -174,7 +178,7 @@ class LogRegModel(BaseSingleModel):
             if not transformers:
                 # Нет фичей для обработки (странно, но обработаем)
                 logger.warning("LogReg: не найдено фичей для предобработки!")
-                return X, y
+                return features, target
 
             self.preprocessor_ = ColumnTransformer(
                 transformers=transformers,
@@ -182,10 +186,12 @@ class LogRegModel(BaseSingleModel):
             )
 
             # Обучаем preprocessor
-            X_transformed = self.preprocessor_.fit_transform(X)
+            features_transformed = self.preprocessor_.fit_transform(features)
 
             logger.debug(
-                "LogReg: данные предобработаны, shape: %s -> %s", X.shape, X_transformed.shape
+                "LogReg: данные предобработаны, shape: %s -> %s",
+                features.shape,
+                features_transformed.shape,
             )
 
         else:
@@ -193,38 +199,38 @@ class LogRegModel(BaseSingleModel):
             if self.preprocessor_ is None:
                 raise ValueError("Preprocessor не обучен. Вызовите fit() сначала.")
 
-            X_transformed = self.preprocessor_.transform(X)
+            features_transformed = self.preprocessor_.transform(features)
 
         # Преобразуем обратно в DataFrame (для совместимости)
         # Для LogisticRegression это необязательно, но для других моделей может быть полезно
         if hasattr(self.preprocessor_, "get_feature_names_out"):
             feature_names = self.preprocessor_.get_feature_names_out()
-            X_transformed = pd.DataFrame(
-                X_transformed,
+            features_transformed = pd.DataFrame(
+                features_transformed,
                 columns=feature_names,
-                index=X.index,
+                index=features.index,
             )
         else:
             # Fallback (для старых версий sklearn)
-            X_transformed = pd.DataFrame(
-                X_transformed,
-                index=X.index,
+            features_transformed = pd.DataFrame(
+                features_transformed,
+                index=features.index,
             )
 
-        return X_transformed, y
+        return features_transformed, target
 
     def _fit_implementation(
         self,
-        X: pd.DataFrame,
-        y: pd.Series,
+        features: pd.DataFrame,
+        target: pd.Series,
         **fit_kwargs,
     ) -> None:
         """
         Обучить Logistic Regression модель.
 
         Args:
-            X: Фичи для обучения.
-            y: Таргет.
+            features: Фичи для обучения.
+            target: Таргет.
             **fit_kwargs: Дополнительные параметры (игнорируются для LogReg).
 
         Examples:
@@ -232,7 +238,7 @@ class LogRegModel(BaseSingleModel):
         """
         # LogReg не поддерживает eval_set, поэтому игнорируем fit_kwargs
         logger.info("Начинаю обучение LogisticRegression...")
-        self.model_.fit(X, y)
+        self.model_.fit(features, target)
 
         logger.info("LogisticRegression обучена: %d итераций", self.model_.n_iter_[0])
 

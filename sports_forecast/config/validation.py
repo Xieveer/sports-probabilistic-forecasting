@@ -6,9 +6,8 @@ Config Validation Module для ML Training Pipeline.
 """
 
 from pathlib import Path
-from typing import List
 
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 
 class ConfigValidationError(Exception):
@@ -31,7 +30,7 @@ def validate_parent_config(cfg: DictConfig, project_root: Path) -> None:
     Examples:
         >>> validate_parent_config(cfg, Path("/project"))
     """
-    errors: List[str] = []
+    errors: list[str] = []
 
     # 1. Tournament задан
     if not hasattr(cfg, "tournament") or not hasattr(cfg.tournament, "name"):
@@ -39,9 +38,7 @@ def validate_parent_config(cfg: DictConfig, project_root: Path) -> None:
     else:
         tournament_name = cfg.tournament.name
         if tournament_name == "???":
-            errors.append(
-                "tournament.name не задан! Укажите: tournament=uel_kz_1"
-            )
+            errors.append("tournament.name не задан! Укажите: tournament=uel_kz_1")
 
     # 2. Market family задан
     if not hasattr(cfg, "market") or not hasattr(cfg.market, "family"):
@@ -55,8 +52,7 @@ def validate_parent_config(cfg: DictConfig, project_root: Path) -> None:
         allowed_families = ["winner", "total", "handicap"]
         if market_family not in allowed_families:
             errors.append(
-                f"market.family должен быть одним из {allowed_families}, "
-                f"получено: {market_family}"
+                f"market.family должен быть одним из {allowed_families}, получено: {market_family}"
             )
 
     # 3. MarketSpec задан и валиден
@@ -65,25 +61,18 @@ def validate_parent_config(cfg: DictConfig, project_root: Path) -> None:
     else:
         market_spec_name = cfg.market_spec.name
         if market_spec_name == "???":
-            errors.append(
-                "market_spec.name не задан! Укажите: market_spec=total_over"
-            )
+            errors.append("market_spec.name не задан! Укажите: market_spec=total_over")
 
     # 4. Для total: line обязателен
     if hasattr(cfg, "market") and cfg.market.get("family") == "total":
         if not hasattr(cfg.market_spec, "line") or cfg.market_spec.line == "???":
             errors.append(
-                "market_spec.line обязателен для total markets! "
-                "Укажите: market_spec.line=6.5"
+                "market_spec.line обязателен для total markets! Укажите: market_spec.line=6.5"
             )
         else:
             # Проверяем что line допустима для турнира
-            if hasattr(cfg, "tournament") and hasattr(
-                cfg.tournament, "allowed_market_specs"
-            ):
-                allowed_lines = (
-                    cfg.tournament.allowed_market_specs.total.get("lines", [])
-                )
+            if hasattr(cfg, "tournament") and hasattr(cfg.tournament, "allowed_market_specs"):
+                allowed_lines = cfg.tournament.allowed_market_specs.total.get("lines", [])
                 if allowed_lines and cfg.market_spec.line not in allowed_lines:
                     errors.append(
                         f"Line {cfg.market_spec.line} не допустима для "
@@ -92,15 +81,12 @@ def validate_parent_config(cfg: DictConfig, project_root: Path) -> None:
 
     # 5. data_format явно задан
     if not hasattr(cfg.market_spec, "data_format"):
-        errors.append(
-            "market_spec.data_format обязателен! Должен быть 'long' или 'wide'"
-        )
+        errors.append("market_spec.data_format обязателен! Должен быть 'long' или 'wide'")
     else:
         data_format = cfg.market_spec.data_format
         if data_format not in ["long", "wide"]:
             errors.append(
-                f"market_spec.data_format должен быть 'long' или 'wide', "
-                f"получено: {data_format}"
+                f"market_spec.data_format должен быть 'long' или 'wide', получено: {data_format}"
             )
 
     # 6. Файл данных существует
@@ -124,9 +110,8 @@ def validate_parent_config(cfg: DictConfig, project_root: Path) -> None:
             errors.append(f"Ошибка проверки пути к данным: {e}")
 
     # 7. Recipe задан (если используется)
-    if hasattr(cfg, "recipe"):
-        if not hasattr(cfg.recipe, "name") or cfg.recipe.name == "???":
-            errors.append("recipe.name не задан! Укажите: recipe=total_baseline")
+    if hasattr(cfg, "recipe") and (not hasattr(cfg.recipe, "name") or cfg.recipe.name == "???"):
+        errors.append("recipe.name не задан! Укажите: recipe=total_baseline")
 
     # Если есть ошибки - падаем с подробным сообщением
     if errors:
@@ -149,16 +134,14 @@ def validate_experiment_config(cfg_experiment: DictConfig) -> None:
     Examples:
         >>> validate_experiment_config(cfg_exp)
     """
-    errors: List[str] = []
+    errors: list[str] = []
 
     # 1. Algorithm задан
     if not hasattr(cfg_experiment, "algorithm"):
         errors.append("algorithm config обязателен!")
     else:
         if not hasattr(cfg_experiment.algorithm, "_target_"):
-            errors.append(
-                "algorithm._target_ обязателен! Должен указывать на класс модели"
-            )
+            errors.append("algorithm._target_ обязателен! Должен указывать на класс модели")
         elif cfg_experiment.algorithm._target_ == "???":
             errors.append("algorithm._target_ не задан!")
 
@@ -172,15 +155,13 @@ def validate_experiment_config(cfg_experiment: DictConfig) -> None:
             errors.append("features.name не задан! Укажите: features=advanced")
 
     # 3. Hyper стратегия валидна
-    if hasattr(cfg_experiment, "hyper"):
-        if hasattr(cfg_experiment.hyper, "strategy"):
-            strategy = cfg_experiment.hyper.strategy
-            allowed_strategies = ["none", "grid", "optuna"]
-            if strategy not in allowed_strategies:
-                errors.append(
-                    f"hyper.strategy должна быть одной из {allowed_strategies}, "
-                    f"получено: {strategy}"
-                )
+    if hasattr(cfg_experiment, "hyper") and hasattr(cfg_experiment.hyper, "strategy"):
+        strategy = cfg_experiment.hyper.strategy
+        allowed_strategies = ["none", "grid", "optuna"]
+        if strategy not in allowed_strategies:
+            errors.append(
+                f"hyper.strategy должна быть одной из {allowed_strategies}, получено: {strategy}"
+            )
 
     # Если есть ошибки - падаем
     if errors:
@@ -209,9 +190,7 @@ def get_data_path(tournament_cfg: DictConfig, data_format: str) -> Path:
         >>> # data/processed/uel_kz_1/train_long.parquet
     """
     if data_format not in ["long", "wide"]:
-        raise ValueError(
-            f"data_format должен быть 'long' или 'wide', получено: {data_format}"
-        )
+        raise ValueError(f"data_format должен быть 'long' или 'wide', получено: {data_format}")
 
     # Получаем базовую директорию
     processed_dir = Path(tournament_cfg.data.processed_dir)
@@ -224,12 +203,10 @@ def get_data_path(tournament_cfg: DictConfig, data_format: str) -> Path:
             f"{tournament_cfg.name}. Доступные: {list(tournament_cfg.data.formats.keys())}"
         )
 
-    return processed_dir / filename
+    return processed_dir / filename  # type: ignore[no-any-return]
 
 
-def check_line_allowed(
-    tournament_cfg: DictConfig, market_family: str, line: float
-) -> bool:
+def check_line_allowed(tournament_cfg: DictConfig, market_family: str, line: float) -> bool:
     """
     Проверить допустимость линии для турнира.
 
@@ -258,9 +235,7 @@ def check_line_allowed(
     return line in allowed_lines
 
 
-def get_allowed_lines(
-    tournament_cfg: DictConfig, market_family: str
-) -> List[float]:
+def get_allowed_lines(tournament_cfg: DictConfig, market_family: str) -> list[float]:
     """
     Получить список допустимых линий для турнира и market family.
 
@@ -282,7 +257,7 @@ def get_allowed_lines(
     if not market_specs:
         return []
 
-    return market_specs.get("lines", [])
+    return market_specs.get("lines", [])  # type: ignore[no-any-return]
 
 
 def print_config_summary(cfg: DictConfig) -> None:
@@ -325,5 +300,3 @@ def print_config_summary(cfg: DictConfig) -> None:
             print(f"   Features: {', '.join(cfg.recipe.featuresets)}")
 
     print("━" * 80)
-
-
