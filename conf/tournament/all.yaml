@@ -1,0 +1,21 @@
+# Tournament: ALL (Multi-tournament режим)
+# Специальный маркер для обработки всех турниров
+
+name: all
+sport: multiple
+description: "Multi-tournament mode (process all available tournaments)"
+
+# Список доступных турниров
+tournaments:
+  cyberhockey:
+    - uel_kz_1
+    - uel_kz_2
+    - uel_cz
+  table_tennis:
+    - lp_by
+    - lp_eu
+    - lp_eu_a18
+    - lp_ru
+
+# Этот конфиг используется только как маркер
+# Реальные настройки берутся из турнир-специфичных конфигов

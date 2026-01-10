@@ -1,0 +1,25 @@
+# Metrics Configuration
+# Метрики для оценки моделей
+
+# Основная метрика (для early stopping и сравнения моделей)
+primary_metric: logloss  # logloss/auc/accuracy
+
+# Дополнительные метрики (для мониторинга)
+secondary_metrics:
+  - auc          # Area Under ROC Curve
+  - accuracy     # Accuracy
+  - brier        # Brier Score
+  - ece          # Expected Calibration Error
+
+# Направление оптимизации
+direction:
+  logloss: minimize
+  auc: maximize
+  accuracy: maximize
+  brier: minimize
+  ece: minimize
+
+# Пороги для алертов
+thresholds:
+  ece_max: 0.15       # Предупреждение если ECE > 0.15
+  auc_min: 0.55       # Предупреждение если AUC < 0.55 (хуже чем random + 5%)

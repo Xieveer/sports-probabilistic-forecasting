@@ -8,7 +8,7 @@ TESTS := tests
 DOCS_SOURCE := docs/source
 DOCS_BUILD := docs/build
 
-.PHONY: help init install lint format fix test pre-commit train clean dvc-repro
+.PHONY: help init install lint format fix test test-unit test-cov test-watch test-file pre-commit train clean dvc-repro
 .PHONY: docs docs-serve docs-clean docs-open docs-coverage docs-linkcheck tree
 
 # ---------- Справка ----------
@@ -27,7 +27,10 @@ help:
 	@echo "  make pre-commit   - прогнать все pre-commit хуки на всех файлах"
 	@echo ""
 	@echo "Тесты:"
-	@echo "  make test         - запустить pytest"
+	@echo "  make test         - запустить все тесты"
+	@echo "  make test-unit    - запустить только юнит-тесты (быстрые)"
+	@echo "  make test-cov     - запустить тесты с coverage отчетом"
+	@echo "  make test-watch   - запустить тесты в watch mode"
 	@echo ""
 	@echo "Документация:"
 	@echo "  make docs              - собрать HTML документацию"
@@ -78,8 +81,27 @@ pre-commit:
 # ---------- Тесты ----------
 
 # Юнит-тесты (на будущее, когда появится папка tests/)
+# ---------- Тесты ----------
+
 test:
+	@echo "🧪 Запуск всех тестов..."
 	uv run pytest
+
+test-unit:
+	@echo "🧪 Запуск юнит-тестов..."
+	uv run pytest -m unit -v
+
+test-cov:
+	@echo "🧪 Запуск тестов с coverage..."
+	uv run pytest --cov=$(SRC) --cov-report=html --cov-report=term-missing
+
+test-watch:
+	@echo "🧪 Запуск тестов в watch mode..."
+	uv run pytest-watch
+
+test-file:
+	@echo "🧪 Запуск конкретного файла: $(FILE)"
+	uv run pytest $(FILE) -v
 
 # ---------- Документация ----------
 
@@ -145,9 +167,16 @@ tree:
 
 # ---------- Основной пайплайн обучения ----------
 
-# Запуск тренировочного скрипта
+# Запуск тренировочного скрипта (архитектура v2.0)
 train:
-	uv run python -m sports_forecast.train
+	uv run python -m sports_forecast.train \
+		tournament=uel_kz_1 \
+		market=total \
+		market_spec=total_over \
+		market_spec.line=6.5 \
+		recipe=total_baseline \
+		features=basic \
+		algorithm=dummy
 
 # ---------- Уборка мусора ----------
 
@@ -173,6 +202,31 @@ dvc-repro:
 	@echo "🔄 Запуск DVC pipeline..."
 	uv run dvc repro
 	@echo "✅ DVC pipeline завершен"
+
+# ---------- MLflow UI ----------
+mlflow-ui:  ## Запустить MLflow UI на порту 5000
+	@echo "🚀 Запуск MLflow UI..."
+	@-pkill -f "mlflow ui" 2>/dev/null || true
+	@sleep 1
+	@bash -c "cd $(shell pwd) && nohup uv run mlflow ui --backend-store-uri file:$(shell pwd)/mlruns --host 127.0.0.1 --port 5000 > mlflow_ui.log 2>&1 & echo \$$!" > mlflow_ui.pid
+	@sleep 3
+	@if pgrep -f "mlflow ui" > /dev/null; then \
+		echo "✅ MLflow UI запущен!"; \
+		echo "📊 URL: http://127.0.0.1:5000"; \
+		echo "📂 Tracking: $(shell pwd)/mlruns"; \
+		echo "📝 Логи: mlflow_ui.log"; \
+		echo "🆔 PID: $$(cat mlflow_ui.pid)"; \
+	else \
+		echo "❌ Ошибка запуска MLflow UI"; \
+		echo "Логи:"; \
+		tail -10 mlflow_ui.log; \
+		exit 1; \
+	fi
+
+mlflow-stop:  ## Остановить MLflow UI
+	@echo "🛑 Остановка MLflow UI..."
+	@-pkill -f "mlflow ui" 2>/dev/null && echo "✅ MLflow UI остановлен" || echo "ℹ️  MLflow UI не был запущен"
+	@rm -f mlflow_ui.pid
 
 # ---------- Демо доступ ----------
 download-demo-data:

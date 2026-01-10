@@ -1,0 +1,29 @@
+# Recipe: Total Baseline
+# Базовый набор экспериментов для total markets
+
+name: total_baseline
+description: "Baseline experiments for total markets (over/under)"
+
+# Какие featuresets пробуем
+featuresets:
+  - basic      # Базовые фичи
+  - advanced   # Продвинутые фичи
+
+# Какие алгоритмы пробуем
+algorithms:
+  - dummy      # Baseline
+  - logreg     # Линейная модель
+  - catboost   # Gradient boosting
+  - lgbm       # Fast gradient boosting
+
+# Стратегия гиперпараметров
+hyper: none  # Без оптимизации для baseline
+
+# Seeds
+seeds:
+  - 42
+
+# TSCV
+tscv:
+  n_folds: 4
+  expanding_window: true

@@ -10,77 +10,102 @@ stages:
       nfiles: 8
     - path: sports_forecast/data/ingest.py
       hash: md5
-      md5: e72f437558ea1688058fc5601ae199f0
-      size: 9451
+      md5: d6c312f940f972c0d2c61abe86f591e7
+      size: 27225
     outs:
     - path: data/raw
       hash: md5
-      md5: a42dd10913621b46be5af78fec0dd84f.dir
-      size: 185907196
-      nfiles: 4
+      md5: 49b441651c266f3d942cd8a156b20fd9.dir
+      size: 191875133
+      nfiles: 14
   features:
-    cmd: uv run python -m sports_forecast.features.features_build
+    cmd: uv run python -m sports_forecast.features.features_build tournament=all
+      model=is_home_win
     deps:
-    - path: conf/features_basic.yaml
+    - path: conf/features
       hash: md5
-      md5: 53ac5ad698bbcef35249edfd55dd17de
-      size: 1218
+      md5: 508ff3aa2c909877d66807f3460acb79.dir
+      size: 6751
+      nfiles: 2
+    - path: conf/paths.yaml
+      hash: md5
+      md5: 37255be8c77c777bcf8382e851be222e
+      size: 224
     - path: data/interim
       hash: md5
-      md5: c74cf87ebb8da9c3ce995a9800d130e8.dir
-      size: 1240680
-      nfiles: 1
+      md5: f616b3c9cb6493864b36381735ff6d2d.dir
+      size: 6753250
+      nfiles: 7
     - path: sports_forecast/features/features_build.py
       hash: md5
-      md5: 613bfaaa4218da0c0bb0281299ba9189
-      size: 18040
+      md5: 530aa3c28c48a3c05542dd81dc0436f9
+      size: 12599
     outs:
     - path: data/processed
       hash: md5
-      md5: f33eeb96b6e95c386540bb77fae9f5c9.dir
-      size: 2199912
-      nfiles: 3
+      md5: 8a094efac99bbf647495ece4389464e2.dir
+      size: 32975664
+      nfiles: 20
   clean:
     cmd: uv run python -m sports_forecast.data.clean
     deps:
-    - path: conf/data_clean.yaml
+    - path: conf/paths.yaml
       hash: md5
-      md5: 326a24b3352843392c0f75cc364919f2
-      size: 1364
+      md5: 37255be8c77c777bcf8382e851be222e
+      size: 224
+    - path: conf/tournament
+      hash: md5
+      md5: 7d04b1efa3694318d2aa8d29dadc81d5.dir
+      size: 17623
+      nfiles: 8
     - path: data/raw
       hash: md5
-      md5: a42dd10913621b46be5af78fec0dd84f.dir
-      size: 185907196
-      nfiles: 4
+      md5: 49b441651c266f3d942cd8a156b20fd9.dir
+      size: 191875133
+      nfiles: 14
     - path: sports_forecast/data/clean.py
       hash: md5
-      md5: fa021bc6f97d4774858fed1a397f6f14
-      size: 13158
+      md5: 05846ba4e3565032778185e39655a9d5
+      size: 17334
     outs:
     - path: data/interim
       hash: md5
-      md5: c74cf87ebb8da9c3ce995a9800d130e8.dir
-      size: 1240680
-      nfiles: 1
+      md5: f616b3c9cb6493864b36381735ff6d2d.dir
+      size: 6753250
+      nfiles: 7
   train:
-    cmd: uv run python -m sports_forecast.train --config-name train_catboost
+    cmd: uv run python -m sports_forecast.train tournament=all model=is_home_win
     deps:
-    - path: conf/train_catboost.yaml
+    - path: conf/config.yaml
       hash: md5
-      md5: ce76881d7cb6e69b864886b75740bbd5
-      size: 726
+      md5: 6e5a28b08e39e17df1e847d5c019a90d
+      size: 1300
+    - path: conf/model
+      hash: md5
+      md5: 84ce9b71e1069928996e3eabca918c80.dir
+      size: 6728
+      nfiles: 4
+    - path: conf/paths.yaml
+      hash: md5
+      md5: 37255be8c77c777bcf8382e851be222e
+      size: 224
+    - path: conf/tournament
+      hash: md5
+      md5: 7d04b1efa3694318d2aa8d29dadc81d5.dir
+      size: 17623
+      nfiles: 8
     - path: data/processed
       hash: md5
-      md5: f33eeb96b6e95c386540bb77fae9f5c9.dir
-      size: 2199912
-      nfiles: 3
+      md5: 8a094efac99bbf647495ece4389464e2.dir
+      size: 32975664
+      nfiles: 20
     - path: sports_forecast/train.py
       hash: md5
-      md5: 6bc1339162e5ebbf4f63b914cbe574d2
-      size: 7399
+      md5: bcc620b2fa3a677feedb4a1f33581cc5
+      size: 34274
     outs:
     - path: models
       hash: md5
-      md5: cac1cdbfd4eea4c5e3e63ede21c162e5.dir
-      size: 221264
-      nfiles: 1
+      md5: bfc56ed8d4ece5f0ba88ba96af6e132c.dir
+      size: 167024
+      nfiles: 7

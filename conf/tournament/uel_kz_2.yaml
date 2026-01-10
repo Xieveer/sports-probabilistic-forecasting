@@ -1,0 +1,46 @@
+# Tournament: UEL Kazakhstan Stream 2 (Cyberhockey)
+
+name: uel_kz_2
+sport: cyberhockey
+region: kazakhstan
+stream: stream_2
+
+data:
+  processed_dir: data/processed/uel_kz_2
+  formats:
+    long: train_long.parquet
+    wide: train_wide.parquet
+  inference:
+    long: inference_long.parquet
+    wide: inference_wide.parquet
+  odds_feed:
+    enabled: true
+    column: fon_bet_odds_feed
+    bookmaker: fonbet
+    format: python_dict
+
+allowed_market_specs:
+  winner:
+    specs: [winner_home]
+    default_recipe: winner_baseline
+  total:
+    lines: [3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5]
+    specs: [total_over, total_under]
+    default_recipe: total_baseline
+
+data_clean:
+  column_mapping:
+    h_m_s: home_points
+    a_m_s: away_points
+  required_columns: [id, status, datetime]
+  drop_na_columns: [id, datetime, status]
+  select_columns: [id, datetime, status, home_points, away_points]
+  dtype_mapping:
+    numeric:
+      home_points: float
+      away_points: float
+    string: [id, status]
+    datetime:
+      datetime:
+        format: null
+        errors: coerce

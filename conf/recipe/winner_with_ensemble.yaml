@@ -1,0 +1,37 @@
+# Recipe: Winner Markets Baseline + Ensemble
+# Полный набор моделей + Stacking для рынков winner
+
+name: winner_with_ensemble
+description: "Full recipe with baseline models + stacking ensemble for winner markets"
+
+# Алгоритмы для обучения (ПОРЯДОК ВАЖЕН!)
+# Сначала обучаются single модели, затем ансамбль использует их предсказания
+algorithms:
+  - dummy          # Baseline
+  - logreg         # Linear model
+  - catboost       # Gradient boosting (CatBoost)
+  - lgbm           # Gradient boosting (LightGBM)
+  - stacking       # Stacking ensemble (последним!)
+
+# Наборы фичей
+featuresets:
+  - basic          # Быстрое тестирование
+
+# Стратегия оптимизации гиперпараметров
+hyper: none        # none/grid_small/optuna
+
+# Seeds для воспроизводимости
+seeds: [42]
+
+# Конфигурация ансамбля (для stacking)
+# Указываем какие базовые модели использовать
+ensemble_config:
+  stacking:
+    base_models:
+      - catboost   # Лучшие модели в качестве базовых
+      - lgbm
+      - logreg
+
+# Дополнительные настройки
+use_calibration: false
+use_optuna: false

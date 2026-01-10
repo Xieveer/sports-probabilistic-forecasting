@@ -1,0 +1,19 @@
+# Market Family: Total (тотал голов/очков)
+# Определяет общую логику тотала (без конкретной линии)
+
+family: total
+description: "Total goals/points market family"
+
+# Общая логика таргета
+target_logic:
+  type: comparison
+  operands:
+    - home_points
+    - away_points
+  operator: sum        # total = home_points + away_points
+  compare_with: line   # Линия берётся из market_spec!
+
+# Возможные стороны
+available_sides:
+  - over   # Больше линии
+  - under  # Меньше линии

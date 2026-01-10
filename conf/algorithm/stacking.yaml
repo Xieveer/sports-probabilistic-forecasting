@@ -1,0 +1,29 @@
+# Algorithm: Stacking Ensemble
+# Универсальный ансамбль из базовых моделей + мета-модель
+# Независим от типа задачи (winner/total/handicap)
+
+name: stacking
+description: "Stacking ensemble: base models + meta-model (LogReg)"
+_target_: sports_forecast.training.ensembles.stacking.StackingEnsemble
+
+# ВАЖНО: Базовые модели НЕ указываются здесь!
+# Они определяются в recipe, который указывает какие модели
+# использовать для конкретного эксперимента
+
+# Мета-модель (обучается на out-of-fold предсказаниях базовых моделей)
+meta_model:
+  type: logreg
+  params:
+    C: 0.1
+    solver: lbfgs
+    max_iter: 1000
+    random_state: 777
+
+# TSCV для stacking (используется для получения OOF предсказаний)
+tscv_n_splits: 4
+
+# Гиперпараметры (пока не используются)
+params: {}
+
+# Optuna space (не используется для ансамбля)
+optuna_space: null

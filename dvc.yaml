@@ -11,25 +11,34 @@ stages:
     cmd: uv run python -m sports_forecast.data.clean
     deps:
       - sports_forecast/data/clean.py
-      - conf/data_clean.yaml
+      - conf/tournament
+      - conf/paths.yaml
       - data/raw
     outs:
       - data/interim
 
   features:
-    cmd: uv run python -m sports_forecast.features.features_build
+    cmd: uv run python -m sports_forecast.features.features_build tournament=all model=is_home_win
     deps:
       - sports_forecast/features/features_build.py
-      - conf/features_basic.yaml
+      - conf/features
+      - conf/paths.yaml
       - data/interim
     outs:
       - data/processed
 
   train:
-    cmd: uv run python -m sports_forecast.train --config-name train_catboost
+    cmd: uv run python -m sports_forecast.train tournament=uel_kz_1 market=total market_spec=total_over market_spec.line=6.5 recipe=total_baseline features=basic algorithm=dummy
     deps:
       - sports_forecast/train.py
-      - conf/train_catboost.yaml
+      - sports_forecast/training/
+      - conf/config.yaml
+      - conf/paths.yaml
+      - conf/tournament
+      - conf/algorithm
+      - conf/market
+      - conf/market_spec
+      - conf/recipe
       - data/processed
     outs:
       - models

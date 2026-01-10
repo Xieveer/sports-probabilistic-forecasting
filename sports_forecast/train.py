@@ -1,192 +1,199 @@
 """
-Обучение модели CatBoost на processed-датасете.
+Training Entry Point для архитектуры v2.0 (Market-Algorithm Separation).
 
-Поток:
-    data/processed/{tournament}/dataset.parquet
-      -> выбор feature_columns и target_column из Hydra-конфига
-      -> train/valid split
-      -> CatBoostClassifier fit
-      -> сохранение модели в models/{tournament}/{model_name}.cbm
+Запуск обучения с новой системой конфигов:
+- Market + MarketSpec (вместо model)
+- Algorithm (вместо model params)
+- Recipe (план экспериментов)
+- Parent/Nested MLflow runs
 
-Запуск:
-    uv run python -m sports_forecast.train --config-name train_catboost
+Usage:
+    # Запуск recipe для total over 6.5 на uel_kz_1
+    uv run python -m sports_forecast.train_v3 \\
+        tournament=uel_kz_1 \\
+        market=total \\
+        market_spec=total_over \\
+        market_spec.line=6.5 \\
+        recipe=total_baseline
+
+    # Быстрый тест (только dummy + logreg)
+    uv run python -m sports_forecast.train_v3 \\
+        tournament=uel_kz_1 \\
+        market=total \\
+        market_spec=total_over \\
+        market_spec.line=6.5 \\
+        recipe.algorithms=[dummy,logreg]
 """
-
-from __future__ import annotations
 
 from pathlib import Path
 
 import hydra
 import mlflow
-import mlflow.catboost
-import pandas as pd
-from catboost import CatBoostClassifier
 from omegaconf import DictConfig, OmegaConf
-from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import train_test_split
 
+from sports_forecast.config import (
+    ConfigValidationError,
+    print_config_summary,
+    validate_parent_config,
+)
+from sports_forecast.training.trainer import ExperimentRunner
 from sports_forecast.utils.log_config import configure_logging, get_logger
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 logger = get_logger(__name__)
 
-
-def load_dataset(
-    processed_root: Path,
-    tournament: str,
-    dataset_filename: str,
-    target_column: str,
-    feature_columns: list[str],
-) -> tuple[pd.DataFrame, pd.Series] | None:
-    dataset_path = processed_root / tournament / dataset_filename
-    if not dataset_path.exists():
-        logger.error("Файл датасета не найден: %s", dataset_path)
-        return None
-
-    logger.info("Читаю датасет: %s", dataset_path)
-    df = pd.read_parquet(dataset_path)
-
-    if df is None or df.empty:
-        logger.error("Датасет пустой")
-        return None
-
-    if target_column not in df.columns:
-        logger.error("Таргет '%s' отсутствует. Колонки: %s", target_column, list(df.columns))
-        return None
-
-    missing = [c for c in feature_columns if c not in df.columns]
-    if missing:
-        logger.error("Отсутствуют фичи из конфига: %s. Колонки: %s", missing, list(df.columns))
-        return None
-
-    X = df[feature_columns]
-    y = df[target_column]
-
-    logger.info("X shape: %s | y shape: %s", X.shape, y.shape)
-    logger.info("Target distribution:\n%s", y.value_counts(dropna=False))
-
-    return X, y
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
 
-@hydra.main(config_path="../conf", config_name="train_catboost", version_base="1.3")
-def run(cfg: DictConfig) -> None:
-    configure_logging(level=cfg.logging.level)
-    logger.info("Train (CatBoost) config: %s", cfg)
+@hydra.main(version_base="1.3", config_path="../conf", config_name="config")
+def main(cfg: DictConfig) -> None:
+    """
+    Главная функция запуска обучения с архитектурой v2.0.
 
-    processed_root = PROJECT_ROOT / cfg.paths.processed_dir
-    models_root = PROJECT_ROOT / cfg.paths.models_dir
-    models_root.mkdir(parents=True, exist_ok=True)
+    Args:
+        cfg: Hydra конфигурация
 
-    dataset = load_dataset(
-        processed_root=processed_root,
-        tournament=cfg.data.tournament,
-        dataset_filename=cfg.data.dataset_filename,
-        target_column=cfg.training.target_column,
-        feature_columns=list(cfg.training.feature_columns),
-    )
-    if dataset is None:
-        logger.error("Не удалось подготовить датасет — выход")
-        return
+    Examples:
+        >>> # Автоматический запуск через Hydra
+        >>> # uv run python -m sports_forecast.train_v3 tournament=uel_kz_1 ...
+    """
+    # Настройка логирования
+    log_level = cfg.logging.get("level", "INFO")
+    configure_logging(level=log_level)
 
-    X, y = dataset
+    logger.info("=" * 80)
+    logger.info("🚀 TRAINING PIPELINE v2.0 (Market-Algorithm Architecture)")
+    logger.info("=" * 80)
 
-    # ---------- MLflow: базовая настройка трекинга ----------
-    # Пытаемся взять настройки из конфигурации (группа mlflow),
-    # иначе используем локальный каталог mlruns в корне проекта.
-    if "mlflow" in cfg:
-        tracking_uri = cfg.mlflow.get("tracking_uri", None)
-        experiment_name = cfg.mlflow.get("experiment_name", None)
-    else:
-        tracking_uri = None
-        experiment_name = None
+    # Печатаем сводку конфигурации
+    print_config_summary(cfg)
 
-    if not tracking_uri:
-        tracking_uri = f"file:{PROJECT_ROOT / 'mlruns'}"
-    if not experiment_name:
-        experiment_name = "sports_forecast"
+    try:
+        # Валидация конфигурации
+        logger.info("🔍 Валидация конфигурации...")
+        validate_parent_config(cfg, PROJECT_ROOT)
+        logger.info("✓ Конфигурация валидна!")
 
-    mlflow.set_tracking_uri(tracking_uri)
-    mlflow.set_experiment(experiment_name)
+    except ConfigValidationError as e:
+        logger.error(str(e))
+        logger.error("\n❌ ОБУЧЕНИЕ ПРЕРВАНО из-за ошибок конфигурации")
+        raise
 
-    run_name = f"{cfg.data.tournament}_{cfg.model.name}"
+    # Создаём Parent MLflow Run
+    parent_run_name = _get_parent_run_name(cfg)
+    logger.info("📊 Создаём Parent MLflow Run: %s", parent_run_name)
 
-    with mlflow.start_run(run_name=run_name):
-        # ---------- Логируем общую информацию о данных и конфиге ----------
-        mlflow.set_tag("tournament", cfg.data.tournament)
-        mlflow.set_tag("model_name", cfg.model.name)
-        mlflow.set_tag("dataset_filename", cfg.data.dataset_filename)
+    with mlflow.start_run(run_name=parent_run_name) as parent_run:
+        # Логируем parent tags
+        parent_tags = _get_parent_tags(cfg)
+        mlflow.set_tags(parent_tags)
 
-        # Сохраняем полный Hydra-конфиг как артефакт
-        mlflow.log_text(OmegaConf.to_yaml(cfg), "config.yaml")
+        # Логируем parent config
+        config_str = OmegaConf.to_yaml(cfg, resolve=True)
+        mlflow.log_text(config_str, "parent_config.yaml")
 
-        # Размеры датасета
-        mlflow.log_param("n_samples", len(X))
-        mlflow.log_param("n_features", X.shape[1])
-        mlflow.log_param("target_column", cfg.training.target_column)
+        logger.info("✓ Parent Run ID: %s", parent_run.info.run_id)
+        logger.info("✓ Tags: %s", parent_tags)
 
-        # Список фичей отдельным артефактом
-        feature_columns = list(cfg.training.feature_columns)
-        mlflow.log_text("\n".join(feature_columns), "features.txt")
+        # Запускаем эксперименты согласно recipe
+        logger.info("")
+        logger.info("🧪 Запуск экспериментов согласно recipe '%s'", cfg.recipe.name)
+        logger.info("=" * 80)
 
-        # Гиперпараметры модели (как есть из конфига)
-        if "params" in cfg.model:
-            mlflow.log_params({f"model__{k}": v for k, v in cfg.model.params.items()})
+        runner = ExperimentRunner(cfg, PROJECT_ROOT, parent_run.info.run_id)
+        results = runner.run_all_experiments()
 
-        # Параметры обучения (test_size, random_state, stratify)
-        mlflow.log_param("test_size", cfg.training.test_size)
-        mlflow.log_param("random_state", cfg.training.random_state)
-        mlflow.log_param("stratify", bool(cfg.training.get("stratify", False)))
+        # Логируем сводку результатов
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("✅ ОБУЧЕНИЕ ЗАВЕРШЕНО")
+        logger.info("=" * 80)
+        logger.info("Результаты:")
+        for exp_name, success in results.items():
+            status = "✓" if success else "✗"
+            logger.info("  %s %s", status, exp_name)
 
-        stratify = y if cfg.training.get("stratify", False) else None
-        X_train, X_valid, y_train, y_valid = train_test_split(
-            X,
-            y,
-            test_size=cfg.training.test_size,
-            random_state=cfg.training.random_state,
-            stratify=stratify,
-        )
+        # Подсчитываем успешные
+        successful = sum(1 for s in results.values() if s)
+        total = len(results)
+        logger.info("")
+        logger.info("Успешно: %d/%d (%.1f%%)", successful, total, successful / total * 100)
 
-        logger.info("Split: train=%d, valid=%d", len(X_train), len(X_valid))
-        mlflow.log_param("n_train", len(X_train))
-        mlflow.log_param("n_valid", len(X_valid))
+        # Логируем итоговую метрику
+        mlflow.log_metric("experiments_total", total)
+        mlflow.log_metric("experiments_successful", successful)
+        mlflow.log_metric("success_rate", successful / total if total > 0 else 0)
 
-        model = CatBoostClassifier(**cfg.model.params)
-        model.fit(X_train, y_train, eval_set=(X_valid, y_valid), use_best_model=True)
+    logger.info("")
+    logger.info("🎉 Все готово! Parent Run ID: %s", parent_run.info.run_id)
 
-        # Базовая метрика (AUC) — логируем в MLflow
-        try:
-            proba = model.predict_proba(X_valid)[:, 1]
-            auc = roc_auc_score(y_valid, proba)
-            logger.info("Valid AUC: %.4f", auc)
-            mlflow.log_metric("valid_auc", auc)
-        except Exception as e:
-            logger.warning("Не удалось посчитать AUC: %s", e)
-            mlflow.set_tag("auc_error", str(e))
 
-        tournament_models_dir = models_root / cfg.data.tournament
-        tournament_models_dir.mkdir(parents=True, exist_ok=True)
+def _get_parent_run_name(cfg: DictConfig) -> str:
+    """
+    Сформировать имя Parent Run.
 
-        ext = cfg.model.get("save_format", "cbm")
-        model_path = tournament_models_dir / f"{cfg.model.name}.{ext}"
+    Args:
+        cfg: Конфигурация
 
-        model.save_model(str(model_path))
-        logger.info("Модель сохранена: %s", model_path)
+    Returns:
+        Имя в формате: tournament__market__side_line
 
-        # ---------- Логирование модели в MLflow ----------
-        # 1) логируем файл модели как артефакт
-        mlflow.log_artifact(str(model_path), artifact_path="model_file")
+    Examples:
+        >>> name = _get_parent_run_name(cfg)
+        >>> # "uel_kz_1__total__over_6.5"
+    """
+    tournament = cfg.tournament.name
+    market = cfg.market.family
+    side = cfg.market_spec.get("side", "")
 
-        # 2) логируем модель через CatBoost flavor (удобно для дальнейшего загрузки через MLflow)
-        try:
-            mlflow.catboost.log_model(
-                model,
-                artifact_path="model",
-            )
-        except Exception as e:
-            logger.warning("Не удалось залогировать модель через mlflow.catboost: %s", e)
-            mlflow.set_tag("mlflow_catboost_log_error", str(e))
+    # Для total добавляем линию
+    if market == "total" and hasattr(cfg.market_spec, "line"):
+        line = cfg.market_spec.line
+        return f"{tournament}__{market}__{side}_{line}"
+
+    # Для winner просто side
+    if side:
+        return f"{tournament}__{market}__{side}"
+
+    return f"{tournament}__{market}"
+
+
+def _get_parent_tags(cfg: DictConfig) -> dict:
+    """
+    Сформировать теги для Parent Run.
+
+    Args:
+        cfg: Конфигурация
+
+    Returns:
+        Словарь тегов для MLflow
+
+    Examples:
+        >>> tags = _get_parent_tags(cfg)
+        >>> # {"tournament": "uel_kz_1", "market_family": "total", ...}
+    """
+    tags = {
+        "tournament": cfg.tournament.name,
+        "market_family": cfg.market.family,
+        "market_spec": cfg.market_spec.name,
+        "recipe": cfg.recipe.name,
+        "architecture": "v2.0",
+    }
+
+    # Добавляем side если есть
+    if hasattr(cfg.market_spec, "side"):
+        tags["side"] = cfg.market_spec.side
+
+    # Добавляем line для total/handicap
+    if cfg.market.family in ["total", "handicap"] and hasattr(cfg.market_spec, "line"):
+        tags["line"] = str(cfg.market_spec.line)
+
+    # Добавляем формат данных
+    if hasattr(cfg.market_spec, "data_format"):
+        tags["data_format"] = cfg.market_spec.data_format
+
+    return tags
 
 
 if __name__ == "__main__":
-    run()
+    main()

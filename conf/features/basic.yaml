@@ -1,0 +1,78 @@
+# Базовый набор фичей для Feature Generation System
+# Используется для быстрого тестирования и простых моделей
+
+name: basic
+description: "Basic featureset for fast testing"
+
+# Префикс для всех генерируемых фичей
+feature_prefix: "f_"
+
+# Требуется ли long format для генерации
+requires_long: true
+
+# Автоматическое создание базовых метрик
+create_metrics:
+  - "diff"    # diff_ps = pl_points - opp_points
+  - "total"   # total_ps = pl_points + opp_points
+
+# Контекстные колонки для long format (копируются в обе строки)
+long_format_context_columns:
+  - "tour_num"
+  - "tour_match_num"
+  - "weekday"
+
+# ОБЯЗАТЕЛЬНЫЙ атрибут для идентификации участника (игрока/команды)
+# Это основной идентификатор участника:
+#   - "short_name_en" для ников в киберспорте (ovi, iceman, griezmann)
+#   - "name" для имён в теннисе (Nadal, Federer)
+#   - "team" для команд в футболе (Barcelona, Real Madrid)
+# Должен существовать как home_{attr} и away_{attr} в исходных данных
+player_id_attr: "short_name_en"
+
+# Генераторы фичей (применяются последовательно)
+generators:
+  # 1. Player Form - базовые индикаторы состояния игрока
+  - type: "form"
+    enabled: true
+    fg_trigger_minutes: 480  # 8 часов
+    dp_trigger_minutes: 30
+    players: ["pl", "opp"]
+    # Генерирует: f_pl_is_dp, f_pl_is_fg, f_pl_is_form, f_match_state, etc.
+
+  # 2. EWM features - скользящие средние (небольшой набор spans)
+  - type: "ewm"
+    enabled: true
+    metric: "diff_ps"
+    spans: [10]  # Только 1 размер окна для БЫСТРОГО тестирования
+    shift: 1
+    min_periods: 3
+    adjust: false
+
+    contexts:
+      # Глобальная форма игрока
+      - name: "global"
+        keys: ["pl"]
+        players: ["pl", "opp"]
+        compute_diff: true
+
+      # H2H форма
+      - name: "h2h"
+        keys: ["pl", "opp"]
+        h2h: true
+        output_suffix: "_diff"
+
+  # 3. Count features - количество встреч
+  - type: "count"
+    enabled: true
+    shift: 1
+
+    contexts:
+      # Общее количество матчей
+      - name: "global"
+        keys: ["pl"]
+        players: ["pl", "opp"]
+
+      # Количество H2H встреч
+      - name: "h2h"
+        keys: ["pl", "opp"]
+        h2h: true

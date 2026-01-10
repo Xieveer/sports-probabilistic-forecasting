@@ -10,16 +10,19 @@
     Выход: data/interim/{tournament}/matches_interim.parquet
 
 Конфигурация:
-    Управляется через Hydra-конфиг ``conf/data_clean.yaml``:
+    Управляется через турнир-специфичные Hydra-конфиги ``conf/tournament/*.yaml``.
+    Для каждого турнира автоматически загружается соответствующий конфиг:
 
-    - paths.raw_dir / paths.interim_dir
-    - clean.required_columns
-    - clean.drop_na_columns
-    - clean.column_mapping
-    - clean.select_columns
+    - tournament.data_clean.required_columns
+    - tournament.data_clean.drop_na_columns
+    - tournament.data_clean.column_mapping (турнир-специфичный!)
+    - tournament.data_clean.select_columns
 
 Пример запуска:
     $ uv run python -m sports_forecast.data.clean
+
+    Автоматически обработает все турниры из data/raw/, применяя
+    турнир-специфичные настройки очистки.
 """
 
 from __future__ import annotations
@@ -27,7 +30,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-import hydra
 import pandas as pd
 from omegaconf import DictConfig
 
@@ -229,16 +231,19 @@ def _validate_required_columns(
     return True
 
 
-def process_tournament(tournament_dir: Path, cfg: DictConfig) -> None:
+def process_tournament(
+    tournament_dir: Path, tournament_cfg: DictConfig, paths_cfg: DictConfig
+) -> None:
     """Обработать один турнир: raw → interim.
 
-    Читает parquet-файл из raw-слоя, применяет маппинг колонок,
-    выполняет типизацию, минимальную очистку согласно конфигу
+    Читает parquet-файл из raw-слоя, применяет турнир-специфичный маппинг колонок,
+    выполняет типизацию, минимальную очистку согласно конфигу турнира
     и сохраняет результат в interim-слой.
 
     Args:
         tournament_dir: Путь к директории турнира в raw-слое.
-        cfg: Hydra-конфиг с параметрами очистки.
+        tournament_cfg: Hydra-конфиг турнира с параметрами очистки (из tournament/*.yaml).
+        paths_cfg: Конфиг с путями (из paths.yaml).
     """
     tournament_name = tournament_dir.name
     raw_path = tournament_dir / "matches.parquet"
@@ -261,22 +266,25 @@ def process_tournament(tournament_dir: Path, cfg: DictConfig) -> None:
         df.shape[1],
     )
 
+    # Извлекаем настройки очистки из турнир-специфичного конфига
+    clean_cfg = tournament_cfg.data_clean
+
     # 1. Применяем маппинг колонок (если он задан в конфиге)
-    if hasattr(cfg.clean, "column_mapping") and cfg.clean.column_mapping:
-        mapping = dict(cfg.clean.column_mapping)
+    if hasattr(clean_cfg, "column_mapping") and clean_cfg.column_mapping:
+        mapping = dict(clean_cfg.column_mapping)
         df = _apply_column_mapping(df, mapping, tournament_name)
 
     # 2. Проверяем обязательные колонки (после маппинга!)
-    required = cfg.clean.required_columns or []
+    required = clean_cfg.required_columns or []
     if required and not _validate_required_columns(df, required, tournament_name):
         return
 
     # 3. Применяем типизацию (ВАЖНО: до dropna!)
-    if hasattr(cfg.clean, "dtype_mapping"):
-        df = _apply_dtype_conversion(df, cfg.clean.dtype_mapping, tournament_name)
+    if hasattr(clean_cfg, "dtype_mapping"):
+        df = _apply_dtype_conversion(df, clean_cfg.dtype_mapping, tournament_name)
 
     # 4. Удаляем строки с NaN
-    drop_na_cols = cfg.clean.drop_na_columns or []
+    drop_na_cols = clean_cfg.drop_na_columns or []
     if drop_na_cols:
         before = len(df)
         df = df.dropna(subset=drop_na_cols)
@@ -289,9 +297,39 @@ def process_tournament(tournament_dir: Path, cfg: DictConfig) -> None:
             before,
         )
 
-    # 5. Выбираем нужные колонки
-    select_cols = cfg.clean.select_columns or []
+    # 5. Добавляем default_status если указан (для турниров без колонки status)
+    if hasattr(clean_cfg, "default_status") and clean_cfg.default_status:
+        df["status"] = clean_cfg.default_status
+        logger.info(
+            "Турнир %s: добавлена колонка status = '%s'",
+            tournament_name,
+            clean_cfg.default_status,
+        )
+
+    # 5.5. Добавляем контекстные колонки для feature engineering
+    # tour_num - номер турнира (последний символ tour_name_en)
+    if "tour_name_en" in df.columns:
+        df["tour_num"] = df["tour_name_en"].str[-1].astype(str)
+        logger.info("Турнир %s: добавлена колонка tour_num", tournament_name)
+
+    # weekday и hour - из datetime
+    if "datetime" in df.columns:
+        df["weekday"] = pd.to_datetime(df["datetime"]).dt.dayofweek
+        df["hour"] = pd.to_datetime(df["datetime"]).dt.hour
+        logger.info("Турнир %s: добавлены колонки weekday, hour", tournament_name)
+
+    # 6. Выбираем нужные колонки
+    select_cols = clean_cfg.select_columns or []
     if select_cols:
+        # Добавляем status в список если есть default_status
+        if (
+            hasattr(clean_cfg, "default_status")
+            and clean_cfg.default_status
+            and "status" not in select_cols
+        ):
+            select_cols = list(select_cols) + ["status"]
+
+        # Фильтруем только существующие колонки (tour_num/weekday/hour уже созданы выше)
         existing_cols = [c for c in select_cols if c in df.columns]
         if not existing_cols:
             logger.warning(
@@ -302,17 +340,18 @@ def process_tournament(tournament_dir: Path, cfg: DictConfig) -> None:
             return
         df = df[existing_cols]
         logger.info(
-            "Турнир %s: оставлены колонки: %s",
+            "Турнир %s: оставлены колонки (%d): %s",
             tournament_name,
-            existing_cols,
+            len(existing_cols),
+            existing_cols[:10],  # Показываем только первые 10
         )
 
     if df.empty:
         logger.warning("Турнир %s: после очистки датафрейм пуст, пропускаю", tournament_name)
         return
 
-    # 6. Сохраняем результат
-    interim_root = PROJECT_ROOT / cfg.paths.interim_dir
+    # 7. Сохраняем результат
+    interim_root = PROJECT_ROOT / paths_cfg.paths.interim_dir
     out_dir = interim_root / tournament_name
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "matches_interim.parquet"
@@ -326,11 +365,54 @@ def process_tournament(tournament_dir: Path, cfg: DictConfig) -> None:
     df.to_parquet(out_path, index=False)
 
 
-@hydra.main(config_path="../../conf", config_name="data_clean", version_base="1.3")
-def run(cfg: DictConfig) -> None:
-    """Запустить обработку всех турниров из raw-слоя в interim-слой."""
-    raw_root = PROJECT_ROOT / cfg.paths.raw_dir
-    interim_root = PROJECT_ROOT / cfg.paths.interim_dir
+def load_tournament_config(tournament_name: str) -> tuple[DictConfig, DictConfig]:
+    """Загрузить конфиг для конкретного турнира (только tournament + paths).
+
+    Args:
+        tournament_name: Имя турнира (например, 'uel', 'lp_by').
+
+    Returns:
+        Tuple (tournament_cfg, paths_cfg) с настройками турнира и путями.
+
+    Raises:
+        FileNotFoundError: Если конфиг турнира не найден.
+    """
+    from hydra import compose, initialize_config_dir
+    from omegaconf import OmegaConf
+
+    config_dir = str((PROJECT_ROOT / "conf").resolve())
+
+    # Загружаем paths
+    with initialize_config_dir(config_dir=config_dir, version_base="1.3"):
+        paths_cfg = compose(config_name="paths", return_hydra_config=False)
+
+    # Загружаем tournament-специфичный конфиг напрямую
+    tournament_config_path = PROJECT_ROOT / "conf" / "tournament" / f"{tournament_name}.yaml"
+    if not tournament_config_path.exists():
+        raise FileNotFoundError(f"Конфиг турнира не найден: {tournament_config_path}")
+
+    tournament_cfg = OmegaConf.load(tournament_config_path)
+
+    return tournament_cfg, paths_cfg
+
+
+def run() -> None:
+    """Запустить обработку всех турниров из raw-слоя в interim-слой.
+
+    Для каждого турнира автоматически загружается соответствующий конфиг
+    из conf/tournament/{tournament_name}.yaml и применяются турнир-специфичные
+    настройки очистки данных.
+    """
+    from hydra import compose, initialize_config_dir
+
+    # Загружаем базовый конфиг только для получения путей
+    config_dir = str((PROJECT_ROOT / "conf").resolve())
+    with initialize_config_dir(config_dir=config_dir, version_base="1.3"):
+        # Загружаем только paths
+        base_cfg = compose(config_name="paths", return_hydra_config=False)
+
+    raw_root = PROJECT_ROOT / base_cfg.paths.raw_dir
+    interim_root = PROJECT_ROOT / base_cfg.paths.interim_dir
 
     if not raw_root.exists():
         raise RuntimeError(f"Папка с raw-данными не найдена: {raw_root}")
@@ -343,8 +425,28 @@ def run(cfg: DictConfig) -> None:
         return
 
     logger.info("Найдено турниров в raw: %d", len(tournaments))
+
     for tournament_dir in tournaments:
-        process_tournament(tournament_dir, cfg)
+        tournament_name = tournament_dir.name
+        logger.info("=" * 60)
+        logger.info("Обрабатываю турнир: %s", tournament_name)
+
+        try:
+            # Загружаем конфиг для конкретного турнира
+            tournament_cfg, paths_cfg = load_tournament_config(tournament_name)
+
+            # Обрабатываем турнир
+            process_tournament(tournament_dir, tournament_cfg, paths_cfg)
+
+        except Exception as e:
+            logger.error("Турнир %s: ошибка при обработке - %s", tournament_name, e)
+            import traceback
+
+            logger.error("Traceback:\n%s", traceback.format_exc())
+            continue
+
+    logger.info("=" * 60)
+    logger.info("Обработка завершена")
 
 
 if __name__ == "__main__":

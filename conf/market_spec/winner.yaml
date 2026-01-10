@@ -1,0 +1,22 @@
+# MarketSpec: Winner (победа игрока)
+# Для long format данных
+# В long format каждый матч представлен дважды:
+#   - player=home, opponent=away (победа домашних)
+#   - player=away, opponent=home (победа гостевых)
+# Таргет: player_points > opponent_points
+
+name: winner
+market_family: winner
+side: player  # Player vs opponent (universal)
+description: "Player wins in long format data"
+
+# ОБЯЗАТЕЛЬНО: Формат данных
+data_format: long  # ЯВНО! Long format: player vs opponent
+
+# Источник таргета (из tournament config)
+target_source_key: player_win
+target_name: target_is_win
+
+# Премач букмекерские линии (опционально)
+prematch_line:
+  enabled: false  # Для winner обычно не нужны линии

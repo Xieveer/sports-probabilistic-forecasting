@@ -1,0 +1,53 @@
+# Tournament: Liga Pro Belarus (Table Tennis)
+
+name: lp_by
+sport: table_tennis
+region: belarus
+description: "Liga Pro: Table Tennis (Belarus)"
+
+data:
+  processed_dir: data/processed/lp_by
+  formats:
+    long: train_long.parquet
+    wide: train_wide.parquet
+  inference:
+    long: inference_long.parquet
+    wide: inference_wide.parquet
+  odds_feed:
+    enabled: true
+    column: sdf_odds_feed
+    bookmaker: sdf
+    format: python_dict
+    coverage: 27.4
+
+allowed_market_specs:
+  winner:
+    specs: [winner_home]
+    default_recipe: winner_baseline
+  total:
+    # Настольный теннис: тоталы в диапазоне 60-80 очков
+    lines: [60.5, 62.5, 64.5, 66.5, 68.5, 70.5, 72.5, 74.5, 76.5, 78.5, 80.5]
+    specs: [total_over, total_under]
+    default_recipe: total_baseline
+
+data_clean:
+  column_mapping:
+    home_score: home_sets
+    away_score: away_sets
+    _hmps: home_points
+    _amps: away_points
+  required_columns: [id, datetime]
+  drop_na_columns: [id, datetime]
+  select_columns: [id, datetime, status, home_sets, away_sets, home_points, away_points]
+  default_status: finished
+  dtype_mapping:
+    numeric:
+      home_sets: int
+      away_sets: int
+      home_points: float
+      away_points: float
+    string: [id, status]
+    datetime:
+      datetime:
+        format: null
+        errors: coerce

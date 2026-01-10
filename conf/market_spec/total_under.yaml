@@ -1,0 +1,29 @@
+# MarketSpec: Total Under (тотал меньше линии)
+# Параметризуется через line (ОБЯЗАТЕЛЬНЫЙ параметр!)
+
+name: total_under
+market_family: total
+side: under
+description: "Total under line (parameterized)"
+
+# ОБЯЗАТЕЛЬНО: Линия задаётся через CLI!
+line: ???  # REQUIRED!
+
+# ОБЯЗАТЕЛЬНО: Формат данных
+data_format: wide
+
+# Источник таргета (из tournament config)
+target_source_key: total_sum_under
+target_name: "target_total_under"  # Будет дополнено линией при логировании
+
+# Фичи
+feature_prefixes:
+  - "home_f_"
+  - "away_f_"
+
+# Премач линии
+prematch_line:
+  enabled: true
+  source: "odds_feed"
+  timing: "close"
+  market_key: "total"

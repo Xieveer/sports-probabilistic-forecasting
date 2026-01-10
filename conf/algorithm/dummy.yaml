@@ -1,0 +1,14 @@
+# Algorithm: Dummy (Baseline)
+# Предсказывает на основе частот классов в обучающей выборке
+
+name: dummy
+description: "Baseline classifier (predicts class frequencies)"
+_target_: sports_forecast.training.models.dummy.DummyModel
+
+# Гиперпараметры
+params:
+  strategy: prior        # prior/stratified/uniform
+  random_state: 777
+
+# Optuna space (не используется для dummy)
+optuna_space: null
