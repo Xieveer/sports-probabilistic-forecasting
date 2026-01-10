@@ -17,6 +17,7 @@
     - tournament.data_clean.drop_na_columns
     - tournament.data_clean.column_mapping (турнир-специфичный!)
     - tournament.data_clean.select_columns
+    - tournament.data_clean.derived_columns (опционально, для генерации доп. колонок)
 
 Пример запуска:
     $ uv run python -m sports_forecast.data.clean
@@ -31,6 +32,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import pandas as pd
+from hydra import compose, initialize_config_dir
 from omegaconf import DictConfig
 
 from sports_forecast.utils.log_config import get_logger
@@ -43,19 +45,29 @@ logger = get_logger(__name__)
 
 def _apply_column_mapping(
     df: pd.DataFrame,
-    mapping: dict[str, str],
+    mapping_cfg: DictConfig | None,
     tournament_name: str,
 ) -> pd.DataFrame:
     """Применить маппинг колонок для унификации названий.
 
     Args:
         df: Исходный датафрейм.
-        mapping: Словарь {старое_название: новое_название}.
+        mapping_cfg: DictConfig с маппингом {старое_название: новое_название}.
         tournament_name: Название турнира (для логирования).
 
     Returns:
         Датафрейм с переименованными колонками.
     """
+    if not mapping_cfg:
+        logger.debug(
+            "Турнир %s: маппинг не задан в конфиге",
+            tournament_name,
+        )
+        return df
+
+    # Конвертируем DictConfig в dict для работы
+    mapping = dict(mapping_cfg)
+
     # Находим только те колонки, которые реально есть в датафрейме
     rename_dict = {
         old_name: new_name for old_name, new_name in mapping.items() if old_name in df.columns
@@ -79,14 +91,14 @@ def _apply_column_mapping(
 
 def _apply_dtype_conversion(
     df: pd.DataFrame,
-    dtype_config: DictConfig,
+    dtype_config: DictConfig | None,
     tournament_name: str,
 ) -> pd.DataFrame:
     """Применить типизацию колонок согласно конфигу.
 
     Args:
         df: Датафрейм для типизации.
-        dtype_config: Конфиг с типами колонок из clean.dtype_mapping.
+        dtype_config: DictConfig с типами колонок из clean.dtype_mapping.
         tournament_name: Название турнира (для логирования).
 
     Returns:
@@ -231,6 +243,92 @@ def _validate_required_columns(
     return True
 
 
+def _apply_derived_columns(
+    df: pd.DataFrame,
+    derived_cfg: DictConfig | None,
+    tournament_name: str,
+) -> pd.DataFrame:
+    """Применить генерацию производных колонок согласно конфигу.
+
+    Args:
+        df: Датафрейм с данными.
+        derived_cfg: DictConfig с правилами генерации колонок из tournament.data_clean.derived_columns.
+        tournament_name: Название турнира (для логирования).
+
+    Returns:
+        Датафрейм с добавленными производными колонками.
+
+    Note:
+        Поддерживаемые трансформации:
+            - extract_last_char: извлечь последний символ из строки
+            - dayofweek: день недели из datetime (0=Пн, 6=Вс)
+            - hour: час из datetime
+            - date: дата из datetime
+    """
+    if not derived_cfg:
+        logger.debug("Турнир %s: derived_columns не заданы в конфиге", tournament_name)
+        return df
+
+    added_columns = []
+
+    for col_name, col_config in derived_cfg.items():
+        source_col = col_config.get("source")
+        transform = col_config.get("transform")
+
+        # Проверяем наличие исходной колонки
+        if source_col not in df.columns:
+            logger.warning(
+                "Турнир %s: исходная колонка '%s' для '%s' не найдена, пропускаю",
+                tournament_name,
+                source_col,
+                col_name,
+            )
+            continue
+
+        try:
+            # Применяем трансформацию
+            if transform == "extract_last_char":
+                df[col_name] = df[source_col].astype(str).str[-1]
+                added_columns.append(col_name)
+
+            elif transform == "dayofweek":
+                df[col_name] = pd.to_datetime(df[source_col]).dt.dayofweek
+                added_columns.append(col_name)
+
+            elif transform == "hour":
+                df[col_name] = pd.to_datetime(df[source_col]).dt.hour
+                added_columns.append(col_name)
+
+            elif transform == "date":
+                df[col_name] = pd.to_datetime(df[source_col]).dt.date
+                added_columns.append(col_name)
+
+            else:
+                logger.warning(
+                    "Турнир %s: неизвестная трансформация '%s' для колонки '%s'",
+                    tournament_name,
+                    transform,
+                    col_name,
+                )
+
+        except Exception as e:
+            logger.error(
+                "Турнир %s: ошибка при генерации колонки '%s' - %s",
+                tournament_name,
+                col_name,
+                e,
+            )
+
+    if added_columns:
+        logger.info(
+            "Турнир %s: добавлены производные колонки: %s",
+            tournament_name,
+            added_columns,
+        )
+
+    return df
+
+
 def process_tournament(
     tournament_dir: Path, tournament_cfg: DictConfig, paths_cfg: DictConfig
 ) -> None:
@@ -270,9 +368,8 @@ def process_tournament(
     clean_cfg = tournament_cfg.data_clean
 
     # 1. Применяем маппинг колонок (если он задан в конфиге)
-    if hasattr(clean_cfg, "column_mapping") and clean_cfg.column_mapping:
-        mapping = dict(clean_cfg.column_mapping)
-        df = _apply_column_mapping(df, mapping, tournament_name)
+    mapping_cfg = clean_cfg.column_mapping if hasattr(clean_cfg, "column_mapping") else None
+    df = _apply_column_mapping(df, mapping_cfg, tournament_name)
 
     # 2. Проверяем обязательные колонки (после маппинга!)
     required = clean_cfg.required_columns or []
@@ -306,17 +403,9 @@ def process_tournament(
             clean_cfg.default_status,
         )
 
-    # 5.5. Добавляем контекстные колонки для feature engineering
-    # tour_num - номер турнира (последний символ tour_name_en)
-    if "tour_name_en" in df.columns:
-        df["tour_num"] = df["tour_name_en"].str[-1].astype(str)
-        logger.info("Турнир %s: добавлена колонка tour_num", tournament_name)
-
-    # weekday и hour - из datetime
-    if "datetime" in df.columns:
-        df["weekday"] = pd.to_datetime(df["datetime"]).dt.dayofweek
-        df["hour"] = pd.to_datetime(df["datetime"]).dt.hour
-        logger.info("Турнир %s: добавлены колонки weekday, hour", tournament_name)
+    # 5.5. Добавляем производные колонки (derived_columns) из конфига
+    derived_cfg = clean_cfg.derived_columns if hasattr(clean_cfg, "derived_columns") else None
+    df = _apply_derived_columns(df, derived_cfg, tournament_name)
 
     # 6. Выбираем нужные колонки
     select_cols = clean_cfg.select_columns or []
@@ -366,32 +455,38 @@ def process_tournament(
 
 
 def load_tournament_config(tournament_name: str) -> tuple[DictConfig, DictConfig]:
-    """Загрузить конфиг для конкретного турнира (только tournament + paths).
+    """Загрузить конфиг для конкретного турнира через Hydra compose.
 
     Args:
-        tournament_name: Имя турнира (например, 'uel', 'lp_by').
+        tournament_name: Имя турнира (например, 'uel_kz_1', 'lp_eu').
 
     Returns:
         Tuple (tournament_cfg, paths_cfg) с настройками турнира и путями.
 
     Raises:
         FileNotFoundError: Если конфиг турнира не найден.
-    """
-    from hydra import compose, initialize_config_dir
-    from omegaconf import OmegaConf
 
+    Note:
+        Использует Hydra compose для загрузки конфигураций вместо прямого
+        OmegaConf.load(), что обеспечивает единый источник правды.
+    """
     config_dir = str((PROJECT_ROOT / "conf").resolve())
 
-    # Загружаем paths
-    with initialize_config_dir(config_dir=config_dir, version_base="1.3"):
-        paths_cfg = compose(config_name="paths", return_hydra_config=False)
-
-    # Загружаем tournament-специфичный конфиг напрямую
+    # Проверяем существование конфига турнира
     tournament_config_path = PROJECT_ROOT / "conf" / "tournament" / f"{tournament_name}.yaml"
     if not tournament_config_path.exists():
         raise FileNotFoundError(f"Конфиг турнира не найден: {tournament_config_path}")
 
-    tournament_cfg = OmegaConf.load(tournament_config_path)
+    # Загружаем через Hydra compose
+    with initialize_config_dir(config_dir=config_dir, version_base="1.3"):
+        tournament_cfg = compose(
+            config_name=f"tournament/{tournament_name}",
+            return_hydra_config=False,
+        )
+        paths_cfg = compose(
+            config_name="paths",
+            return_hydra_config=False,
+        )
 
     return tournament_cfg, paths_cfg
 
@@ -403,8 +498,6 @@ def run() -> None:
     из conf/tournament/{tournament_name}.yaml и применяются турнир-специфичные
     настройки очистки данных.
     """
-    from hydra import compose, initialize_config_dir
-
     # Загружаем базовый конфиг только для получения путей
     config_dir = str((PROJECT_ROOT / "conf").resolve())
     with initialize_config_dir(config_dir=config_dir, version_base="1.3"):

@@ -1,0 +1,35 @@
+# Bookmaker: Fonbet
+# Конфигурация маппинга коэффициентов
+
+name: fonbet
+description: "Fonbet - российский букмекер"
+
+# Базовые маппинги (основные рынки)
+base_mapping:
+  "1": odds_home_win
+  "x": odds_draw
+  "2": odds_away_win
+
+# Паттерны для дополнительных рынков
+patterns:
+  # Тоталы
+  - prefix: "to_"
+    type: total_over
+    template: "odds_total_over_{value}"
+    description: "Total Over (больше)"
+
+  - prefix: "tu_"
+    type: total_under
+    template: "odds_total_under_{value}"
+    description: "Total Under (меньше)"
+
+  # Форы
+  - prefix: "f1"
+    type: handicap_home
+    template: "odds_handicap_home{value}"
+    description: "Handicap Home (фора хозяев)"
+
+  - prefix: "f2"
+    type: handicap_away
+    template: "odds_handicap_away{value}"
+    description: "Handicap Away (фора гостей)"

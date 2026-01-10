@@ -28,15 +28,23 @@ allowed_market_specs:
     default_recipe: total_baseline
 
 data_clean:
+  # Маппинг колонок
   column_mapping:
     home_score: home_sets
     away_score: away_sets
     _hmps: home_points
     _amps: away_points
+
+  # Обязательные колонки
   required_columns: [id, datetime]
+
+  # Колонки для dropna
   drop_na_columns: [id, datetime]
-  select_columns: [id, datetime, status, home_sets, away_sets, home_points, away_points]
+
+  # Дефолтный статус (для турниров без колонки status)
   default_status: finished
+
+  # Типизация
   dtype_mapping:
     numeric:
       home_sets: int
@@ -48,3 +56,15 @@ data_clean:
       datetime:
         format: null
         errors: coerce
+
+  # Генерация производных колонок
+  derived_columns:
+    weekday:
+      source: datetime
+      transform: dayofweek
+    hour:
+      source: datetime
+      transform: hour
+
+  # Финальный набор колонок для interim
+  select_columns: [id, datetime, status, home_sets, away_sets, home_points, away_points, weekday, hour]

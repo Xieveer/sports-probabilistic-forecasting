@@ -36,7 +36,6 @@ data_clean:
     _amps: away_points
   required_columns: [id, datetime]
   drop_na_columns: [id, datetime]
-  select_columns: [id, datetime, status, home_sets, away_sets, home_points, away_points]
   default_status: finished
   dtype_mapping:
     numeric:
@@ -49,3 +48,11 @@ data_clean:
       datetime:
         format: null
         errors: coerce
+  derived_columns:
+    weekday:
+      source: datetime
+      transform: dayofweek
+    hour:
+      source: datetime
+      transform: hour
+  select_columns: [id, datetime, status, home_sets, away_sets, home_points, away_points, weekday, hour]

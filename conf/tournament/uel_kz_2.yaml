@@ -34,7 +34,6 @@ data_clean:
     a_m_s: away_points
   required_columns: [id, status, datetime]
   drop_na_columns: [id, datetime, status]
-  select_columns: [id, datetime, status, home_points, away_points]
   dtype_mapping:
     numeric:
       home_points: float
@@ -44,3 +43,14 @@ data_clean:
       datetime:
         format: null
         errors: coerce
+  derived_columns:
+    tour_num:
+      source: tour_name_en
+      transform: extract_last_char
+    weekday:
+      source: datetime
+      transform: dayofweek
+    hour:
+      source: datetime
+      transform: hour
+  select_columns: [id, datetime, status, home_points, away_points, tour_num, weekday, hour]
