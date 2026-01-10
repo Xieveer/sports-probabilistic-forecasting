@@ -60,6 +60,45 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 logger = get_logger(__name__)
 
 
+def load_source_config(source_name: str) -> DictConfig:
+    """Загрузить конфигурацию источника данных через Hydra compose.
+
+    Args:
+        source_name: Название источника (например: 'uel', 'lp_eu')
+
+    Returns:
+        DictConfig с конфигурацией источника
+
+    Raises:
+        FileNotFoundError: Если конфиг источника не найден
+
+    Examples:
+        >>> config = load_source_config('uel')
+        >>> config.split_strategy.enabled
+        True
+
+    Note:
+        Использует Hydra compose для загрузки конфигов из conf/source/*.yaml.
+        Конфиги источников используются на этапе ingest для определения
+        правил разделения и извлечения коэффициентов.
+    """
+    config_dir = str((PROJECT_ROOT / "conf").resolve())
+    source_config_path = PROJECT_ROOT / "conf" / "source" / f"{source_name}.yaml"
+
+    if not source_config_path.exists():
+        raise FileNotFoundError(f"Конфиг источника не найден: {source_config_path}")
+
+    try:
+        with initialize_config_dir(config_dir=config_dir, version_base="1.3"):
+            return compose(  # type: ignore[no-any-return]
+                config_name=f"source/{source_name}",
+                return_hydra_config=False,
+            )
+    except Exception as e:
+        logger.error("Ошибка загрузки конфига источника %s: %s", source_name, e)
+        raise
+
+
 def load_tournament_config(tournament_name: str) -> DictConfig:
     """Загрузить конфигурацию турнира через Hydra compose.
 
@@ -78,8 +117,8 @@ def load_tournament_config(tournament_name: str) -> DictConfig:
         True
 
     Note:
-        Использует Hydra compose вместо прямого чтения YAML для
-        обеспечения единого источника правды.
+        Использует Hydra compose для загрузки конфигов из conf/tournament/*.yaml.
+        Конфиги турниров используются на этапах clean/features/train.
     """
     config_dir = str((PROJECT_ROOT / "conf").resolve())
     tournament_config_path = PROJECT_ROOT / "conf" / "tournament" / f"{tournament_name}.yaml"
@@ -94,7 +133,7 @@ def load_tournament_config(tournament_name: str) -> DictConfig:
                 return_hydra_config=False,
             )
     except Exception as e:
-        logger.error("Ошибка загрузки конфига %s: %s", tournament_name, e)
+        logger.error("Ошибка загрузки конфига турнира %s: %s", tournament_name, e)
         raise
 
 
@@ -723,29 +762,38 @@ def process_tournament(source_dir: Path, raw_root: Path) -> None:
             len(df.columns),
         )
 
-        # БИЗНЕС-ЛОГИКА: Разделение турниров на подтурниры (если задано в конфиге)
-        config = load_tournament_config(tournament_name)
+        # БИЗНЕС-ЛОГИКА: Разделение источников на подтурниры (если задано в конфиге)
+        try:
+            source_config = load_source_config(tournament_name)
 
-        if hasattr(config, "split_strategy") and config.split_strategy.get("enabled"):
-            logger.info(
-                "Турнир %s: обнаружена split_strategy, разделяю на подтурниры",
-                tournament_name,
+            if hasattr(source_config, "split_strategy") and source_config.split_strategy.get(
+                "enabled"
+            ):
+                logger.info(
+                    "Источник %s: обнаружена split_strategy, разделяю на подтурниры",
+                    tournament_name,
+                )
+
+                # Получаем odds конфиг (если есть)
+                odds_cfg = source_config.odds if hasattr(source_config, "odds") else None
+
+                # Универсальное разделение через конфиг
+                split_tournament_by_config(
+                    df,
+                    raw_root,
+                    tournament_name,
+                    source_config.split_strategy,
+                    odds_cfg,
+                )
+
+                logger.info("Источник %s: разделение завершено", tournament_name)
+                return  # Источник обработан через split, не нужно сохранять единым файлом
+
+        except FileNotFoundError:
+            # Конфиг источника не найден - значит это простой турнир без split логики
+            logger.debug(
+                "Конфиг источника %s не найден, обрабатываю как обычный турнир", tournament_name
             )
-
-            # Получаем odds конфиг (если есть)
-            odds_cfg = config.odds if hasattr(config, "odds") else None
-
-            # Универсальное разделение через конфиг
-            split_tournament_by_config(
-                df,
-                raw_root,
-                tournament_name,
-                config.split_strategy,
-                odds_cfg,
-            )
-
-            logger.info("Турнир %s: разделение завершено", tournament_name)
-            return  # Турнир обработан через split, не нужно сохранять единым файлом
 
         # Стандартная обработка для остальных турниров
         # Создаем директорию для выходного файла
@@ -773,19 +821,23 @@ def process_tournament(source_dir: Path, raw_root: Path) -> None:
         else:
             logger.error("Турнир %s: ✗ parquet НЕ СОЗДАН → %s", tournament_name, output_parquet)
 
-        # Сохраняем odds.parquet (если есть конфигурация)
-        if (
-            hasattr(config, "data")
-            and hasattr(config.data, "odds_feed")
-            and config.data.odds_feed.get("enabled")
-        ):
-            save_odds_if_available(
-                df,
-                tournament_name,
-                output_parquet.parent,
-                odds_column=config.data.odds_feed.get("column"),
-                bookmaker=config.data.odds_feed.get("bookmaker"),
-            )
+        # Сохраняем odds.parquet (если есть конфигурация в турнире)
+        try:
+            tournament_config = load_tournament_config(tournament_name)
+            if (
+                hasattr(tournament_config, "data")
+                and hasattr(tournament_config.data, "odds_feed")
+                and tournament_config.data.odds_feed.get("enabled")
+            ):
+                save_odds_if_available(
+                    df,
+                    tournament_name,
+                    output_parquet.parent,
+                    odds_column=tournament_config.data.odds_feed.get("column"),
+                    bookmaker=tournament_config.data.odds_feed.get("bookmaker"),
+                )
+        except FileNotFoundError:
+            logger.debug("Конфиг турнира %s не найден, пропускаю odds", tournament_name)
 
     except pd.errors.ParserError as e:
         logger.error("Турнир %s: ошибка парсинга CSV - %s", tournament_name, e)
