@@ -16,6 +16,7 @@ from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
 
 from sports_forecast.config import get_data_path, validate_experiment_config
+from sports_forecast.training.ensembles.stacking import StackingEnsemble
 from sports_forecast.training.models.catboost import CatBoostModel
 from sports_forecast.training.models.dummy import DummyModel
 from sports_forecast.training.models.lgbm import LGBMModel
@@ -266,7 +267,8 @@ class ExperimentRunner:
             Series с таргетом
         """
         line = cfg.market_spec.get("line") if hasattr(cfg.market_spec, "line") else None
-        return compute_target_from_market_spec(df, cfg.market_spec, line=line)
+        tournament_cfg = cfg.tournament if hasattr(cfg, "tournament") else None
+        return compute_target_from_market_spec(df, cfg.market_spec, tournament_cfg, line=line)
 
     def _train_model(
         self,
@@ -507,9 +509,84 @@ class ExperimentRunner:
             return CatBoostModel(name=model_name, params=params)
         if "lgbm" in model_name.lower() or "LGBMModel" in target:
             return LGBMModel(name=model_name, params=params)
+        if "stacking" in model_name.lower() or "StackingEnsemble" in target:
+            return self._create_stacking_ensemble(algorithm_cfg)
         raise ValueError(
             f"Не удалось определить класс модели для: name={model_name}, target={target}"
         )
+
+    def _create_stacking_ensemble(self, algorithm_cfg: DictConfig) -> StackingEnsemble:
+        """
+        Создать Stacking Ensemble с base_models из recipe.
+
+        Args:
+            algorithm_cfg: Конфигурация алгоритма stacking
+
+        Returns:
+            Экземпляр StackingEnsemble
+
+        Raises:
+            ValueError: Если base_models не указаны в recipe.ensemble_config
+        """
+        # Получаем список base_models из recipe
+        if not hasattr(self.config, "recipe"):
+            raise ValueError("recipe не найден в config")
+
+        recipe = self.config.recipe
+        if not hasattr(recipe, "ensemble_config") or not hasattr(
+            recipe.ensemble_config, "stacking"
+        ):
+            raise ValueError(
+                "ensemble_config.stacking не найден в recipe. "
+                "Укажите base_models в recipe.ensemble_config.stacking.base_models"
+            )
+
+        base_model_names = recipe.ensemble_config.stacking.base_models
+        logger.info("Создаю Stacking Ensemble с base_models: %s", base_model_names)
+
+        # Создаём экземпляры базовых моделей
+        base_models = []
+        for model_name in base_model_names:
+            # Загружаем конфиг базовой модели
+            from hydra import compose, initialize_config_dir
+
+            try:
+                # Композиция конфига для базовой модели
+                with initialize_config_dir(
+                    config_dir=str(self.project_root / "conf"), version_base=None
+                ):
+                    base_cfg = compose(config_name="config", overrides=[f"algorithm={model_name}"])
+                    base_model = self._create_model(base_cfg.algorithm)
+                    base_models.append(base_model)
+                    logger.debug("  Добавлена базовая модель: %s", model_name)
+            except Exception as e:
+                logger.error("Ошибка создания базовой модели %s: %s", model_name, e)
+                raise
+
+        # Создаём мета-модель
+        meta_model_cfg = algorithm_cfg.meta_model
+        meta_model_type = meta_model_cfg.get("type", "logreg")
+        meta_model_params = dict(meta_model_cfg.get("params", {}))
+
+        if meta_model_type == "logreg":
+            meta_model = LogRegModel(name="meta_logreg", params=meta_model_params)
+        else:
+            raise ValueError(f"Неизвестный тип мета-модели: {meta_model_type}")
+
+        # Создаём StackingEnsemble
+        n_splits = algorithm_cfg.get("tscv_n_splits", 4)
+        stacking = StackingEnsemble(
+            name="stacking",
+            base_models=base_models,
+            meta_model=meta_model,
+            config=algorithm_cfg,
+            n_splits=n_splits,
+        )
+
+        logger.info(
+            "✓ Stacking Ensemble создан: %d базовых моделей + %s", len(base_models), meta_model_type
+        )
+        return stacking
 
     def _train_with_tscv(
         self,

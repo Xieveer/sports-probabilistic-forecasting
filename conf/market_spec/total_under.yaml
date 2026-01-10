@@ -12,13 +12,9 @@ line: ???  # REQUIRED!
 # ОБЯЗАТЕЛЬНО: Формат данных
 data_format: wide
 
-# Правило таргета
-target:
-  source_columns:
-    - home_points
-    - away_points
-  formula: "(home_points + away_points) < line"
-  name: "target_total_under_{line}"
+# Источник таргета (из tournament config)
+target_source_key: total_sum_under
+target_name: "target_total_under"  # Будет дополнено линией при логировании
 
 # Фичи
 feature_prefixes:

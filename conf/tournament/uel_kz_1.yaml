@@ -41,6 +41,7 @@ allowed_market_specs:
   winner:
     specs:
       - winner_home    # Победа хозяев (wide format)
+      - winner         # Победа игрока (long format)
     default_recipe: winner_baseline
 
   # Total markets
@@ -51,6 +52,40 @@ allowed_market_specs:
       - total_over
       - total_under
     default_recipe: total_baseline
+
+# ============================================================================
+# ОПРЕДЕЛЕНИЕ ТАРГЕТОВ
+# ============================================================================
+
+target_sources:
+  # Winner: Player win (для long format)
+  player_win:
+    format: long
+    player_column: pl_points
+    opponent_column: opp_points
+    comparison: greater  # pl_points > opp_points
+
+  # Winner: Home win (для wide format)
+  home_win:
+    format: wide
+    home_column: home_points
+    away_column: away_points
+    comparison: greater  # home_points > away_points
+
+  # Total: Over (для обоих форматов)
+  total_sum:
+    format: wide  # Считается на wide (home + away)
+    home_column: home_points
+    away_column: away_points
+    comparison: total_over  # (home + away) > line
+    # Для long format: (player_points + opponent_points) / 2 > line
+
+  # Total: Under
+  total_sum_under:
+    format: wide
+    home_column: home_points
+    away_column: away_points
+    comparison: total_under  # (home + away) < line
 
 # ============================================================================
 # ОБРАБОТКА ДАННЫХ (для data pipeline)

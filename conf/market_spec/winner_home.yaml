@@ -9,13 +9,9 @@ description: "Home team wins"
 # ОБЯЗАТЕЛЬНО: Формат данных
 data_format: wide  # ЯВНО! Никаких дефолтов!
 
-# Правило таргета
-target:
-  source_columns:
-    - home_points
-    - away_points
-  formula: "home_points > away_points"
-  name: "target_is_home_win"
+# Источник таргета (из tournament config)
+target_source_key: home_win
+target_name: "target_is_home_win"
 
 # Фичи (префиксы для wide format)
 feature_prefixes:

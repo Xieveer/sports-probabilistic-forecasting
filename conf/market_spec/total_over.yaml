@@ -13,13 +13,9 @@ line: ???  # REQUIRED! Без этого параметра конфиг нев�
 # ОБЯЗАТЕЛЬНО: Формат данных
 data_format: wide  # Тоталы обычно в wide format
 
-# Правило таргета
-target:
-  source_columns:
-    - home_points
-    - away_points
-  formula: "(home_points + away_points) > line"
-  name: "target_total_over_{line}"  # Динамическое имя
+# Источник таргета (из tournament config)
+target_source_key: total_sum
+target_name: "target_total_over"  # Будет дополнено линией при логировании
 
 # Фичи (префиксы для wide format)
 feature_prefixes:

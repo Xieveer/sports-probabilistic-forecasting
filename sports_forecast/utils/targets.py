@@ -19,8 +19,113 @@ class TargetComputationError(Exception):
     pass
 
 
+def _compute_target_from_source(
+    df: pd.DataFrame,
+    market_spec: DictConfig,
+    tournament_cfg: DictConfig,
+    line: float | None = None,
+) -> pd.Series:
+    """
+    Вычислить таргет используя target_sources из tournament config (НОВАЯ АРХИТЕКТУРА).
+
+    Args:
+        df: DataFrame с данными
+        market_spec: cfg.market_spec конфигурация
+        tournament_cfg: cfg.tournament конфигурация
+        line: Линия для total/handicap markets
+
+    Returns:
+        Series с бинарным таргетом (0/1)
+
+    Raises:
+        TargetComputationError: Если вычисление невозможно
+    """
+    target_source_key = market_spec.target_source_key
+    target_name = market_spec.get("target_name", "target")
+    data_format = market_spec.data_format
+
+    if not hasattr(tournament_cfg, "target_sources"):
+        raise TargetComputationError(
+            f"tournament '{tournament_cfg.name}' не содержит target_sources"
+        )
+
+    if target_source_key not in tournament_cfg.target_sources:
+        available = list(tournament_cfg.target_sources.keys())
+        raise TargetComputationError(
+            f"target_source_key '{target_source_key}' не найден в tournament.target_sources. "
+            f"Доступные: {available}"
+        )
+
+    target_spec = tournament_cfg.target_sources[target_source_key]
+    comparison = target_spec.comparison
+
+    # Получаем колонки в зависимости от формата
+    if target_spec.format == "long":
+        col_a = target_spec.player_column
+        col_b = target_spec.opponent_column
+    else:  # wide
+        col_a = target_spec.home_column
+        col_b = target_spec.away_column
+
+    # Проверяем наличие колонок
+    for col in [col_a, col_b]:
+        if col not in df.columns:
+            raise TargetComputationError(
+                f"Колонка '{col}' не найдена в датафрейме. Доступные: {list(df.columns)[:20]}..."
+            )
+
+    # Вычисляем таргет
+    if comparison == "greater":
+        target = (df[col_a] > df[col_b]).astype(int)
+        logger.info(
+            "✓ Таргет '%s': %s > %s, format=%s, positive_rate=%.2f%%",
+            target_name,
+            col_a,
+            col_b,
+            data_format,
+            target.mean() * 100,
+        )
+    elif comparison == "total_over":
+        if line is None:
+            line = market_spec.get("line")
+        if line is None or line == "???":
+            raise TargetComputationError("Line обязательна для total_over!")
+        target = ((df[col_a] + df[col_b]) > line).astype(int)
+        logger.info(
+            "✓ Таргет '%s': (%s + %s) > %.1f, format=%s, positive_rate=%.2f%%",
+            target_name,
+            col_a,
+            col_b,
+            line,
+            data_format,
+            target.mean() * 100,
+        )
+    elif comparison == "total_under":
+        if line is None:
+            line = market_spec.get("line")
+        if line is None:
+            raise TargetComputationError("Line обязательна для total_under!")
+        target = ((df[col_a] + df[col_b]) < line).astype(int)
+        logger.info(
+            "✓ Таргет '%s': (%s + %s) < %.1f, format=%s, positive_rate=%.2f%%",
+            target_name,
+            col_a,
+            col_b,
+            line,
+            data_format,
+            target.mean() * 100,
+        )
+    else:
+        raise TargetComputationError(f"Неизвестный comparison: {comparison}")
+
+    return target  # type: ignore[no-any-return]
+
+
 def compute_target_from_market_spec(
-    df: pd.DataFrame, market_spec: DictConfig, line: float | None = None
+    df: pd.DataFrame,
+    market_spec: DictConfig,
+    tournament_cfg: DictConfig | None = None,
+    line: float | None = None,
 ) -> pd.Series:
     """
     Вычислить таргет на основе MarketSpec (архитектура v2.0).
@@ -28,6 +133,7 @@ def compute_target_from_market_spec(
     Args:
         df: DataFrame с данными
         market_spec: cfg.market_spec конфигурация
+        tournament_cfg: cfg.tournament конфигурация (для target_sources)
         line: Линия для total/handicap markets (override market_spec.line)
 
     Returns:
@@ -37,12 +143,17 @@ def compute_target_from_market_spec(
         TargetComputationError: Если вычисление невозможно
 
     Examples:
-        >>> # Winner home
-        >>> target = compute_target_from_market_spec(df, cfg.market_spec)
+        >>> # Winner (long format) - НОВАЯ АРХИТЕКТУРА
+        >>> target = compute_target_from_market_spec(df, cfg.market_spec, cfg.tournament)
 
-        >>> # Total over 6.5
-        >>> target = compute_target_from_market_spec(df, cfg.market_spec, line=6.5)
+        >>> # Total over 6.5 - НОВАЯ АРХИТЕКТУРА
+        >>> target = compute_target_from_market_spec(df, cfg.market_spec, cfg.tournament, line=6.5)
     """
+    # НОВАЯ АРХИТЕКТУРА: Используем target_source_key
+    if hasattr(market_spec, "target_source_key") and tournament_cfg:
+        return _compute_target_from_source(df, market_spec, tournament_cfg, line)
+
+    # СТАРАЯ АРХИТЕКТУРА (для обратной совместимости)
     # Получаем параметры
     market_family = market_spec.market_family
     side = market_spec.get("side")
@@ -51,7 +162,8 @@ def compute_target_from_market_spec(
     # Получаем source columns
     if not hasattr(market_spec, "target"):
         raise TargetComputationError(
-            f"market_spec '{market_spec.name}' не содержит секцию 'target'"
+            f"market_spec '{market_spec.name}' не содержит ни target_source_key, ни target секцию. "
+            "Обновите конфиг на новую архитектуру!"
         )
 
     source_columns = market_spec.target.get("source_columns", [])
@@ -248,13 +360,22 @@ def get_target_name(market_spec: DictConfig, line: float | None = None) -> str:
         >>> name = get_target_name(cfg.market_spec, line=6.5)
         >>> # "target_total_over_6.5"
     """
-    base_name = market_spec.target.get("name", "target")
+    # НОВАЯ АРХИТЕКТУРА: используем target_name
+    if hasattr(market_spec, "target_name"):
+        base_name = market_spec.target_name
+    # СТАРАЯ АРХИТЕКТУРА: используем target.name
+    elif hasattr(market_spec, "target"):
+        base_name = market_spec.target.get("name", "target")
+    else:
+        base_name = "target"
 
-    # Подставляем line если есть placeholder {line}
-    if "{line}" in base_name:
+    # Подставляем line если есть placeholder {line} или добавляем line для total/handicap
+    market_family = market_spec.get("market_family", "")
+    if market_family in ["total", "handicap"]:
         if line is None:
             line = market_spec.get("line")
         if line is not None:
-            base_name = base_name.replace("{line}", str(line).replace(".", "_"))
+            # Добавляем линию к имени
+            base_name = f"{base_name}_{str(line).replace('.', '_')}"
 
     return base_name  # type: ignore[no-any-return]

@@ -14,10 +14,10 @@ defaults:
   - market_spec: ???       # REQUIRED: market_spec=total_over
   - recipe: ???            # REQUIRED: recipe=total_baseline
 
-  # Компоненты experiment (заполняются recipe или CLI)
-  - algorithm: ???         # Заполняется из recipe
-  - features: ???          # Заполняется из recipe
-  - hyper: none            # По умолчанию без оптимизации
+  # Компоненты experiment (OPTIONAL: заполняются recipe или CLI)
+  - optional algorithm: null  # Заполняется из recipe или CLI
+  - optional features: null   # Заполняется из recipe или CLI
+  - hyper: none               # По умолчанию без оптимизации
 
   - _self_
 
