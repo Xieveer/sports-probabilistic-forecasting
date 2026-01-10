@@ -599,7 +599,7 @@ class ExperimentRunner:
                     "iterations": 100,
                     "depth": 6,
                     "learning_rate": 0.1,
-                    "random_state": 777,
+                    "random_seed": 777,  # CatBoost использует random_seed, не random_state!
                     "verbose": 0,
                 },
             },
