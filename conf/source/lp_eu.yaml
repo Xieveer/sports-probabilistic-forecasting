@@ -1,10 +1,10 @@
-# Tournament: Liga Pro Europe (Table Tennis) - Source
-# Исходный турнир, который разделяется на подтурниры на этапе ingest
+# Source: Liga Pro Europe (Table Tennis)
+# Конфигурация для обработки исходного файла data/source/lp_eu/source.csv
 
-name: lp_eu_source
+name: lp_eu
 sport: table_tennis
 region: europe
-description: "Liga Pro Europe - Table Tennis (исходный файл)"
+description: "Liga Pro Europe - Table Tennis"
 
 # ============================================================================
 # РАЗДЕЛЕНИЕ НА ПОДТУРНИРЫ (SPLIT STRATEGY)
@@ -33,5 +33,5 @@ split_strategy:
 odds:
   enabled: true
   source_column: sdf_odds_feed
-  bookmaker: sdf
+  bookmaker: fonbet  # sdf - это на самом деле fonbet
   format: python_dict

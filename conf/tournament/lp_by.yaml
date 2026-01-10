@@ -16,7 +16,7 @@ data:
   odds_feed:
     enabled: true
     column: sdf_odds_feed
-    bookmaker: sdf
+    bookmaker: fonbet  # sdf - это на самом деле fonbet
     format: python_dict
     coverage: 27.4
 

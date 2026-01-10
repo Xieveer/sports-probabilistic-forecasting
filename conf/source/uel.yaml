@@ -1,5 +1,5 @@
-# Tournament: UEL (Ultimate Esports League) - Cyberhockey
-# Исходный турнир, который разделяется на подтурниры на этапе ingest
+# Source: UEL (Ultimate Esports League) - Cyberhockey
+# Конфигурация для обработки исходного файла data/source/uel/source.csv
 
 name: uel
 sport: cyberhockey
