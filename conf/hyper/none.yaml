@@ -1,0 +1,10 @@
+# Hyper Strategy: None
+# Без оптимизации гиперпараметров, используем дефолтные из algorithm config
+
+strategy: none
+description: "No hyperparameter optimization (use defaults)"
+
+# Параметры
+enabled: false
+
+

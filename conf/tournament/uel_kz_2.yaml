@@ -1,103 +1,46 @@
-# Конфигурация турнира UEL Kazakhstan Stream 2 (Cyberhockey)
-# Подтурнир UEL, разделенный на этапе ingest по полю tour_name_en
+# Tournament: UEL Kazakhstan Stream 2 (Cyberhockey)
 
-name: "uel_kz_2"
-sport: "cyberhockey"
-region: "kazakhstan"
-stream: "stream_2"
+name: uel_kz_2
+sport: cyberhockey
+region: kazakhstan
+stream: stream_2
+
+data:
+  processed_dir: data/processed/uel_kz_2
+  formats:
+    long: train_long.parquet
+    wide: train_wide.parquet
+  inference:
+    long: inference_long.parquet
+    wide: inference_wide.parquet
+  odds_feed:
+    enabled: true
+    column: fon_bet_odds_feed
+    bookmaker: fonbet
+    format: python_dict
+
+allowed_market_specs:
+  winner:
+    specs: [winner_home]
+    default_recipe: winner_baseline
+  total:
+    lines: [3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5]
+    specs: [total_over, total_under]
+    default_recipe: total_baseline
 
 data_clean:
-  # Маппинг колонок: исходное название → унифицированное
   column_mapping:
-    h_m_s: home_points  # home match score (очки/голы домашней команды)
-    a_m_s: away_points  # away match score (очки/голы гостевой команды)
-
-  # Обязательные колонки (проверка наличия)
-  required_columns:
-    - id
-    - status
-    - datetime
-
-  # Колонки для dropna (удаление строк с пропусками)
-  drop_na_columns:
-    - id
-    - datetime
-    - status
-
-  # Финальный набор колонок для interim слоя
-  select_columns:
-    - id
-    - datetime
-    - status
-    - home_points
-    - away_points
-
-  # Типизация колонок
+    h_m_s: home_points
+    a_m_s: away_points
+  required_columns: [id, status, datetime]
+  drop_na_columns: [id, datetime, status]
+  select_columns: [id, datetime, status, home_points, away_points]
   dtype_mapping:
     numeric:
       home_points: float
       away_points: float
-    string:
-      - id
-      - status
+    string: [id, status]
     datetime:
       datetime:
-        format: null        # Автоопределение формата pandas
-        errors: "coerce"    # Невалидные даты → NaT
-
-# Конфигурация источников таргета для разных моделей
-# Используется в train.py для динамического вычисления таргета
-# Диапазоны тоталов (для автоматической генерации моделей)
-total_ranges:
-  min: 3.5
-  max: 9.5
-  step: 1.0
-  default: 5.5
-
-target_sources:
-  # === LONG FORMAT MODELS (train_long.parquet) ===
-  is_win:
-    player_column: "pl_points"
-    opponent_column: "opp_points"
-    comparison: "greater"
-    format: "long"
-
-  # === WIDE FORMAT MODELS (train_wide.parquet) ===
-  is_home_win:
-    home_column: "home_points"
-    away_column: "away_points"
-    comparison: "greater"
-    format: "wide"
-
-  is_away_win:
-    home_column: "home_points"
-    away_column: "away_points"
-    comparison: "less"
-    format: "wide"
-
-  is_draw:
-    home_column: "home_points"
-    away_column: "away_points"
-    comparison: "equal"
-    format: "wide"
-
-  total_over:
-    home_column: "home_points"
-    away_column: "away_points"
-    comparison: "total_over"
-    base: 5.5
-    format: "wide"
-
-  total_under:
-    home_column: "home_points"
-    away_column: "away_points"
-    comparison: "total_under"
-    base: 5.5
-    format: "wide"
-
-# Букмекерские коэффициенты
-odds:
-  enabled: true
-  source_column: "fon_bet_odds_feed"
-  bookmaker: "fonbet"
-  parse_format: "python_dict"
+        format: null
+        errors: coerce

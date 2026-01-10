@@ -1,0 +1,32 @@
+# Hyper Strategy: Optuna
+# Bayesian оптимизация гиперпараметров с Optuna
+
+strategy: optuna
+description: "Optuna hyperparameter optimization (Bayesian)"
+
+# Параметры оптимизации
+enabled: true
+n_trials: 50
+timeout: 3600  # 1 час
+direction: minimize
+metric: logloss
+
+# Optuna sampler
+sampler:
+  type: TPESampler
+  n_startup_trials: 10
+  multivariate: true
+  seed: 42
+
+# Optuna pruner
+pruner:
+  type: MedianPruner
+  n_startup_trials: 5
+  n_warmup_steps: 10
+  interval_steps: 1
+
+# Логирование
+verbose: true
+show_progress_bar: true
+
+

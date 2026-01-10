@@ -167,13 +167,16 @@ tree:
 
 # ---------- Основной пайплайн обучения ----------
 
-# Запуск тренировочного скрипта (новая система через ModelTrainer)
+# Запуск тренировочного скрипта (архитектура v2.0)
 train:
-	uv run python -m sports_forecast.train_v2 model=single/catboost tournament=all
-
-# Запуск старого train.py (на случай отладки)
-train-legacy:
-	uv run python -m sports_forecast.train
+	uv run python -m sports_forecast.train \
+		tournament=uel_kz_1 \
+		market=total \
+		market_spec=total_over \
+		market_spec.line=6.5 \
+		recipe=total_baseline \
+		features=basic \
+		algorithm=dummy
 
 # ---------- Уборка мусора ----------
 

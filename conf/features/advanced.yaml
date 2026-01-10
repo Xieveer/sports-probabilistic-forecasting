@@ -1,6 +1,9 @@
 # Продвинутый набор фичей (на основе feature_pipeline_v2.py)
 # Генерирует ~1000+ фичей для максимального качества модели
 
+name: advanced
+description: "Advanced featureset with multiple spans (5, 25, 100)"
+
 # Префикс для всех генерируемых фичей
 feature_prefix: "f_"
 

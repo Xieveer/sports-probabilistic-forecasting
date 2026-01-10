@@ -1,51 +1,94 @@
-# Конфигурация турнира UEL Kazakhstan Stream 1 (Cyberhockey)
+# Tournament: UEL Kazakhstan Stream 1 (Cyberhockey)
 # Подтурнир UEL, разделенный на этапе ingest по полю tour_name_en
 
-name: "uel_kz_1"
-sport: "cyberhockey"
-region: "kazakhstan"
-stream: "stream_1"
+name: uel_kz_1
+sport: cyberhockey
+region: kazakhstan
+stream: stream_1
+description: "UEL Kazakhstan Stream 1 - Cyberhockey esports"
 
-# Букмекерские коэффициенты
-odds:
-  enabled: true
-  source_column: "fon_bet_odds_feed"  # Колонка в source.csv
-  bookmaker: "fonbet"
-  parse_format: "python_dict"  # ast.literal_eval()
+# ============================================================================
+# ДАННЫЕ: Пути к обработанным данным
+# ============================================================================
+
+data:
+  # Базовая директория
+  processed_dir: data/processed/uel_kz_1
+
+  # Доступные форматы данных
+  formats:
+    long: train_long.parquet      # Player vs Opponent format
+    wide: train_wide.parquet      # Home vs Away format
+
+  # Inference данные
+  inference:
+    long: inference_long.parquet
+    wide: inference_wide.parquet
+
+  # Букмекерские коэффициенты
+  odds_feed:
+    enabled: true
+    column: fon_bet_odds_feed
+    bookmaker: fonbet
+    format: python_dict  # ast.literal_eval()
+
+# ============================================================================
+# РЕЕСТР ДОПУСТИМЫХ MARKET SPECS
+# ============================================================================
+
+allowed_market_specs:
+  # Winner markets
+  winner:
+    specs:
+      - winner_home    # Победа хозяев (wide format)
+    default_recipe: winner_baseline
+
+  # Total markets
+  total:
+    # Допустимые линии для киберхоккея
+    lines: [3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5]
+    specs:
+      - total_over
+      - total_under
+    default_recipe: total_baseline
+
+# ============================================================================
+# ОБРАБОТКА ДАННЫХ (для data pipeline)
+# ============================================================================
 
 data_clean:
-  # Маппинг колонок: исходное название → унифицированное
+  # Маппинг колонок
   column_mapping:
-    h_m_s: home_points  # home match score (очки/голы домашней команды)
-    a_m_s: away_points  # away match score (очки/голы гостевой команды)
+    h_m_s: home_points
+    a_m_s: away_points
 
-  # Обязательные колонки (проверка наличия)
+  # Обязательные колонки
   required_columns:
     - id
     - status
     - datetime
 
-  # Колонки для dropna (удаление строк с пропусками)
+  # Колонки для dropna
   drop_na_columns:
     - id
     - datetime
     - status
 
-  # Финальный набор колонок для interim слоя
+  # Финальный набор колонок для interim
   select_columns:
     - id
     - datetime
     - status
     - home_points
     - away_points
-    - home_short_name_en  # для wide_to_long (создает pl_name/opp_name)
-    - away_short_name_en  # для wide_to_long (создает pl_name/opp_name)
-    - tour_match_num  # номер матча в турнире
-    - tour_num  # создается в clean.py из tour_name_en
-    - weekday  # создается в clean.py из datetime
-    - hour  # создается в clean.py из datetime
+    - home_short_name_en
+    - away_short_name_en
+    - tour_match_num
+    - tour_num
+    - weekday
+    - hour
 
-  # Типизация колонок
+  # Типизация
   dtype_mapping:
     numeric:
       home_points: float
@@ -55,72 +98,21 @@ data_clean:
       - status
     datetime:
       datetime:
-        format: null        # Автоопределение формата pandas
-        errors: "coerce"    # Невалидные даты → NaT
+        format: null
+        errors: coerce
 
-# Диапазоны тоталов (для автоматической генерации моделей)
-total_ranges:
-  min: 3.5
-  max: 9.5
-  step: 1.0
-  default: 5.5  # Базовое значение для демо
+# ============================================================================
+# МЕТАДАННЫЕ
+# ============================================================================
 
-# Конфигурация источников таргета для разных моделей
-# Используется в train.py для динамического вычисления таргета
-target_sources:
-  # === LONG FORMAT MODELS (train_long.parquet) ===
+# Статистика турнира (для валидации)
+stats:
+  avg_home_points: 5.5
+  avg_away_points: 5.0
+  avg_total: 10.5
+  typical_range: [3, 15]  # Типичный диапазон тотала
 
-  # Модель is_win: победа текущего игрока (pl vs opp)
-  # Работает для обеих сторон благодаря long формату
-  is_win:
-    player_column: "pl_points"
-    opponent_column: "opp_points"
-    comparison: "greater"  # pl_points > opp_points
-    format: "long"
-
-  # === WIDE FORMAT MODELS (train_wide.parquet) ===
-
-  # Модель is_home_win: победа домашней команды (legacy)
-  is_home_win:
-    home_column: "home_points"
-    away_column: "away_points"
-    comparison: "greater"  # home_points > away_points
-    format: "wide"
-
-  # Модель is_away_win: победа гостевой команды (legacy)
-  is_away_win:
-    home_column: "home_points"
-    away_column: "away_points"
-    comparison: "less"  # home_points < away_points
-    format: "wide"
-
-  # Модель is_draw: ничья
-  is_draw:
-    home_column: "home_points"
-    away_column: "away_points"
-    comparison: "equal"  # home_points == away_points
-    format: "wide"
-
-  # Модель total_over: тотал больше базы
-  total_over:
-    home_column: "home_points"
-    away_column: "away_points"
-    comparison: "total_over"
-    base: 5.5  # Берется из total_ranges.default
-    format: "wide"
-
-  # Модель total_under: тотал меньше базы
-  total_under:
-    home_column: "home_points"
-    away_column: "away_points"
-    comparison: "total_under"
-    base: 5.5  # Берется из total_ranges.default
-    format: "wide"
-
-  # Модель total_over_6_5: тотал больше 6.5
-  total_over_6_5:
-    home_column: "home_points"
-    away_column: "away_points"
-    comparison: "total_over"
-    base: 6.5
-    format: "wide"
+# Временной диапазон данных
+time_range:
+  start: "2024-01-06"
+  end: "2025-10-19"

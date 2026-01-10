@@ -1,0 +1,21 @@
+# Market Family: Winner (1x2 или Head-to-Head)
+# Определяет общую логику победителя (без конкретных параметров)
+
+family: winner
+description: "Winner market family (home/away/h2h)"
+
+# Общая логика таргета (параметризуется в market_spec)
+target_logic:
+  type: comparison
+  operands:
+    - player_points  # Или home_points/away_points в зависимости от side
+    - opponent_points
+  operator: greater  # player_points > opponent_points для победы
+
+# Возможные стороны (sides)
+available_sides:
+  - home    # Победа хозяев (wide format)
+  - away    # Победа гостей (wide format)
+  - h2h     # Head-to-head без привязки к home/away (long format)
+
+

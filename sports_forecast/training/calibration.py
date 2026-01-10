@@ -22,8 +22,8 @@ import numpy as np
 import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
 
-from sports_forecast.train import compute_expected_calibration_error
 from sports_forecast.utils.log_config import get_logger
+from sports_forecast.utils.metrics import compute_expected_calibration_error
 
 
 logger = get_logger(__name__)

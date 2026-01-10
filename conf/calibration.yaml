@@ -1,0 +1,25 @@
+# Model Calibration Configuration
+# Настройки калибровки вероятностей
+
+# Включить калибровку
+enabled: true
+
+# Порог ECE для применения калибровки
+threshold_ece: 0.10  # Калибруем только если ECE > 0.10
+
+# Метод калибровки
+method: isotonic  # isotonic/sigmoid (Platt scaling)
+
+# CV для калибровки
+cv: 3  # prefit или число фолдов
+
+# Источник данных для калибровки
+source: validation  # validation (из train) / test (УТЕЧКА!)
+
+# Размер validation для калибровки (если source=validation)
+validation_size: 0.1  # 10% от train
+
+# Логирование
+verbose: true
+
+

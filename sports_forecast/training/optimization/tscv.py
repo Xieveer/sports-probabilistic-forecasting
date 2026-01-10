@@ -25,9 +25,10 @@ import pandas as pd
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
 from sklearn.model_selection import TimeSeriesSplit
 
-# Используем ECE из train.py
-from sports_forecast.train import compute_expected_calibration_error
 from sports_forecast.utils.log_config import get_logger
+
+# Используем ECE из train.py
+from sports_forecast.utils.metrics import compute_expected_calibration_error
 
 
 logger = get_logger(__name__)

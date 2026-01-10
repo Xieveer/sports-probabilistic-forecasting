@@ -1,29 +1,42 @@
-# LP EU A18 - Лига Про Настольный Теннис (Европа A18)
-# @package _global_.tournament
+# Tournament: Liga Pro Europe A18 (Table Tennis)
 
 name: lp_eu_a18
 sport: table_tennis
-description: 'Лига Про: Настольный теннис (Европа A18)'
+region: europe
+category: a18
+
+data:
+  processed_dir: data/processed/lp_eu_a18
+  formats:
+    long: train_long.parquet
+    wide: train_wide.parquet
+  inference:
+    long: inference_long.parquet
+    wide: inference_wide.parquet
+  odds_feed:
+    enabled: true
+    column: sdf_odds_feed
+    bookmaker: sdf
+    format: python_dict
+
+allowed_market_specs:
+  winner:
+    specs: [winner_home]
+    default_recipe: winner_baseline
+  total:
+    lines: [60.5, 62.5, 64.5, 66.5, 68.5, 70.5, 72.5, 74.5, 76.5, 78.5, 80.5]
+    specs: [total_over, total_under]
+    default_recipe: total_baseline
+
 data_clean:
   column_mapping:
     home_score: home_sets
     away_score: away_sets
     _hmps: home_points
     _amps: away_points
-  required_columns:
-  - id
-  - datetime
-  drop_na_columns:
-  - id
-  - datetime
-  select_columns:
-  - id
-  - datetime
-  - status
-  - home_sets
-  - away_sets
-  - home_points
-  - away_points
+  required_columns: [id, datetime]
+  drop_na_columns: [id, datetime]
+  select_columns: [id, datetime, status, home_sets, away_sets, home_points, away_points]
   default_status: finished
   dtype_mapping:
     numeric:
@@ -31,44 +44,8 @@ data_clean:
       away_sets: int
       home_points: float
       away_points: float
-    string:
-    - id
-    - status
+    string: [id, status]
     datetime:
       datetime:
         format: null
         errors: coerce
-total_ranges:
-  min: 60.5
-  max: 80.5
-  step: 1.0
-  default: 70.5
-target_sources:
-  is_win:
-    player_column: pl_sets
-    opponent_column: opp_sets
-    comparison: greater
-    format: long
-  is_home_win:
-    home_column: home_sets
-    away_column: away_sets
-    comparison: greater
-    format: wide
-  total_over:
-    home_column: home_points
-    away_column: away_points
-    comparison: total_over
-    base: 70.5
-    format: wide
-  total_under:
-    home_column: home_points
-    away_column: away_points
-    comparison: total_under
-    base: 70.5
-    format: wide
-odds:
-  enabled: true
-  source_column: sdf_odds_feed
-  bookmaker: sdf
-  parse_format: python_dict
-  coverage: 28.1

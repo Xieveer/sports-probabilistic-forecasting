@@ -28,14 +28,17 @@ stages:
       - data/processed
 
   train:
-    cmd: uv run python -m sports_forecast.train_v2 model=single/catboost tournament=all
+    cmd: uv run python -m sports_forecast.train tournament=uel_kz_1 market=total market_spec=total_over market_spec.line=6.5 recipe=total_baseline features=basic algorithm=dummy
     deps:
-      - sports_forecast/train_v2.py
+      - sports_forecast/train.py
       - sports_forecast/training/
       - conf/config.yaml
       - conf/paths.yaml
       - conf/tournament
-      - conf/model
+      - conf/algorithm
+      - conf/market
+      - conf/market_spec
+      - conf/recipe
       - data/processed
     outs:
       - models

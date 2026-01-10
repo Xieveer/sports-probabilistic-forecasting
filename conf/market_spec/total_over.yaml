@@ -1,0 +1,36 @@
+# MarketSpec: Total Over (тотал больше линии)
+# Параметризуется через line (ОБЯЗАТЕЛЬНЫЙ параметр!)
+
+name: total_over
+market_family: total
+side: over
+description: "Total over line (parameterized)"
+
+# ОБЯЗАТЕЛЬНО: Линия задаётся через CLI!
+# Пример: market_spec.line=6.5
+line: ???  # REQUIRED! Без этого параметра конфиг невалиден!
+
+# ОБЯЗАТЕЛЬНО: Формат данных
+data_format: wide  # Тоталы обычно в wide format
+
+# Правило таргета
+target:
+  source_columns:
+    - home_points
+    - away_points
+  formula: "(home_points + away_points) > line"
+  name: "target_total_over_{line}"  # Динамическое имя
+
+# Фичи (префиксы для wide format)
+feature_prefixes:
+  - "home_f_"
+  - "away_f_"
+
+# Премач букмекерские линии
+prematch_line:
+  enabled: true
+  source: "odds_feed"      # Колонка с коэффициентами
+  timing: "close"          # close/open/pre_N_minutes
+  market_key: "total"      # Ключ для парсинга odds
+
+

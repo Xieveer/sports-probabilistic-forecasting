@@ -1,0 +1,40 @@
+# Algorithm: CatBoost
+# Gradient boosting с нативной поддержкой categorical features
+
+name: catboost
+description: "CatBoost classifier (gradient boosting)"
+_target_: sports_forecast.training.models.catboost.CatBoostModel
+
+# Гиперпараметры
+params:
+  loss_function: Logloss
+  eval_metric: Logloss
+  iterations: 500
+  learning_rate: 0.1
+  depth: 6
+  l2_leaf_reg: 3
+  random_seed: 777
+  verbose: false
+
+# Optuna space
+optuna_space:
+  learning_rate:
+    type: float
+    low: 0.01
+    high: 0.3
+    log: true
+  depth:
+    type: int
+    low: 4
+    high: 12
+  l2_leaf_reg:
+    type: int
+    low: 1
+    high: 10
+  iterations:
+    type: int
+    low: 100
+    high: 1000
+    step: 100
+
+

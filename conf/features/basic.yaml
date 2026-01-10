@@ -1,6 +1,9 @@
 # Базовый набор фичей для Feature Generation System
 # Используется для быстрого тестирования и простых моделей
 
+name: basic
+description: "Basic featureset for fast testing"
+
 # Префикс для всех генерируемых фичей
 feature_prefix: "f_"
 

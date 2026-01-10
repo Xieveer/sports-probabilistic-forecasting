@@ -1,103 +1,50 @@
-# LP RU - Лига Про Настольный Теннис (Россия)
-# @package _global_.tournament
+# Tournament: Liga Pro Russia (Table Tennis)
 
-name: "lp_ru"
-sport: "table_tennis"
-description: "Лига Про: Настольный теннис (Россия)"
+name: lp_ru
+sport: table_tennis
+region: russia
 
-# Настройки очистки данных (специфичны для LP RU)
+data:
+  processed_dir: data/processed/lp_ru
+  formats:
+    long: train_long.parquet
+    wide: train_wide.parquet
+  inference:
+    long: inference_long.parquet
+    wide: inference_wide.parquet
+  odds_feed:
+    enabled: true
+    column: sdf_odds_feed
+    bookmaker: sdf
+    format: python_dict
+
+allowed_market_specs:
+  winner:
+    specs: [winner_home]
+    default_recipe: winner_baseline
+  total:
+    lines: [60.5, 62.5, 64.5, 66.5, 68.5, 70.5, 72.5, 74.5, 76.5, 78.5, 80.5]
+    specs: [total_over, total_under]
+    default_recipe: total_baseline
+
 data_clean:
-  # Маппинг колонок: приводим к унифицированным названиям
   column_mapping:
-    home_score: home_sets    # Счет по СЕТАМ (для определения победителя)
-    away_score: away_sets    # Счет по СЕТАМ
-    _hmps: home_points       # Сумма ПОИНТОВ хозяев (для тотала и фичей)
-    _amps: away_points       # Сумма ПОИНТОВ гостей (для тотала и фичей)
-
-  # Обязательные колонки
-  required_columns:
-    - id
-    - datetime
-
-  # По этим колонкам дропаем строки с NaN
-  drop_na_columns:
-    - id
-    - datetime
-
-  # Колонки для финального датасета (после маппинга)
-  select_columns:
-    - id
-    - datetime
-    - status
-    - home_sets      # Счет по сетам (для is_win)
-    - away_sets
-    - home_points    # Сумма поинтов (для total и фичей)
-    - away_points
-
-  # LP турниры: все матчи finished, добавляем колонку status
-  default_status: "finished"
-
-  # Типизация колонок
+    home_score: home_sets
+    away_score: away_sets
+    _hmps: home_points
+    _amps: away_points
+  required_columns: [id, datetime]
+  drop_na_columns: [id, datetime]
+  select_columns: [id, datetime, status, home_sets, away_sets, home_points, away_points]
+  default_status: finished
   dtype_mapping:
     numeric:
-      home_sets: int       # Счет по сетам
+      home_sets: int
       away_sets: int
-      home_points: float   # Сумма поинтов (будет вычислено из scores)
+      home_points: float
       away_points: float
-    string:
-      - id
-      - status
+    string: [id, status]
     datetime:
       datetime:
         format: null
-        errors: "coerce"
-
-# Букмекерские коэффициенты
-odds:
-  enabled: true
-  source_column: "sdf_odds_feed"  # Колонка в source.csv
-  bookmaker: "sdf"
-  parse_format: "python_dict"
-  coverage: 27.4  # ~27% матчей имеют коэффициенты
-
-# Источники данных для вычисления различных таргетов
-# Диапазоны тоталов (для автоматической генерации моделей)
-total_ranges:
-  min: 60.5
-  max: 80.5
-  step: 1.0
-  default: 70.5  # Базовое значение для демо
-
-target_sources:
-  # === LONG FORMAT MODELS (train_long.parquet) ===
-
-  # Модель is_win: победа по СЕТАМ (правильная логика для настольного тенниса)
-  is_win:
-    player_column: "pl_sets"      # Используем счет по сетам!
-    opponent_column: "opp_sets"
-    comparison: "greater"  # pl_sets > opp_sets
-    format: "long"
-
-  # === WIDE FORMAT MODELS (train_wide.parquet) ===
-
-  # Legacy: победа по сетам
-  is_home_win:
-    home_column: "home_sets"      # Используем счет по сетам!
-    away_column: "away_sets"
-    comparison: "greater"
-    format: "wide"
-
-  # Тотал по ПОИНТАМ (сумма всех очков во всех сетах)
-  total_over:
-    home_column: "home_points"    # Сумма поинтов
-    away_column: "away_points"
-    comparison: "total_over"
-    base: 70.5  # Берется из total_ranges.default
-    format: "wide"
-
-  total_under:
-    home_column: "home_points"
-    away_column: "away_points"
-    comparison: "total_under"
-    base: 70.5
-    format: "wide"
+        errors: coerce

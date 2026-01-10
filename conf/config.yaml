@@ -1,38 +1,44 @@
-# Корневой конфиг для обучения и инференса
-# Использует Hydra config groups для композиции настроек
+# Root Configuration для ML Training Pipeline
+# Архитектура v2.0: Market-Algorithm Separation
 
 defaults:
   - paths
+  - split
+  - calibration
+  - metrics
   - mlflow: mlflow
-  - features: basic
-  - tournament: ???              # обязательно из CLI: tournament=uel
-  - model: ???                   # обязательно из CLI: model=is_home_win
+
+  # Основные компоненты (обязательны через CLI)
+  - tournament: ???        # REQUIRED: tournament=uel_kz_1
+  - market: ???            # REQUIRED: market=total
+  - market_spec: ???       # REQUIRED: market_spec=total_over
+  - recipe: ???            # REQUIRED: recipe=total_baseline
+
+  # Компоненты experiment (заполняются recipe или CLI)
+  - algorithm: ???         # Заполняется из recipe
+  - features: ???          # Заполняется из recipe
+  - hyper: none            # По умолчанию без оптимизации
+
   - _self_
 
-# Общие настройки обучения
-training:
-  test_size: 0.2
-  time_column: "datetime"  # Колонка для сортировки временных рядов
+# ============================================================================
+# GENERAL SETTINGS
+# ============================================================================
 
-  # Временные ряды: НЕ перемешиваем, НЕ используем stratify
-  # Валидация всегда на более поздних данных
-  shuffle: false
+# Seed для воспроизводимости
+seed: 42
 
-  # Основная метрика для временных рядов
-  primary_metric: "logloss"  # LogLoss - основная метрика
-  secondary_metrics:
-    - "auc"  # AUC - дополнительная метрика для мониторинга
-
-# Настройки для датасетов
-data:
-  dataset_filename: "train.parquet"
-  inference_filename: "inference.parquet"
-
-# Настройки логирования
+# Логирование
 logging:
-  level: "INFO"
+  level: INFO
+  format: "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
 
-# Настройки Hydra
+# ============================================================================
+# HYDRA SETTINGS
+# ============================================================================
+
 hydra:
   run:
-    dir: .
+    dir: .  # Не создавать outputs/ директорию
+  job:
+    chdir: false  # Не менять рабочую директорию

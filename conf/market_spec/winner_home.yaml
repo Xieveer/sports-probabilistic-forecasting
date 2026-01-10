@@ -1,0 +1,29 @@
+# MarketSpec: Winner Home (победа хозяев)
+# Для wide format данных
+
+name: winner_home
+market_family: winner
+side: home
+description: "Home team wins"
+
+# ОБЯЗАТЕЛЬНО: Формат данных
+data_format: wide  # ЯВНО! Никаких дефолтов!
+
+# Правило таргета
+target:
+  source_columns:
+    - home_points
+    - away_points
+  formula: "home_points > away_points"
+  name: "target_is_home_win"
+
+# Фичи (префиксы для wide format)
+feature_prefixes:
+  - "home_f_"
+  - "away_f_"
+
+# Премач букмекерские линии (опционально)
+prematch_line:
+  enabled: false  # Для winner обычно не нужны линии
+
+

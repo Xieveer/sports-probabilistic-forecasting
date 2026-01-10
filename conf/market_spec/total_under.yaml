@@ -1,0 +1,35 @@
+# MarketSpec: Total Under (тотал меньше линии)
+# Параметризуется через line (ОБЯЗАТЕЛЬНЫЙ параметр!)
+
+name: total_under
+market_family: total
+side: under
+description: "Total under line (parameterized)"
+
+# ОБЯЗАТЕЛЬНО: Линия задаётся через CLI!
+line: ???  # REQUIRED!
+
+# ОБЯЗАТЕЛЬНО: Формат данных
+data_format: wide
+
+# Правило таргета
+target:
+  source_columns:
+    - home_points
+    - away_points
+  formula: "(home_points + away_points) < line"
+  name: "target_total_under_{line}"
+
+# Фичи
+feature_prefixes:
+  - "home_f_"
+  - "away_f_"
+
+# Премач линии
+prematch_line:
+  enabled: true
+  source: "odds_feed"
+  timing: "close"
+  market_key: "total"
+
+
