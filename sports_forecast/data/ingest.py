@@ -762,38 +762,43 @@ def process_tournament(source_dir: Path, raw_root: Path) -> None:
             len(df.columns),
         )
 
-        # БИЗНЕС-ЛОГИКА: Разделение источников на подтурниры (если задано в конфиге)
+        # БИЗНЕС-ЛОГИКА: Загружаем конфиг источника (если есть)
+        source_config = None
         try:
             source_config = load_source_config(tournament_name)
-
-            if hasattr(source_config, "split_strategy") and source_config.split_strategy.get(
-                "enabled"
-            ):
-                logger.info(
-                    "Источник %s: обнаружена split_strategy, разделяю на подтурниры",
-                    tournament_name,
-                )
-
-                # Получаем odds конфиг (если есть)
-                odds_cfg = source_config.odds if hasattr(source_config, "odds") else None
-
-                # Универсальное разделение через конфиг
-                split_tournament_by_config(
-                    df,
-                    raw_root,
-                    tournament_name,
-                    source_config.split_strategy,
-                    odds_cfg,
-                )
-
-                logger.info("Источник %s: разделение завершено", tournament_name)
-                return  # Источник обработан через split, не нужно сохранять единым файлом
-
+            logger.debug("Источник %s: конфиг загружен", tournament_name)
         except FileNotFoundError:
-            # Конфиг источника не найден - значит это простой турнир без split логики
+            # Конфиг источника не найден - это нормально для простых турниров
             logger.debug(
-                "Конфиг источника %s не найден, обрабатываю как обычный турнир", tournament_name
+                "Конфиг источника %s не найден, обрабатываю без специальной логики",
+                tournament_name,
             )
+
+        # Разделение на подтурниры (если задано в конфиге)
+        if (
+            source_config
+            and hasattr(source_config, "split_strategy")
+            and source_config.split_strategy.get("enabled")
+        ):
+            logger.info(
+                "Источник %s: обнаружена split_strategy, разделяю на подтурниры",
+                tournament_name,
+            )
+
+            # Получаем odds конфиг (если есть)
+            odds_cfg = source_config.odds if hasattr(source_config, "odds") else None
+
+            # Универсальное разделение через конфиг
+            split_tournament_by_config(
+                df,
+                raw_root,
+                tournament_name,
+                source_config.split_strategy,
+                odds_cfg,
+            )
+
+            logger.info("Источник %s: разделение завершено", tournament_name)
+            return  # Источник обработан через split, не нужно сохранять единым файлом
 
         # Стандартная обработка для остальных турниров
         # Создаем директорию для выходного файла
@@ -821,23 +826,15 @@ def process_tournament(source_dir: Path, raw_root: Path) -> None:
         else:
             logger.error("Турнир %s: ✗ parquet НЕ СОЗДАН → %s", tournament_name, output_parquet)
 
-        # Сохраняем odds.parquet (если есть конфигурация в турнире)
-        try:
-            tournament_config = load_tournament_config(tournament_name)
-            if (
-                hasattr(tournament_config, "data")
-                and hasattr(tournament_config.data, "odds_feed")
-                and tournament_config.data.odds_feed.get("enabled")
-            ):
-                save_odds_if_available(
-                    df,
-                    tournament_name,
-                    output_parquet.parent,
-                    odds_column=tournament_config.data.odds_feed.get("column"),
-                    bookmaker=tournament_config.data.odds_feed.get("bookmaker"),
-                )
-        except FileNotFoundError:
-            logger.debug("Конфиг турнира %s не найден, пропускаю odds", tournament_name)
+        # Сохраняем odds.parquet (если есть конфигурация в source)
+        if source_config and hasattr(source_config, "odds") and source_config.odds.get("enabled"):
+            save_odds_if_available(
+                df,
+                tournament_name,
+                output_parquet.parent,
+                odds_column=source_config.odds.get("source_column"),
+                bookmaker=source_config.odds.get("bookmaker"),
+            )
 
     except pd.errors.ParserError as e:
         logger.error("Турнир %s: ошибка парсинга CSV - %s", tournament_name, e)

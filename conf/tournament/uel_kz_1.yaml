@@ -25,13 +25,6 @@ data:
     long: inference_long.parquet
     wide: inference_wide.parquet
 
-  # Букмекерские коэффициенты
-  odds_feed:
-    enabled: true
-    column: fon_bet_odds_feed
-    bookmaker: fonbet
-    format: python_dict  # ast.literal_eval()
-
 # ============================================================================
 # РЕЕСТР ДОПУСТИМЫХ MARKET SPECS
 # ============================================================================

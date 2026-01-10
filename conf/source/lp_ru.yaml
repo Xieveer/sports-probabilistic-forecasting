@@ -1,0 +1,25 @@
+# Source: Liga Pro Russia (Table Tennis)
+# Конфигурация для обработки исходного файла data/source/lp_ru/source.csv
+
+name: lp_ru
+sport: table_tennis
+region: russia
+description: "Liga Pro: Table Tennis (Russia)"
+
+# ============================================================================
+# РАЗДЕЛЕНИЕ НА ПОДТУРНИРЫ (SPLIT STRATEGY)
+# ============================================================================
+# LP_RU не требует разделения
+
+split_strategy:
+  enabled: false
+
+# ============================================================================
+# БУКМЕКЕРСКИЕ КОЭФФИЦИЕНТЫ
+# ============================================================================
+
+odds:
+  enabled: true
+  source_column: sdf_odds_feed
+  bookmaker: fonbet  # sdf - это на самом деле fonbet
+  format: python_dict
