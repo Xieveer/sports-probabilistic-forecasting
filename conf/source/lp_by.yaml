@@ -1,0 +1,25 @@
+# Source: Liga Pro Belarus (Table Tennis)
+# Конфигурация для обработки исходного файла data/source/lp_by/source.csv
+
+name: lp_by
+sport: table_tennis
+region: belarus
+description: "Liga Pro: Table Tennis (Belarus)"
+
+# ============================================================================
+# РАЗДЕЛЕНИЕ НА ПОДТУРНИРЫ (SPLIT STRATEGY)
+# ============================================================================
+# LP_BY не требует разделения
+
+split_strategy:
+  enabled: false
+
+# ============================================================================
+# БУКМЕКЕРСКИЕ КОЭФФИЦИЕНТЫ
+# ============================================================================
+
+odds:
+  enabled: true
+  source_column: sdf_odds_feed
+  bookmaker: fonbet  # sdf - это на самом деле fonbet
+  format: python_dict

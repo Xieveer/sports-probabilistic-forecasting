@@ -12,11 +12,6 @@ data:
   inference:
     long: inference_long.parquet
     wide: inference_wide.parquet
-  odds_feed:
-    enabled: true
-    column: sdf_odds_feed
-    bookmaker: fonbet  # sdf - это на самом деле fonbet
-    format: python_dict
 
 allowed_market_specs:
   winner:
