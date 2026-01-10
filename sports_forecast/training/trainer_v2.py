@@ -460,12 +460,39 @@ class ExperimentRunner:
         """
         # Исключаем служебные колонки
         exclude_cols = [
+            "id",
             "match_id",
             "datetime",
             "tournament",
             "status",
             "match_state",
         ]
+
+        # 🚨 КРИТИЧЕСКИ ВАЖНО: Исключаем колонки с результатами матчей (утечка таргета!)
+        result_cols = [
+            # Long format
+            "pl_points",
+            "opp_points",
+            "pl",
+            "opp",
+            "diff_ps",
+            "total_ps",
+            # Wide format
+            "home_points",
+            "away_points",
+            "home_score",
+            "away_score",
+            "total",
+            "diff",
+            # Названия команд/игроков (могут быть категориальными)
+            "pl_short_name_en",
+            "opp_short_name_en",
+            "home_name",
+            "away_name",
+            "home_short_name_en",
+            "away_short_name_en",
+        ]
+        exclude_cols.extend(result_cols)
 
         # Добавляем имя таргета
         target_name = get_target_name(cfg.market_spec)
@@ -480,6 +507,12 @@ class ExperimentRunner:
         ]
 
         features = df[feature_cols].copy()
+
+        # Логируем исключённые результативные колонки (для отладки)
+        excluded_results = [col for col in result_cols if col in df.columns]
+        if excluded_results:
+            logger.debug("🔒 Исключены результативные колонки: %s", excluded_results)
+
         return features, feature_cols
 
     def _create_model(self, algorithm_cfg: DictConfig):
@@ -544,24 +577,70 @@ class ExperimentRunner:
         base_model_names = recipe.ensemble_config.stacking.base_models
         logger.info("Создаю Stacking Ensemble с base_models: %s", base_model_names)
 
-        # Создаём экземпляры базовых моделей
+        # Создаём экземпляры базовых моделей напрямую (без Hydra compose)
         base_models = []
-        for model_name in base_model_names:
-            # Загружаем конфиг базовой модели
-            from hydra import compose, initialize_config_dir
 
-            try:
-                # Композиция конфига для базовой модели
-                with initialize_config_dir(
-                    config_dir=str(self.project_root / "conf"), version_base=None
-                ):
-                    base_cfg = compose(config_name="config", overrides=[f"algorithm={model_name}"])
-                    base_model = self._create_model(base_cfg.algorithm)
-                    base_models.append(base_model)
-                    logger.debug("  Добавлена базовая модель: %s", model_name)
-            except Exception as e:
-                logger.error("Ошибка создания базовой модели %s: %s", model_name, e)
-                raise
+        # Маппинг имён моделей на конфигурации
+        model_configs = {
+            "dummy": {"name": "dummy", "params": {}},
+            "logreg": {
+                "name": "logreg",
+                "params": {
+                    "penalty": "l2",
+                    "C": 1.0,
+                    "solver": "saga",
+                    "max_iter": 1000,
+                    "random_state": 777,
+                },
+            },
+            "catboost": {
+                "name": "catboost",
+                "params": {
+                    "iterations": 100,
+                    "depth": 6,
+                    "learning_rate": 0.1,
+                    "random_state": 777,
+                    "verbose": 0,
+                },
+            },
+            "lgbm": {
+                "name": "lgbm",
+                "params": {
+                    "n_estimators": 100,
+                    "max_depth": 6,
+                    "learning_rate": 0.1,
+                    "random_state": 777,
+                    "verbose": -1,
+                },
+            },
+        }
+
+        for model_name in base_model_names:
+            if model_name not in model_configs:
+                raise ValueError(
+                    f"Модель '{model_name}' не поддерживается в Stacking. "
+                    f"Поддерживаются: {list(model_configs.keys())}"
+                )
+
+            cfg = model_configs[model_name]
+            model_cfg_name: str = str(cfg["name"])
+            model_cfg_params: dict[str, Any] = dict(cfg["params"])  # type: ignore[arg-type]
+
+            # Создаём модель напрямую
+            model: Any
+            if model_name == "dummy":
+                model = DummyModel(name=model_cfg_name, params=model_cfg_params)
+            elif model_name == "logreg":
+                model = LogRegModel(name=model_cfg_name, params=model_cfg_params)
+            elif model_name == "catboost":
+                model = CatBoostModel(name=model_cfg_name, params=model_cfg_params)
+            elif model_name == "lgbm":
+                model = LGBMModel(name=model_cfg_name, params=model_cfg_params)
+            else:
+                raise ValueError(f"Неизвестный тип модели: {model_name}")
+
+            base_models.append(model)
+            logger.debug("  Добавлена базовая модель: %s", model_name)
 
         # Создаём мета-модель
         meta_model_cfg = algorithm_cfg.meta_model
