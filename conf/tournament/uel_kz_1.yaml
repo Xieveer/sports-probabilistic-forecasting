@@ -35,7 +35,6 @@ allowed_market_specs:
     specs:
       - winner_home    # Победа хозяев (wide format)
       - winner         # Победа игрока (long format)
-    default_recipe: winner_baseline
 
   # Total markets
   total:
@@ -44,7 +43,6 @@ allowed_market_specs:
     specs:
       - total_over
       - total_under
-    default_recipe: total_baseline
 
 # ============================================================================
 # ОПРЕДЕЛЕНИЕ ТАРГЕТОВ

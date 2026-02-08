@@ -74,7 +74,7 @@ class FeaturePipeline:
         self.config = config
         self.generators = self._init_generators()
 
-        logger.info(f"FeaturePipeline инициализирован: {len(self.generators)} генераторов")
+        logger.info("FeaturePipeline инициализирован: %d генераторов", len(self.generators))
 
     def _init_generators(self) -> list:
         """
@@ -102,14 +102,14 @@ class FeaturePipeline:
         for i, gen_config in enumerate(gen_configs):
             # Валидация конфига генератора
             if "type" not in gen_config:
-                logger.warning(f"FeaturePipeline: generators[{i}] не содержит 'type', пропускаем")
+                logger.warning("FeaturePipeline: generators[%d] не содержит 'type', пропускаем", i)
                 continue
 
             gen_type = gen_config["type"]
             enabled = gen_config.get("enabled", True)
 
             if not enabled:
-                logger.info(f"FeaturePipeline: генератор {gen_type} отключен (enabled=False)")
+                logger.info("FeaturePipeline: генератор %s отключен (enabled=False)", gen_type)
                 continue
 
             # Получение класса генератора
@@ -131,9 +131,9 @@ class FeaturePipeline:
                 generators.append(generator)
 
                 feature_count = len(generator.get_feature_names())
-                logger.info(f"FeaturePipeline: ✓ {gen_type} ({feature_count} фичей)")
+                logger.info("FeaturePipeline: %s (%d фичей)", gen_type, feature_count)
             except Exception as e:
-                logger.error(f"FeaturePipeline: ошибка инициализации {gen_type}: {e}")
+                logger.error("FeaturePipeline: ошибка инициализации %s: %s", gen_type, e)
                 raise
 
         if len(generators) == 0:
@@ -168,8 +168,8 @@ class FeaturePipeline:
         logger.info("=" * 70)
         logger.info("НАЧАЛО ГЕНЕРАЦИИ ФИЧЕЙ")
         logger.info("=" * 70)
-        logger.info(f"Входной датафрейм: {df.shape[0]} строк × {df.shape[1]} колонок")
-        logger.info(f"Формат: {format}")
+        logger.info("Входной датафрейм: %d строк × %d колонок", df.shape[0], df.shape[1])
+        logger.info("Формат: %s", format)
 
         # 1. Трансформация в long format (если требуется)
         requires_long = self.config.get("requires_long", True)
@@ -204,20 +204,20 @@ class FeaturePipeline:
                     "Укажите атрибут для идентификации участника (например, 'short_name_en', 'name', 'team')"
                 )
 
-            logger.info(f"  Контекстные колонки: {context_columns if context_columns else 'нет'}")
-            logger.info(f"  ID участника: {player_id_attr}")
+            logger.info("  Контекстные колонки: %s", context_columns if context_columns else "нет")
+            logger.info("  ID участника: %s", player_id_attr)
 
             df_long = wide_to_long(
                 df, context_columns=context_columns, player_id_attr=player_id_attr
             )
             validate_long_format(df_long)
 
-            logger.info(f"  ✓ wide → long: {df.shape[0]} матчей → {df_long.shape[0]} строк")
+            logger.info("  wide → long: %d матчей → %d строк", df.shape[0], df_long.shape[0])
 
         # 2. Создание базовых метрик (diff_ps, total_ps)
         create_metrics = self.config.get("create_metrics", ["diff", "total"])
         if create_metrics:
-            logger.info(f"Создание базовых метрик: {create_metrics}...")
+            logger.info("Создание базовых метрик: %s...", create_metrics)
             df_long = create_player_metrics(df_long, metrics=create_metrics)
             logger.info("  ✓ Базовые метрики созданы")
 
@@ -226,7 +226,7 @@ class FeaturePipeline:
         all_features = []
 
         for i, generator in enumerate(self.generators, 1):
-            logger.info(f"\n[{i}/{len(self.generators)}] {generator.name}...")
+            logger.info("[%d/%d] %s...", i, len(self.generators), generator.name)
 
             try:
                 result_df = generator(result_df)
@@ -235,9 +235,9 @@ class FeaturePipeline:
                 gen_features = generator.get_prefixed_feature_names()
                 all_features.extend(gen_features)
 
-                logger.info(f"  ✓ Сгенерировано {len(gen_features)} фичей")
+                logger.info("  Сгенерировано %d фичей", len(gen_features))
             except Exception as e:
-                logger.error(f"  ✗ Ошибка в {generator.name}: {e}")
+                logger.error("  Ошибка в %s: %s", generator.name, e)
                 raise
 
         # 4. Итоговая статистика
@@ -247,9 +247,9 @@ class FeaturePipeline:
         logger.info("\n" + "=" * 70)
         logger.info("ГЕНЕРАЦИЯ ФИЧЕЙ ЗАВЕРШЕНА")
         logger.info("=" * 70)
-        logger.info(f"Время выполнения: {elapsed:.2f} секунд")
-        logger.info(f"Генераторов применено: {len(self.generators)}")
-        logger.info(f"Фичей сгенерировано: {len(actual_features)}")
+        logger.info("Время выполнения: %.2f секунд", elapsed)
+        logger.info("Генераторов применено: %d", len(self.generators))
+        logger.info("Фичей сгенерировано: %d", len(actual_features))
         logger.info(
             f"Итоговый датафрейм: {result_df.shape[0]} строк × {result_df.shape[1]} колонок"
         )

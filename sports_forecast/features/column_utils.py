@@ -67,22 +67,35 @@ META_COLUMNS = {
 }
 
 
-def get_feature_columns(df: pd.DataFrame) -> list[str]:
-    """
-    Получить все колонки-фичи (с префиксом f_).
+def get_feature_columns(
+    df: pd.DataFrame,
+    prefixes: list[str] | None = None,
+) -> list[str]:
+    """Получить все колонки-фичи по заданным префиксам.
+
+    По умолчанию ищет колонки с префиксом ``f_`` (long format).
+    Для wide format следует передать ``["home_f_", "away_f_"]``.
 
     Args:
-        df: Датафрейм
+        df: Датафрейм.
+        prefixes: Список префиксов для поиска фичей.
+            По умолчанию ``["f_"]``.
 
     Returns:
-        Список имен колонок-фичей
+        Список имен колонок-фичей.
 
     Examples:
         >>> df = pd.DataFrame({'f_ewm_10': [1], 'id': [1], 'f_count': [2]})
         >>> get_feature_columns(df)
         ['f_ewm_10', 'f_count']
+
+        >>> df = pd.DataFrame({'home_f_a': [1], 'away_f_a': [2], 'f_a': [3]})
+        >>> get_feature_columns(df, prefixes=["home_f_", "away_f_"])
+        ['home_f_a', 'away_f_a']
     """
-    return [col for col in df.columns if col.startswith(FEATURE_PREFIX)]
+    if prefixes is None:
+        prefixes = [FEATURE_PREFIX]
+    return [col for col in df.columns if any(col.startswith(p) for p in prefixes)]
 
 
 def get_meta_columns(df: pd.DataFrame) -> list[str]:

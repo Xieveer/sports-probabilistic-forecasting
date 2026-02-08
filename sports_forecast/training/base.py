@@ -153,6 +153,17 @@ class BaseModel(ABC):
         """
         return self.is_fitted_
 
+    def get_feature_importance(self) -> pd.DataFrame | None:
+        """
+        Получить важность фичей (если модель поддерживает).
+
+        Returns:
+            DataFrame с колонками ['feature', 'importance']
+            или None если модель не поддерживает.
+        """
+        logger.debug("Feature importance не поддерживается для модели '%s'", self.name)
+        return None
+
 
 class BaseSingleModel(BaseModel):
     """
@@ -414,8 +425,9 @@ class BaseSingleModel(BaseModel):
         if version not in ["shadow", "prod"]:
             raise ValueError(f"Версия должна быть 'shadow' или 'prod', получено: {version}")
 
-        save_path = path.parent / f"{path.name}_{version}{path.suffix}"
-        save_path.parent.mkdir(parents=True, exist_ok=True)
+        # path — это директория модели (models/tournament/spec/alg_feat/)
+        path.mkdir(parents=True, exist_ok=True)
+        save_path = path / f"{path.name}_{version}"
 
         # Сохранение (зависит от типа модели)
         if hasattr(self.model_, "save_model"):
@@ -431,7 +443,7 @@ class BaseSingleModel(BaseModel):
         if self.preprocessor_ is not None:
             import joblib
 
-            preprocessor_path = path.parent / f"{path.name}_{version}_preprocessor.pkl"
+            preprocessor_path = path / f"{path.name}_{version}_preprocessor.pkl"
             joblib.dump(self.preprocessor_, preprocessor_path)
             logger.debug("Preprocessor сохранён: %s", preprocessor_path)
 

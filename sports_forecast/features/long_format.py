@@ -283,7 +283,7 @@ def long_to_wide(
                 away_aligned = away_df.set_index("id").reindex(home_df["id"].values)
                 wide[f"{away_prefix}{col}"] = away_aligned[col].values
 
-    logger.info(f"Long → Wide: {len(df)} строк → {len(wide)} матчей")
+    logger.info("Long → Wide: %d строк → %d матчей", len(df), len(wide))
 
     return wide
 
@@ -386,4 +386,4 @@ def validate_long_format(df: pd.DataFrame) -> None:
     if len(mismatches) > 0:
         raise ValueError(f"Long format: найдено {len(mismatches)} строк где side='a' но is_home!=0")
 
-    logger.debug(f"Long format валидация пройдена: {len(df)} строк")
+    logger.debug("Long format валидация пройдена: %d строк", len(df))

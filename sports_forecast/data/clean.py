@@ -32,9 +32,9 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import pandas as pd
-from hydra import compose, initialize_config_dir
 from omegaconf import DictConfig
 
+from sports_forecast.config.loaders import load_paths_config, load_tournament_config
 from sports_forecast.utils.log_config import get_logger
 
 
@@ -454,43 +454,6 @@ def process_tournament(
     df.to_parquet(out_path, index=False)
 
 
-def load_tournament_config(tournament_name: str) -> tuple[DictConfig, DictConfig]:
-    """Загрузить конфиг для конкретного турнира через Hydra compose.
-
-    Args:
-        tournament_name: Имя турнира (например, 'uel_kz_1', 'lp_eu').
-
-    Returns:
-        Tuple (tournament_cfg, paths_cfg) с настройками турнира и путями.
-
-    Raises:
-        FileNotFoundError: Если конфиг турнира не найден.
-
-    Note:
-        Использует Hydra compose для загрузки конфигураций вместо прямого
-        OmegaConf.load(), что обеспечивает единый источник правды.
-    """
-    config_dir = str((PROJECT_ROOT / "conf").resolve())
-
-    # Проверяем существование конфига турнира
-    tournament_config_path = PROJECT_ROOT / "conf" / "tournament" / f"{tournament_name}.yaml"
-    if not tournament_config_path.exists():
-        raise FileNotFoundError(f"Конфиг турнира не найден: {tournament_config_path}")
-
-    # Загружаем через Hydra compose
-    with initialize_config_dir(config_dir=config_dir, version_base="1.3"):
-        tournament_cfg = compose(
-            config_name=f"tournament/{tournament_name}",
-            return_hydra_config=False,
-        )
-        paths_cfg = compose(
-            config_name="paths",
-            return_hydra_config=False,
-        )
-
-    return tournament_cfg, paths_cfg
-
-
 def run() -> None:
     """Запустить обработку всех турниров из raw-слоя в interim-слой.
 
@@ -498,14 +461,10 @@ def run() -> None:
     из conf/tournament/{tournament_name}.yaml и применяются турнир-специфичные
     настройки очистки данных.
     """
-    # Загружаем базовый конфиг только для получения путей
-    config_dir = str((PROJECT_ROOT / "conf").resolve())
-    with initialize_config_dir(config_dir=config_dir, version_base="1.3"):
-        # Загружаем только paths
-        base_cfg = compose(config_name="paths", return_hydra_config=False)
+    paths_cfg = load_paths_config()
 
-    raw_root = PROJECT_ROOT / base_cfg.paths.raw_dir
-    interim_root = PROJECT_ROOT / base_cfg.paths.interim_dir
+    raw_root = PROJECT_ROOT / paths_cfg.paths.raw_dir
+    interim_root = PROJECT_ROOT / paths_cfg.paths.interim_dir
 
     if not raw_root.exists():
         raise RuntimeError(f"Папка с raw-данными не найдена: {raw_root}")
@@ -525,17 +484,11 @@ def run() -> None:
         logger.info("Обрабатываю турнир: %s", tournament_name)
 
         try:
-            # Загружаем конфиг для конкретного турнира
-            tournament_cfg, paths_cfg = load_tournament_config(tournament_name)
-
-            # Обрабатываем турнир
+            tournament_cfg = load_tournament_config(tournament_name)
             process_tournament(tournament_dir, tournament_cfg, paths_cfg)
 
-        except Exception as e:
-            logger.error("Турнир %s: ошибка при обработке - %s", tournament_name, e)
-            import traceback
-
-            logger.error("Traceback:\n%s", traceback.format_exc())
+        except Exception:
+            logger.exception("Турнир %s: ошибка при обработке", tournament_name)
             continue
 
     logger.info("=" * 60)

@@ -52,10 +52,12 @@ class FormFeatureGenerator(BaseFeatureGenerator):
 
         # Проверка обязательных параметров
         if "fg_trigger_minutes" not in self.config:
-            logger.warning(f"{self.name}: fg_trigger_minutes не указан, используется 480 (8 часов)")
+            logger.warning(
+                "%s: fg_trigger_minutes не указан, используется 480 (8 часов)", self.name
+            )
 
         if "dp_trigger_minutes" not in self.config:
-            logger.warning(f"{self.name}: dp_trigger_minutes не указан, используется 30 минут")
+            logger.warning("%s: dp_trigger_minutes не указан, используется 30 минут", self.name)
 
     def generate(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -103,7 +105,7 @@ class FormFeatureGenerator(BaseFeatureGenerator):
             # Разница во времени между игроками
             long["diff_mins_prev_match"] = long["pl_mins_prev_match"] - long["opp_mins_prev_match"]
 
-            logger.debug(f"{self.name}: создано match_state и diff_mins_prev_match")
+            logger.debug("%s: создано match_state и diff_mins_prev_match", self.name)
 
         return long
 

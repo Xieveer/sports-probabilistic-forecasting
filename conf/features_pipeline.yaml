@@ -1,0 +1,19 @@
+# Features Pipeline Configuration
+# Минимальный конфиг для генерации фичей (features_build.py)
+# Не требует market, market_spec, algorithm — только features и paths
+
+defaults:
+  - paths
+  - features: basic       # По умолчанию: features=basic (можно override через CLI)
+  - _self_
+
+# Логирование
+logging:
+  level: INFO
+
+# Hydra settings
+hydra:
+  run:
+    dir: .
+  job:
+    chdir: false

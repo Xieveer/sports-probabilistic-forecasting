@@ -90,7 +90,7 @@ class CountFeatureGenerator(BaseFeatureGenerator):
         shift = self.config.get("shift", 1)
         contexts = self.config["contexts"]
 
-        logger.debug(f"{self.name}: shift={shift}, contexts={len(contexts)}")
+        logger.debug("%s: shift=%d, contexts=%d", self.name, shift, len(contexts))
 
         # Генерация фичей для каждого контекста
         for ctx in contexts:
@@ -122,7 +122,7 @@ class CountFeatureGenerator(BaseFeatureGenerator):
         if is_h2h:
             # H2H count (один признак на пару игроков)
             df[f"{name}_count"] = self._calculate_count(df, keys, shift)
-            logger.debug(f"{self.name}: {name}_count создан (h2h, keys={keys})")
+            logger.debug("%s: %s_count создан (h2h, keys=%s)", self.name, name, keys)
         else:
             # Count для каждого игрока
             players = ctx.get("players", ["pl", "opp"])
@@ -141,7 +141,9 @@ class CountFeatureGenerator(BaseFeatureGenerator):
                     continue
 
                 df[f"{player}_{name}_count"] = self._calculate_count(df, player_keys, shift)
-                logger.debug(f"{self.name}: {player}_{name}_count создан (keys={player_keys})")
+                logger.debug(
+                    "%s: %s_%s_count создан (keys=%s)", self.name, player, name, player_keys
+                )
 
     def _calculate_count(self, df: pd.DataFrame, group_keys: list[str], shift: int) -> pd.Series:
         """

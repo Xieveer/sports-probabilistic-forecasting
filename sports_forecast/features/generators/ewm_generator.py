@@ -120,7 +120,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
             f"{self.name}: metric={metric_col}, spans={spans}, "
             f"shift={shift}, min_periods={min_periods}, adjust={adjust}"
         )
-        logger.debug(f"{self.name}: contexts={len(contexts)}")
+        logger.debug("%s: contexts=%d", self.name, len(contexts))
 
         # Генерация фичей для каждого span и контекста
         total_features = 0
@@ -186,7 +186,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
                 df, keys, metric, span, shift, min_periods, adjust
             )
             features_created = 1
-            logger.debug(f"{self.name}: {feature_name} создан (h2h, keys={keys})")
+            logger.debug("%s: %s создан (h2h, keys=%s)", self.name, feature_name, keys)
         else:
             # Фичи для каждого игрока
             players = ctx.get("players", ["pl", "opp"])
@@ -209,7 +209,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
                     df, player_keys, metric, span, shift, min_periods, adjust
                 )
                 features_created += 1
-                logger.debug(f"{self.name}: {feature_name} создан (keys={player_keys})")
+                logger.debug("%s: %s создан (keys=%s)", self.name, feature_name, player_keys)
 
             # Разница между игроками
             if ctx.get("compute_diff", False) and "pl" in players and "opp" in players:
@@ -220,7 +220,9 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
                     diff_feat = f"all_{name}_ewm_{span}_diff"
                     df[diff_feat] = df[pl_feat] - df[opp_feat]
                     features_created += 1
-                    logger.debug(f"{self.name}: {diff_feat} создан (diff: {pl_feat} - {opp_feat})")
+                    logger.debug(
+                        "%s: %s создан (diff: %s - %s)", self.name, diff_feat, pl_feat, opp_feat
+                    )
 
         return features_created
 

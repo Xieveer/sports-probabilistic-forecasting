@@ -4,19 +4,20 @@
 Основные компоненты:
     - BaseModel: Базовый класс для всех моделей
     - BaseSingleModel: Базовый класс для одиночных моделей
-    - BaseEnsembleModel: Базовый класс для ансамблей
-    - ModelTrainer: Оркестратор обучения
+    - ModelFactory: Фабрика создания моделей из конфига
+    - SingleExperimentRunner: Оркестратор одного эксперимента
     - TimeSeriesCrossValidator: TSCV для временных рядов
-    - OptunaOptimizer: Оптимизация гиперпараметров
     - ModelCalibrator: Калибровка моделей
-
-Примеры:
-    >>> from sports_forecast.training import ModelTrainer
-    >>> trainer = ModelTrainer(cfg)
-    >>> trainer.train_single("catboost", "uel_kz_1", "is_win")
 """
 
 from sports_forecast.training.base import BaseModel, BaseSingleModel
+from sports_forecast.training.model_factory import ModelFactory
+from sports_forecast.training.trainer import SingleExperimentRunner
 
 
-__all__ = ["BaseModel", "BaseSingleModel"]
+__all__ = [
+    "BaseModel",
+    "BaseSingleModel",
+    "ModelFactory",
+    "SingleExperimentRunner",
+]
