@@ -15,15 +15,16 @@ Examples:
     >>> print(f"ROI: {metrics['roi']:.2%}, Profit: ${metrics['profit']:.2f}")
 """
 
-import logging
 from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
 import pandas as pd
 
+from sports_forecast.utils.log_config import get_logger
 
-logger = logging.getLogger(__name__)
+
+logger = get_logger(__name__)
 
 
 @dataclass

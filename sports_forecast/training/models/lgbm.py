@@ -197,8 +197,9 @@ class LGBMModel(BaseSingleModel):
             raise ValueError(f"Версия должна быть 'shadow' или 'prod', получено: {version}")
 
         # LightGBM использует расширение .txt
-        save_path = path.parent / f"{path.stem}_{version}.txt"
-        save_path.parent.mkdir(parents=True, exist_ok=True)
+        # path — это директория модели (models/tournament/spec/alg_feat/)
+        path.mkdir(parents=True, exist_ok=True)
+        save_path = path / f"{path.name}_{version}.txt"
 
         # Сохранение
         self.model_.booster_.save_model(str(save_path))

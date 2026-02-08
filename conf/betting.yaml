@@ -1,0 +1,24 @@
+# Betting Simulator Configuration
+# Настройки симуляции ставок для бизнес-метрик
+
+# Включить симуляцию ставок
+enabled: true
+
+# Начальный банкролл для симуляции
+initial_bankroll: 1000.0
+
+# Стратегия ставок
+stake_strategy: flat  # flat / kelly
+
+# Размер flat ставки
+flat_stake: 10.0
+
+# Доля Kelly (для kelly strategy)
+kelly_fraction: 0.25  # quarter Kelly (консервативная)
+
+# Минимальный порог Expected Value для ставки
+# EV = p * (odds - 1) - (1 - p) > threshold
+min_value_threshold: 0.05  # 5% EV
+
+# Максимальная доля банка на одну ставку (защита от разорения)
+max_stake_fraction: 0.1  # 10% от текущего банка

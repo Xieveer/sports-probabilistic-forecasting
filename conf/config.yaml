@@ -6,17 +6,16 @@ defaults:
   - split
   - calibration
   - metrics
+  - betting
   - mlflow: mlflow
 
   # Основные компоненты (обязательны через CLI)
   - tournament: ???        # REQUIRED: tournament=uel_kz_1
   - market: ???            # REQUIRED: market=total
   - market_spec: ???       # REQUIRED: market_spec=total_over
-  - recipe: ???            # REQUIRED: recipe=total_baseline
+  - algorithm: ???         # REQUIRED: algorithm=catboost
+  - features: ???          # REQUIRED: features=basic
 
-  # Компоненты experiment (OPTIONAL: заполняются recipe или CLI)
-  - optional algorithm: null  # Заполняется из recipe или CLI
-  - optional features: null   # Заполняется из recipe или CLI
   - hyper: none               # По умолчанию без оптимизации
 
   - _self_

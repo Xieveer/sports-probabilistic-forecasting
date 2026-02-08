@@ -1,29 +1,19 @@
 """
-Модуль генерации фичей (processed-слой) с поддержкой Feature Generation System.
+Модуль генерации фичей (processed-слой) через Feature Generation System.
 
 Назначение:
-    Преобразовать промежуточные данные (interim) в датасеты для обучения,
-    используя Feature Generation System или старую логику (для совместимости).
+    Преобразовать промежуточные данные (interim) в датасеты для обучения
+    с использованием FeaturePipeline (генераторы: form, EWM, count).
 
 Слой данных:
     Вход:  data/interim/{tournament}/matches_interim.parquet
     Выход:
-        NEW SYSTEM (features/*.yaml с generators):
         - data/processed/{tournament}/train_wide.parquet (для моделей тотала)
         - data/processed/{tournament}/train_long.parquet (для моделей победителя)
         - data/processed/{tournament}/inference_wide.parquet
         - data/processed/{tournament}/inference_long.parquet
 
-        OLD SYSTEM (features/basic_old.yaml):
-        - data/processed/{tournament}/train.parquet
-        - data/processed/{tournament}/inference.parquet
-
-Использование нового Feature Pipeline:
-    Если в конфиге features есть секция 'generators', используется FeaturePipeline.
-    Иначе используется старая логика (basic_old.yaml).
-
 Пример:
-    # С новым Feature Pipeline
     uv run python -m sports_forecast.features.features_build
 
 Конфигурация:
@@ -36,8 +26,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
+from sports_forecast.config.loaders import load_paths_config
 from sports_forecast.features.long_format import long_to_wide
 from sports_forecast.features.pipeline import FeaturePipeline
 from sports_forecast.utils.log_config import configure_logging, get_logger
@@ -45,20 +36,6 @@ from sports_forecast.utils.log_config import configure_logging, get_logger
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 logger = get_logger(__name__)
-
-
-def use_feature_pipeline(cfg: DictConfig) -> bool:
-    """
-    Определить какую систему генерации фичей использовать.
-
-    Args:
-        cfg: Hydra конфиг
-
-    Returns:
-        True если использовать FeaturePipeline, False если старую логику
-    """
-    # Проверяем наличие секции generators в features
-    return hasattr(cfg, "features") and hasattr(cfg.features, "generators")
 
 
 def process_tournament_new(
@@ -188,36 +165,6 @@ def process_tournament_new(
     logger.info("=" * 70)
 
 
-def process_tournament_old(
-    tournament_name: str,
-    interim_root: Path,
-    processed_root: Path,
-    features_cfg: DictConfig,
-) -> None:
-    """
-    Обработка турнира со СТАРОЙ логикой (для совместимости).
-
-    DEPRECATED: Используйте новый Feature Generation System.
-
-    Args:
-        tournament_name: Имя турнира
-        interim_root: Корневая директория interim данных
-        processed_root: Корневая директория processed данных
-        features_cfg: Конфигурация фичей (basic_old.yaml)
-    """
-    logger.warning("Используется СТАРАЯ система генерации фичей для турнира %s", tournament_name)
-    logger.warning("Рекомендуется мигрировать на новый Feature Generation System")
-
-    # Импортируем старую логику
-    from sports_forecast.features.features_build_old import (
-        process_tournament as process_tournament_legacy,
-    )
-
-    # Старая функция принимает tournament_dir (Path), а не tournament_name (str)
-    tournament_dir = interim_root / tournament_name
-    process_tournament_legacy(tournament_dir, features_cfg, processed_root)
-
-
 def process_all_tournaments(cfg: DictConfig) -> None:
     """
     Обработка всех турниров.
@@ -225,21 +172,21 @@ def process_all_tournaments(cfg: DictConfig) -> None:
     Args:
         cfg: Полный Hydra конфиг
     """
-    # Загрузка paths конфига
-    paths_config_path = PROJECT_ROOT / "conf" / "paths.yaml"
-    paths_cfg = OmegaConf.load(paths_config_path)
+    paths_cfg = load_paths_config()
 
     interim_root = PROJECT_ROOT / paths_cfg.paths.interim_dir
     processed_root = PROJECT_ROOT / paths_cfg.paths.processed_dir
 
-    # Определение системы фичей
-    use_new_system = use_feature_pipeline(cfg)
+    logger.info("Используется Feature Generation System")
+    logger.info("  Конфиг: %s", cfg.features.get("name", "N/A"))
 
-    if use_new_system:
-        logger.info("🚀 Используется Feature Generation System")
-        logger.info("   Конфиг: %s", cfg.features.get("_target_", "N/A"))
-    else:
-        logger.info("⚠️  Используется старая система фичей (basic_old.yaml)")
+    # Проверяем наличие секции generators
+    if not hasattr(cfg, "features") or not hasattr(cfg.features, "generators"):
+        logger.error(
+            "features.generators не задан в конфиге! "
+            "Используйте features=basic или features=advanced"
+        )
+        return
 
     # Поиск турниров
     if not interim_root.exists():
@@ -259,60 +206,47 @@ def process_all_tournaments(cfg: DictConfig) -> None:
         tournament_name = tournament_dir.name
 
         try:
-            if use_new_system:
-                process_tournament_new(
-                    tournament_name,
-                    interim_root,
-                    processed_root,
-                    cfg.features,
-                )
-            else:
-                process_tournament_old(
-                    tournament_name,
-                    interim_root,
-                    processed_root,
-                    cfg.features,
-                )
+            process_tournament_new(
+                tournament_name,
+                interim_root,
+                processed_root,
+                cfg.features,
+            )
         except Exception as e:
             logger.error("Ошибка обработки турнира %s: %s", tournament_name, e, exc_info=True)
             continue
 
 
 def run(cfg: DictConfig) -> None:
-    """
-    Entry point для генерации фичей.
+    """Entry point для генерации фичей.
+
+    Вызывается через Hydra CLI — ``features`` конфиг должен быть
+    скомпонован автоматически (``features=basic`` или ``features=advanced``).
 
     Args:
-        cfg: Hydra конфигурация
+        cfg: Hydra конфигурация (должна содержать ``cfg.features``).
 
     Examples:
-        # Базовый набор фичей
-        python -m sports_forecast.features.features_build features=basic
+        Базовый набор фичей::
 
-        # Продвинутый набор фичей
-        python -m sports_forecast.features.features_build features=advanced
+            python -m sports_forecast.features.features_build features=basic
 
-        # Старая система
-        python -m sports_forecast.features.features_build features=basic_old
+        Продвинутый набор фичей::
+
+            python -m sports_forecast.features.features_build features=advanced
     """
     logger.info("=" * 70)
     logger.info("FEATURE GENERATION")
     logger.info("=" * 70)
 
-    # Загрузка конфига фичей
-    features_file = cfg.get("features_file", "conf/features/basic.yaml")
-    logger.info("Конфиг фичей: %s", features_file)
+    if not hasattr(cfg, "features") or not hasattr(cfg.features, "generators"):
+        logger.error(
+            "features.generators не задан в конфиге! "
+            "Используйте: features=basic или features=advanced"
+        )
+        return
 
-    if not hasattr(cfg, "features"):
-        # Загружаем конфиг фичей явно
-        features_path = PROJECT_ROOT / features_file
-        if not features_path.exists():
-            logger.error("Файл конфигурации фичей не найден: %s", features_path)
-            return
-
-        features_cfg = OmegaConf.load(features_path)
-        cfg.features = features_cfg
-        logger.info("Конфиг фичей загружен из %s", features_path)
+    logger.info("Конфиг фичей: %s", cfg.features.get("name", "N/A"))
 
     process_all_tournaments(cfg)
 
@@ -324,9 +258,13 @@ def run(cfg: DictConfig) -> None:
 if __name__ == "__main__":
     import hydra
 
-    @hydra.main(version_base=None, config_path="../../conf", config_name="config")
+    @hydra.main(
+        version_base="1.3",
+        config_path="../../conf",
+        config_name="features_pipeline",
+    )
     def main(cfg: DictConfig) -> None:
-        configure_logging("INFO")
+        configure_logging(cfg.get("logging", {}).get("level", "INFO"))
         run(cfg)
 
     main()

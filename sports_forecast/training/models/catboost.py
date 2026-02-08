@@ -171,8 +171,9 @@ class CatBoostModel(BaseSingleModel):
             raise ValueError(f"Версия должна быть 'shadow' или 'prod', получено: {version}")
 
         # CatBoost использует расширение .cbm
-        save_path = path.parent / f"{path.stem}_{version}.cbm"
-        save_path.parent.mkdir(parents=True, exist_ok=True)
+        # path — это директория модели (models/tournament/spec/alg_feat/)
+        path.mkdir(parents=True, exist_ok=True)
+        save_path = path / f"{path.name}_{version}.cbm"
 
         # Сохранение
         self.model_.save_model(str(save_path))

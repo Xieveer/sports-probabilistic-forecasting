@@ -17,11 +17,9 @@ data:
 allowed_market_specs:
   winner:
     specs: [winner_home]
-    default_recipe: winner_baseline
   total:
     lines: [3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5]
     specs: [total_over, total_under]
-    default_recipe: total_baseline
 
 data_clean:
   column_mapping:

@@ -73,7 +73,7 @@ class BaseFeatureGenerator(ABC):
         self.validate_config()
 
         if not self.enabled:
-            logger.info(f"{self.name}: отключен (enabled=False)")
+            logger.info("%s: отключен (enabled=False)", self.name)
 
     @abstractmethod
     def generate(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -183,10 +183,10 @@ class BaseFeatureGenerator(ABC):
             >>> df_with_features = generator(df)  # Вызов как функции
         """
         if not self.enabled:
-            logger.info(f"{self.name}: пропущен (disabled)")
+            logger.info("%s: пропущен (disabled)", self.name)
             return df
 
-        logger.info(f"{self.name}: начало генерации фичей...")
+        logger.info("%s: начало генерации фичей...", self.name)
 
         # Генерация фичей (без префикса)
         result = self.generate(df)
@@ -203,10 +203,12 @@ class BaseFeatureGenerator(ABC):
 
             if existing_renames:
                 result = result.rename(columns=existing_renames)
-                logger.debug(f"{self.name}: добавлен префикс f_ к {len(existing_renames)} колонкам")
+                logger.debug(
+                    "%s: добавлен префикс f_ к %d колонкам", self.name, len(existing_renames)
+                )
 
         features_count = len(self.get_feature_names())
-        logger.info(f"{self.name}: сгенерировано {features_count} фичей")
+        logger.info("%s: сгенерировано %d фичей", self.name, features_count)
 
         return result
 

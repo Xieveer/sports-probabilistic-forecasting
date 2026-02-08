@@ -8,7 +8,7 @@ TESTS := tests
 DOCS_SOURCE := docs/source
 DOCS_BUILD := docs/build
 
-.PHONY: help init install lint format fix test test-unit test-cov test-watch test-file pre-commit train clean dvc-repro
+.PHONY: help init install lint format fix test test-unit test-cov test-watch test-file pre-commit train train-sweep promote clean dvc-repro
 .PHONY: docs docs-serve docs-clean docs-open docs-coverage docs-linkcheck tree
 
 # ---------- Справка ----------
@@ -42,7 +42,9 @@ help:
 	@echo "  make tree [DEPTH=3]    - вывести структуру проекта (с указанием глубины)"
 	@echo ""
 	@echo "Пайплайн:"
-	@echo "  make train        - запустить training-пайплайн"
+	@echo "  make train        - запустить training-пайплайн (одиночный эксперимент)"
+	@echo "  make train-sweep  - запустить sweep через Hydra --multirun"
+	@echo "  make promote      - сравнить модели и выбрать лучшую для продакшена"
 	@echo "  make dvc-repro    - перепроизвести датасет с DVC"
 	@echo ""
 	@echo "Утилиты:"
@@ -167,16 +169,34 @@ tree:
 
 # ---------- Основной пайплайн обучения ----------
 
-# Запуск тренировочного скрипта (архитектура v2.0)
+# Запуск одиночного эксперимента (архитектура v2.0)
 train:
 	uv run python -m sports_forecast.train \
 		tournament=uel_kz_1 \
 		market=total \
 		market_spec=total_over \
 		market_spec.line=6.5 \
-		recipe=total_baseline \
-		features=basic \
-		algorithm=dummy
+		algorithm=dummy \
+		features=basic
+
+# Sweep через Hydra --multirun (все комбинации)
+train-sweep:
+	uv run python -m sports_forecast.train --multirun \
+		tournament=uel_kz_1 \
+		market=total \
+		market_spec=total_over \
+		market_spec.line=6.5 \
+		algorithm=catboost,lgbm,logreg \
+		features=basic,advanced
+
+# Выбор лучшей модели (compare)
+promote:
+	@echo "🏆 Сравнение моделей..."
+	uv run python main.py promote compare \
+		--experiment $(or $(EXP),uel_kz_1__total__over_6.5) \
+		--metric $(or $(METRIC),test_logloss) \
+		--direction $(or $(DIR),minimize) \
+		--top-n $(or $(TOP),5)
 
 # ---------- Уборка мусора ----------
 

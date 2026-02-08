@@ -3,21 +3,31 @@ stages:
   ingest:
     cmd: uv run python -m sports_forecast.data.ingest
     deps:
-    - path: data/source
+    - path: conf/bookmaker/
+      hash: md5
+      md5: f2b626c74a183b3ead4a09538408836b.dir
+      size: 948
+      nfiles: 1
+    - path: conf/source/
+      hash: md5
+      md5: 4de438777b410cdbf176fd80270281be.dir
+      size: 4735
+      nfiles: 4
+    - path: data/source/
       hash: md5
       md5: 2a5a6422a6d04bb4eb26a74148bb3b19.dir
       size: 474621059
       nfiles: 8
     - path: sports_forecast/data/ingest.py
       hash: md5
-      md5: d6c312f940f972c0d2c61abe86f591e7
-      size: 27225
+      md5: 80fbb1a9a785cfa4eb3a1b705df0aa91
+      size: 31585
     outs:
-    - path: data/raw
+    - path: data/raw/
       hash: md5
-      md5: 49b441651c266f3d942cd8a156b20fd9.dir
-      size: 191875133
-      nfiles: 14
+      md5: be60255b41ca946f7c264fd6048350cb.dir
+      size: 211268308
+      nfiles: 15
   features:
     cmd: uv run python -m sports_forecast.features.features_build tournament=all
       model=is_home_win
@@ -51,27 +61,27 @@ stages:
     deps:
     - path: conf/paths.yaml
       hash: md5
-      md5: 37255be8c77c777bcf8382e851be222e
-      size: 224
-    - path: conf/tournament
+      md5: 13a08ff4d363534b6ba112d37150e148
+      size: 252
+    - path: conf/tournament/
       hash: md5
-      md5: 7d04b1efa3694318d2aa8d29dadc81d5.dir
-      size: 17623
+      md5: bf843b8bc31134f0c07ce5db7b554985.dir
+      size: 12475
       nfiles: 8
-    - path: data/raw
+    - path: data/raw/
       hash: md5
-      md5: 49b441651c266f3d942cd8a156b20fd9.dir
-      size: 191875133
-      nfiles: 14
+      md5: be60255b41ca946f7c264fd6048350cb.dir
+      size: 211268308
+      nfiles: 15
     - path: sports_forecast/data/clean.py
       hash: md5
-      md5: 05846ba4e3565032778185e39655a9d5
-      size: 17334
+      md5: c7e92f396817c177c2f542fe7fd5a02b
+      size: 21683
     outs:
-    - path: data/interim
+    - path: data/interim/
       hash: md5
-      md5: f616b3c9cb6493864b36381735ff6d2d.dir
-      size: 6753250
+      md5: 3197adbd50cd445024039d251a960a7d.dir
+      size: 6767489
       nfiles: 7
   train:
     cmd: uv run python -m sports_forecast.train tournament=all model=is_home_win

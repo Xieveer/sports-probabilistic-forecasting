@@ -4,13 +4,13 @@ Target Computation Module для архитектуры v2.0.
 Вычисление таргетов на основе MarketSpec вместо старых target_sources.
 """
 
-import logging
-
 import pandas as pd
 from omegaconf import DictConfig
 
+from sports_forecast.utils.log_config import get_logger
 
-logger = logging.getLogger(__name__)
+
+logger = get_logger(__name__)
 
 
 class TargetComputationError(Exception):

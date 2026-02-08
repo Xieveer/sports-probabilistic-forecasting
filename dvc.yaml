@@ -36,11 +36,15 @@ stages:
 
   # Шаг 3: Features (interim → processed)
   # Генерация фичей для обучения
+  # Используется features_pipeline.yaml (не требует market/algorithm)
   features:
-    cmd: uv run python -m sports_forecast.features.features_build tournament=all
+    cmd: uv run python -m sports_forecast.features.features_build features=basic
     deps:
       - sports_forecast/features/features_build.py
+      - sports_forecast/features/pipeline.py
+      - sports_forecast/features/generators/
       - conf/features/
+      - conf/features_pipeline.yaml
       - conf/paths.yaml
       - data/interim/
     outs:

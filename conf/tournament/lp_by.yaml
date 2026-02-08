@@ -17,12 +17,10 @@ data:
 allowed_market_specs:
   winner:
     specs: [winner_home]
-    default_recipe: winner_baseline
   total:
     # Настольный теннис: тоталы в диапазоне 60-80 очков
     lines: [60.5, 62.5, 64.5, 66.5, 68.5, 70.5, 72.5, 74.5, 76.5, 78.5, 80.5]
     specs: [total_over, total_under]
-    default_recipe: total_baseline
 
 data_clean:
   column_mapping:

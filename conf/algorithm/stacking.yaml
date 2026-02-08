@@ -6,9 +6,8 @@ name: stacking
 description: "Stacking ensemble: base models + meta-model (LogReg)"
 _target_: sports_forecast.training.ensembles.stacking.StackingEnsemble
 
-# ВАЖНО: Базовые модели НЕ указываются здесь!
-# Они определяются в recipe, который указывает какие модели
-# использовать для конкретного эксперимента
+# ВАЖНО: Базовые модели передаются через CLI:
+#   algorithm=stacking algorithm.base_models=[catboost,lgbm]
 
 # Мета-модель (обучается на out-of-fold предсказаниях базовых моделей)
 meta_model:

@@ -13,8 +13,10 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
+from omegaconf import DictConfig
 
 from sports_forecast.training.calibration import ModelCalibrator
+from sports_forecast.training.model_factory import ModelFactory
 from sports_forecast.training.models.catboost import CatBoostModel
 from sports_forecast.training.models.dummy import DummyModel
 from sports_forecast.training.models.lgbm import LGBMModel
@@ -259,13 +261,13 @@ def test_logreg_save_load_with_preprocessor(sample_data_with_cat, tmp_path):
     model.fit(features, target)
     proba_before = model.predict_proba(features)
 
-    # Сохранение
+    # Сохранение (save_path — директория модели)
     save_path = tmp_path / "logreg_test"
     model.save(save_path, version="shadow")
 
-    # Загрузка в новую модель
+    # Загрузка в новую модель (файл внутри директории)
     model_loaded = LogRegModel()
-    model_loaded.load(save_path.parent / "logreg_test_shadow.pkl")
+    model_loaded.load(save_path / "logreg_test_shadow.pkl")
 
     # Preprocessor должен быть загружен
     assert model_loaded.preprocessor_ is not None
@@ -359,19 +361,132 @@ def test_model_save_load(sample_data, tmp_path):
     # Предсказания до сохранения
     proba_before = model.predict_proba(features)
 
-    # Сохраняем
+    # Сохраняем (save_path — директория модели)
     save_path = tmp_path / "test_model"
     model.save(save_path, version="shadow")
 
-    # Загружаем новую модель
+    # Загружаем новую модель (файл внутри директории)
     model_loaded = CatBoostModel()
-    model_loaded.load(save_path.parent / "test_model_shadow.cbm")
+    model_loaded.load(save_path / "test_model_shadow.cbm")
 
     # Предсказания после загрузки
     proba_after = model_loaded.predict_proba(features)
 
     # Должны быть идентичными
     assert np.allclose(proba_before, proba_after)
+
+
+# ==================== ModelFactory Tests ====================
+
+
+class TestModelFactory:
+    """Тесты для ModelFactory."""
+
+    def test_create_dummy(self):
+        """ModelFactory создаёт DummyModel по имени."""
+        cfg = DictConfig(
+            {
+                "name": "dummy",
+                "_target_": "sports_forecast.training.models.dummy.DummyModel",
+                "params": {},
+            }
+        )
+        model = ModelFactory.create_model(cfg)
+        assert isinstance(model, DummyModel)
+        assert model.name == "dummy"
+
+    def test_create_logreg(self):
+        """ModelFactory создаёт LogRegModel по имени."""
+        cfg = DictConfig(
+            {
+                "name": "logreg",
+                "_target_": "sports_forecast.training.models.logreg.LogRegModel",
+                "params": {"max_iter": 100},
+            }
+        )
+        model = ModelFactory.create_model(cfg)
+        assert isinstance(model, LogRegModel)
+        assert model.name == "logreg"
+
+    def test_create_catboost(self):
+        """ModelFactory создаёт CatBoostModel по имени."""
+        cfg = DictConfig(
+            {
+                "name": "catboost",
+                "_target_": "sports_forecast.training.models.catboost.CatBoostModel",
+                "params": {"iterations": 10, "verbose": False},
+            }
+        )
+        model = ModelFactory.create_model(cfg)
+        assert isinstance(model, CatBoostModel)
+
+    def test_create_lgbm(self):
+        """ModelFactory создаёт LGBMModel по имени."""
+        cfg = DictConfig(
+            {
+                "name": "lgbm",
+                "_target_": "sports_forecast.training.models.lgbm.LGBMModel",
+                "params": {"n_estimators": 10, "verbose": -1},
+            }
+        )
+        model = ModelFactory.create_model(cfg)
+        assert isinstance(model, LGBMModel)
+
+    def test_create_by_target_only(self):
+        """ModelFactory создаёт модель по _target_ даже если name нестандартный."""
+        cfg = DictConfig({"name": "my_custom", "_target_": "CatBoostModel", "params": {}})
+        model = ModelFactory.create_model(cfg)
+        assert isinstance(model, CatBoostModel)
+
+    def test_unknown_model_raises_error(self):
+        """ModelFactory выбрасывает ValueError для неизвестной модели."""
+        cfg = DictConfig({"name": "unknown_model", "_target_": "UnknownClass", "params": {}})
+        with pytest.raises(ValueError, match="Не удалось определить класс модели"):
+            ModelFactory.create_model(cfg)
+
+    def test_created_model_can_fit_predict(self, sample_data):
+        """Модель, созданная через ModelFactory, обучается и предсказывает."""
+        features, target = sample_data
+        cfg = DictConfig(
+            {
+                "name": "catboost",
+                "_target_": "CatBoostModel",
+                "params": {"iterations": 10, "verbose": False},
+            }
+        )
+        model = ModelFactory.create_model(cfg)
+
+        model.fit(features, target)
+        assert model.is_fitted()
+
+        proba = model.predict_proba(features)
+        assert proba.shape == (len(features), 2)
+
+    def test_params_passed_correctly(self):
+        """ModelFactory передаёт params из конфига в модель."""
+        cfg = DictConfig(
+            {
+                "name": "catboost",
+                "_target_": "CatBoostModel",
+                "params": {"iterations": 42, "depth": 3, "verbose": False},
+            }
+        )
+        model = ModelFactory.create_model(cfg)
+        assert model.params["iterations"] == 42
+        assert model.params["depth"] == 3
+
+    def test_stacking_without_base_models_raises_error(self):
+        """ModelFactory выбрасывает ValueError для Stacking без base_models."""
+        cfg = DictConfig(
+            {
+                "name": "stacking",
+                "_target_": "StackingEnsemble",
+                "params": {},
+                "meta_model": {"type": "logreg", "params": {}},
+            }
+        )
+        with pytest.raises(ValueError, match="base_models"):
+            ModelFactory.create_model(cfg)
 
 
 # ==================== Integration Tests ====================

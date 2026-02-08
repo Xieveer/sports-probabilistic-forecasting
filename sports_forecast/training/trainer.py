@@ -1,8 +1,21 @@
 """
-ExperimentRunner - оркестратор обучения для архитектуры v2.0.
+SingleExperimentRunner — оркестратор обучения одного эксперимента.
 
-Запускает nested MLflow runs согласно recipe, используя Hydra compose
-для динамической композиции конфигов.
+Каждый вызов — один алгоритм + один набор фичей + один seed.
+Множественные эксперименты запускаются через ``hydra --multirun``.
+Группировка в MLflow — через имя эксперимента.
+
+Полный цикл обучения:
+    1. Загрузка данных и вычисление таргета
+    2. Выбор фичей (leakage guard + column_utils)
+    3. Train/Test split по времени
+    4. (Опционально) Optuna → подбор гиперпараметров
+    5. TSCV → Shadow модель
+    6. Калибровка (если включена и ECE > threshold)
+    7. Оценка на test set (ML + Business метрики)
+    8. Feature importance → MLflow
+    9. Обучение Prod модели на train+test
+    10. MLflow логирование всех метрик и артефактов
 """
 
 from __future__ import annotations
@@ -11,18 +24,22 @@ from pathlib import Path
 from typing import Any
 
 import mlflow
+import numpy as np
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
 
-from sports_forecast.config import get_data_path, validate_experiment_config
-from sports_forecast.training.ensembles.stacking import StackingEnsemble
-from sports_forecast.training.models.catboost import CatBoostModel
-from sports_forecast.training.models.dummy import DummyModel
-from sports_forecast.training.models.lgbm import LGBMModel
-from sports_forecast.training.models.logreg import LogRegModel
+from sports_forecast.betting.odds import find_odds_column
+from sports_forecast.betting.simulator import BettingSimulator
+from sports_forecast.config import get_data_path
+from sports_forecast.features.column_utils import get_feature_columns
+from sports_forecast.training.base import BaseModel
+from sports_forecast.training.calibration import ModelCalibrator
+from sports_forecast.training.model_factory import ModelFactory
+from sports_forecast.training.optimization.optuna_optimizer import OptunaHyperOptimizer
 from sports_forecast.training.optimization.tscv import TimeSeriesCrossValidator
 from sports_forecast.utils.log_config import get_logger
+from sports_forecast.utils.metrics import compute_expected_calibration_error
 from sports_forecast.utils.targets import (
     compute_target_from_market_spec,
     get_target_name,
@@ -32,213 +49,143 @@ from sports_forecast.utils.targets import (
 logger = get_logger(__name__)
 
 
-class ExperimentRunner:
-    """
-    Оркестратор запуска экспериментов согласно Recipe.
+class SingleExperimentRunner:
+    """Оркестратор запуска одного эксперимента.
 
-    Для каждой комбинации (algorithm, featureset, seed):
-    1. Compose конфиг через Hydra
-    2. Валидация эксперимента
-    3. Загрузка данных и вычисление таргета
-    4. Запуск nested MLflow run
-    5. Обучение через ModelTrainer
-    6. Логирование метрик и артефактов
+    Полный цикл:
+        1. Загрузка данных и вычисление таргета
+        2. Выбор фичей (с leakage guard)
+        3. Train/Test split по времени
+        4. (Опционально) Optuna → подбор гиперпараметров
+        5. TSCV → Shadow модель
+        6. Калибровка (если ECE > threshold)
+        7. Оценка на test set (ML-метрики + бизнес-метрики)
+        8. Feature importance → MLflow
+        9. Обучение на train+test → Prod модель
+        10. MLflow логирование метрик и артефактов (включая fold-level)
 
     Args:
-        config: Parent конфигурация (tournament, market_spec, recipe)
-        project_root: Корневая директория проекта
-        parent_run_id: ID parent MLflow run
+        config: Hydra конфигурация (tournament, market_spec, algorithm, features).
+        project_root: Корневая директория проекта.
 
     Examples:
-        >>> runner = ExperimentRunner(cfg, PROJECT_ROOT, parent_run_id)
-        >>> results = runner.run_all_experiments()
+        >>> runner = SingleExperimentRunner(cfg, PROJECT_ROOT)
+        >>> success = runner.run_experiment()
     """
 
-    def __init__(self, config: DictConfig, project_root: Path, parent_run_id: str):
-        """
-        Инициализация ExperimentRunner.
+    def __init__(self, config: DictConfig, project_root: Path) -> None:
+        """Инициализация SingleExperimentRunner.
 
         Args:
-            config: Parent конфигурация
-            project_root: Путь к корню проекта
-            parent_run_id: ID parent run для вложенности
+            config: Полная Hydra конфигурация.
+            project_root: Путь к корню проекта.
         """
         self.config = config
         self.project_root = project_root
-        self.parent_run_id = parent_run_id
 
-        # Инициализируем Hydra для compose
-        self.config_dir = str((project_root / "conf").resolve())
-
-        logger.info("ExperimentRunner инициализирован")
+        logger.info("SingleExperimentRunner инициализирован")
         logger.info("  Project root: %s", project_root)
-        logger.info("  Parent run ID: %s", parent_run_id)
+        logger.info("  Algorithm: %s", config.algorithm.name)
+        logger.info("  Features: %s", config.features.name)
 
-    def run_all_experiments(self) -> dict[str, bool]:
-        """
-        Запустить все эксперименты согласно recipe.
-
-        Returns:
-            Словарь {experiment_name: success}
-
-        Examples:
-            >>> results = runner.run_all_experiments()
-            >>> # {"cb__adv__s42": True, "lgbm__basic__s42": True, ...}
-        """
-        recipe = self.config.recipe
-        results = {}
-
-        # Получаем списки из recipe
-        algorithms = recipe.get("algorithms", [])
-        featuresets = recipe.get("featuresets", [])
-        seeds = recipe.get("seeds", [42])
-
-        logger.info("Запуск %d экспериментов:", len(algorithms) * len(featuresets) * len(seeds))
-        logger.info("  Algorithms: %s", algorithms)
-        logger.info("  Featuresets: %s", featuresets)
-        logger.info("  Seeds: %s", seeds)
-
-        # Перебираем все комбинации
-        experiment_idx = 0
-        total_experiments = len(algorithms) * len(featuresets) * len(seeds)
-
-        for algorithm_name in algorithms:
-            for featureset_name in featuresets:
-                for seed in seeds:
-                    experiment_idx += 1
-
-                    # Формируем имя эксперимента
-                    exp_name = self._get_experiment_name(algorithm_name, featureset_name, seed)
-
-                    logger.info("")
-                    logger.info("─" * 80)
-                    logger.info(
-                        "🧪 Эксперимент %d/%d: %s",
-                        experiment_idx,
-                        total_experiments,
-                        exp_name,
-                    )
-                    logger.info("─" * 80)
-
-                    try:
-                        # Запускаем эксперимент
-                        success = self._run_single_experiment(algorithm_name, featureset_name, seed)
-                        results[exp_name] = success
-
-                        status = "✓ УСПЕХ" if success else "✗ ОШИБКА"
-                        logger.info("%s: %s", status, exp_name)
-
-                    except Exception as e:
-                        logger.error(
-                            "✗ ОШИБКА в эксперименте %s: %s",
-                            exp_name,
-                            str(e),
-                            exc_info=True,
-                        )
-                        results[exp_name] = False
-
-        return results
-
-    def _run_single_experiment(self, algorithm_name: str, featureset_name: str, seed: int) -> bool:
-        """
-        Запустить один эксперимент (nested run).
-
-        Args:
-            algorithm_name: Имя алгоритма (catboost, logreg, ...)
-            featureset_name: Имя набора фичей (basic, advanced)
-            seed: Random seed
+    def run_experiment(self) -> bool:
+        """Запустить один эксперимент.
 
         Returns:
-            True если эксперимент успешен, иначе False
+            True если эксперимент успешен, иначе False.
         """
-        # 1. Compose конфиг для эксперимента
-        cfg_experiment = self._compose_experiment_config(algorithm_name, featureset_name, seed)
+        cfg = self.config
 
-        # 2. Валидация
-        validate_experiment_config(cfg_experiment)
+        # Формируем имя и теги для MLflow run
+        run_name = self._get_run_name(cfg)
+        run_tags = self._get_run_tags(cfg)
 
-        # 3. Формируем имя и теги для nested run
-        nested_run_name = self._get_experiment_name(algorithm_name, featureset_name, seed)
-        nested_tags = self._get_experiment_tags(algorithm_name, featureset_name, seed)
-
-        # 4. Запускаем nested run
-        with mlflow.start_run(
-            run_name=nested_run_name, nested=True, tags=nested_tags
-        ) as nested_run:
-            logger.info("Nested Run ID: %s", nested_run.info.run_id)
+        with mlflow.start_run(run_name=run_name, tags=run_tags) as run:
+            logger.info("MLflow Run ID: %s", run.info.run_id)
 
             # Логируем конфиг эксперимента
-            config_str = OmegaConf.to_yaml(cfg_experiment, resolve=True)
+            config_str = OmegaConf.to_yaml(cfg, resolve=True)
             mlflow.log_text(config_str, "experiment_config.yaml")
 
-            # 5. Загружаем данные
-            df = self._load_data(cfg_experiment)
+            # Загружаем данные
+            df = self._load_data(cfg)
 
-            # 6. Вычисляем таргет
-            target = self._compute_target(df, cfg_experiment)
-            target_name = get_target_name(cfg_experiment.market_spec)
+            # Вычисляем таргет
+            target = self._compute_target(df, cfg)
 
-            # 7. Обучаем модель через ModelTrainer (адаптируем старый trainer)
-            # TODO: Пока используем упрощённую версию, потом интегрируем полный ModelTrainer
-            return self._train_model(
-                df, target, target_name, cfg_experiment, nested_run.info.run_id
-            )
+            # Обучаем модель
+            return self._train_model(df, target, cfg, run.info.run_id)
 
-    def _compose_experiment_config(
-        self, algorithm_name: str, featureset_name: str, seed: int
-    ) -> DictConfig:
-        """
-        Скомпоновать конфиг для эксперимента из parent config.
+    # ─────────────────────────────────────────────────────────────────────────
+    # ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _get_run_name(self, cfg: DictConfig) -> str:
+        """Сформировать имя MLflow run.
 
         Args:
-            algorithm_name: Имя алгоритма
-            featureset_name: Имя фичей
-            seed: Random seed
+            cfg: Конфигурация.
 
         Returns:
-            Полный конфиг эксперимента
+            Имя в формате ``alg__feat__sXXX``.
         """
-        # Загружаем конфиги алгоритма и фичей вручную (минуя Hydra compose)
-        algorithm_path = self.project_root / "conf" / "algorithm" / f"{algorithm_name}.yaml"
-        features_path = self.project_root / "conf" / "features" / f"{featureset_name}.yaml"
+        alg_short = {
+            "catboost": "cb",
+            "lgbm": "lgbm",
+            "logreg": "lr",
+            "dummy": "dum",
+        }
+        feat_short = {
+            "basic": "bas",
+            "advanced": "adv",
+        }
+        alg = alg_short.get(cfg.algorithm.name, cfg.algorithm.name[:4])
+        feat = feat_short.get(cfg.features.name, cfg.features.name[:4])
+        seed = cfg.get("seed", 42)
+        return f"{alg}__{feat}__s{seed}"
 
-        if not algorithm_path.exists():
-            raise FileNotFoundError(f"Algorithm config не найден: {algorithm_path}")
-        if not features_path.exists():
-            raise FileNotFoundError(f"Features config не найден: {features_path}")
+    def _get_run_tags(self, cfg: DictConfig) -> dict[str, str]:
+        """Сформировать теги для MLflow run.
 
-        # Читаем конфиги
-        algorithm_cfg = OmegaConf.load(algorithm_path)
-        features_cfg = OmegaConf.load(features_path)
+        Args:
+            cfg: Конфигурация.
 
-        # Клонируем parent config
-        cfg_experiment = OmegaConf.create(OmegaConf.to_container(self.config, resolve=False))
+        Returns:
+            Словарь тегов.
+        """
+        tags: dict[str, str] = {
+            "tournament": cfg.tournament.name,
+            "market_family": cfg.market.family,
+            "market_spec": cfg.market_spec.name,
+            "algorithm": cfg.algorithm.name,
+            "featureset": cfg.features.name,
+            "seed": str(cfg.get("seed", 42)),
+            "architecture": "v2.0",
+        }
 
-        # Заменяем секции
-        cfg_experiment.algorithm = algorithm_cfg
-        cfg_experiment.features = features_cfg
-        cfg_experiment.seed = seed
+        if hasattr(cfg.market_spec, "side"):
+            tags["side"] = cfg.market_spec.side
 
-        logger.debug(
-            "Config composed: algorithm=%s, features=%s, seed=%d",
-            algorithm_name,
-            featureset_name,
-            seed,
-        )
+        if cfg.market.family in ("total", "handicap") and hasattr(cfg.market_spec, "line"):
+            tags["line"] = str(cfg.market_spec.line)
 
-        return cfg_experiment
+        if hasattr(cfg.market_spec, "data_format"):
+            tags["data_format"] = cfg.market_spec.data_format
+
+        return tags
 
     def _load_data(self, cfg: DictConfig) -> pd.DataFrame:
-        """
-        Загрузить данные на основе tournament и data_format.
+        """Загрузить данные на основе tournament и data_format.
 
         Args:
-            cfg: Конфигурация эксперимента
+            cfg: Конфигурация эксперимента.
 
         Returns:
-            DataFrame с данными
+            DataFrame с данными.
+
+        Raises:
+            FileNotFoundError: Если файл данных не найден.
         """
-        # Получаем путь к данным
         data_format = cfg.market_spec.data_format
         data_path = get_data_path(cfg.tournament, data_format)
         full_path = self.project_root / data_path
@@ -251,20 +198,18 @@ class ExperimentRunner:
             )
 
         df = pd.read_parquet(full_path)
-        logger.info("✓ Загружено %d строк, %d колонок", len(df), len(df.columns))
-
+        logger.info("Загружено %d строк, %d колонок", len(df), len(df.columns))
         return df
 
     def _compute_target(self, df: pd.DataFrame, cfg: DictConfig) -> pd.Series:
-        """
-        Вычислить таргет на основе market_spec.
+        """Вычислить таргет на основе market_spec.
 
         Args:
-            df: DataFrame с данными
-            cfg: Конфигурация эксперимента
+            df: DataFrame с данными.
+            cfg: Конфигурация эксперимента.
 
         Returns:
-            Series с таргетом
+            Series с таргетом.
         """
         line = cfg.market_spec.get("line") if hasattr(cfg.market_spec, "line") else None
         tournament_cfg = cfg.tournament if hasattr(cfg, "tournament") else None
@@ -274,56 +219,43 @@ class ExperimentRunner:
         self,
         df: pd.DataFrame,
         target: pd.Series,
-        target_name: str,
         cfg: DictConfig,
         run_id: str,
     ) -> bool:
-        """
-        Обучить модель с TSCV и Shadow/Production сохранением.
-
-        Полный цикл обучения:
-        1. Выбор фичей
-        2. Train/Test split (90/10 по времени)
-        3. TSCV на train → Shadow модель
-        4. Обучение на train+test → Prod модель
-        5. MLflow логирование метрик
+        """Обучить модель с TSCV, калибровкой и бизнес-метриками.
 
         Args:
-            df: DataFrame с данными
-            target: Таргет
-            target_name: Имя таргета
-            cfg: Конфигурация
-            run_id: ID nested run
+            df: DataFrame с данными.
+            target: Таргет.
+            cfg: Конфигурация.
+            run_id: ID MLflow run.
 
         Returns:
-            True если успешно
+            True если успешно.
         """
         try:
-            # 1. Явная сортировка по времени (защита от утечек)
-            time_col = cfg.get("time_column", "match_datetime")
+            # 1. Сортировка по времени (защита от утечек)
+            time_col = cfg.get("split", {}).get("time_column", "datetime")
             if time_col not in df.columns:
-                # Пробуем альтернативные варианты
                 if "date" in df.columns:
                     time_col = "date"
+                elif "match_datetime" in df.columns:
+                    time_col = "match_datetime"
                 else:
                     logger.warning(
-                        "⚠️  Колонка времени '%s' не найдена! Split может быть некорректным.",
+                        "Колонка времени '%s' не найдена! Split может быть некорректным.",
                         time_col,
                     )
-                    logger.warning("  Доступные колонки: %s", list(df.columns))
 
             if time_col in df.columns:
                 df = df.sort_values(time_col).reset_index(drop=True)
-                logger.info("✓ Данные отсортированы по времени: %s", time_col)
-            else:
-                logger.warning("⚠️  Пропускаю сортировку (колонка не найдена)")
+                target = target.iloc[df.index].reset_index(drop=True)
+                logger.info("Данные отсортированы по времени: %s", time_col)
 
             # 2. Выбор фичей
-            logger.info("🔍 Выбор фичей...")
+            logger.info("Выбор фичей...")
             features, feature_names = self._select_features(df, cfg)
-            target_series = target
-
-            logger.info("✓ Фичи: %d колонок", len(feature_names))
+            logger.info("Фичи: %d колонок", len(feature_names))
 
             # 3. Train/Test split (90/10)
             test_size = cfg.get("split", {}).get("test_size", 0.1)
@@ -331,167 +263,186 @@ class ExperimentRunner:
 
             train_features = features.iloc[:split_idx]
             test_features = features.iloc[split_idx:]
-            train_target = target_series.iloc[:split_idx]
-            test_target = target_series.iloc[split_idx:]
+            train_target = target.iloc[:split_idx]
+            test_target = target.iloc[split_idx:]
+
+            # Сохраняем полный df для test set (нужен для odds)
+            test_df = df.iloc[split_idx:]
 
             logger.info(
-                "✓ Split: train=%d (%.1f%%), test=%d (%.1f%%)",
+                "Split: train=%d (%.1f%%), test=%d (%.1f%%)",
                 len(train_features),
                 (1 - test_size) * 100,
                 len(test_features),
                 test_size * 100,
             )
 
-            # 4. Создаём Shadow модель
-            shadow_model = self._create_model(cfg.algorithm)
+            # 4. Калибровочный split (если включена калибровка)
+            cal_features = None
+            cal_target = None
+            inner_train_features = train_features
+            inner_train_target = train_target
 
-            # 5. TSCV на train → Shadow модель
-            logger.info("🔄 TSCV (Shadow модель)...")
-            shadow_metrics = self._train_with_tscv(shadow_model, train_features, train_target, cfg)
+            calibration_enabled = cfg.get("calibration", {}).get("enabled", False)
+            if calibration_enabled:
+                cal_size = cfg.calibration.get("validation_size", 0.1)
+                cal_split_idx = int(len(train_features) * (1 - cal_size))
 
-            # Сохраняем Shadow модель
+                inner_train_features = train_features.iloc[:cal_split_idx]
+                inner_train_target = train_target.iloc[:cal_split_idx]
+                cal_features = train_features.iloc[cal_split_idx:]
+                cal_target = train_target.iloc[cal_split_idx:]
+
+                logger.info(
+                    "Calibration split: inner_train=%d, calibration=%d",
+                    len(inner_train_features),
+                    len(cal_features),
+                )
+
+            # 5. Optuna оптимизация (если включена)
+            optimized_params, optuna_metrics = self._optimize_hyperparams(
+                inner_train_features,
+                inner_train_target,
+                cfg,
+            )
+
+            # 6. Создаём Shadow модель через ModelFactory
+            #    (с оптимизированными параметрами, если Optuna отработала)
+            shadow_model = self._create_model(cfg.algorithm, optimized_params)
+
+            # 7. TSCV на inner_train → Shadow модель
+            logger.info("TSCV (Shadow модель)...")
+            shadow_metrics = self._train_with_tscv(
+                shadow_model, inner_train_features, inner_train_target, cfg
+            )
+
+            # 8. Дообучаем Shadow модель на полном inner_train
+            logger.info("Дообучаем Shadow модель на полном inner_train...")
+            shadow_model = self._create_model(cfg.algorithm, optimized_params)
+            shadow_model.fit(inner_train_features, inner_train_target)
+
+            # 9. Калибровка Shadow модели
+            calibration_metrics: dict[str, Any] = {}
+            if calibration_enabled and cal_features is not None and cal_target is not None:
+                shadow_model, calibration_metrics = self._calibrate_model(
+                    shadow_model,
+                    cal_features,
+                    cal_target,
+                    test_features,
+                    test_target,
+                    cfg,
+                )
+
+            # 10. Оценка Shadow модели на test set
+            test_ml_metrics = self._evaluate_on_test(
+                shadow_model,
+                test_features,
+                test_target,
+            )
+
+            # 11. Бизнес-метрики на test set
+            business_metrics = self._compute_business_metrics(
+                shadow_model,
+                test_features,
+                test_target,
+                test_df,
+                cfg,
+            )
+
+            # 12. Feature importance
+            feature_importance = self._get_feature_importance(shadow_model)
+
+            # 13. Сохраняем Shadow модель
             shadow_path = self._get_model_path(cfg, version="shadow")
             shadow_model.save(shadow_path, version="shadow")
-            logger.info("✓ Shadow модель сохранена: %s", shadow_path)
+            self._save_feature_names(shadow_path, feature_names)
+            logger.info("Shadow модель сохранена: %s", shadow_path)
 
-            # 6. Обучение Prod модели (train + test)
-            logger.info("🚀 Обучение Prod модели (train+test)...")
-            prod_model = self._create_model(cfg.algorithm)
+            # 14. Обучение Prod модели (train + test)
+            logger.info("Обучение Prod модели (train+test)...")
+            prod_model = self._create_model(cfg.algorithm, optimized_params)
             full_features = pd.concat([train_features, test_features])
             full_target = pd.concat([train_target, test_target])
             prod_model.fit(full_features, full_target)
 
-            # ⚠️ Метрики Prod = метрики Shadow (т.к. нет holdout для валидации Prod)
-            # Prod обучена на train+test → не можем честно оценить на test
-            prod_metrics = shadow_metrics.copy()
-            prod_metrics["note"] = "prod_trained_on_train+test_metrics_from_shadow"
-            prod_metrics["validated"] = False
-
-            # Сохраняем Prod модель
+            # 15. Сохраняем Prod модель
             prod_path = self._get_model_path(cfg, version="prod")
             prod_model.save(prod_path, version="prod")
-            logger.info("✓ Prod модель сохранена: %s", prod_path)
+            self._save_feature_names(prod_path, feature_names)
+            logger.info("Prod модель сохранена: %s", prod_path)
 
-            # 7. Анализ стабильности (индикатор качества Prod)
+            # 16. Анализ стабильности
             stability_metrics = self._analyze_training_stability(shadow_metrics)
 
-            # 8. MLflow логирование
+            # 17. MLflow логирование
             self._log_metrics_to_mlflow(
-                shadow_metrics, prod_metrics, stability_metrics, cfg, feature_names
+                shadow_metrics=shadow_metrics,
+                test_metrics=test_ml_metrics,
+                calibration_metrics=calibration_metrics,
+                business_metrics=business_metrics,
+                stability_metrics=stability_metrics,
+                optuna_metrics=optuna_metrics,
+                feature_importance=feature_importance,
+                cfg=cfg,
+                feature_names=feature_names,
             )
 
-            logger.info("✓ Обучение завершено успешно")
+            logger.info("Обучение завершено успешно")
             return True
 
         except Exception as e:
-            logger.error("❌ Ошибка обучения: %s", str(e), exc_info=True)
+            logger.error("Ошибка обучения: %s", str(e), exc_info=True)
             mlflow.set_tag("error", str(e))
             return False
 
-    def _get_experiment_name(self, algorithm_name: str, featureset_name: str, seed: int) -> str:
-        """
-        Сформировать читаемое имя эксперимента.
-
-        Args:
-            algorithm_name: Имя алгоритма
-            featureset_name: Имя фичей
-            seed: Seed
-
-        Returns:
-            Имя в формате: alg__feat__sXXX
-
-        Examples:
-            >>> name = self._get_experiment_name("catboost", "advanced", 42)
-            >>> # "cb__adv__s42"
-        """
-        # Сокращения для алгоритмов
-        alg_short = {
-            "catboost": "cb",
-            "lgbm": "lgbm",
-            "logreg": "lr",
-            "dummy": "dum",
-        }
-
-        # Сокращения для фичей
-        feat_short = {
-            "basic": "bas",
-            "advanced": "adv",
-        }
-
-        alg = alg_short.get(algorithm_name, algorithm_name[:4])
-        feat = feat_short.get(featureset_name, featureset_name[:4])
-
-        return f"{alg}__{feat}__s{seed}"
-
-    def _get_experiment_tags(self, algorithm_name: str, featureset_name: str, seed: int) -> dict:
-        """
-        Сформировать теги для nested run.
-
-        Args:
-            algorithm_name: Имя алгоритма
-            featureset_name: Имя фичей
-            seed: Seed
-
-        Returns:
-            Словарь тегов
-        """
-        return {
-            "algorithm": algorithm_name,
-            "featureset": featureset_name,
-            "seed": str(seed),
-            "hyper": self.config.recipe.hyper,
-            "parent_run_id": self.parent_run_id,
-        }
-
-    # ─────────────────────────────────────────────────────────────────────────────
-    # ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ДЛЯ ОБУЧЕНИЯ
-    # ─────────────────────────────────────────────────────────────────────────────
-
     def _select_features(self, df: pd.DataFrame, cfg: DictConfig) -> tuple[pd.DataFrame, list[str]]:
-        """
-        Выбрать фичи для модели.
+        """Выбрать фичи для модели (с leakage guard).
+
+        Стратегия выбора:
+            1. Если в ``market_spec.feature_prefixes`` заданы префиксы
+               (например ``["home_f_", "away_f_"]`` для wide format) —
+               используем их.
+            2. Если есть колонки с префиксом ``f_`` (из FeaturePipeline) —
+               используем ``column_utils.get_feature_columns()``.
+            3. Иначе — fallback: все числовые колонки минус exclude/result.
 
         Args:
-            df: DataFrame с данными
-            cfg: Конфигурация
+            df: DataFrame с данными.
+            cfg: Конфигурация.
 
         Returns:
-            (features, feature_names)
+            Кортеж (features DataFrame, список имён фичей).
         """
-        # Исключаем служебные колонки
-        exclude_cols = [
-            "id",
-            "match_id",
-            "datetime",
-            "tournament",
-            "status",
-            "match_state",
-        ]
+        # Стратегия 1: Явные префиксы из market_spec (wide format)
+        feature_prefixes = list(cfg.market_spec.get("feature_prefixes", []))
+        if feature_prefixes:
+            f_cols = get_feature_columns(df, prefixes=feature_prefixes)
+            if f_cols:
+                logger.info(
+                    "Используем %d колонок с префиксами %s (wide format)",
+                    len(f_cols),
+                    feature_prefixes,
+                )
+                features = df[f_cols].copy()
+                return features, f_cols
 
-        # 🚨 КРИТИЧЕСКИ ВАЖНО: Исключаем колонки с результатами матчей (утечка таргета!)
-        result_cols = [
-            # Long format
-            "pl_points",
-            "opp_points",
-            "pl",
-            "opp",
-            "diff_ps",
-            "total_ps",
-            # Wide format
-            "home_points",
-            "away_points",
-            "home_score",
-            "away_score",
-            "total",
-            "diff",
-            # Названия команд/игроков (могут быть категориальными)
-            "pl_short_name_en",
-            "opp_short_name_en",
-            "home_name",
-            "away_name",
-            "home_short_name_en",
-            "away_short_name_en",
-        ]
+        # Стратегия 2: Колонки с префиксом f_ (long format, предпочтительная)
+        f_cols = get_feature_columns(df)
+        if f_cols:
+            logger.info(
+                "Используем %d колонок с префиксом f_ (FeaturePipeline)",
+                len(f_cols),
+            )
+            features = df[f_cols].copy()
+            return features, f_cols
+
+        # Стратегия 2: Fallback — все числовые минус exclude/result
+        logger.warning(
+            "Колонки с префиксом f_ не найдены. "
+            "Используем fallback: все числовые минус exclude_cols + result_cols"
+        )
+        exclude_cols = list(cfg.features.get("exclude_cols", []))
+        result_cols = list(cfg.features.get("result_cols", []))
         exclude_cols.extend(result_cols)
 
         # Добавляем имя таргета
@@ -499,7 +450,7 @@ class ExperimentRunner:
         if target_name in df.columns:
             exclude_cols.append(target_name)
 
-        # Выбираем только числовые колонки
+        # Выбираем только числовые колонки, не входящие в exclude
         feature_cols = [
             col
             for col in df.columns
@@ -508,164 +459,126 @@ class ExperimentRunner:
 
         features = df[feature_cols].copy()
 
-        # Логируем исключённые результативные колонки (для отладки)
+        # Логируем исключённые результативные колонки
         excluded_results = [col for col in result_cols if col in df.columns]
         if excluded_results:
-            logger.debug("🔒 Исключены результативные колонки: %s", excluded_results)
+            logger.debug("Исключены результативные колонки: %s", excluded_results)
 
         return features, feature_cols
 
-    def _create_model(self, algorithm_cfg: DictConfig):
-        """
-        Создать модель по конфигурации.
+    def _create_model(
+        self,
+        algorithm_cfg: DictConfig,
+        optimized_params: dict[str, Any] | None = None,
+    ) -> BaseModel:
+        """Создать модель по конфигурации, используя ModelFactory.
+
+        Если ``optimized_params`` переданы (после Optuna), они мержатся
+        с дефолтными параметрами алгоритма.
 
         Args:
-            algorithm_cfg: Конфигурация алгоритма
+            algorithm_cfg: Конфигурация алгоритма.
+            optimized_params: Оптимизированные гиперпараметры (опционально).
 
         Returns:
-            Экземпляр модели
+            Экземпляр модели (BaseModel).
         """
-        model_name = algorithm_cfg.name
-        params = dict(algorithm_cfg.get("params", {}))
+        if optimized_params:
+            logger.debug(
+                "Создаём модель '%s' с оптимизированными параметрами",
+                algorithm_cfg.name,
+            )
+            cfg_dict = OmegaConf.to_container(algorithm_cfg, resolve=True)
+            cfg_dict["params"] = optimized_params
+            merged_cfg = OmegaConf.create(cfg_dict)
+            return ModelFactory.create_model(merged_cfg)
 
-        # Определяем класс модели по _target_ или name
-        target = algorithm_cfg.get("_target_", "")
+        logger.debug("Создаём модель: %s", algorithm_cfg.name)
+        return ModelFactory.create_model(algorithm_cfg)
 
-        logger.debug("Создаём модель: %s (target=%s)", model_name, target)
+    def _optimize_hyperparams(
+        self,
+        train_features: pd.DataFrame,
+        train_target: pd.Series,
+        cfg: DictConfig,
+    ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+        """Запустить Optuna оптимизацию гиперпараметров (если включена).
 
-        # Маппинг name → класс модели
-        if "dummy" in model_name.lower() or "DummyModel" in target:
-            return DummyModel(name=model_name, params=params)
-        if "logreg" in model_name.lower() or "LogRegModel" in target:
-            return LogRegModel(name=model_name, params=params)
-        if "catboost" in model_name.lower() or "CatBoostModel" in target:
-            return CatBoostModel(name=model_name, params=params)
-        if "lgbm" in model_name.lower() or "LGBMModel" in target:
-            return LGBMModel(name=model_name, params=params)
-        if "stacking" in model_name.lower() or "StackingEnsemble" in target:
-            return self._create_stacking_ensemble(algorithm_cfg)
-        raise ValueError(
-            f"Не удалось определить класс модели для: name={model_name}, target={target}"
+        Args:
+            train_features: Обучающие фичи.
+            train_target: Обучающий таргет.
+            cfg: Конфигурация.
+
+        Returns:
+            Кортеж (оптимизированные параметры или None, метрики Optuna).
+        """
+        hyper_cfg = cfg.get("hyper", {})
+        if not hyper_cfg.get("enabled", False):
+            logger.info("Optuna оптимизация отключена (hyper.enabled=false)")
+            return None, {}
+
+        # Проверяем наличие optuna_space
+        optuna_space = cfg.algorithm.get("optuna_space", None)
+        if optuna_space is None:
+            logger.warning(
+                "optuna_space не задан для '%s', пропускаем оптимизацию",
+                cfg.algorithm.name,
+            )
+            return None, {}
+
+        # Формируем имя study
+        tournament = cfg.tournament.name
+        market_spec = cfg.market_spec.name
+        algorithm = cfg.algorithm.name
+        study_name = f"{tournament}__{market_spec}__{algorithm}"
+
+        split_cfg = cfg.get("split", None)
+
+        optimizer = OptunaHyperOptimizer(
+            algorithm_cfg=cfg.algorithm,
+            hyper_cfg=hyper_cfg,
+            split_cfg=split_cfg,
+            study_name=study_name,
         )
 
-    def _create_stacking_ensemble(self, algorithm_cfg: DictConfig) -> StackingEnsemble:
-        """
-        Создать Stacking Ensemble с base_models из recipe.
+        best_params = optimizer.optimize(train_features, train_target)
 
-        Args:
-            algorithm_cfg: Конфигурация алгоритма stacking
+        # Логируем в MLflow
+        optimizer.log_to_mlflow(best_params)
 
-        Returns:
-            Экземпляр StackingEnsemble
-
-        Raises:
-            ValueError: Если base_models не указаны в recipe.ensemble_config
-        """
-        # Получаем список base_models из recipe
-        if not hasattr(self.config, "recipe"):
-            raise ValueError("recipe не найден в config")
-
-        recipe = self.config.recipe
-        if not hasattr(recipe, "ensemble_config") or not hasattr(
-            recipe.ensemble_config, "stacking"
-        ):
-            raise ValueError(
-                "ensemble_config.stacking не найден в recipe. "
-                "Укажите base_models в recipe.ensemble_config.stacking.base_models"
-            )
-
-        base_model_names = recipe.ensemble_config.stacking.base_models
-        logger.info("Создаю Stacking Ensemble с base_models: %s", base_model_names)
-
-        # Создаём экземпляры базовых моделей напрямую (без Hydra compose)
-        base_models = []
-
-        # Маппинг имён моделей на конфигурации
-        model_configs = {
-            "dummy": {"name": "dummy", "params": {}},
-            "logreg": {
-                "name": "logreg",
-                "params": {
-                    "penalty": "l2",
-                    "C": 1.0,
-                    "solver": "saga",
-                    "max_iter": 1000,
-                    "random_state": 777,
-                },
-            },
-            "catboost": {
-                "name": "catboost",
-                "params": {
-                    "iterations": 100,
-                    "depth": 6,
-                    "learning_rate": 0.1,
-                    "random_seed": 777,  # CatBoost использует random_seed, не random_state!
-                    "verbose": 0,
-                },
-            },
-            "lgbm": {
-                "name": "lgbm",
-                "params": {
-                    "n_estimators": 100,
-                    "max_depth": 6,
-                    "learning_rate": 0.1,
-                    "random_state": 777,
-                    "verbose": -1,
-                },
-            },
+        optuna_metrics: dict[str, Any] = {
+            "enabled": True,
+            "best_params": best_params,
+            "study_name": study_name,
         }
 
-        for model_name in base_model_names:
-            if model_name not in model_configs:
-                raise ValueError(
-                    f"Модель '{model_name}' не поддерживается в Stacking. "
-                    f"Поддерживаются: {list(model_configs.keys())}"
-                )
+        logger.info("Optuna: лучшие параметры найдены для '%s'", algorithm)
+        return best_params, optuna_metrics
 
-            cfg = model_configs[model_name]
-            model_cfg_name: str = str(cfg["name"])
-            model_cfg_params: dict[str, Any] = dict(cfg["params"])  # type: ignore[arg-type]
+    def _get_feature_importance(
+        self,
+        model: BaseModel,
+    ) -> pd.DataFrame | None:
+        """Получить важность фичей от обученной модели.
 
-            # Создаём модель напрямую
-            model: Any
-            if model_name == "dummy":
-                model = DummyModel(name=model_cfg_name, params=model_cfg_params)
-            elif model_name == "logreg":
-                model = LogRegModel(name=model_cfg_name, params=model_cfg_params)
-            elif model_name == "catboost":
-                model = CatBoostModel(name=model_cfg_name, params=model_cfg_params)
-            elif model_name == "lgbm":
-                model = LGBMModel(name=model_cfg_name, params=model_cfg_params)
-            else:
-                raise ValueError(f"Неизвестный тип модели: {model_name}")
+        Args:
+            model: Обученная модель.
 
-            base_models.append(model)
-            logger.debug("  Добавлена базовая модель: %s", model_name)
-
-        # Создаём мета-модель
-        meta_model_cfg = algorithm_cfg.meta_model
-        meta_model_type = meta_model_cfg.get("type", "logreg")
-        meta_model_params = dict(meta_model_cfg.get("params", {}))
-
-        if meta_model_type == "logreg":
-            meta_model = LogRegModel(name="meta_logreg", params=meta_model_params)
+        Returns:
+            DataFrame с feature importance или None.
+        """
+        importance = model.get_feature_importance()
+        if importance is not None and not importance.empty:
+            logger.info(
+                "Feature importance: top-5 фичей:\n%s",
+                importance.head(5).to_string(index=False),
+            )
         else:
-            raise ValueError(f"Неизвестный тип мета-модели: {meta_model_type}")
-
-        # Создаём StackingEnsemble
-        n_splits = algorithm_cfg.get("tscv_n_splits", 4)
-        stacking = StackingEnsemble(
-            name="stacking",
-            base_models=base_models,
-            meta_model=meta_model,
-            config=algorithm_cfg,
-            n_splits=n_splits,
-        )
-
-        logger.info(
-            "✓ Stacking Ensemble создан: %d базовых моделей + %s", len(base_models), meta_model_type
-        )
-        return stacking
+            logger.debug(
+                "Feature importance недоступна для '%s'",
+                model.get_name(),
+            )
+        return importance
 
     def _train_with_tscv(
         self,
@@ -673,18 +586,17 @@ class ExperimentRunner:
         train_features: pd.DataFrame,
         train_target: pd.Series,
         cfg: DictConfig,
-    ) -> dict:
-        """
-        Обучить модель с TSCV и вернуть агрегированные метрики.
+    ) -> dict[str, Any]:
+        """Обучить модель с TSCV и вернуть агрегированные метрики.
 
         Args:
-            model: Модель для обучения
-            train_features: Обучающие фичи
-            train_target: Обучающие таргеты
-            cfg: Конфигурация
+            model: Модель для обучения.
+            train_features: Обучающие фичи.
+            train_target: Обучающие таргеты.
+            cfg: Конфигурация.
 
         Returns:
-            Словарь с метриками (mean, std)
+            Словарь с метриками (mean, std).
         """
         n_splits = cfg.get("split", {}).get("tscv_n_splits", 4)
         tscv = TimeSeriesCrossValidator(n_splits=n_splits)
@@ -693,8 +605,7 @@ class ExperimentRunner:
 
         tscv_results = tscv.cross_validate(model, train_features, train_target)
 
-        # Извлекаем метрики
-        shadow_metrics = {
+        shadow_metrics: dict[str, Any] = {
             "logloss": tscv_results.get("mean_logloss", 0),
             "auc": tscv_results.get("mean_auc", 0),
             "accuracy": tscv_results.get("mean_accuracy", 0),
@@ -709,38 +620,283 @@ class ExperimentRunner:
 
         logger.info("  TSCV метрики:")
         logger.info(
-            "    LogLoss: %.4f ± %.4f", shadow_metrics["logloss"], shadow_metrics["std_logloss"]
+            "    LogLoss: %.4f +/- %.4f",
+            shadow_metrics["logloss"],
+            shadow_metrics["std_logloss"],
         )
-        logger.info("    AUC:     %.4f ± %.4f", shadow_metrics["auc"], shadow_metrics["std_auc"])
-        logger.info("    ECE:     %.4f ± %.4f", shadow_metrics["ece"], shadow_metrics["std_ece"])
+        logger.info(
+            "    AUC:     %.4f +/- %.4f",
+            shadow_metrics["auc"],
+            shadow_metrics["std_auc"],
+        )
+        logger.info(
+            "    ECE:     %.4f +/- %.4f",
+            shadow_metrics["ece"],
+            shadow_metrics["std_ece"],
+        )
 
-        # Сохраняем детальные результаты для анализа стабильности
         shadow_metrics["fold_details"] = tscv_results
-
         return shadow_metrics
 
-    def _analyze_training_stability(self, shadow_metrics: dict) -> dict:
-        """
-        Анализ стабильности обучения как индикатор качества Prod модели.
+    def _calibrate_model(
+        self,
+        model: BaseModel,
+        cal_features: pd.DataFrame,
+        cal_target: pd.Series,
+        val_features: pd.DataFrame,
+        val_target: pd.Series,
+        cfg: DictConfig,
+    ) -> tuple[BaseModel, dict[str, Any]]:
+        """Калибровать модель если ECE превышает порог.
 
         Args:
-            shadow_metrics: Метрики Shadow модели с TSCV
+            model: Обученная модель.
+            cal_features: Фичи для калибровки.
+            cal_target: Таргет для калибровки.
+            val_features: Фичи для оценки калибровки.
+            val_target: Таргет для оценки калибровки.
+            cfg: Конфигурация.
 
         Returns:
-            Словарь с индикаторами стабильности
+            Кортеж (модель, метрики калибровки).
+        """
+        logger.info("=" * 60)
+        logger.info("КАЛИБРОВКА МОДЕЛИ")
+        logger.info("=" * 60)
+
+        cal_cfg = cfg.calibration
+        threshold_ece = cal_cfg.get("threshold_ece", 0.10)
+        method = cal_cfg.get("method", "isotonic")
+        cv = cal_cfg.get("cv", "prefit")
+
+        calibrator = ModelCalibrator(
+            threshold_ece=threshold_ece,
+            method=method,
+            cv=cv,
+        )
+
+        calibrated_model, is_calibrated, ece_before, ece_after = calibrator.calibrate_if_needed(
+            model=model,
+            cal_features=cal_features,
+            cal_target=cal_target,
+            val_features=val_features,
+            val_target=val_target,
+        )
+
+        metrics: dict[str, Any] = {
+            "is_calibrated": is_calibrated,
+            "ece_before": ece_before,
+            "ece_after": ece_after,
+            "method": method,
+            "threshold": threshold_ece,
+        }
+
+        if is_calibrated:
+            logger.info(
+                "✓ Калибровка применена: ECE %.4f → %.4f (метод: %s)",
+                ece_before,
+                ece_after,
+                method,
+            )
+        else:
+            logger.info(
+                "✓ Калибровка не требуется: ECE %.4f <= %.4f",
+                ece_before,
+                threshold_ece,
+            )
+
+        return calibrated_model, metrics
+
+    def _evaluate_on_test(
+        self,
+        model: BaseModel,
+        test_features: pd.DataFrame,
+        test_target: pd.Series,
+    ) -> dict[str, float]:
+        """Вычислить ML-метрики на test set.
+
+        Args:
+            model: Обученная (возможно калиброванная) модель.
+            test_features: Тестовые фичи.
+            test_target: Тестовый таргет.
+
+        Returns:
+            Словарь ML-метрик.
+        """
+        logger.info("=" * 60)
+        logger.info("ОЦЕНКА НА TEST SET")
+        logger.info("=" * 60)
+
+        proba = model.predict_proba(test_features)[:, 1]
+        y_pred = (proba >= 0.5).astype(int)
+
+        metrics: dict[str, float] = {}
+
+        try:
+            metrics["logloss"] = float(log_loss(test_target, proba))
+        except Exception as e:
+            logger.warning("LogLoss ошибка: %s", e)
+            metrics["logloss"] = 0.0
+
+        try:
+            metrics["auc"] = float(roc_auc_score(test_target, proba))
+        except Exception as e:
+            logger.warning("AUC ошибка: %s", e)
+            metrics["auc"] = 0.0
+
+        try:
+            metrics["accuracy"] = float(accuracy_score(test_target, y_pred))
+        except Exception as e:
+            logger.warning("Accuracy ошибка: %s", e)
+            metrics["accuracy"] = 0.0
+
+        try:
+            metrics["brier"] = float(brier_score_loss(test_target, proba))
+        except Exception as e:
+            logger.warning("Brier ошибка: %s", e)
+            metrics["brier"] = 0.0
+
+        try:
+            metrics["ece"] = float(compute_expected_calibration_error(np.array(test_target), proba))
+        except Exception as e:
+            logger.warning("ECE ошибка: %s", e)
+            metrics["ece"] = 0.0
+
+        logger.info("  Test LogLoss:  %.4f", metrics["logloss"])
+        logger.info("  Test AUC:      %.4f", metrics["auc"])
+        logger.info("  Test Accuracy: %.4f", metrics["accuracy"])
+        logger.info("  Test Brier:    %.4f", metrics["brier"])
+        logger.info("  Test ECE:      %.4f", metrics["ece"])
+
+        return metrics
+
+    def _compute_business_metrics(
+        self,
+        model: BaseModel,
+        test_features: pd.DataFrame,
+        test_target: pd.Series,
+        test_df: pd.DataFrame,
+        cfg: DictConfig,
+    ) -> dict[str, Any]:
+        """Вычислить бизнес-метрики через BettingSimulator.
+
+        Симулирует ставки на test set, используя предсказания модели
+        и реальные букмекерские коэффициенты.
+
+        Args:
+            model: Обученная модель.
+            test_features: Тестовые фичи.
+            test_target: Тестовый таргет.
+            test_df: Полный DataFrame test set (для odds).
+            cfg: Конфигурация.
+
+        Returns:
+            Словарь бизнес-метрик (пустой если odds не найдены).
+        """
+        # Проверяем что betting включён
+        betting_cfg = cfg.get("betting", {})
+        if not betting_cfg.get("enabled", False):
+            logger.info("BettingSimulator отключён (betting.enabled=false)")
+            return {}
+
+        # Находим колонку с коэффициентами
+        odds_col = find_odds_column(test_df, cfg.market_spec)
+        if odds_col is None:
+            logger.warning("Odds column не найдена → бизнес-метрики пропущены")
+            return {}
+
+        # Проверяем что колонка не пустая
+        odds = test_df[odds_col]
+        valid_odds_mask = odds.notna() & (odds > 1.0)
+        valid_count = valid_odds_mask.sum()
+
+        if valid_count == 0:
+            logger.warning(
+                "Odds column '%s' не содержит валидных значений",
+                odds_col,
+            )
+            return {}
+
+        logger.info("=" * 60)
+        logger.info("БИЗНЕС-МЕТРИКИ (BettingSimulator)")
+        logger.info("  Odds column: %s", odds_col)
+        logger.info("  Валидных odds: %d / %d", valid_count, len(odds))
+        logger.info("=" * 60)
+
+        # Фильтруем данные с валидными odds
+        valid_features = test_features.loc[valid_odds_mask]
+        valid_target = test_target.loc[valid_odds_mask]
+        valid_odds = odds.loc[valid_odds_mask]
+
+        # Предсказания
+        proba = model.predict_proba(valid_features)[:, 1]
+
+        # Создаём симулятор
+        simulator = BettingSimulator(
+            initial_bankroll=betting_cfg.get("initial_bankroll", 1000.0),
+            stake_strategy=betting_cfg.get("stake_strategy", "flat"),
+            flat_stake=betting_cfg.get("flat_stake", 10.0),
+            kelly_fraction=betting_cfg.get("kelly_fraction", 0.25),
+            min_value_threshold=betting_cfg.get("min_value_threshold", 0.05),
+            max_stake_fraction=betting_cfg.get("max_stake_fraction", 0.1),
+        )
+
+        # Симуляция
+        betting_metrics = simulator.simulate(
+            y_true=np.array(valid_target),
+            y_pred_proba=proba,
+            odds=np.array(valid_odds),
+        )
+
+        return {
+            "roi": betting_metrics.roi,
+            "profit": betting_metrics.profit,
+            "total_staked": betting_metrics.total_staked,
+            "num_bets": betting_metrics.num_bets,
+            "num_wins": betting_metrics.num_wins,
+            "win_rate": betting_metrics.win_rate,
+            "avg_odds": betting_metrics.avg_odds,
+            "avg_value": betting_metrics.avg_value,
+            "sharpe_ratio": betting_metrics.sharpe_ratio,
+            "max_drawdown": betting_metrics.max_drawdown,
+            "final_bankroll": betting_metrics.final_bankroll,
+            "odds_column": odds_col,
+            "valid_odds_count": int(valid_count),
+        }
+
+    def _save_feature_names(self, model_dir: Path, feature_names: list[str]) -> None:
+        """Сохранить список фичей в директорию модели.
+
+        Сохраняет ``features.txt`` рядом с файлом модели,
+        чтобы ``predict.py`` мог загрузить тот же набор фичей.
+
+        Args:
+            model_dir: Директория модели.
+            feature_names: Список имён фичей.
+        """
+        features_path = model_dir / "features.txt"
+        features_path.write_text("\n".join(feature_names))
+        logger.debug("features.txt сохранён: %s (%d фичей)", features_path, len(feature_names))
+
+    def _analyze_training_stability(self, shadow_metrics: dict[str, Any]) -> dict[str, Any]:
+        """Анализ стабильности обучения как индикатор качества Prod модели.
+
+        Args:
+            shadow_metrics: Метрики Shadow модели с TSCV.
+
+        Returns:
+            Словарь с индикаторами стабильности.
 
         Notes:
-            - Низкий CV (< 10%) → модель стабильна → Prod скорее всего не деградирует
-            - Высокий CV (> 20%) → модель нестабильна → Prod может быть хуже
+            - Низкий CV (< 10%) → модель стабильна.
+            - Высокий CV (> 20%) → модель нестабильна.
         """
         logloss_mean = shadow_metrics.get("logloss", 0)
         logloss_std = shadow_metrics.get("std_logloss", 0)
         auc_std = shadow_metrics.get("std_auc", 0)
 
-        # Coefficient of Variation (CV) для LogLoss
         cv_logloss = (logloss_std / logloss_mean * 100) if logloss_mean > 0 else 0
 
-        # Оценка стабильности
         if cv_logloss < 10:
             stability_level = "high"
             prod_confidence = "high"
@@ -751,7 +907,7 @@ class ExperimentRunner:
             stability_level = "low"
             prod_confidence = "low"
 
-        stability = {
+        stability: dict[str, Any] = {
             "cv_logloss": cv_logloss,
             "std_auc": auc_std,
             "stability_level": stability_level,
@@ -765,63 +921,32 @@ class ExperimentRunner:
             ),
         }
 
-        logger.info("📊 Анализ стабильности:")
-        logger.info("  CV(LogLoss): %.2f%% → Стабильность: %s", cv_logloss, stability_level)
+        logger.info("Анализ стабильности:")
+        logger.info(
+            "  CV(LogLoss): %.2f%% → Стабильность: %s",
+            cv_logloss,
+            stability_level,
+        )
         logger.info("  Уверенность в Prod: %s", prod_confidence)
         logger.info("  Рекомендация: %s", stability["recommendation"])
 
         return stability
 
-    def _evaluate_model(
-        self, model: Any, test_features: pd.DataFrame, test_target: pd.Series
-    ) -> dict:
-        """
-        Вычислить метрики модели на тестовых данных.
-
-        Args:
-            model: Обученная модель
-            test_features: Тестовые фичи
-            test_target: Тестовые таргеты
-
-        Returns:
-            Словарь метрик
-        """
-        pred_proba = model.predict_proba(test_features)
-
-        metrics = {
-            "logloss": log_loss(test_target, pred_proba),
-            "auc": roc_auc_score(test_target, pred_proba[:, 1])
-            if len(set(test_target)) > 1
-            else 0.5,
-            "accuracy": accuracy_score(test_target, pred_proba.argmax(axis=1)),
-            "brier": brier_score_loss(test_target, pred_proba[:, 1]),
-        }
-
-        logger.info("  Prod метрики (test set):")
-        logger.info("    LogLoss:  %.4f", metrics["logloss"])
-        logger.info("    AUC:      %.4f", metrics["auc"])
-        logger.info("    Accuracy: %.4f", metrics["accuracy"])
-        logger.info("    Brier:    %.4f", metrics["brier"])
-
-        return metrics
-
     def _get_model_path(self, cfg: DictConfig, version: str) -> Path:
-        """
-        Сформировать путь для сохранения модели.
+        """Сформировать путь для сохранения модели.
 
         Args:
-            cfg: Конфигурация
-            version: "shadow" или "prod"
+            cfg: Конфигурация.
+            version: ``"shadow"`` или ``"prod"``.
 
         Returns:
-            Путь к модели
+            Путь к директории модели.
         """
-        tournament_name = cfg.tournament.name
-        algorithm_name = cfg.algorithm.name
-        featureset_name = cfg.features.name
-        market_spec_name = cfg.market_spec.name
+        tournament_name = str(cfg.tournament.name)
+        algorithm_name = str(cfg.algorithm.name)
+        featureset_name = str(cfg.features.name)
+        market_spec_name = str(cfg.market_spec.name)
 
-        # Формат: models/{tournament}/{market_spec}/{algorithm}_{featureset}
         model_dir = (
             self.project_root
             / "models"
@@ -830,40 +955,46 @@ class ExperimentRunner:
             / f"{algorithm_name}_{featureset_name}"
         )
         model_dir.mkdir(parents=True, exist_ok=True)
-
-        return model_dir  # type: ignore[no-any-return]
+        return model_dir
 
     def _log_metrics_to_mlflow(
         self,
-        shadow_metrics: dict,
-        prod_metrics: dict,
-        stability_metrics: dict,
+        shadow_metrics: dict[str, Any],
+        test_metrics: dict[str, float],
+        calibration_metrics: dict[str, Any],
+        business_metrics: dict[str, Any],
+        stability_metrics: dict[str, Any],
+        optuna_metrics: dict[str, Any],
+        feature_importance: pd.DataFrame | None,
         cfg: DictConfig,
         feature_names: list[str],
     ) -> None:
-        """
-        Залогировать метрики в MLflow.
+        """Залогировать все метрики в MLflow.
 
         Args:
-            shadow_metrics: Метрики Shadow модели (TSCV)
-            prod_metrics: Метрики Prod модели (копия Shadow)
-            stability_metrics: Анализ стабильности обучения
-            cfg: Конфигурация
-            feature_names: Список фичей
+            shadow_metrics: Метрики Shadow модели (TSCV).
+            test_metrics: ML-метрики на test set.
+            calibration_metrics: Метрики калибровки.
+            business_metrics: Бизнес-метрики (BettingSimulator).
+            stability_metrics: Анализ стабильности.
+            optuna_metrics: Метрики Optuna оптимизации.
+            feature_importance: DataFrame с важностью фичей.
+            cfg: Конфигурация.
+            feature_names: Список фичей.
         """
-        # Логируем параметры
+        # ── Параметры ────────────────────────────────────────────────
         mlflow.log_param("algorithm", cfg.algorithm.name)
         mlflow.log_param("model_target", cfg.algorithm.get("_target_", "unknown"))
         mlflow.log_param("featureset", cfg.features.name)
         mlflow.log_param("seed", cfg.seed)
         mlflow.log_param("n_features", len(feature_names))
 
-        # Логируем гиперпараметры модели
+        # Гиперпараметры модели
         if hasattr(cfg.algorithm, "params"):
             for key, value in cfg.algorithm.params.items():
                 mlflow.log_param(f"model__{key}", value)
 
-        # Shadow метрики (TSCV) — VALIDATED ✅
+        # ── Shadow метрики (TSCV) — VALIDATED ────────────────────────
         mlflow.log_metric("shadow_logloss", shadow_metrics["logloss"])
         mlflow.log_metric("shadow_logloss_std", shadow_metrics["std_logloss"])
         mlflow.log_metric("shadow_auc", shadow_metrics["auc"])
@@ -874,27 +1005,103 @@ class ExperimentRunner:
         mlflow.log_metric("shadow_ece_std", shadow_metrics["std_ece"])
         mlflow.set_tag("shadow_validated", "true")
 
-        # Prod метрики = Shadow метрики (т.к. нет holdout) — UNVALIDATED ⚠️
-        mlflow.log_metric("prod_logloss", prod_metrics["logloss"])
-        mlflow.log_metric("prod_auc", prod_metrics["auc"])
-        mlflow.log_metric("prod_accuracy", prod_metrics["accuracy"])
-        mlflow.log_metric("prod_brier", prod_metrics["brier"])
-        mlflow.set_tag("prod_validated", "false")
-        mlflow.set_tag("prod_note", prod_metrics.get("note", ""))
+        # ── Test-set метрики (holdout) ───────────────────────────────
+        for metric_name, value in test_metrics.items():
+            mlflow.log_metric(f"test_{metric_name}", value)
+        mlflow.set_tag("test_validated", "true")
 
-        # Индикаторы стабильности (для оценки качества Prod)
+        # ── Калибровка ───────────────────────────────────────────────
+        if calibration_metrics:
+            mlflow.log_metric("cal_ece_before", calibration_metrics["ece_before"])
+            if calibration_metrics["ece_after"] is not None:
+                mlflow.log_metric("cal_ece_after", calibration_metrics["ece_after"])
+            mlflow.set_tag("is_calibrated", str(calibration_metrics["is_calibrated"]))
+            mlflow.set_tag("calibration_method", calibration_metrics["method"])
+            mlflow.log_param("calibration_threshold", calibration_metrics["threshold"])
+
+        # ── Бизнес-метрики (BettingSimulator) ────────────────────────
+        if business_metrics:
+            mlflow.log_metric("betting_roi", business_metrics["roi"])
+            mlflow.log_metric("betting_profit", business_metrics["profit"])
+            mlflow.log_metric("betting_num_bets", business_metrics["num_bets"])
+            mlflow.log_metric("betting_win_rate", business_metrics["win_rate"])
+            mlflow.log_metric("betting_avg_odds", business_metrics["avg_odds"])
+            mlflow.log_metric("betting_avg_value", business_metrics["avg_value"])
+            mlflow.log_metric("betting_sharpe", business_metrics["sharpe_ratio"])
+            mlflow.log_metric("betting_max_drawdown", business_metrics["max_drawdown"])
+            mlflow.log_metric("betting_final_bankroll", business_metrics["final_bankroll"])
+            mlflow.log_metric("betting_total_staked", business_metrics["total_staked"])
+            mlflow.set_tag("odds_column", business_metrics["odds_column"])
+            mlflow.log_param("betting_valid_odds", business_metrics["valid_odds_count"])
+            mlflow.set_tag("has_business_metrics", "true")
+        else:
+            mlflow.set_tag("has_business_metrics", "false")
+
+        # ── Стабильность ─────────────────────────────────────────────
         mlflow.log_metric("stability_cv_logloss", stability_metrics["cv_logloss"])
         mlflow.log_metric("stability_std_auc", stability_metrics["std_auc"])
         mlflow.set_tag("stability_level", stability_metrics["stability_level"])
         mlflow.set_tag("prod_confidence", stability_metrics["prod_confidence"])
         mlflow.set_tag("recommendation", stability_metrics["recommendation"])
 
-        # Логируем список фичей
+        # ── Fold-level метрики (TSCV) ──────────────────────────────────
+        fold_details = shadow_metrics.get("fold_details", {})
+        if fold_details:
+            for key, value in fold_details.items():
+                if key.startswith("fold_") and isinstance(value, (int, float)):
+                    mlflow.log_metric(f"tscv_{key}", float(value))
+
+        # ── Optuna ────────────────────────────────────────────────────
+        if optuna_metrics.get("enabled", False):
+            mlflow.set_tag("hyper_optimized", "true")
+            mlflow.set_tag("optuna_study", optuna_metrics.get("study_name", ""))
+        else:
+            mlflow.set_tag("hyper_optimized", "false")
+
+        # ── Feature Importance ────────────────────────────────────────
+        if feature_importance is not None and not feature_importance.empty:
+            importance_csv = feature_importance.to_csv(index=False)
+            mlflow.log_text(importance_csv, "feature_importance.csv")
+
+            # Логируем top-10 фичей как метрики
+            top_n = min(10, len(feature_importance))
+            for idx in range(top_n):
+                row = feature_importance.iloc[idx]
+                feat_name = str(row["feature"])[:50]  # MLflow лимит
+                mlflow.log_metric(
+                    f"fi_top{idx + 1}",
+                    float(row["importance"]),
+                )
+                mlflow.set_tag(f"fi_top{idx + 1}_name", feat_name)
+
+        # ── Артефакты ────────────────────────────────────────────────
         mlflow.log_text("\n".join(feature_names), "features.txt")
 
-        logger.info("✓ Метрики залогированы в MLflow")
-        logger.info("  Shadow: validated=true (TSCV)")
-        logger.info("  Prod: validated=false (trained on train+test)")
+        logger.info("Метрики залогированы в MLflow")
+        logger.info("  Shadow (TSCV): validated=true")
+        logger.info("  Test (holdout): validated=true")
+        if calibration_metrics:
+            logger.info(
+                "  Calibration: ECE %.4f → %s",
+                calibration_metrics["ece_before"],
+                calibration_metrics["ece_after"]
+                if calibration_metrics["ece_after"] is not None
+                else "N/A",
+            )
+        if business_metrics:
+            logger.info(
+                "  Business: ROI=%.2f%%, bets=%d, sharpe=%.2f",
+                business_metrics["roi"],
+                business_metrics["num_bets"],
+                business_metrics["sharpe_ratio"],
+            )
+        if feature_importance is not None and not feature_importance.empty:
+            logger.info(
+                "  Feature importance: %d фичей залогировано",
+                len(feature_importance),
+            )
+        if optuna_metrics.get("enabled", False):
+            logger.info("  Optuna: hyper_optimized=true")
         logger.info(
             "  Stability: %s (confidence=%s)",
             stability_metrics["stability_level"],

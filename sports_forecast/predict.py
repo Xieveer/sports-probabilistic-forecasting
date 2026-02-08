@@ -1,25 +1,29 @@
 """
-Инференс модели CatBoost на inference-датасете с поддержкой мультитурнирного режима.
+Инференс обученной модели на inference-датасете.
+
+Поддерживает мультитурнирный режим и любые модели,
+реализующие интерфейс ``BaseModel`` (CatBoost, LightGBM, LogReg и т.д.).
 
 Поток:
-    1. Загрузка датасета: data/processed/{tournament}/inference.parquet
-    2. Загрузка модели: models/{tournament}/{model_name}.cbm
-    3. Извлечение фичей из model.features
-    4. Вычисление predict_proba
-    5. Сохранение: data/predictions/{tournament}/predictions.parquet
+    1. Загрузка датасета: ``data/processed/{tournament}/inference_{format}.parquet``
+    2. Загрузка модели через ``ModelFactory`` + ``BaseModel.load()``
+    3. Загрузка списка фичей из артефакта ``features.txt``
+    4. Вычисление ``predict_proba``
+    5. Сохранение: ``data/predictions/{tournament}/{market_spec}/predictions.parquet``
 
-Запуск:
-    # Инференс для турнира uel с моделью is_home_win
-    uv run python -m sports_forecast.predict tournament=uel model=is_home_win
+Запуск::
 
-    # Инференс для всех турниров
-    uv run python -m sports_forecast.predict tournament=all model=is_home_win
-
-    # Инференс для турнира lp_by
-    uv run python -m sports_forecast.predict tournament=lp_by model=is_home_win
+    # Инференс для одного турнира
+    uv run python -m sports_forecast.predict \\
+        tournament=uel_kz_1 \\
+        market=total \\
+        market_spec=total_over \\
+        market_spec.line=6.5 \\
+        algorithm=catboost \\
+        features=basic
 
 Примечание:
-    Таргет НЕ используется в инференсе - только фичи из модели.
+    Таргет НЕ используется в инференсе — только фичи из модели.
 """
 
 from __future__ import annotations
@@ -28,9 +32,10 @@ from pathlib import Path
 
 import hydra
 import pandas as pd
-from catboost import CatBoostClassifier
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
+from sports_forecast.training.base import BaseModel
+from sports_forecast.training.model_factory import ModelFactory
 from sports_forecast.utils.log_config import configure_logging, get_logger
 
 
@@ -42,15 +47,15 @@ def load_inference_dataset(
     processed_root: Path,
     tournament: str,
     filename: str,
-    feature_columns: list[str],
+    feature_columns: list[str] | None = None,
 ) -> pd.DataFrame | None:
     """Загрузить inference-датасет.
 
     Args:
         processed_root: Путь к директории processed.
         tournament: Название турнира.
-        filename: Имя файла датасета (inference.parquet).
-        feature_columns: Список фичей для проверки.
+        filename: Имя файла датасета.
+        feature_columns: Список фичей для проверки (опционально).
 
     Returns:
         DataFrame с данными или None при ошибке.
@@ -68,40 +73,112 @@ def load_inference_dataset(
         logger.warning("Inference-датасет пустой")
         return None
 
-    missing = [c for c in feature_columns if c not in df.columns]
-    if missing:
-        logger.error("Отсутствуют фичи: %s. Колонки: %s", missing, list(df.columns))
-        return None
+    if feature_columns:
+        missing = [c for c in feature_columns if c not in df.columns]
+        if missing:
+            logger.error("Отсутствуют фичи: %s. Колонки: %s", missing, list(df.columns))
+            return None
 
     logger.info("Inference shape: %s", df.shape)
     return df
 
 
-def load_model(
-    models_root: Path, tournament: str, model_name: str, load_format: str = "cbm"
-) -> CatBoostClassifier:
-    """Загрузить обученную модель.
+def load_model_from_path(algorithm_cfg: DictConfig, model_path: Path) -> BaseModel:
+    """Загрузить модель с диска, используя ModelFactory.
 
     Args:
-        models_root: Путь к директории models.
-        tournament: Название турнира.
-        model_name: Имя модели.
-        load_format: Формат файла модели.
+        algorithm_cfg: Конфигурация алгоритма модели.
+        model_path: Путь к файлу модели.
 
     Returns:
-        Загруженная модель CatBoost.
+        Загруженный экземпляр BaseModel.
 
     Raises:
-        FileNotFoundError: Если модель не найдена.
+        FileNotFoundError: Если файл модели не найден.
     """
-    model_path = models_root / tournament / f"{model_name}.{load_format}"
     if not model_path.exists():
         raise FileNotFoundError(f"Файл модели не найден: {model_path}")
 
-    logger.info("Загружаю модель CatBoost: %s", model_path)
-    model = CatBoostClassifier()
-    model.load_model(str(model_path))
+    logger.info("Загружаю модель: %s", model_path)
+    model = ModelFactory.create_model(algorithm_cfg)
+    model.load(model_path)
     return model
+
+
+def load_feature_names(model_dir: Path) -> list[str] | None:
+    """Загрузить список фичей из артефакта features.txt.
+
+    Args:
+        model_dir: Директория модели.
+
+    Returns:
+        Список имён фичей или None если файл не найден.
+    """
+    features_path = model_dir / "features.txt"
+    if not features_path.exists():
+        logger.warning(
+            "features.txt не найден в %s, будут использованы все числовые колонки",
+            model_dir,
+        )
+        return None
+
+    feature_names = features_path.read_text().strip().split("\n")
+    logger.info("Загружено %d фичей из %s", len(feature_names), features_path)
+    return feature_names
+
+
+def get_model_dir(cfg: DictConfig, project_root: Path) -> Path:
+    """Получить директорию модели из конфигурации.
+
+    Args:
+        cfg: Hydra конфигурация.
+        project_root: Корневая директория проекта.
+
+    Returns:
+        Путь к директории модели.
+    """
+    tournament_name = str(cfg.tournament.name)
+    market_spec_name = str(cfg.market_spec.name)
+    algorithm_name = str(cfg.algorithm.name)
+    featureset_name = str(cfg.features.name)
+    models_dir = Path(str(cfg.paths.models_dir))
+
+    return (
+        project_root
+        / models_dir
+        / tournament_name
+        / market_spec_name
+        / f"{algorithm_name}_{featureset_name}"
+    )
+
+
+def find_model_file(model_dir: Path, version: str = "prod") -> Path | None:
+    """Найти файл модели в директории.
+
+    Поддерживает форматы: ``.cbm``, ``.pkl``, ``.lgbm``.
+
+    Args:
+        model_dir: Директория модели.
+        version: Версия модели (``"prod"`` или ``"shadow"``).
+
+    Returns:
+        Путь к файлу модели или None если не найден.
+    """
+    extensions = [".cbm", ".pkl", ".txt", ".lgbm"]
+
+    for ext in extensions:
+        # Ищем файлы вида {name}_{version}{ext}
+        candidates = list(model_dir.glob(f"*_{version}{ext}"))
+        if candidates:
+            return candidates[0]
+
+    # Пробуем без версии
+    for ext in extensions:
+        candidates = list(model_dir.glob(f"*{ext}"))
+        if candidates:
+            return candidates[0]
+
+    return None
 
 
 def get_available_tournaments(processed_root: Path) -> list[str]:
@@ -111,182 +188,130 @@ def get_available_tournaments(processed_root: Path) -> list[str]:
         processed_root: Путь к директории data/processed.
 
     Returns:
-        Список названий турниров (имена поддиректорий).
+        Список названий турниров.
     """
     if not processed_root.exists():
         return []
 
-    tournaments = []
-    for item in processed_root.iterdir():
-        if item.is_dir():
-            # Проверяем, что есть inference.parquet
-            inf_file = item / "inference.parquet"
-            if inf_file.exists():
-                tournaments.append(item.name)
-
-    return sorted(tournaments)
+    return sorted(
+        item.name
+        for item in processed_root.iterdir()
+        if item.is_dir() and any(item.glob("inference_*.parquet"))
+    )
 
 
-def predict_single_tournament(
-    tournament_name: str, model_cfg: DictConfig, paths_cfg: DictConfig
-) -> bool:
-    """Сделать предсказания для одного турнира.
+def predict_single(cfg: DictConfig, version: str = "prod") -> bool:
+    """Сделать предсказания для одного эксперимента.
 
     Args:
-        tournament_name: Название турнира.
-        model_cfg: Конфиг модели.
-        cfg: Полный Hydra-конфиг (будет переопределен tournament).
+        cfg: Полный Hydra конфиг.
+        version: Версия модели (``"prod"`` или ``"shadow"``).
 
     Returns:
         True если инференс успешен, False иначе.
     """
+    tournament_name = cfg.tournament.name
+    algorithm_name = cfg.algorithm.name
+    featureset_name = cfg.features.name
+    market_spec_name = cfg.market_spec.name
+    data_format = cfg.market_spec.data_format
 
     logger.info("=" * 60)
     logger.info("ИНФЕРЕНС МОДЕЛИ")
-    logger.info("Турнир: %s", tournament_name)
-    logger.info("Модель: %s", model_cfg.name)
+    logger.info("  Турнир: %s", tournament_name)
+    logger.info("  Алгоритм: %s", algorithm_name)
+    logger.info("  Фичи: %s", featureset_name)
+    logger.info("  MarketSpec: %s", market_spec_name)
+    logger.info("  Версия: %s", version)
     logger.info("=" * 60)
 
-    # Переопределяем конфиг для конкретного турнира
-    from omegaconf import OmegaConf
-
-    # Загружаем конфиг турнира напрямую
-    tournament_config_path = PROJECT_ROOT / "conf" / "tournament" / f"{tournament_name}.yaml"
-    tournament_cfg_data = OmegaConf.load(tournament_config_path)
-
-    # Создаем полный конфиг из существующего, заменяя tournament
-    tournament_cfg = OmegaConf.create(
-        {
-            "tournament": tournament_cfg_data,
-            "model": model_cfg,
-            "paths": paths_cfg.paths,  # paths_cfg.paths, так как OmegaConf.load возвращает весь файл
-        }
-    )
-
-    processed_root = PROJECT_ROOT / tournament_cfg.paths.processed_dir
-    predictions_root = PROJECT_ROOT / tournament_cfg.paths.predictions_dir
-    models_root = PROJECT_ROOT / tournament_cfg.paths.models_dir
-
-    predictions_root.mkdir(parents=True, exist_ok=True)
-
     try:
-        # Загружаем датасет
-        df = load_inference_dataset(
-            processed_root=processed_root,
-            tournament=tournament_cfg.tournament.name,
-            filename="inference.parquet",  # Стандартное имя файла inference
-            feature_columns=list(tournament_cfg.model.features),
-        )
-        if df is None or df.empty:
-            logger.error("Турнир %s: нет данных для инференса — пропускаю", tournament_name)
+        # 1. Определяем пути
+        processed_root = PROJECT_ROOT / cfg.paths.processed_dir
+        predictions_root = PROJECT_ROOT / cfg.paths.predictions_dir
+        model_dir = get_model_dir(cfg, PROJECT_ROOT)
+
+        # 2. Находим файл модели
+        model_file = find_model_file(model_dir, version=version)
+        if model_file is None:
+            logger.error("Модель не найдена в %s (version=%s)", model_dir, version)
             return False
 
-        # Загружаем модель
-        model = load_model(
-            models_root=models_root,
-            tournament=tournament_cfg.tournament.name,
-            model_name=tournament_cfg.model.name,
-            load_format=tournament_cfg.model.get("save_format", "cbm"),
+        # 3. Загружаем модель
+        model = load_model_from_path(cfg.algorithm, model_file)
+
+        # 4. Загружаем список фичей
+        feature_names = load_feature_names(model_dir)
+
+        # 5. Загружаем inference-датасет
+        inference_filename = f"inference_{data_format}.parquet"
+        df = load_inference_dataset(
+            processed_root=processed_root,
+            tournament=tournament_name,
+            filename=inference_filename,
+            feature_columns=feature_names,
         )
+        if df is None or df.empty:
+            logger.error("Турнир %s: нет данных для инференса", tournament_name)
+            return False
 
-        # Извлекаем фичи
-        feature_columns = list(tournament_cfg.model.features)
-        features = df[feature_columns]
+        # 6. Извлекаем фичи
+        if feature_names:
+            features = df[feature_names]
+        else:
+            # Fallback: все числовые колонки
+            features = df.select_dtypes(include="number")
+            logger.warning("Используются все %d числовых колонок", features.shape[1])
 
-        logger.info("Фичи для инференса: %s", feature_columns)
-        logger.info("X shape: %s", features.shape)
+        logger.info("Features shape: %s", features.shape)
 
-        # Предсказания
+        # 7. Предсказания
         logger.info("Считаю predict_proba...")
-        proba = model.predict_proba(features)[:, 1]
+        proba = model.predict_proba(features)
 
-        proba_col = f"proba_{tournament_cfg.model.name}"
+        # Для бинарной классификации — вероятность класса 1
+        proba_values = proba[:, 1] if proba.shape[1] == 2 else proba.max(axis=1)
 
+        proba_col = f"proba_{market_spec_name}"
         df_out = df.copy()
-        df_out[proba_col] = proba
+        df_out[proba_col] = proba_values
 
-        # Сохраняем
-        out_dir = predictions_root / tournament_cfg.tournament.name
+        # 8. Сохраняем
+        out_dir = predictions_root / tournament_name / market_spec_name
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        out_path = out_dir / "predictions.parquet"
-        logger.info(
-            "Записываю предсказания (%d строк, %d колонок) → %s",
-            len(df_out),
-            df_out.shape[1],
-            out_path,
-        )
+        out_path = out_dir / f"predictions_{version}.parquet"
         df_out.to_parquet(out_path, index=False)
+        logger.info("Предсказания сохранены (%d строк) → %s", len(df_out), out_path)
 
-        logger.info("=" * 60)
         logger.info("Турнир %s: инференс завершен успешно", tournament_name)
-        logger.info("=" * 60)
         return True
 
-    except Exception as e:
-        logger.error("Турнир %s: ошибка при инференсе - %s", tournament_name, e)
-        import traceback
-
-        logger.error("Traceback:\n%s", traceback.format_exc())
+    except Exception:
+        logger.exception("Турнир %s: ошибка при инференсе", tournament_name)
         return False
 
 
 @hydra.main(config_path="../conf", config_name="config", version_base="1.3")
 def run(cfg: DictConfig) -> None:
-    """Запустить инференс модели для одного или всех турниров.
-
-    Если cfg.tournament.name == "all", делает предсказания для всех доступных турниров.
-    Иначе делает предсказания только для указанного турнира.
+    """Запустить инференс модели.
 
     Args:
         cfg: Hydra-конфиг с настройками инференса.
     """
     configure_logging(level=cfg.logging.level)
 
-    # Загружаем paths конфиг
-    paths_config_path = PROJECT_ROOT / "conf" / "paths.yaml"
-    paths_cfg = OmegaConf.load(paths_config_path)
+    logger.info("=" * 80)
+    logger.info("PREDICTION PIPELINE v2.0")
+    logger.info("=" * 80)
 
-    # Определяем список турниров для инференса
-    if cfg.tournament.name == "all":
-        # Режим: инференс для всех турниров
-        processed_root = PROJECT_ROOT / paths_cfg.paths.processed_dir
-        tournaments = get_available_tournaments(processed_root)
+    version = cfg.get("model_version", "prod")
 
-        if not tournaments:
-            logger.error("Не найдено ни одного турнира с inference данными в %s", processed_root)
-            return
-
-        logger.info("=" * 60)
-        logger.info("МУЛЬТИТУРНИРНЫЙ ИНФЕРЕНС")
-        logger.info("Модель: %s", cfg.model.name)
-        logger.info("Найдено турниров: %d", len(tournaments))
-        logger.info("Турниры: %s", ", ".join(tournaments))
-        logger.info("=" * 60)
-
-        success_count = 0
-        failed_tournaments = []
-
-        for tournament_name in tournaments:
-            success = predict_single_tournament(tournament_name, cfg.model, paths_cfg)
-            if success:
-                success_count += 1
-            else:
-                failed_tournaments.append(tournament_name)
-
-        logger.info("=" * 60)
-        logger.info("МУЛЬТИТУРНИРНЫЙ ИНФЕРЕНС ЗАВЕРШЕН")
-        logger.info("Успешно обработано: %d/%d", success_count, len(tournaments))
-        if failed_tournaments:
-            logger.warning("Турниры с ошибками: %s", ", ".join(failed_tournaments))
-        logger.info("=" * 60)
-
+    success = predict_single(cfg, version=version)
+    if success:
+        logger.info("Инференс завершен успешно")
     else:
-        # Режим: инференс для одного турнира
-        success = predict_single_tournament(cfg.tournament.name, cfg.model, paths_cfg)
-        if not success:
-            logger.error("Инференс не удался")
-            return
+        logger.error("Инференс завершен с ошибками")
 
 
 if __name__ == "__main__":
