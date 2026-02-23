@@ -45,7 +45,7 @@ class FeaturePipeline:
     Args:
         config: Конфигурация из features/*.yaml
             Обязательные поля:
-                - generators: список конфигураций генераторов
+                - generators: dict генераторов {name: config} или list конфигураций
             Опциональные поля:
                 - requires_long: bool - требуется ли long format (default: True)
                 - feature_prefix: str - префикс для фичей (default: "f_")
@@ -80,6 +80,11 @@ class FeaturePipeline:
         """
         Инициализация генераторов из конфига.
 
+        Поддерживает два формата конфига generators:
+            - **dict** (рекомендуемый): ``{name: {type: ..., ...}, ...}``
+              Ключ словаря используется как fallback для type.
+            - **list** (legacy): ``[{type: ..., ...}, ...]``
+
         Returns:
             Список инициализированных генераторов
 
@@ -92,21 +97,41 @@ class FeaturePipeline:
         generators = []
         gen_configs = self.config["generators"]
 
-        # Поддержка OmegaConf ListConfig
-        if hasattr(gen_configs, "__iter__") and not isinstance(gen_configs, (str, dict)):
-            # Это list-подобный объект (list, tuple, ListConfig)
-            pass
-        else:
-            raise ValueError("FeaturePipeline: 'generators' должен быть списком")
+        # Нормализация: dict → list of (key, config) pairs
+        items: list[tuple[str, Any]] = []
 
-        for i, gen_config in enumerate(gen_configs):
-            # Валидация конфига генератора
-            if "type" not in gen_config:
-                logger.warning("FeaturePipeline: generators[%d] не содержит 'type', пропускаем", i)
+        if isinstance(gen_configs, dict):
+            # Новый формат: dict {gen_name: gen_config}
+            for gen_key, gen_cfg in gen_configs.items():
+                items.append((gen_key, gen_cfg))
+        elif hasattr(gen_configs, "items"):
+            # OmegaConf DictConfig
+            for gen_key, gen_cfg in gen_configs.items():
+                items.append((gen_key, gen_cfg))
+        elif hasattr(gen_configs, "__iter__") and not isinstance(gen_configs, str):
+            # Legacy формат: list [{type: ...}, ...]
+            for i, gen_cfg in enumerate(gen_configs):
+                gen_key = (
+                    gen_cfg.get("type", f"generator_{i}")
+                    if hasattr(gen_cfg, "get")
+                    else f"generator_{i}"
+                )
+                items.append((gen_key, gen_cfg))
+        else:
+            raise ValueError("FeaturePipeline: 'generators' должен быть dict или list")
+
+        for gen_key, gen_config in items:
+            # Определяем тип генератора: явный type или ключ словаря
+            if hasattr(gen_config, "get") or isinstance(gen_config, dict):
+                gen_type = gen_config.get("type", gen_key)
+            else:
+                logger.warning(
+                    "FeaturePipeline: generators['%s'] имеет невалидный формат, пропускаем",
+                    gen_key,
+                )
                 continue
 
-            gen_type = gen_config["type"]
-            enabled = gen_config.get("enabled", True)
+            enabled = gen_config.get("enabled", True) if hasattr(gen_config, "get") else True
 
             if not enabled:
                 logger.info("FeaturePipeline: генератор %s отключен (enabled=False)", gen_type)
@@ -116,17 +141,29 @@ class FeaturePipeline:
             generator_class = self.GENERATOR_MAP.get(gen_type)
             if generator_class is None:
                 logger.warning(
-                    f"FeaturePipeline: неизвестный тип генератора '{gen_type}', "
-                    f"доступные типы: {list(self.GENERATOR_MAP.keys())}"
+                    "FeaturePipeline: неизвестный тип генератора '%s', доступные типы: %s",
+                    gen_type,
+                    list(self.GENERATOR_MAP.keys()),
                 )
                 continue
 
             # Инициализация генератора
             try:
                 # Конвертируем OmegaConf в обычный dict (рекурсивно)
-                gen_config_dict = OmegaConf.to_container(gen_config, resolve=True)
+                if hasattr(gen_config, "_metadata"):
+                    # OmegaConf объект
+                    gen_config_dict = OmegaConf.to_container(gen_config, resolve=True)
+                elif isinstance(gen_config, dict):
+                    gen_config_dict = gen_config
+                else:
+                    gen_config_dict = dict(gen_config)
+
                 if gen_config_dict is None:
                     gen_config_dict = {}
+
+                # Гарантируем наличие type в конфиге генератора
+                gen_config_dict["type"] = gen_type
+
                 generator = generator_class(gen_config_dict)  # type: ignore[abstract]
                 generators.append(generator)
 

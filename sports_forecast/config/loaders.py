@@ -36,11 +36,15 @@ CONF_DIR = str((PROJECT_ROOT / "conf").resolve())
 def load_tournament_config(tournament_name: str) -> DictConfig:
     """Загрузить конфигурацию турнира через Hydra compose.
 
+    Hydra ``compose()`` помещает конфиг в namespace config-группы
+    (``tournament``), поэтому результат разворачивается до плоского
+    DictConfig для совместимости с потребителями.
+
     Args:
         tournament_name: Название турнира (например: ``'uel_kz_1'``, ``'lp_ru'``).
 
     Returns:
-        DictConfig с конфигурацией турнира.
+        DictConfig с конфигурацией турнира (плоская, без обёртки ``tournament:``).
 
     Raises:
         FileNotFoundError: Если конфиг турнира не найден.
@@ -56,10 +60,15 @@ def load_tournament_config(tournament_name: str) -> DictConfig:
 
     try:
         with initialize_config_dir(config_dir=CONF_DIR, version_base="1.3"):
-            return compose(  # type: ignore[no-any-return]
+            cfg = compose(
                 config_name=f"tournament/{tournament_name}",
                 return_hydra_config=False,
             )
+        # Hydra compose оборачивает конфиг под ключ config-группы "tournament".
+        # Разворачиваем для совместимости: cfg.tournament → cfg.
+        if "tournament" in cfg:
+            return cfg.tournament  # type: ignore[no-any-return]
+        return cfg  # type: ignore[no-any-return]
     except Exception as e:
         logger.error("Ошибка загрузки конфига турнира %s: %s", tournament_name, e)
         raise
@@ -88,10 +97,13 @@ def load_source_config(source_name: str) -> DictConfig:
 
     try:
         with initialize_config_dir(config_dir=CONF_DIR, version_base="1.3"):
-            return compose(  # type: ignore[no-any-return]
+            cfg = compose(
                 config_name=f"source/{source_name}",
                 return_hydra_config=False,
             )
+        if "source" in cfg:
+            return cfg.source  # type: ignore[no-any-return]
+        return cfg  # type: ignore[no-any-return]
     except Exception as e:
         logger.error("Ошибка загрузки конфига источника %s: %s", source_name, e)
         raise

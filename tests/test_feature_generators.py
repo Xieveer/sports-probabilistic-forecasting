@@ -1,11 +1,12 @@
 """
-Тесты для генераторов фичей (form, ewm, count).
+Тесты для генераторов фичей (form, ewm, count) и FeaturePipeline.
 
 Покрывают:
 - BaseFeatureGenerator: __call__, prefix logic, enabled/disabled
 - FormFeatureGenerator: формы игроков (FG, DP, Form)
 - EWMFeatureGenerator: EWM в разных контекстах
 - CountFeatureGenerator: подсчёт встреч в контексте
+- FeaturePipeline: инициализация из dict и list конфигов
 - Обработка ошибок: отсутствующие колонки, невалидные конфиги
 """
 
@@ -18,6 +19,7 @@ import pytest
 from sports_forecast.features.generators.count_generator import CountFeatureGenerator
 from sports_forecast.features.generators.ewm_generator import EWMFeatureGenerator
 from sports_forecast.features.generators.form_generator import FormFeatureGenerator
+from sports_forecast.features.pipeline import FeaturePipeline
 
 
 # ==================== Fixtures ====================
@@ -464,3 +466,165 @@ class TestBaseGenerator:
         result = gen(long_df)
         assert isinstance(result, pd.DataFrame)
         assert len(result) == len(long_df)
+
+
+# ==================== FeaturePipeline Tests ====================
+
+
+class TestFeaturePipelineDictFormat:
+    """Тесты для FeaturePipeline с dict-форматом generators (новый формат)."""
+
+    def test_dict_format_initializes_generators(self) -> None:
+        """Pipeline корректно инициализируется из dict-формата generators."""
+        config = {
+            "generators": {
+                "form": {
+                    "type": "form",
+                    "enabled": True,
+                    "fg_trigger_minutes": 480,
+                    "dp_trigger_minutes": 30,
+                    "players": ["pl", "opp"],
+                },
+                "count": {
+                    "type": "count",
+                    "enabled": True,
+                    "shift": 1,
+                    "contexts": [
+                        {"name": "global", "keys": ["pl"], "players": ["pl", "opp"]},
+                    ],
+                },
+            },
+            "requires_long": False,
+            "player_id_attr": "short_name_en",
+        }
+        pipeline = FeaturePipeline(config)
+        assert len(pipeline.generators) == 2
+
+    def test_dict_format_type_from_key(self) -> None:
+        """Если type не указан, используется ключ словаря."""
+        config = {
+            "generators": {
+                "form": {
+                    # type не указан — берём из ключа "form"
+                    "enabled": True,
+                    "fg_trigger_minutes": 480,
+                    "dp_trigger_minutes": 30,
+                    "players": ["pl"],
+                },
+            },
+            "requires_long": False,
+        }
+        pipeline = FeaturePipeline(config)
+        assert len(pipeline.generators) == 1
+        assert pipeline.generators[0].config["type"] == "form"
+
+    def test_dict_format_disabled_generator_skipped(self) -> None:
+        """Отключённый генератор в dict-формате пропускается."""
+        config = {
+            "generators": {
+                "form": {
+                    "type": "form",
+                    "enabled": False,
+                    "players": ["pl"],
+                },
+                "count": {
+                    "type": "count",
+                    "enabled": True,
+                    "shift": 1,
+                    "contexts": [
+                        {"name": "global", "keys": ["pl"], "players": ["pl"]},
+                    ],
+                },
+            },
+            "requires_long": False,
+        }
+        pipeline = FeaturePipeline(config)
+        assert len(pipeline.generators) == 1
+
+    def test_dict_format_generates_features(self, long_df: pd.DataFrame) -> None:
+        """Pipeline с dict-форматом генерирует фичи."""
+        config = {
+            "generators": {
+                "form": {
+                    "type": "form",
+                    "enabled": True,
+                    "fg_trigger_minutes": 480,
+                    "dp_trigger_minutes": 30,
+                    "players": ["pl", "opp"],
+                },
+                "ewm": {
+                    "type": "ewm",
+                    "enabled": True,
+                    "metric": "diff_ps",
+                    "spans": [5],
+                    "shift": 1,
+                    "min_periods": 1,
+                    "adjust": False,
+                    "contexts": [
+                        {
+                            "name": "global",
+                            "keys": ["pl"],
+                            "players": ["pl"],
+                            "compute_diff": False,
+                        }
+                    ],
+                },
+            },
+            "requires_long": False,
+            "create_metrics": ["diff"],
+        }
+        pipeline = FeaturePipeline(config)
+        result_df, feature_names = pipeline.generate_features(long_df, format="long")
+
+        assert len(feature_names) > 0
+        assert "f_pl_is_dp" in result_df.columns
+        assert "f_pl_global_ewm_5" in result_df.columns
+
+    def test_unknown_generator_type_skipped(self) -> None:
+        """Неизвестный тип генератора пропускается с warning."""
+        config = {
+            "generators": {
+                "unknown_gen": {
+                    "type": "nonexistent_type",
+                    "enabled": True,
+                },
+            },
+            "requires_long": False,
+        }
+        pipeline = FeaturePipeline(config)
+        assert len(pipeline.generators) == 0
+
+
+class TestFeaturePipelineLegacyFormat:
+    """Тесты для FeaturePipeline с list-форматом generators (legacy)."""
+
+    def test_list_format_still_works(self) -> None:
+        """Pipeline по-прежнему работает с list-форматом generators."""
+        config = {
+            "generators": [
+                {
+                    "type": "form",
+                    "enabled": True,
+                    "fg_trigger_minutes": 480,
+                    "dp_trigger_minutes": 30,
+                    "players": ["pl"],
+                },
+                {
+                    "type": "count",
+                    "enabled": True,
+                    "shift": 1,
+                    "contexts": [
+                        {"name": "global", "keys": ["pl"], "players": ["pl"]},
+                    ],
+                },
+            ],
+            "requires_long": False,
+        }
+        pipeline = FeaturePipeline(config)
+        assert len(pipeline.generators) == 2
+
+    def test_missing_generators_raises(self) -> None:
+        """Отсутствие generators вызывает ValueError."""
+        config = {"requires_long": False}
+        with pytest.raises(ValueError, match="generators"):
+            FeaturePipeline(config)

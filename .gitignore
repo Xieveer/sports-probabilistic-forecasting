@@ -50,6 +50,7 @@ htmlcov/
 # Hydra
 .hydra/
 outputs/
+multirun/
 
 # DVC
 /data/raw
@@ -87,5 +88,6 @@ Thumbs.db
 *.bak
 *.swp
 *~
+*.zip
 /models
 train_all_models.*

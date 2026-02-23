@@ -1,0 +1,15 @@
+# Form features: генератор формы игрока.
+# Параметры fg/dp берутся из tournament конфига через Hydra interpolation.
+#
+# Создаёт: match_state, is_dp, is_fg, is_form, mins_prev_match, diff_mins_prev_match
+#
+# Требует в tournament конфиге:
+#   tournament.form_params.fg_trigger_minutes
+#   tournament.form_params.dp_trigger_minutes
+
+form:
+  type: "form"
+  enabled: true
+  fg_trigger_minutes: ${tournament.form_params.fg_trigger_minutes}
+  dp_trigger_minutes: ${tournament.form_params.dp_trigger_minutes}
+  players: ["pl", "opp"]

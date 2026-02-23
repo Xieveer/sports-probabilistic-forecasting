@@ -1,7 +1,9 @@
 # Tournament: Liga Pro Europe (Table Tennis)
 
+defaults:
+  - /sport@_here_: table_tennis
+
 name: lp_eu
-sport: table_tennis
 region: europe
 
 data:
@@ -13,44 +15,8 @@ data:
     long: inference_long.parquet
     wide: inference_wide.parquet
 
-allowed_market_specs:
-  winner:
-    specs: [winner_home]
-  total:
-    lines: [60.5, 62.5, 64.5, 66.5, 68.5, 70.5, 72.5, 74.5, 76.5, 78.5, 80.5]
-    specs: [total_over, total_under]
-
+# target_sources, allowed_market_specs, column_mapping, dtype_mapping — наследуются из sport
 data_clean:
-  # Маппинг колонок
-  column_mapping:
-    home_score: home_sets
-    away_score: away_sets
-    _hmps: home_points
-    _amps: away_points
-
-  # Обязательные колонки
-  required_columns: [id, datetime]
-
-  # Колонки для dropna
-  drop_na_columns: [id, datetime]
-
-  # Дефолтный статус (для турниров без колонки status)
-  default_status: finished
-
-  # Типизация
-  dtype_mapping:
-    numeric:
-      home_sets: int
-      away_sets: int
-      home_points: float
-      away_points: float
-    string: [id, status]
-    datetime:
-      datetime:
-        format: null
-        errors: coerce
-
-  # Генерация производных колонок
   derived_columns:
     weekday:
       source: datetime
@@ -58,6 +24,4 @@ data_clean:
     hour:
       source: datetime
       transform: hour
-
-  # Финальный набор колонок для interim
-  select_columns: [id, datetime, status, home_sets, away_sets, home_points, away_points, weekday, hour]
+  select_columns: [id, datetime, status, home_sets, away_sets, home_points, away_points, home_name, away_name, weekday, hour]

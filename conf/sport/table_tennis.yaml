@@ -1,0 +1,105 @@
+# Sport: Table Tennis (Настольный теннис)
+# Общая конфигурация для всех теннисных турниров (LP RU, LP EU, LP BY и т.д.)
+#
+# ВАЖНО: В настольном теннисе ДВА типа счёта:
+#   - Сеты (home_sets / away_sets) → определяют ПОБЕДИТЕЛЯ
+#   - Очки (home_points / away_points) → определяют ТОТАЛ
+#
+# Содержит:
+#   - target_sources: правильные таргеты (sets для winner, points для total)
+#   - allowed_market_specs: допустимые рынки и линии
+#   - data_clean: стандартный column_mapping, dtype_mapping
+#   - form_params: дефолтные пороги FG/DP
+
+sport: table_tennis
+
+# ============================================================================
+# ИДЕНТИФИКАЦИЯ УЧАСТНИКОВ
+# ============================================================================
+player_id_attr: "name"
+
+# ============================================================================
+# FORM PARAMS (бизнес-логика формы — overridable на уровне турнира)
+# ============================================================================
+form_params:
+  fg_trigger_minutes: 360   # 6 часов → First Game
+  dp_trigger_minutes: 45    # 45 минут → Double Play
+
+# ============================================================================
+# ДОПУСТИМЫЕ MARKET SPECS
+# ============================================================================
+allowed_market_specs:
+  winner:
+    specs: [winner, winner_home]
+  total:
+    # Настольный теннис: тоталы в диапазоне 60-80 очков
+    lines: [60.5, 62.5, 64.5, 66.5, 68.5, 70.5, 72.5, 74.5, 76.5, 78.5, 80.5]
+    specs: [total_over, total_under]
+
+# ============================================================================
+# ОПРЕДЕЛЕНИЕ ТАРГЕТОВ
+# ============================================================================
+# ВАЖНО: Победитель определяется по СЕТАМ, тотал — по ОЧКАМ!
+target_sources:
+  # Winner (long format): победитель по СЕТАМ
+  player_win:
+    format: long
+    player_column: pl_sets       # ← СЕТЫ, не очки!
+    opponent_column: opp_sets
+    comparison: greater
+
+  # Winner (wide format): победитель по СЕТАМ
+  home_win:
+    format: wide
+    home_column: home_sets
+    away_column: away_sets
+    comparison: greater
+
+  # Total Over: сумма ОЧКОВ > line
+  total_sum:
+    format: wide
+    home_column: home_points     # ← ОЧКИ (сумма из всех сетов)
+    away_column: away_points
+    comparison: total_over
+
+  # Total Under: сумма ОЧКОВ < line
+  total_sum_under:
+    format: wide
+    home_column: home_points
+    away_column: away_points
+    comparison: total_under
+
+# ============================================================================
+# DATA CLEAN: Общий шаблон для всех теннисных турниров
+# ============================================================================
+data_clean:
+  # Маппинг source → стандартные имена
+  column_mapping:
+    home_score: home_sets
+    away_score: away_sets
+    _hmps: home_points
+    _amps: away_points
+    _home_name: home_name
+    _away_name: away_name
+
+  # Обязательные колонки
+  required_columns: [id, datetime]
+
+  # Колонки для dropna
+  drop_na_columns: [id, datetime]
+
+  # Дефолтный статус (LP турниры не имеют колонки status)
+  default_status: finished
+
+  # Типизация
+  dtype_mapping:
+    numeric:
+      home_sets: int
+      away_sets: int
+      home_points: float
+      away_points: float
+    string: [id, status]
+    datetime:
+      datetime:
+        format: null
+        errors: coerce

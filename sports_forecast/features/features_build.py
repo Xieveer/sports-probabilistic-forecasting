@@ -28,7 +28,6 @@ from pathlib import Path
 import pandas as pd
 from omegaconf import DictConfig
 
-from sports_forecast.config.loaders import load_paths_config
 from sports_forecast.features.long_format import long_to_wide
 from sports_forecast.features.pipeline import FeaturePipeline
 from sports_forecast.utils.log_config import configure_logging, get_logger
@@ -165,75 +164,30 @@ def process_tournament_new(
     logger.info("=" * 70)
 
 
-def process_all_tournaments(cfg: DictConfig) -> None:
-    """
-    Обработка всех турниров.
-
-    Args:
-        cfg: Полный Hydra конфиг
-    """
-    paths_cfg = load_paths_config()
-
-    interim_root = PROJECT_ROOT / paths_cfg.paths.interim_dir
-    processed_root = PROJECT_ROOT / paths_cfg.paths.processed_dir
-
-    logger.info("Используется Feature Generation System")
-    logger.info("  Конфиг: %s", cfg.features.get("name", "N/A"))
-
-    # Проверяем наличие секции generators
-    if not hasattr(cfg, "features") or not hasattr(cfg.features, "generators"):
-        logger.error(
-            "features.generators не задан в конфиге! "
-            "Используйте features=basic или features=advanced"
-        )
-        return
-
-    # Поиск турниров
-    if not interim_root.exists():
-        logger.error("Директория %s не существует", interim_root)
-        return
-
-    tournament_dirs = [d for d in interim_root.iterdir() if d.is_dir()]
-    if not tournament_dirs:
-        logger.warning("Не найдено турниров в %s", interim_root)
-        return
-
-    logger.info("Найдено турниров: %d", len(tournament_dirs))
-    logger.info("Турниры: %s", [d.name for d in tournament_dirs])
-
-    # Обработка каждого турнира
-    for tournament_dir in sorted(tournament_dirs):
-        tournament_name = tournament_dir.name
-
-        try:
-            process_tournament_new(
-                tournament_name,
-                interim_root,
-                processed_root,
-                cfg.features,
-            )
-        except Exception as e:
-            logger.error("Ошибка обработки турнира %s: %s", tournament_name, e, exc_info=True)
-            continue
-
-
 def run(cfg: DictConfig) -> None:
-    """Entry point для генерации фичей.
+    """Entry point для генерации фичей для одного турнира.
 
-    Вызывается через Hydra CLI — ``features`` конфиг должен быть
-    скомпонован автоматически (``features=basic`` или ``features=advanced``).
+    Турнир задаётся через Hydra CLI (``tournament=uel_kz_1``).
+    Features конфиг резолвит ``player_id_attr`` и ``form_params``
+    из конфига турнира, поэтому каждый запуск — один турнир.
+
+    Для обработки нескольких турниров используйте Hydra multirun::
+
+        python -m sports_forecast.features.features_build --multirun \\
+            tournament=uel_kz_1,uel_kz_2,lp_ru,lp_eu
 
     Args:
-        cfg: Hydra конфигурация (должна содержать ``cfg.features``).
+        cfg: Hydra конфигурация (``cfg.tournament``, ``cfg.features``).
 
     Examples:
-        Базовый набор фичей::
+        Один турнир::
 
-            python -m sports_forecast.features.features_build features=basic
+            python -m sports_forecast.features.features_build tournament=lp_ru
 
-        Продвинутый набор фичей::
+        Все турниры::
 
-            python -m sports_forecast.features.features_build features=advanced
+            python -m sports_forecast.features.features_build --multirun \\
+                tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by
     """
     logger.info("=" * 70)
     logger.info("FEATURE GENERATION")
@@ -246,9 +200,28 @@ def run(cfg: DictConfig) -> None:
         )
         return
 
-    logger.info("Конфиг фичей: %s", cfg.features.get("name", "N/A"))
+    if not hasattr(cfg, "tournament") or not hasattr(cfg.tournament, "name"):
+        logger.error("tournament не задан! Укажите: tournament=uel_kz_1")
+        return
 
-    process_all_tournaments(cfg)
+    tournament_name = cfg.tournament.name
+    logger.info("Конфиг фичей: %s", cfg.features.get("name", "N/A"))
+    logger.info("Турнир: %s", tournament_name)
+    logger.info("player_id_attr: %s", cfg.features.get("player_id_attr", "N/A"))
+
+    # paths уже скомпонованы через features_pipeline.yaml defaults
+    interim_root = PROJECT_ROOT / cfg.paths.interim_dir
+    processed_root = PROJECT_ROOT / cfg.paths.processed_dir
+
+    try:
+        process_tournament_new(
+            tournament_name,
+            interim_root,
+            processed_root,
+            cfg.features,
+        )
+    except Exception as e:
+        logger.error("Ошибка обработки турнира %s: %s", tournament_name, e, exc_info=True)
 
     logger.info("=" * 70)
     logger.info("✅ ГЕНЕРАЦИЯ ФИЧЕЙ ЗАВЕРШЕНА")

@@ -1,7 +1,9 @@
 # Tournament: UEL Kazakhstan Stream 2 (Cyberhockey)
 
+defaults:
+  - /sport@_here_: cyberhockey
+
 name: uel_kz_2
-sport: cyberhockey
 region: kazakhstan
 stream: stream_2
 
@@ -14,28 +16,8 @@ data:
     long: inference_long.parquet
     wide: inference_wide.parquet
 
-allowed_market_specs:
-  winner:
-    specs: [winner_home]
-  total:
-    lines: [3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5]
-    specs: [total_over, total_under]
-
+# column_mapping, dtype_mapping, target_sources — наследуются из sport
 data_clean:
-  column_mapping:
-    h_m_s: home_points
-    a_m_s: away_points
-  required_columns: [id, status, datetime]
-  drop_na_columns: [id, datetime, status]
-  dtype_mapping:
-    numeric:
-      home_points: float
-      away_points: float
-    string: [id, status]
-    datetime:
-      datetime:
-        format: null
-        errors: coerce
   derived_columns:
     tour_num:
       source: tour_name_en
@@ -46,4 +28,4 @@ data_clean:
     hour:
       source: datetime
       transform: hour
-  select_columns: [id, datetime, status, home_points, away_points, tour_num, weekday, hour]
+  select_columns: [id, datetime, status, home_points, away_points, home_short_name_en, away_short_name_en, tour_num, weekday, hour]

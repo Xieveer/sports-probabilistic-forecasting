@@ -1,8 +1,10 @@
 # Tournament: UEL Kazakhstan Stream 1 (Cyberhockey)
 # Подтурнир UEL, разделенный на этапе ingest по полю tour_name_en
 
+defaults:
+  - /sport@_here_: cyberhockey
+
 name: uel_kz_1
-sport: cyberhockey
 region: kazakhstan
 stream: stream_1
 description: "UEL Kazakhstan Stream 1 - Cyberhockey esports"
@@ -12,101 +14,29 @@ description: "UEL Kazakhstan Stream 1 - Cyberhockey esports"
 # ============================================================================
 
 data:
-  # Базовая директория
   processed_dir: data/processed/uel_kz_1
-
-  # Доступные форматы данных
   formats:
-    long: train_long.parquet      # Player vs Opponent format
-    wide: train_wide.parquet      # Home vs Away format
-
-  # Inference данные
+    long: train_long.parquet
+    wide: train_wide.parquet
   inference:
     long: inference_long.parquet
     wide: inference_wide.parquet
 
 # ============================================================================
-# РЕЕСТР ДОПУСТИМЫХ MARKET SPECS
+# FORM PARAMS (override спорта если нужно для этого турнира)
 # ============================================================================
-
-allowed_market_specs:
-  # Winner markets
-  winner:
-    specs:
-      - winner_home    # Победа хозяев (wide format)
-      - winner         # Победа игрока (long format)
-
-  # Total markets
-  total:
-    # Допустимые линии для киберхоккея
-    lines: [3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5]
-    specs:
-      - total_over
-      - total_under
+# Наследуются из sport/cyberhockey.yaml: fg=480, dp=30
+# Раскомментировать для override:
+# form_params:
+#   fg_trigger_minutes: 600
+#   dp_trigger_minutes: 25
 
 # ============================================================================
-# ОПРЕДЕЛЕНИЕ ТАРГЕТОВ
+# DATA CLEAN: Турнир-специфичная конкретика
 # ============================================================================
-
-target_sources:
-  # Winner: Player win (для long format)
-  player_win:
-    format: long
-    player_column: pl_points
-    opponent_column: opp_points
-    comparison: greater  # pl_points > opp_points
-
-  # Total: Over (для обоих форматов)
-  total_sum:
-    format: wide  # Считается на wide (home + away)
-    home_column: home_points
-    away_column: away_points
-    comparison: total_over  # (home + away) > line
-    # Для long format: (player_points + opponent_points) / 2 > line
-
-  # Total: Under
-  total_sum_under:
-    format: wide
-    home_column: home_points
-    away_column: away_points
-    comparison: total_under  # (home + away) < line
-
-# ============================================================================
-# ОБРАБОТКА ДАННЫХ (для data pipeline)
-# ============================================================================
-
+# column_mapping, dtype_mapping, required_columns — наследуются из sport
 data_clean:
-  # Маппинг колонок
-  column_mapping:
-    h_m_s: home_points
-    a_m_s: away_points
-
-  # Обязательные колонки
-  required_columns:
-    - id
-    - status
-    - datetime
-
-  # Колонки для dropna
-  drop_na_columns:
-    - id
-    - datetime
-    - status
-
-  # Типизация (применяется ДО генерации производных колонок)
-  dtype_mapping:
-    numeric:
-      home_points: float
-      away_points: float
-    string:
-      - id
-      - status
-    datetime:
-      datetime:
-        format: null
-        errors: coerce
-
-  # Генерация производных колонок (контекстные фичи для feature engineering)
+  # Генерация производных колонок (специфично для UEL)
   derived_columns:
     tour_num:
       source: tour_name_en
@@ -118,7 +48,7 @@ data_clean:
       source: datetime
       transform: hour
 
-  # Финальный набор колонок для interim (включая производные)
+  # Финальный набор колонок для interim (специфичен для турнира)
   select_columns:
     - id
     - datetime
@@ -136,14 +66,12 @@ data_clean:
 # МЕТАДАННЫЕ
 # ============================================================================
 
-# Статистика турнира (для валидации)
 stats:
   avg_home_points: 5.5
   avg_away_points: 5.0
   avg_total: 10.5
-  typical_range: [3, 15]  # Типичный диапазон тотала
+  typical_range: [3, 15]
 
-# Временной диапазон данных
 time_range:
   start: "2024-01-06"
   end: "2025-10-19"

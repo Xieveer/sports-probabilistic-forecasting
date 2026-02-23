@@ -1,0 +1,51 @@
+# Общие настройки для всех features конфигов.
+# Подключается через defaults в basic.yaml / advanced.yaml.
+# Содержит: exclude_cols, result_cols, prefix, requires_long, create_metrics.
+
+# Колонки для исключения из фичей (глобальные)
+exclude_cols:
+  - id
+  - match_id
+  - datetime
+  - tournament
+  - status
+  - match_state
+
+# Колонки с результатами матчей (для защиты от утечек)
+result_cols:
+  # Long format
+  - pl_points
+  - opp_points
+  - pl_sets
+  - opp_sets
+  - pl
+  - opp
+  - diff_ps
+  - total_ps
+  # Wide format
+  - home_points
+  - away_points
+  - home_score
+  - away_score
+  - home_sets
+  - away_sets
+  - total
+  - diff
+  # Названия команд/игроков
+  - pl_short_name_en
+  - opp_short_name_en
+  - home_name
+  - away_name
+  - home_short_name_en
+  - away_short_name_en
+
+# Префикс для всех генерируемых фичей
+feature_prefix: "f_"
+
+# Требуется ли long format для генерации
+requires_long: true
+
+# Автоматическое создание базовых метрик
+create_metrics:
+  - "diff"    # diff_ps = pl_points - opp_points
+  - "total"   # total_ps = pl_points + opp_points

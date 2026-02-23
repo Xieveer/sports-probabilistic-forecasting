@@ -38,7 +38,10 @@ stages:
   # Генерация фичей для обучения
   # Используется features_pipeline.yaml (не требует market/algorithm)
   features:
-    cmd: uv run python -m sports_forecast.features.features_build features=basic
+    cmd: >-
+      uv run python -m sports_forecast.features.features_build --multirun
+      tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by
+      features=basic
     deps:
       - sports_forecast/features/features_build.py
       - sports_forecast/features/pipeline.py

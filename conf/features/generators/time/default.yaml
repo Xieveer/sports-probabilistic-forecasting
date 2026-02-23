@@ -1,0 +1,15 @@
+# Time features: извлечение временных признаков из datetime.
+# Контекстные колонки для long format, копируются из wide в long.
+#
+# Эти колонки должны быть созданы на этапе clean (derived_columns)
+# и включены в select_columns турнирного конфига.
+#
+# ПРИМЕЧАНИЕ: TimeFeatureGenerator пока не реализован в коде,
+# time-колонки (weekday, hour) создаются на этапе clean (derived_columns)
+# и передаются как контекстные колонки в long format.
+
+long_format_context_columns:
+  - "tour_num"
+  - "tour_match_num"
+  - "weekday"
+  - "hour"

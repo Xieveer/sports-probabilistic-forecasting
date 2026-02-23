@@ -1,0 +1,96 @@
+# Sport: Cyberhockey (Esports)
+# Общая конфигурация для всех киберхоккейных турниров (UEL KZ, UEL CZ и т.д.)
+#
+# Содержит:
+#   - target_sources: как вычислять таргеты (один тип счёта — голы)
+#   - allowed_market_specs: допустимые рынки и линии
+#   - data_clean: стандартный column_mapping, dtype_mapping
+#   - form_params: дефолтные пороги FG/DP (override на уровне турнира)
+
+sport: cyberhockey
+
+# ============================================================================
+# ИДЕНТИФИКАЦИЯ УЧАСТНИКОВ
+# ============================================================================
+# Стандартизированный атрибут для идентификации после clean-этапа.
+# На clean-этапе source-колонка маппится в home_name/away_name.
+player_id_attr: "short_name_en"
+
+# ============================================================================
+# FORM PARAMS (бизнес-логика формы — overridable на уровне турнира)
+# ============================================================================
+form_params:
+  fg_trigger_minutes: 480   # 8 часов → First Game
+  dp_trigger_minutes: 30    # 30 минут → Double Play
+
+# ============================================================================
+# ДОПУСТИМЫЕ MARKET SPECS
+# ============================================================================
+allowed_market_specs:
+  winner:
+    specs: [winner, winner_home]
+  total:
+    # Киберхоккей: тоталы в диапазоне 3-10 голов
+    lines: [3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5]
+    specs: [total_over, total_under]
+
+# ============================================================================
+# ОПРЕДЕЛЕНИЕ ТАРГЕТОВ
+# ============================================================================
+# Киберхоккей: один тип счёта — голы (home_points / away_points)
+# Голы определяют и победителя, и тотал.
+target_sources:
+  # Winner (long format): pl_points > opp_points
+  player_win:
+    format: long
+    player_column: pl_points
+    opponent_column: opp_points
+    comparison: greater
+
+  # Winner (wide format): home_points > away_points
+  home_win:
+    format: wide
+    home_column: home_points
+    away_column: away_points
+    comparison: greater
+
+  # Total Over: (home_points + away_points) > line
+  total_sum:
+    format: wide
+    home_column: home_points
+    away_column: away_points
+    comparison: total_over
+
+  # Total Under: (home_points + away_points) < line
+  total_sum_under:
+    format: wide
+    home_column: home_points
+    away_column: away_points
+    comparison: total_under
+
+# ============================================================================
+# DATA CLEAN: Общий шаблон для всех киберхоккейных турниров
+# ============================================================================
+# Турнирный конфиг может добавить select_columns, derived_columns.
+data_clean:
+  # Маппинг source → стандартные имена
+  column_mapping:
+    h_m_s: home_points
+    a_m_s: away_points
+
+  # Обязательные колонки
+  required_columns: [id, status, datetime]
+
+  # Колонки для dropna
+  drop_na_columns: [id, datetime, status]
+
+  # Типизация
+  dtype_mapping:
+    numeric:
+      home_points: float
+      away_points: float
+    string: [id, status]
+    datetime:
+      datetime:
+        format: null
+        errors: coerce

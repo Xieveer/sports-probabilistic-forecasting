@@ -1,9 +1,13 @@
 # Features Pipeline Configuration
 # Минимальный конфиг для генерации фичей (features_build.py)
-# Не требует market, market_spec, algorithm — только features и paths
+# Не требует market, market_spec, algorithm — только features, tournament и paths
+#
+# ВАЖНО: tournament обязателен, т.к. features/generators/form использует
+# ${tournament.form_params.*} для пороговых значений формы.
 
 defaults:
   - paths
+  - tournament: ???       # REQUIRED: tournament=uel_kz_1
   - features: basic       # По умолчанию: features=basic (можно override через CLI)
   - _self_
 

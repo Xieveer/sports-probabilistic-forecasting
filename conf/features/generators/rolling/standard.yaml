@@ -1,0 +1,133 @@
+# Rolling features: полный набор скользящих и count фичей.
+# EWM с 3 spans (5, 25, 100) + Count по всем контекстам.
+# Используется в features/advanced.yaml.
+
+ewm:
+  type: "ewm"
+  enabled: true
+  metric: "diff_ps"
+  spans: [5, 25, 100]
+  shift: 1
+  min_periods: 3
+  adjust: false
+
+  contexts:
+    # Глобальная форма игрока
+    - name: "global"
+      keys: ["pl"]
+      players: ["pl", "opp"]
+      compute_diff: true
+
+    # Форма в зависимости от состояния (fg/dp/form)
+    - name: "match_state"
+      keys: ["pl", "match_state"]
+      players: ["pl", "opp"]
+      compute_diff: true
+
+    # Форма в зависимости от номера матча в турнире
+    - name: "match_num"
+      keys: ["pl", "tour_match_num"]
+      players: ["pl", "opp"]
+      compute_diff: true
+
+    # Форма по дням недели
+    - name: "weekday"
+      keys: ["pl", "weekday"]
+      players: ["pl", "opp"]
+      compute_diff: true
+
+    # Форма в зависимости от номера турнира
+    - name: "tour_num"
+      keys: ["pl", "tour_num"]
+      players: ["pl", "opp"]
+      compute_diff: true
+
+    # Форма в зависимости от стороны (home/away)
+    - name: "tour_side"
+      keys: ["pl", "side"]
+      players: ["pl", "opp"]
+      compute_diff: true
+
+    # ===== H2H контексты =====
+
+    # H2H базовый
+    - name: "h2h"
+      keys: ["pl", "opp"]
+      h2h: true
+      output_suffix: "_diff"
+
+    # H2H + match_state
+    - name: "h2h_match_state"
+      keys: ["pl", "opp", "match_state"]
+      h2h: true
+      output_suffix: "_diff"
+
+    # H2H + match_num
+    - name: "h2h_match_num"
+      keys: ["pl", "opp", "tour_match_num"]
+      h2h: true
+      output_suffix: "_diff"
+
+    # H2H + side
+    - name: "h2h_side"
+      keys: ["pl", "opp", "side", "pl_name", "opp_name"]
+      h2h: true
+      output_suffix: "_diff"
+
+count:
+  type: "count"
+  enabled: true
+  shift: 1
+
+  contexts:
+    # Общее количество матчей игрока
+    - name: "global"
+      keys: ["pl"]
+      players: ["pl", "opp"]
+
+    # Количество матчей в match_state
+    - name: "match_state"
+      keys: ["pl", "match_state"]
+      players: ["pl", "opp"]
+
+    # Количество матчей с tour_match_num
+    - name: "match_num"
+      keys: ["pl", "tour_match_num"]
+      players: ["pl", "opp"]
+
+    # Количество матчей по weekday
+    - name: "weekday"
+      keys: ["pl", "weekday"]
+      players: ["pl", "opp"]
+
+    # Количество матчей в tour_num
+    - name: "tour_num"
+      keys: ["pl", "tour_num"]
+      players: ["pl", "opp"]
+
+    # Количество матчей на side
+    - name: "tour_side"
+      keys: ["pl", "side"]
+      players: ["pl", "opp"]
+
+    # ===== H2H count =====
+
+    # H2H базовый
+    - name: "h2h"
+      keys: ["pl", "opp"]
+      h2h: true
+
+    # H2H + match_state
+    - name: "h2h_match_state"
+      keys: ["pl", "opp", "match_state"]
+      h2h: true
+
+    # H2H + match_num
+    - name: "h2h_match_num"
+      keys: ["pl", "opp", "tour_match_num"]
+      h2h: true
+
+    # H2H + side
+    - name: "h2h_side"
+      keys: ["pl", "opp", "side", "pl_team", "opp_team"]
+      h2h: true
