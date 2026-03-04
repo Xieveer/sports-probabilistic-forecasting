@@ -39,7 +39,11 @@ from sports_forecast.training.model_factory import ModelFactory
 from sports_forecast.training.optimization.optuna_optimizer import OptunaHyperOptimizer
 from sports_forecast.training.optimization.tscv import TimeSeriesCrossValidator
 from sports_forecast.utils.log_config import get_logger
-from sports_forecast.utils.metrics import compute_expected_calibration_error
+from sports_forecast.utils.metrics import (
+    compute_calibration_table,
+    compute_expected_calibration_error,
+    compute_max_calibration_error,
+)
 from sports_forecast.utils.targets import (
     compute_target_from_market_spec,
     get_target_name,
@@ -762,11 +766,18 @@ class SingleExperimentRunner:
             logger.warning("ECE ошибка: %s", e)
             metrics["ece"] = 0.0
 
+        try:
+            metrics["mce"] = float(compute_max_calibration_error(np.array(test_target), proba))
+        except Exception as e:
+            logger.warning("MCE ошибка: %s", e)
+            metrics["mce"] = 0.0
+
         logger.info("  Test LogLoss:  %.4f", metrics["logloss"])
         logger.info("  Test AUC:      %.4f", metrics["auc"])
         logger.info("  Test Accuracy: %.4f", metrics["accuracy"])
         logger.info("  Test Brier:    %.4f", metrics["brier"])
         logger.info("  Test ECE:      %.4f", metrics["ece"])
+        logger.info("  Test MCE:      %.4f", metrics["mce"])
 
         return metrics
 
@@ -780,8 +791,14 @@ class SingleExperimentRunner:
     ) -> dict[str, Any]:
         """Вычислить бизнес-метрики через BettingSimulator.
 
-        Симулирует ставки на test set, используя предсказания модели
-        и реальные букмекерские коэффициенты.
+        Полный набор:
+            - Volume: n_bets, turnover, coverage
+            - Profit: profit_units, ROI, avg_profit_per_bet
+            - Edge/EV: avg_edge, avg_ev, ev_sum, ev_realization
+            - Risk: max_drawdown, sharpe, profit_factor
+            - Calibration on selected: brier, logloss, ECE
+            - Odds-bin breakdown
+            - Threshold sweep (артефакт)
 
         Args:
             model: Обученная модель.
@@ -793,7 +810,6 @@ class SingleExperimentRunner:
         Returns:
             Словарь бизнес-метрик (пустой если odds не найдены).
         """
-        # Проверяем что betting включён
         betting_cfg = cfg.get("betting", {})
         if not betting_cfg.get("enabled", False):
             logger.info("BettingSimulator отключён (betting.enabled=false)")
@@ -805,16 +821,12 @@ class SingleExperimentRunner:
             logger.warning("Odds column не найдена → бизнес-метрики пропущены")
             return {}
 
-        # Проверяем что колонка не пустая
         odds = test_df[odds_col]
         valid_odds_mask = odds.notna() & (odds > 1.0)
-        valid_count = valid_odds_mask.sum()
+        valid_count = int(valid_odds_mask.sum())
 
         if valid_count == 0:
-            logger.warning(
-                "Odds column '%s' не содержит валидных значений",
-                odds_col,
-            )
+            logger.warning("Odds column '%s' не содержит валидных значений", odds_col)
             return {}
 
         logger.info("=" * 60)
@@ -827,11 +839,12 @@ class SingleExperimentRunner:
         valid_features = test_features.loc[valid_odds_mask]
         valid_target = test_target.loc[valid_odds_mask]
         valid_odds = odds.loc[valid_odds_mask]
-
-        # Предсказания
         proba = model.predict_proba(valid_features)[:, 1]
 
-        # Создаём симулятор
+        y_true_arr = np.array(valid_target)
+        odds_arr = np.array(valid_odds)
+
+        # ── 1. Main simulation ───────────────────────────────────────────
         simulator = BettingSimulator(
             initial_bankroll=betting_cfg.get("initial_bankroll", 1000.0),
             stake_strategy=betting_cfg.get("stake_strategy", "flat"),
@@ -841,28 +854,130 @@ class SingleExperimentRunner:
             max_stake_fraction=betting_cfg.get("max_stake_fraction", 0.1),
         )
 
-        # Симуляция
-        betting_metrics = simulator.simulate(
-            y_true=np.array(valid_target),
+        result = simulator.simulate(
+            y_true=y_true_arr,
             y_pred_proba=proba,
-            odds=np.array(valid_odds),
+            odds=odds_arr,
         )
 
-        return {
-            "roi": betting_metrics.roi,
-            "profit": betting_metrics.profit,
-            "total_staked": betting_metrics.total_staked,
-            "num_bets": betting_metrics.num_bets,
-            "num_wins": betting_metrics.num_wins,
-            "win_rate": betting_metrics.win_rate,
-            "avg_odds": betting_metrics.avg_odds,
-            "avg_value": betting_metrics.avg_value,
-            "sharpe_ratio": betting_metrics.sharpe_ratio,
-            "max_drawdown": betting_metrics.max_drawdown,
-            "final_bankroll": betting_metrics.final_bankroll,
+        # ── 2. Calibration on selected bets ──────────────────────────────
+        cal_selected = self._compute_calibration_on_selected(y_true_arr, proba, result.bet_mask)
+
+        # ── 3. Odds-bin analysis ─────────────────────────────────────────
+        odds_bins_cfg = betting_cfg.get("odds_bins", {})
+        bins = list(odds_bins_cfg.get("bins", [1.0, 2.0, 3.0, 5.0, 999.0]))
+        bin_labels = list(odds_bins_cfg.get("labels", ["1_2", "2_3", "3_5", "5_plus"]))
+        odds_bin_metrics = BettingSimulator.compute_odds_bin_metrics(
+            y_true_arr,
+            proba,
+            odds_arr,
+            result.bet_mask,
+            bins=bins,
+            labels=bin_labels,
+        )
+
+        # ── 4. Threshold sweep ───────────────────────────────────────────
+        sweep_cfg = betting_cfg.get("threshold_sweep", {})
+        sweep_df: pd.DataFrame | None = None
+        if sweep_cfg.get("enabled", True):
+            thr_min = sweep_cfg.get("min", 0.0)
+            thr_max = sweep_cfg.get("max", 0.30)
+            thr_step = sweep_cfg.get("step", 0.01)
+            thresholds = np.round(np.arange(thr_min, thr_max + thr_step / 2, thr_step), 4).tolist()
+            sweep_df = simulator.sweep_thresholds(y_true_arr, proba, odds_arr, thresholds)
+
+        # ── 5. Calibration table (reliability diagram data) ──────────────
+        cal_table = compute_calibration_table(y_true_arr, proba)
+
+        # ── Compose result dict ──────────────────────────────────────────
+        metrics: dict[str, Any] = {
+            # Volume
+            "n_total_events": result.n_total_events,
+            "n_bets": result.n_bets,
+            "turnover_units": result.turnover_units,
+            "coverage": result.coverage,
+            # Profit
+            "profit_units": result.profit_units,
+            "roi": result.roi,
+            "avg_profit_per_bet": result.avg_profit_per_bet,
+            # Edge / EV
+            "avg_edge": result.avg_edge,
+            "avg_ev": result.avg_ev,
+            "ev_sum_units": result.ev_sum_units,
+            "ev_realization": result.ev_realization,
+            # Win / Loss
+            "hit_rate": result.hit_rate,
+            "num_wins": result.num_wins,
+            # Risk
+            "max_drawdown_units": result.max_drawdown_units,
+            "max_drawdown_pct": result.max_drawdown_pct,
+            "std_return_per_bet": result.std_return_per_bet,
+            "sharpe_like": result.sharpe_like,
+            "profit_factor": result.profit_factor,
+            # Averages
+            "avg_odds": result.avg_odds,
+            "final_bankroll": result.final_bankroll,
+            # Calibration on selected
+            **{f"cal_selected_{k}": v for k, v in cal_selected.items()},
+            # Odds bins
+            "odds_bin_metrics": odds_bin_metrics,
+            # Artifacts data
+            "equity_curve": result.equity_curve,
+            "sweep_df": sweep_df,
+            "cal_table": cal_table,
+            # Meta
             "odds_column": odds_col,
-            "valid_odds_count": int(valid_count),
+            "valid_odds_count": valid_count,
         }
+
+        return metrics
+
+    def _compute_calibration_on_selected(
+        self,
+        y_true: np.ndarray,
+        y_pred_proba: np.ndarray,
+        bet_mask: np.ndarray,
+    ) -> dict[str, float]:
+        """Вычислить метрики калибровки на отобранных ставках.
+
+        Args:
+            y_true: Реальные исходы.
+            y_pred_proba: Предсказанные вероятности.
+            bet_mask: Маска отобранных ставок.
+
+        Returns:
+            Словарь ``{brier, logloss, ece}``.
+        """
+        from sklearn.metrics import brier_score_loss, log_loss
+
+        selected_y = y_true[bet_mask]
+        selected_p = y_pred_proba[bet_mask]
+
+        if len(selected_y) < 2:
+            return {"brier": 0.0, "logloss": 0.0, "ece": 0.0}
+
+        result: dict[str, float] = {}
+        try:
+            result["brier"] = float(brier_score_loss(selected_y, selected_p))
+        except Exception:
+            result["brier"] = 0.0
+        try:
+            result["logloss"] = float(log_loss(selected_y, selected_p))
+        except Exception:
+            result["logloss"] = 0.0
+        try:
+            result["ece"] = float(compute_expected_calibration_error(selected_y, selected_p))
+        except Exception:
+            result["ece"] = 0.0
+
+        logger.info(
+            "  Calibration on selected (%d bets): brier=%.4f, logloss=%.4f, ece=%.4f",
+            len(selected_y),
+            result["brier"],
+            result["logloss"],
+            result["ece"],
+        )
+        return result
 
     def _save_feature_names(self, model_dir: Path, feature_names: list[str]) -> None:
         """Сохранить список фичей в директорию модели.
@@ -1021,19 +1136,7 @@ class SingleExperimentRunner:
 
         # ── Бизнес-метрики (BettingSimulator) ────────────────────────
         if business_metrics:
-            mlflow.log_metric("betting_roi", business_metrics["roi"])
-            mlflow.log_metric("betting_profit", business_metrics["profit"])
-            mlflow.log_metric("betting_num_bets", business_metrics["num_bets"])
-            mlflow.log_metric("betting_win_rate", business_metrics["win_rate"])
-            mlflow.log_metric("betting_avg_odds", business_metrics["avg_odds"])
-            mlflow.log_metric("betting_avg_value", business_metrics["avg_value"])
-            mlflow.log_metric("betting_sharpe", business_metrics["sharpe_ratio"])
-            mlflow.log_metric("betting_max_drawdown", business_metrics["max_drawdown"])
-            mlflow.log_metric("betting_final_bankroll", business_metrics["final_bankroll"])
-            mlflow.log_metric("betting_total_staked", business_metrics["total_staked"])
-            mlflow.set_tag("odds_column", business_metrics["odds_column"])
-            mlflow.log_param("betting_valid_odds", business_metrics["valid_odds_count"])
-            mlflow.set_tag("has_business_metrics", "true")
+            self._log_business_metrics_to_mlflow(business_metrics)
         else:
             mlflow.set_tag("has_business_metrics", "false")
 
@@ -1090,10 +1193,11 @@ class SingleExperimentRunner:
             )
         if business_metrics:
             logger.info(
-                "  Business: ROI=%.2f%%, bets=%d, sharpe=%.2f",
-                business_metrics["roi"],
-                business_metrics["num_bets"],
-                business_metrics["sharpe_ratio"],
+                "  Business: ROI=%.2f%%, bets=%d, sharpe=%.3f, PF=%.2f",
+                business_metrics.get("roi", 0),
+                business_metrics.get("n_bets", 0),
+                business_metrics.get("sharpe_like", 0),
+                business_metrics.get("profit_factor", 0),
             )
         if feature_importance is not None and not feature_importance.empty:
             logger.info(
@@ -1107,3 +1211,93 @@ class SingleExperimentRunner:
             stability_metrics["stability_level"],
             stability_metrics["prod_confidence"],
         )
+
+    # ─────────────────────────────────────────────────────────────────────
+    # BUSINESS METRICS MLflow LOGGING
+    # ─────────────────────────────────────────────────────────────────────
+
+    def _log_business_metrics_to_mlflow(self, bm: dict[str, Any]) -> None:
+        """Залогировать все бизнес-метрики и артефакты в MLflow.
+
+        Args:
+            bm: Словарь бизнес-метрик из ``_compute_business_metrics``.
+        """
+        import json
+
+        mlflow.set_tag("has_business_metrics", "true")
+        mlflow.set_tag("odds_column", bm["odds_column"])
+        mlflow.log_param("betting_valid_odds", bm["valid_odds_count"])
+
+        # ── Volume ───────────────────────────────────────────────────
+        mlflow.log_metric("betting_n_bets", bm["n_bets"])
+        mlflow.log_metric("betting_turnover_units", bm["turnover_units"])
+        mlflow.log_metric("betting_coverage", bm["coverage"])
+        mlflow.log_metric("betting_n_total_events", bm["n_total_events"])
+
+        # ── Profit ───────────────────────────────────────────────────
+        mlflow.log_metric("betting_profit_units", bm["profit_units"])
+        mlflow.log_metric("betting_roi", bm["roi"])
+        mlflow.log_metric("betting_avg_profit_per_bet", bm["avg_profit_per_bet"])
+
+        # ── Edge / EV ────────────────────────────────────────────────
+        mlflow.log_metric("betting_avg_edge", bm["avg_edge"])
+        mlflow.log_metric("betting_avg_ev", bm["avg_ev"])
+        mlflow.log_metric("betting_ev_sum_units", bm["ev_sum_units"])
+        mlflow.log_metric("betting_ev_realization", bm["ev_realization"])
+
+        # ── Win / Loss ───────────────────────────────────────────────
+        mlflow.log_metric("betting_hit_rate", bm["hit_rate"])
+        mlflow.log_metric("betting_num_wins", bm["num_wins"])
+
+        # ── Risk ─────────────────────────────────────────────────────
+        mlflow.log_metric("betting_max_drawdown_units", bm["max_drawdown_units"])
+        mlflow.log_metric("betting_max_drawdown_pct", bm["max_drawdown_pct"])
+        mlflow.log_metric("betting_std_return_per_bet", bm["std_return_per_bet"])
+        mlflow.log_metric("betting_sharpe_like", bm["sharpe_like"])
+        mlflow.log_metric("betting_profit_factor", bm["profit_factor"])
+
+        # ── Averages ─────────────────────────────────────────────────
+        mlflow.log_metric("betting_avg_odds", bm["avg_odds"])
+
+        # ── Calibration on selected ──────────────────────────────────
+        for key in ("cal_selected_brier", "cal_selected_logloss", "cal_selected_ece"):
+            if key in bm:
+                mlflow.log_metric(key, bm[key])
+
+        # ── Odds-bin metrics ─────────────────────────────────────────
+        odds_bins: dict[str, dict[str, float]] = bm.get("odds_bin_metrics", {})
+        for bin_label, bin_data in odds_bins.items():
+            for metric_name, value in bin_data.items():
+                mlflow.log_metric(f"betting_{metric_name}_odds_{bin_label}", value)
+
+        # ── Threshold sweep (artifact) ───────────────────────────────
+        sweep_df: pd.DataFrame | None = bm.get("sweep_df")
+        if sweep_df is not None and not sweep_df.empty:
+            sweep_csv = sweep_df.to_csv(index=False)
+            mlflow.log_text(sweep_csv, "threshold_sweep.csv")
+
+            # Логируем ключевые пороги как отдельные метрики
+            key_thresholds = [0.0, 0.03, 0.05, 0.07, 0.10, 0.15, 0.20]
+            for _, row in sweep_df.iterrows():
+                thr = row["threshold"]
+                if thr in key_thresholds:
+                    suffix = str(thr).replace(".", "_")
+                    mlflow.log_metric(f"sweep_n_bets_thr_{suffix}", row["n_bets"])
+                    mlflow.log_metric(f"sweep_roi_thr_{suffix}", row["roi"])
+                    mlflow.log_metric(f"sweep_profit_thr_{suffix}", row["profit_units"])
+                    if abs(row["ev_realization"]) < 1e6:  # Защита от inf
+                        mlflow.log_metric(f"sweep_ev_real_thr_{suffix}", row["ev_realization"])
+
+        # ── Equity curve (artifact) ──────────────────────────────────
+        equity_curve: list[float] = bm.get("equity_curve", [])
+        if equity_curve:
+            equity_df = pd.DataFrame({"step": range(len(equity_curve)), "bankroll": equity_curve})
+            mlflow.log_text(equity_df.to_csv(index=False), "equity_curve.csv")
+
+        # ── Calibration table (reliability diagram data) ─────────────
+        cal_table: list[dict[str, float]] = bm.get("cal_table", [])
+        if cal_table:
+            mlflow.log_text(
+                json.dumps(cal_table, indent=2, default=str),
+                "calibration_table.json",
+            )

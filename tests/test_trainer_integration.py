@@ -200,7 +200,7 @@ class TestEvaluateOnTest:
     """Тесты для _evaluate_on_test."""
 
     def test_returns_all_metrics(self, runner: SingleExperimentRunner) -> None:
-        """Возвращает словарь со всеми ML-метриками."""
+        """Возвращает словарь со всеми ML-метриками включая MCE."""
         np.random.seed(42)
         n = 50
         features = pd.DataFrame(np.random.randn(n, 5), columns=[f"f_{i}" for i in range(5)])
@@ -216,6 +216,7 @@ class TestEvaluateOnTest:
         assert "accuracy" in metrics
         assert "brier" in metrics
         assert "ece" in metrics
+        assert "mce" in metrics
 
         # Все метрики должны быть числовыми
         for key, value in metrics.items():
@@ -314,13 +315,39 @@ class TestComputeBusinessMetrics:
 
         result = runner._compute_business_metrics(model, features, target, df, cfg)
 
+        # Core metrics (v2 naming)
         assert "roi" in result
-        assert "profit" in result
-        assert "num_bets" in result
-        assert "sharpe_ratio" in result
-        assert "max_drawdown" in result
+        assert "profit_units" in result
+        assert "n_bets" in result
+        assert "sharpe_like" in result
+        assert "max_drawdown_pct" in result
         assert "odds_column" in result
         assert result["odds_column"] == "odds_home_win"
+
+        # New v2 metrics
+        assert "turnover_units" in result
+        assert "coverage" in result
+        assert "avg_edge" in result
+        assert "avg_ev" in result
+        assert "ev_sum_units" in result
+        assert "ev_realization" in result
+        assert "hit_rate" in result
+        assert "profit_factor" in result
+        assert "std_return_per_bet" in result
+        assert "max_drawdown_units" in result
+
+        # Calibration on selected
+        assert "cal_selected_brier" in result
+        assert "cal_selected_logloss" in result
+        assert "cal_selected_ece" in result
+
+        # Odds bins
+        assert "odds_bin_metrics" in result
+        assert isinstance(result["odds_bin_metrics"], dict)
+
+        # Artifacts
+        assert "equity_curve" in result
+        assert "sweep_df" in result
 
     def test_skips_invalid_odds(self) -> None:
         """Пропускает строки с невалидными odds (NaN, <= 1.0)."""

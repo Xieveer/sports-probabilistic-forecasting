@@ -1,3 +1,4 @@
+# @package split
 # Train/Test Split Configuration
 # Стратегия разделения данных для обучения и тестирования
 

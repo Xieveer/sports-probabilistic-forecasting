@@ -1,3 +1,3 @@
-tracking_uri: "file:./mlruns"
+tracking_uri: "sqlite:///mlflow.db"
 experiment_name: "sports_forecast"
 registry_uri: null

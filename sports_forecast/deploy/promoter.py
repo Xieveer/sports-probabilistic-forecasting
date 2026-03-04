@@ -72,7 +72,7 @@ class ModelPromoter:
         metric: Метрика для ранжирования (e.g. ``"test_logloss"``).
         direction: ``"minimize"`` или ``"maximize"``.
         min_bets: Минимальное количество ставок для допуска
-            (``betting_num_bets``). По умолчанию 0 (без фильтра).
+            (``betting_n_bets``). По умолчанию 0 (без фильтра).
         required_tags: Дополнительные теги-фильтры
             (e.g. ``{"test_validated": "true"}``).
 
@@ -244,10 +244,10 @@ class ModelPromoter:
 
             for i, c in enumerate(candidates, 1):
                 roi = c.metrics.get("betting_roi", 0)
-                profit = c.metrics.get("betting_profit", 0)
-                bets = int(c.metrics.get("betting_num_bets", 0))
-                sharpe = c.metrics.get("betting_sharpe", 0)
-                max_dd = c.metrics.get("betting_max_drawdown", 0)
+                profit = c.metrics.get("betting_profit_units", 0)
+                bets = int(c.metrics.get("betting_n_bets", 0))
+                sharpe = c.metrics.get("betting_sharpe_like", 0)
+                max_dd = c.metrics.get("betting_max_drawdown_pct", 0)
 
                 biz_line = (
                     f"{i:<3} {roi:<10.2f} {profit:<12.2f} {bets:<8} {sharpe:<10.4f} {max_dd:<10.4f}"
@@ -289,7 +289,7 @@ class ModelPromoter:
 
             # Фильтр по min_bets
             if self.min_bets > 0:
-                num_bets = metrics.get("betting_num_bets", 0)
+                num_bets = metrics.get("betting_n_bets", 0)
                 if num_bets < self.min_bets:
                     continue
 
@@ -388,13 +388,15 @@ class ModelPromoter:
             },
             "business": {
                 "betting_roi": candidate.metrics.get("betting_roi"),
-                "betting_profit": candidate.metrics.get("betting_profit"),
-                "betting_num_bets": (
-                    int(candidate.metrics["betting_num_bets"])
-                    if "betting_num_bets" in candidate.metrics
+                "betting_profit_units": candidate.metrics.get("betting_profit_units"),
+                "betting_n_bets": (
+                    int(candidate.metrics["betting_n_bets"])
+                    if "betting_n_bets" in candidate.metrics
                     else None
                 ),
-                "betting_sharpe": candidate.metrics.get("betting_sharpe"),
+                "betting_sharpe_like": candidate.metrics.get("betting_sharpe_like"),
+                "betting_profit_factor": candidate.metrics.get("betting_profit_factor"),
+                "betting_ev_realization": candidate.metrics.get("betting_ev_realization"),
             },
             "stability": {
                 "level": candidate.tags.get("stability_level"),

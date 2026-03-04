@@ -97,6 +97,11 @@ def main(cfg: DictConfig) -> None:
         logger.error("ОБУЧЕНИЕ ПРЕРВАНО из-за ошибок конфигурации")
         raise
 
+    # Устанавливаем tracking URI из конфига (до set_experiment!)
+    tracking_uri = cfg.mlflow.get("tracking_uri", "sqlite:///mlflow.db")
+    mlflow.set_tracking_uri(tracking_uri)
+    logger.info("MLflow Tracking URI: %s", tracking_uri)
+
     # Определяем имя MLflow эксперимента для группировки
     mlflow_experiment_name = _get_mlflow_experiment_name(cfg)
     mlflow.set_experiment(mlflow_experiment_name)

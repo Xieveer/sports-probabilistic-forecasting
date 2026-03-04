@@ -1,3 +1,4 @@
+# @package metrics
 # Metrics Configuration
 # Метрики для оценки моделей
 
@@ -10,6 +11,7 @@ secondary_metrics:
   - accuracy     # Accuracy
   - brier        # Brier Score
   - ece          # Expected Calibration Error
+  - mce          # Maximum Calibration Error
 
 # Направление оптимизации
 direction:
@@ -18,8 +20,10 @@ direction:
   accuracy: maximize
   brier: minimize
   ece: minimize
+  mce: minimize
 
 # Пороги для алертов
 thresholds:
   ece_max: 0.15       # Предупреждение если ECE > 0.15
+  mce_max: 0.30       # Предупреждение если MCE > 0.30
   auc_min: 0.55       # Предупреждение если AUC < 0.55 (хуже чем random + 5%)

@@ -70,6 +70,7 @@ multirun/
 catboost_info/
 mlflow_ui.log
 mlflow_ui.pid
+mlflow.db
 mlruns.backup.*
 
 # Logs

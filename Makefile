@@ -226,27 +226,36 @@ dvc-repro:
 # ---------- MLflow UI ----------
 mlflow-ui:  ## Запустить MLflow UI на порту 5000
 	@echo "🚀 Запуск MLflow UI..."
+	@-pkill -f "mlflow.server" 2>/dev/null || true
 	@-pkill -f "mlflow ui" 2>/dev/null || true
-	@sleep 1
-	@bash -c "cd $(shell pwd) && nohup uv run mlflow ui --backend-store-uri file:$(shell pwd)/mlruns --host 127.0.0.1 --port 5000 > mlflow_ui.log 2>&1 & echo \$$!" > mlflow_ui.pid
-	@sleep 3
-	@if pgrep -f "mlflow ui" > /dev/null; then \
-		echo "✅ MLflow UI запущен!"; \
-		echo "📊 URL: http://127.0.0.1:5000"; \
-		echo "📂 Tracking: $(shell pwd)/mlruns"; \
-		echo "📝 Логи: mlflow_ui.log"; \
-		echo "🆔 PID: $$(cat mlflow_ui.pid)"; \
-	else \
-		echo "❌ Ошибка запуска MLflow UI"; \
-		echo "Логи:"; \
-		tail -10 mlflow_ui.log; \
-		exit 1; \
-	fi
+	@-fuser -k 5000/tcp 2>/dev/null || true
+	@sleep 2
+	@bash -c "cd $(shell pwd) && nohup uv run mlflow ui --backend-store-uri sqlite:///$(shell pwd)/mlflow.db --default-artifact-root file://$(shell pwd)/mlruns --host 127.0.0.1 --port 5000 > mlflow_ui.log 2>&1 & echo \$$!" > mlflow_ui.pid
+	@echo "⏳ Ожидание запуска MLflow UI..."
+	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+		sleep 1; \
+		if curl -sf http://127.0.0.1:5000/ > /dev/null 2>&1; then \
+			echo "✅ MLflow UI запущен! ($$i сек)"; \
+			echo "📊 URL: http://127.0.0.1:5000"; \
+			echo "📂 Backend: sqlite:///$(shell pwd)/mlflow.db"; \
+			echo "📁 Artifacts: $(shell pwd)/mlruns"; \
+			echo "📝 Логи: mlflow_ui.log"; \
+			echo "🆔 PID: $$(cat mlflow_ui.pid)"; \
+			exit 0; \
+		fi; \
+	done; \
+	echo "❌ Ошибка запуска MLflow UI (таймаут 10 сек)"; \
+	echo "Логи:"; \
+	tail -20 mlflow_ui.log; \
+	exit 1
 
 mlflow-stop:  ## Остановить MLflow UI
 	@echo "🛑 Остановка MLflow UI..."
-	@-pkill -f "mlflow ui" 2>/dev/null && echo "✅ MLflow UI остановлен" || echo "ℹ️  MLflow UI не был запущен"
+	@-pkill -f "mlflow.server" 2>/dev/null || true
+	@-pkill -f "mlflow ui" 2>/dev/null || true
+	@-fuser -k 5000/tcp 2>/dev/null || true
 	@rm -f mlflow_ui.pid
+	@echo "✅ MLflow UI остановлен"
 
 # ---------- Демо доступ ----------
 download-demo-data:

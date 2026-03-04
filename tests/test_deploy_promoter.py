@@ -34,7 +34,7 @@ def _make_run(
     test_brier: float = 0.2,
     test_ece: float = 0.05,
     betting_roi: float | None = None,
-    betting_num_bets: float = 0,
+    betting_n_bets: float = 0,
     tags_extra: dict | None = None,
 ) -> MagicMock:
     """Создать mock MLflow Run."""
@@ -56,7 +56,7 @@ def _make_run(
         "test_auc": test_auc,
         "test_brier": test_brier,
         "test_ece": test_ece,
-        "betting_num_bets": betting_num_bets,
+        "betting_n_bets": betting_n_bets,
     }
     if betting_roi is not None:
         metrics["betting_roi"] = betting_roi
@@ -186,8 +186,8 @@ class TestFilterAndRank:
             min_bets=10,
         )
         runs = [
-            _make_run("a", "run_a", test_logloss=0.3, betting_num_bets=5),
-            _make_run("b", "run_b", test_logloss=0.5, betting_num_bets=15),
+            _make_run("a", "run_a", test_logloss=0.3, betting_n_bets=5),
+            _make_run("b", "run_b", test_logloss=0.5, betting_n_bets=15),
         ]
         result = promoter._filter_and_rank(runs, top_n=10)
         assert len(result) == 1
@@ -368,7 +368,7 @@ class TestCompare:
                 "cb__bas__s42",
                 test_logloss=0.5,
                 betting_roi=5.0,
-                betting_num_bets=50,
+                betting_n_bets=50,
             ),
         ]
         mock_mlflow.search_runs.return_value = runs
@@ -405,9 +405,9 @@ class TestPromote:
                 "test_ece": 0.04,
                 "test_accuracy": 0.75,
                 "betting_roi": 8.5,
-                "betting_profit": 85.0,
-                "betting_num_bets": 50,
-                "betting_sharpe": 1.2,
+                "betting_profit_units": 85.0,
+                "betting_n_bets": 50,
+                "betting_sharpe_like": 1.2,
             },
             tags={
                 "stability_level": "high",
