@@ -25,6 +25,7 @@ from sports_forecast.features.column_utils import get_feature_columns
 from sports_forecast.features.generators.count_generator import CountFeatureGenerator
 from sports_forecast.features.generators.ewm_generator import EWMFeatureGenerator
 from sports_forecast.features.generators.form_generator import FormFeatureGenerator
+from sports_forecast.features.generators.time_generator import TimeFeatureGenerator
 from sports_forecast.features.long_format import (
     create_player_metrics,
     validate_long_format,
@@ -62,7 +63,11 @@ class FeaturePipeline:
         "form": FormFeatureGenerator,
         "ewm": EWMFeatureGenerator,
         "count": CountFeatureGenerator,
+        "time": TimeFeatureGenerator,
     }
+
+    # Типы, которые запускаются на WIDE данных ДО wide→long
+    PRE_GENERATOR_TYPES = {"time"}
 
     def __init__(self, config: dict[str, Any] | DictConfig):
         """
@@ -72,11 +77,17 @@ class FeaturePipeline:
             config: Конфигурация из YAML
         """
         self.config = config
-        self.generators = self._init_generators()
+        self.pre_generators: list = []
+        self.generators: list = []
+        self._init_generators()
 
-        logger.info("FeaturePipeline инициализирован: %d генераторов", len(self.generators))
+        logger.info(
+            "FeaturePipeline инициализирован: %d пре-генераторов, %d генераторов",
+            len(self.pre_generators),
+            len(self.generators),
+        )
 
-    def _init_generators(self) -> list:
+    def _init_generators(self) -> None:
         """
         Инициализация генераторов из конфига.
 
@@ -85,16 +96,16 @@ class FeaturePipeline:
               Ключ словаря используется как fallback для type.
             - **list** (legacy): ``[{type: ..., ...}, ...]``
 
-        Returns:
-            Список инициализированных генераторов
+        Генераторы типов из ``PRE_GENERATOR_TYPES`` помещаются в
+        ``self.pre_generators`` (запускаются на wide ДО wide→long),
+        остальные — в ``self.generators``.
 
         Raises:
-            ValueError: Если конфигурация некорректна
+            ValueError: Если конфигурация некорректна.
         """
         if "generators" not in self.config:
             raise ValueError("FeaturePipeline: отсутствует поле 'generators' в конфиге")
 
-        generators = []
         gen_configs = self.config["generators"]
 
         # Нормализация: dict → list of (key, config) pairs
@@ -165,18 +176,29 @@ class FeaturePipeline:
                 gen_config_dict["type"] = gen_type
 
                 generator = generator_class(gen_config_dict)  # type: ignore[abstract]
-                generators.append(generator)
 
-                feature_count = len(generator.get_feature_names())
-                logger.info("FeaturePipeline: %s (%d фичей)", gen_type, feature_count)
+                # Разделяем pre-generators и основные
+                if gen_type in self.PRE_GENERATOR_TYPES:
+                    self.pre_generators.append(generator)
+                    logger.info(
+                        "FeaturePipeline: pre-generator %s (%d фичей)",
+                        gen_type,
+                        len(generator.get_feature_names()),
+                    )
+                else:
+                    self.generators.append(generator)
+                    logger.info(
+                        "FeaturePipeline: generator %s (%d фичей)",
+                        gen_type,
+                        len(generator.get_feature_names()),
+                    )
             except Exception as e:
                 logger.error("FeaturePipeline: ошибка инициализации %s: %s", gen_type, e)
                 raise
 
-        if len(generators) == 0:
+        total = len(self.pre_generators) + len(self.generators)
+        if total == 0:
             logger.warning("FeaturePipeline: ни один генератор не был инициализирован!")
-
-        return generators
 
     def generate_features(
         self, df: pd.DataFrame, format: str = "wide"
@@ -208,18 +230,36 @@ class FeaturePipeline:
         logger.info("Входной датафрейм: %d строк × %d колонок", df.shape[0], df.shape[1])
         logger.info("Формат: %s", format)
 
+        # 0. Pre-generators (на WIDE данных, ДО wide→long)
+        df_wide = df.copy()
+        pre_gen_columns: list[str] = []
+
+        if self.pre_generators:
+            logger.info("Пре-генераторы (%d)...", len(self.pre_generators))
+            for pg in self.pre_generators:
+                df_wide = pg(df_wide)
+                # Собираем колонки для контекста wide→long
+                if hasattr(pg, "get_context_column_names"):
+                    pre_gen_columns.extend(pg.get_context_column_names())
+            logger.info("  Пре-генераторы добавили колонки: %s", pre_gen_columns)
+
         # 1. Трансформация в long format (если требуется)
         requires_long = self.config.get("requires_long", True)
-        df_long = df.copy()
+        df_long = df_wide
 
         if requires_long and format == "wide":
             logger.info("Трансформация: wide → long...")
 
             # Параметры для трансформации
-            context_columns_config = self.config.get("long_format_context_columns", [])
+            context_columns_config = list(self.config.get("long_format_context_columns", []))
+
+            # Добавляем колонки от пре-генераторов
+            for col in pre_gen_columns:
+                if col not in context_columns_config:
+                    context_columns_config.append(col)
 
             # Фильтруем только те колонки, которые действительно есть в данных
-            context_columns = [col for col in context_columns_config if col in df.columns]
+            context_columns = [col for col in context_columns_config if col in df_wide.columns]
 
             # Если ничего не указано, автоматически ищем
             if not context_columns:
@@ -231,7 +271,7 @@ class FeaturePipeline:
                     "time_of_day",
                     "tour_name",
                 ]
-                context_columns = [col for col in possible_context if col in df.columns]
+                context_columns = [col for col in possible_context if col in df_wide.columns]
 
             # ОБЯЗАТЕЛЬНЫЙ параметр: атрибут для идентификации участника
             player_id_attr = self.config.get("player_id_attr")
@@ -245,11 +285,11 @@ class FeaturePipeline:
             logger.info("  ID участника: %s", player_id_attr)
 
             df_long = wide_to_long(
-                df, context_columns=context_columns, player_id_attr=player_id_attr
+                df_wide, context_columns=context_columns, player_id_attr=player_id_attr
             )
             validate_long_format(df_long)
 
-            logger.info("  wide → long: %d матчей → %d строк", df.shape[0], df_long.shape[0])
+            logger.info("  wide → long: %d матчей → %d строк", df_wide.shape[0], df_long.shape[0])
 
         # 2. Создание базовых метрик (diff_ps, total_ps)
         create_metrics = self.config.get("create_metrics", ["diff", "total"])
@@ -309,7 +349,7 @@ class FeaturePipeline:
             Общее количество фичей
         """
         total = 0
-        for generator in self.generators:
+        for generator in self.pre_generators + self.generators:
             total += len(generator.get_feature_names())
         return total
 
@@ -321,7 +361,7 @@ class FeaturePipeline:
             Словарь {имя_генератора: количество_фичей}
         """
         summary = {}
-        for generator in self.generators:
+        for generator in self.pre_generators + self.generators:
             gen_type = generator.config.get("type", "unknown")
             feature_count = len(generator.get_feature_names())
             summary[gen_type] = feature_count
@@ -331,5 +371,8 @@ class FeaturePipeline:
         """Строковое представление pipeline."""
         total_features = self.get_total_feature_count()
         return (
-            f"FeaturePipeline(generators={len(self.generators)}, total_features={total_features})"
+            f"FeaturePipeline("
+            f"pre_generators={len(self.pre_generators)}, "
+            f"generators={len(self.generators)}, "
+            f"total_features={total_features})"
         )

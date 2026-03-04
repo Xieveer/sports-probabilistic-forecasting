@@ -17,15 +17,10 @@ data:
     wide: inference_wide.parquet
 
 # column_mapping, dtype_mapping, target_sources — наследуются из sport
+# weekday, hour — генерируются в FeaturePipeline (TimeFeatureGenerator)
 data_clean:
   derived_columns:
     tour_num:
       source: tour_name_en
       transform: extract_last_char
-    weekday:
-      source: datetime
-      transform: dayofweek
-    hour:
-      source: datetime
-      transform: hour
-  select_columns: [id, datetime, status, home_points, away_points, home_short_name_en, away_short_name_en, tour_num, weekday, hour]
+  select_columns: [id, datetime, status, home_points, away_points, home_short_name_en, away_short_name_en, tour_num]

@@ -81,6 +81,7 @@ data_clean:
     _amps: away_points
     _home_name: home_name
     _away_name: away_name
+    sdf_odds_feed: odds_raw
 
   # Обязательные колонки
   required_columns: [id, datetime]

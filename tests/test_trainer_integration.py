@@ -52,6 +52,17 @@ def _make_cfg(**overrides: Any) -> DictConfig:
         "split": {"test_size": 0.1, "tscv_n_splits": 2, "time_column": "datetime"},
         "calibration": {"enabled": False},
         "betting": {"enabled": False},
+        "bookmaker": {
+            "name": "fonbet",
+            "market_keys": {
+                "winner_home": "1",
+                "winner_away": "2",
+                "draw": "x",
+                "total_over": "to_{line}",
+                "total_under": "tu_{line}",
+            },
+            "side_keys": {"h": "1", "a": "2"},
+        },
         "seed": 42,
     }
     cfg = OmegaConf.create(base)
@@ -303,9 +314,13 @@ class TestComputeBusinessMetrics:
         n = 50
         features = pd.DataFrame(np.random.randn(n, 3), columns=[f"f_{i}" for i in range(3)])
         target = pd.Series(np.random.randint(0, 2, n))
+        # odds_raw содержит строковые представления dict с ключом "1" (home_win)
+        odds_values = np.random.uniform(1.5, 3.0, n)
         df = pd.DataFrame(
             {
-                "odds_home_win": np.random.uniform(1.5, 3.0, n),
+                "odds_raw": [
+                    str({"1": round(float(v), 2), "2": round(float(4 - v), 2)}) for v in odds_values
+                ],
                 "other": range(n),
             }
         )
@@ -322,7 +337,6 @@ class TestComputeBusinessMetrics:
         assert "sharpe_like" in result
         assert "max_drawdown_pct" in result
         assert "odds_column" in result
-        assert result["odds_column"] == "odds_home_win"
 
         # New v2 metrics
         assert "turnover_units" in result
@@ -372,8 +386,20 @@ class TestComputeBusinessMetrics:
         features = pd.DataFrame(np.random.randn(n, 2), columns=["f_0", "f_1"])
         target = pd.Series(np.random.randint(0, 2, n))
 
-        odds = [2.0, float("nan"), 0.5, 1.0, 2.5, 1.8, float("nan"), 3.0, 2.1, 1.9]
-        df = pd.DataFrame({"odds_home_win": odds})
+        # odds_raw с невалидными / отсутствующими значениями
+        raw_odds = [
+            str({"1": 2.0, "2": 1.8}),
+            None,  # NaN
+            str({"1": 0.5, "2": 5.0}),  # odds < 1.0 → невалидно
+            str({"1": 1.0, "2": 3.0}),  # odds == 1.0 → невалидно
+            str({"1": 2.5, "2": 1.5}),
+            str({"1": 1.8, "2": 2.1}),
+            None,  # NaN
+            str({"1": 3.0, "2": 1.3}),
+            str({"1": 2.1, "2": 1.7}),
+            str({"1": 1.9, "2": 1.9}),
+        ]
+        df = pd.DataFrame({"odds_raw": raw_odds})
 
         model = DummyModel()
         model.fit(features, target)

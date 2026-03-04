@@ -29,7 +29,7 @@ import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
 
-from sports_forecast.betting.odds import find_odds_column
+from sports_forecast.betting.odds import extract_odds_from_raw
 from sports_forecast.betting.simulator import BettingSimulator
 from sports_forecast.config import get_data_path
 from sports_forecast.features.column_utils import get_feature_columns
@@ -815,23 +815,23 @@ class SingleExperimentRunner:
             logger.info("BettingSimulator отключён (betting.enabled=false)")
             return {}
 
-        # Находим колонку с коэффициентами
-        odds_col = find_odds_column(test_df, cfg.market_spec)
-        if odds_col is None:
-            logger.warning("Odds column не найдена → бизнес-метрики пропущены")
-            return {}
-
-        odds = test_df[odds_col]
+        # Извлекаем odds из raw-колонки (dict string → numeric)
+        bookmaker_cfg = cfg.get("bookmaker", {})
+        odds = extract_odds_from_raw(test_df, cfg.market_spec, bookmaker_cfg)
         valid_odds_mask = odds.notna() & (odds > 1.0)
         valid_count = int(valid_odds_mask.sum())
 
         if valid_count == 0:
-            logger.warning("Odds column '%s' не содержит валидных значений", odds_col)
+            logger.warning(
+                "Не удалось извлечь валидные odds из odds_raw "
+                "(market=%s) → бизнес-метрики пропущены",
+                cfg.market_spec.name,
+            )
             return {}
 
         logger.info("=" * 60)
         logger.info("БИЗНЕС-МЕТРИКИ (BettingSimulator)")
-        logger.info("  Odds column: %s", odds_col)
+        logger.info("  Market: %s", cfg.market_spec.name)
         logger.info("  Валидных odds: %d / %d", valid_count, len(odds))
         logger.info("=" * 60)
 
@@ -926,7 +926,7 @@ class SingleExperimentRunner:
             "sweep_df": sweep_df,
             "cal_table": cal_table,
             # Meta
-            "odds_column": odds_col,
+            "odds_column": f"odds_raw→{cfg.market_spec.name}",
             "valid_odds_count": valid_count,
         }
 

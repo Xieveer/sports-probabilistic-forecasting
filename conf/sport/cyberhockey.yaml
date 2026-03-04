@@ -77,6 +77,7 @@ data_clean:
   column_mapping:
     h_m_s: home_points
     a_m_s: away_points
+    fon_bet_odds_feed: odds_raw
 
   # Обязательные колонки
   required_columns: [id, status, datetime]

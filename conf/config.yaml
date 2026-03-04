@@ -7,6 +7,7 @@ defaults:
   - calibration
   - metrics
   - betting
+  - bookmaker: fonbet       # Маппинг ключей odds (fonbet)
   - mlflow: mlflow
 
   # Основные компоненты (обязательны через CLI)

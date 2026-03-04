@@ -10,6 +10,7 @@ exclude_cols:
   - tournament
   - status
   - match_state
+  - odds_raw
 
 # Колонки с результатами матчей (для защиты от утечек)
 result_cols:
@@ -49,3 +50,10 @@ requires_long: true
 create_metrics:
   - "diff"    # diff_ps = pl_points - opp_points
   - "total"   # total_ps = pl_points + opp_points
+
+# Контекстные колонки для wide→long трансформации.
+# TimeFeatureGenerator автоматически добавляет свои колонки (weekday, hour, ...)
+# к этому списку, НЕ нужно указывать их здесь.
+long_format_context_columns:
+  - "tour_num"
+  - "tour_match_num"

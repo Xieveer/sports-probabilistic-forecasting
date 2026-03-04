@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import pytest
 from omegaconf import OmegaConf
 
 from sports_forecast.betting.odds import (
+    extract_odds_from_raw,
     find_odds_column,
     get_odds_column_long_format,
     get_odds_column_name,
@@ -142,3 +144,118 @@ class TestFindOddsColumn:
         df = pd.DataFrame({expected_col: [2.0, 1.5]})
         spec = _make_market_spec(name="total_over", line=line)
         assert find_odds_column(df, spec) == expected_col
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# extract_odds_from_raw  (uses bookmaker config)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_FONBET_CFG = OmegaConf.create(
+    {
+        "name": "fonbet",
+        "market_keys": {
+            "winner_home": "1",
+            "winner_away": "2",
+            "draw": "x",
+            "total_over": "to_{line}",
+            "total_under": "tu_{line}",
+            "winner": "1",  # wide-format fallback (не используется напрямую)
+        },
+        "side_keys": {
+            "h": "1",
+            "a": "2",
+        },
+    }
+)
+
+
+class TestExtractOddsFromRaw:
+    """Тесты для extract_odds_from_raw (bookmaker-driven)."""
+
+    def test_winner_home(self) -> None:
+        """Извлекает odds для winner_home по ключу '1'."""
+        df = pd.DataFrame({"odds_raw": ["{'1': 1.48, '2': 2.45}"]})
+        spec = _make_market_spec(name="winner_home", data_format="wide")
+        result = extract_odds_from_raw(df, spec, _FONBET_CFG)
+        assert result.iloc[0] == pytest.approx(1.48)
+
+    def test_winner_away(self) -> None:
+        """Извлекает odds для winner_away по ключу '2'."""
+        df = pd.DataFrame({"odds_raw": ["{'1': 1.48, '2': 2.45}"]})
+        spec = _make_market_spec(name="winner_away", data_format="wide")
+        result = extract_odds_from_raw(df, spec, _FONBET_CFG)
+        assert result.iloc[0] == pytest.approx(2.45)
+
+    def test_total_over_with_line(self) -> None:
+        """Извлекает odds для total_over, ключ = 'to_5.5'."""
+        df = pd.DataFrame({"odds_raw": ["{'to_5.5': 1.90, 'tu_5.5': 1.85}"]})
+        spec = _make_market_spec(name="total_over", data_format="wide", line=5.5)
+        result = extract_odds_from_raw(df, spec, _FONBET_CFG)
+        assert result.iloc[0] == pytest.approx(1.90)
+
+    def test_total_under_with_line(self) -> None:
+        """Извлекает odds для total_under, ключ = 'tu_5.5'."""
+        df = pd.DataFrame({"odds_raw": ["{'to_5.5': 1.90, 'tu_5.5': 1.85}"]})
+        spec = _make_market_spec(name="total_under", data_format="wide", line=5.5)
+        result = extract_odds_from_raw(df, spec, _FONBET_CFG)
+        assert result.iloc[0] == pytest.approx(1.85)
+
+    def test_long_format_winner_h(self) -> None:
+        """Long format winner: side='h' → ключ '1'."""
+        df = pd.DataFrame(
+            {
+                "odds_raw": ["{'1': 1.60, '2': 2.30}", "{'1': 1.60, '2': 2.30}"],
+                "side": ["h", "a"],
+            }
+        )
+        spec = _make_market_spec(name="winner", data_format="long")
+        result = extract_odds_from_raw(df, spec, _FONBET_CFG)
+        assert result.iloc[0] == pytest.approx(1.60)  # home
+        assert result.iloc[1] == pytest.approx(2.30)  # away
+
+    def test_missing_odds_raw_column(self) -> None:
+        """Если колонка odds_raw отсутствует — все NaN."""
+        df = pd.DataFrame({"other": [1, 2]})
+        spec = _make_market_spec(name="winner_home", data_format="wide")
+        result = extract_odds_from_raw(df, spec, _FONBET_CFG)
+        assert result.isna().all()
+
+    def test_nan_and_none_values(self) -> None:
+        """NaN и None в odds_raw → NaN в результате."""
+        df = pd.DataFrame({"odds_raw": [None, float("nan"), "nan"]})
+        spec = _make_market_spec(name="winner_home", data_format="wide")
+        result = extract_odds_from_raw(df, spec, _FONBET_CFG)
+        assert result.isna().all()
+
+    def test_odds_below_1_excluded(self) -> None:
+        """odds <= 1.0 исключаются."""
+        df = pd.DataFrame({"odds_raw": ["{'1': 0.95, '2': 1.05}"]})
+        spec = _make_market_spec(name="winner_home", data_format="wide")
+        result = extract_odds_from_raw(df, spec, _FONBET_CFG)
+        assert np.isnan(result.iloc[0])
+
+    def test_unknown_market_returns_nan(self) -> None:
+        """Неизвестный market → все NaN."""
+        df = pd.DataFrame({"odds_raw": ["{'1': 1.48}"]})
+        spec = _make_market_spec(name="exotic_market", data_format="wide")
+        result = extract_odds_from_raw(df, spec, _FONBET_CFG)
+        assert result.isna().all()
+
+    def test_multiple_rows(self) -> None:
+        """Корректная работа на нескольких строках."""
+        df = pd.DataFrame(
+            {
+                "odds_raw": [
+                    "{'1': 1.50, '2': 2.40}",
+                    "{'1': 2.10, '2': 1.70}",
+                    None,
+                    "{'1': 1.80, '2': 1.95}",
+                ]
+            }
+        )
+        spec = _make_market_spec(name="winner_home", data_format="wide")
+        result = extract_odds_from_raw(df, spec, _FONBET_CFG)
+        assert result.iloc[0] == pytest.approx(1.50)
+        assert result.iloc[1] == pytest.approx(2.10)
+        assert np.isnan(result.iloc[2])
+        assert result.iloc[3] == pytest.approx(1.80)

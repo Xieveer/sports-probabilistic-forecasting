@@ -74,6 +74,25 @@ def _apply_column_mapping(
     }
 
     if rename_dict:
+        # Guard: если несколько source маппятся в одно target,
+        # берём первый найденный (предотвращаем дубликаты колонок).
+        target_seen: dict[str, str] = {}
+        unique_rename: dict[str, str] = {}
+        for old_name, new_name in rename_dict.items():
+            if new_name in target_seen:
+                logger.warning(
+                    "Турнир %s: дубль маппинга → '%s' и '%s' оба → '%s', используем '%s'",
+                    tournament_name,
+                    target_seen[new_name],
+                    old_name,
+                    new_name,
+                    target_seen[new_name],
+                )
+                continue
+            target_seen[new_name] = old_name
+            unique_rename[old_name] = new_name
+        rename_dict = unique_rename
+
         logger.info(
             "Турнир %s: применяю маппинг колонок: %s",
             tournament_name,
@@ -417,6 +436,14 @@ def process_tournament(
             and "status" not in select_cols
         ):
             select_cols = list(select_cols) + ["status"]
+
+        # Автоматически включаем odds_raw если он есть в данных (для BettingSimulator)
+        if "odds_raw" in df.columns and "odds_raw" not in select_cols:
+            select_cols = list(select_cols) + ["odds_raw"]
+            logger.info(
+                "Турнир %s: автоматически добавлена колонка odds_raw",
+                tournament_name,
+            )
 
         # Фильтруем только существующие колонки (tour_num/weekday/hour уже созданы выше)
         existing_cols = [c for c in select_cols if c in df.columns]

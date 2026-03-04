@@ -37,16 +37,11 @@ data:
 # column_mapping, dtype_mapping, required_columns — наследуются из sport
 data_clean:
   # Генерация производных колонок (специфично для UEL)
+  # weekday, hour — генерируются в FeaturePipeline (TimeFeatureGenerator)
   derived_columns:
     tour_num:
       source: tour_name_en
       transform: extract_last_char
-    weekday:
-      source: datetime
-      transform: dayofweek
-    hour:
-      source: datetime
-      transform: hour
 
   # Финальный набор колонок для interim (специфичен для турнира)
   select_columns:
@@ -59,8 +54,6 @@ data_clean:
     - away_short_name_en
     - tour_match_num
     - tour_num
-    - weekday
-    - hour
 
 # ============================================================================
 # МЕТАДАННЫЕ
