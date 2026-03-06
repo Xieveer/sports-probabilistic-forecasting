@@ -4,6 +4,8 @@ FastAPI application — тонкий read-only API.
 Не выполняет тяжёлых вычислений.
 Предсказания предвычисляются batch pipeline и хранятся в БД.
 
+Prometheus метрики доступны на ``/metrics``.
+
 Запуск::
 
     uvicorn sports_forecast.service.app:app --host 0.0.0.0 --port 8000
@@ -15,6 +17,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from prometheus_client import make_asgi_app
 
 from sports_forecast.service.db.engine import get_engine, init_db
 from sports_forecast.service.routers import health, predictions
@@ -40,6 +43,10 @@ app = FastAPI(
 # Register routers
 app.include_router(health.router)
 app.include_router(predictions.router)
+
+# Prometheus /metrics endpoint
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
 
 
 @app.get("/", include_in_schema=False)

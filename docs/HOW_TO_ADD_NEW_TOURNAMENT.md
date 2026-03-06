@@ -1,0 +1,348 @@
+# Как добавить новый турнир
+
+Пошаговое руководство по добавлению нового турнира в систему прогнозирования.
+
+---
+
+## Обзор
+
+Добавление турнира состоит из следующих шагов:
+
+1. Определить спорт (существующий или новый)
+2. Создать source конфиг
+3. Положить исходные данные
+4. Создать tournament конфиг
+5. Запустить DVC pipeline
+6. Проверить результат
+
+---
+
+## Шаг 1. Определить спорт
+
+Турнир всегда привязан к спорту. Спорт определяет:
+
+- `player_id_attr` — атрибут идентификации участников
+- `target_sources` — как вычислять таргеты
+- `allowed_market_specs` — допустимые рынки и линии
+- `data_clean` — маппинг колонок, типы данных
+- `form_params` — пороги FG/DP для формы игрока
+
+### Существующие спорты
+
+| Спорт | Конфиг | player_id_attr |
+|-------|--------|----------------|
+| Cyberhockey | `conf/sport/cyberhockey.yaml` | short_name_en |
+| Table Tennis | `conf/sport/table_tennis.yaml` | name |
+
+Если ваш турнир относится к существующему спорту, переходите к **Шагу 2**.
+
+### Новый спорт
+
+Если нужен новый спорт, создайте файл `conf/sport/<sport_name>.yaml`:
+
+```yaml
+# conf/sport/basketball.yaml
+sport: basketball
+
+player_id_attr: "team_name"
+
+form_params:
+  fg_trigger_minutes: 1440    # 24 часа → First Game
+  dp_trigger_minutes: 60      # 60 минут → Double Play
+
+allowed_market_specs:
+  winner:
+    specs: [winner, winner_home]
+  total:
+    lines: [180.5, 190.5, 200.5, 210.5, 220.5]
+    specs: [total_over, total_under]
+
+target_sources:
+  player_win:
+    format: long
+    player_column: pl_points
+    opponent_column: opp_points
+    comparison: greater
+
+  home_win:
+    format: wide
+    home_column: home_points
+    away_column: away_points
+    comparison: greater
+
+  total_sum:
+    format: wide
+    home_column: home_points
+    away_column: away_points
+    comparison: total_over
+
+  total_sum_under:
+    format: wide
+    home_column: home_points
+    away_column: away_points
+    comparison: total_under
+
+data_clean:
+  column_mapping:
+    raw_home_score: home_points
+    raw_away_score: away_points
+    odds_column: odds_raw
+
+  required_columns: [id, status, datetime]
+  drop_na_columns: [id, datetime, status]
+
+  dtype_mapping:
+    numeric:
+      home_points: float
+      away_points: float
+    string: [id, status]
+    datetime:
+      datetime:
+        format: null
+        errors: coerce
+```
+
+**Важно:**
+- `target_sources` определяет, какие столбцы используются для таргета
+- Для спортов с двойной системой счёта (например, теннис: сеты + очки) создайте отдельные target_sources для winner (по сетам) и total (по очкам)
+- `column_mapping` маппит исходные имена столбцов в стандартные
+
+---
+
+## Шаг 2. Создать source конфиг
+
+Source конфиг описывает, как обрабатывать исходный файл данных.
+
+Создайте `conf/source/<source_name>.yaml`:
+
+```yaml
+# conf/source/nba.yaml
+name: nba
+sport: basketball
+region: usa
+description: "NBA Basketball"
+
+# Если source содержит один турнир
+split_strategy:
+  enabled: false
+
+# Букмекерские коэффициенты
+odds:
+  enabled: true
+  source_column: odds_feed_column_name
+  bookmaker: fonbet
+  format: python_dict
+```
+
+### Если source содержит несколько подтурниров
+
+```yaml
+# conf/source/uel.yaml
+split_strategy:
+  enabled: true
+  method: column_based
+  split_column: tour_name_en
+
+  rules:
+    - condition: "contains('stream 1', case=False)"
+      output_tournament: uel_kz_1
+      description: "Kazakhstan Stream 1"
+
+    - condition: "contains('stream 2', case=False)"
+      output_tournament: uel_kz_2
+      description: "Kazakhstan Stream 2"
+
+    - condition: default
+      output_tournament: uel_cz
+      description: "Czech Republic"
+```
+
+---
+
+## Шаг 3. Положить исходные данные
+
+Разместите CSV/JSON файл в:
+
+```
+data/source/<source_name>/source.csv
+```
+
+Пример:
+```
+data/source/nba/source.csv
+```
+
+**Минимальные обязательные столбцы:**
+- `id` — уникальный идентификатор матча
+- `datetime` — дата и время матча
+- `status` — статус матча (finished, upcoming, live)
+- Столбцы со счётом (будут замаплены через `column_mapping`)
+- Имена участников
+
+---
+
+## Шаг 4. Создать tournament конфиг
+
+Создайте `conf/tournament/<tournament_name>.yaml`:
+
+```yaml
+# conf/tournament/nba.yaml
+
+# Наследование от спорта
+defaults:
+  - /sport@_here_: basketball
+
+name: nba
+region: usa
+
+# Пути к обработанным данным
+data:
+  processed_dir: data/processed/nba
+  formats:
+    long: train_long.parquet
+    wide: train_wide.parquet
+  inference:
+    long: inference_long.parquet
+    wide: inference_wide.parquet
+
+# Опционально: override form_params для конкретного турнира
+# form_params:
+#   fg_trigger_minutes: 2880
+#   dp_trigger_minutes: 120
+
+# Турнир-специфичные настройки clean
+data_clean:
+  # Если нужны дополнительные derived_columns
+  derived_columns:
+    season:
+      source: datetime
+      transform: extract_year
+
+  # Финальный набор колонок для interim
+  select_columns:
+    - id
+    - datetime
+    - status
+    - home_points
+    - away_points
+    - home_team_name
+    - away_team_name
+
+# Метаданные (опционально)
+stats:
+  avg_home_points: 110
+  avg_away_points: 108
+  avg_total: 218
+
+time_range:
+  start: "2024-01-01"
+  end: "2025-12-31"
+```
+
+**Ключевые моменты:**
+
+- `defaults: [/sport@_here_: <sport>]` — наследует все настройки от спорта
+- `data.processed_dir` — куда будут сохранены обработанные данные
+- `data_clean.select_columns` — какие столбцы попадут в interim данные
+- `target_sources`, `allowed_market_specs` — наследуются из спорта (можно override)
+
+---
+
+## Шаг 5. Обновить DVC и feature pipeline
+
+### Добавить турнир в DVC pipeline
+
+Отредактируйте `dvc.yaml`, добавив новый турнир в список:
+
+```yaml
+features:
+  cmd: >-
+    uv run python -m sports_forecast.features.features_build --multirun
+    tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by,nba
+    features=${features.config}
+```
+
+### Добавить конфиг `conf/tournament/all.yaml` (если используется)
+
+```yaml
+# Если есть all.yaml, добавьте новый турнир
+tournaments:
+  - nba
+```
+
+---
+
+## Шаг 6. Запустить pipeline
+
+```bash
+# Полный pipeline: ingest → clean → features
+make dvc-repro
+
+# Или поэтапно:
+uv run python -m sports_forecast.data.ingest
+uv run python -m sports_forecast.data.clean
+uv run python -m sports_forecast.features.features_build \
+    tournament=nba features=basic
+```
+
+---
+
+## Шаг 7. Проверить результат
+
+```bash
+# Проверить структуру данных
+ls data/raw/nba/
+ls data/interim/nba/
+ls data/processed/nba/
+
+# Валидация данных
+make validate-data
+
+# Тестовое обучение
+make train TOURNAMENT=nba MARKET=winner SPEC=winner ALG=catboost FEAT=basic
+
+# Просмотр результатов в MLflow
+make mlflow-ui
+```
+
+---
+
+## Чеклист
+
+- [ ] Спорт определён (существующий или новый `conf/sport/<name>.yaml`)
+- [ ] Source конфиг создан: `conf/source/<name>.yaml`
+- [ ] Данные размещены: `data/source/<name>/source.csv`
+- [ ] Tournament конфиг создан: `conf/tournament/<name>.yaml`
+- [ ] Турнир добавлен в `dvc.yaml`
+- [ ] `make dvc-repro` — pipeline отработал без ошибок
+- [ ] `make validate-data` — данные прошли валидацию
+- [ ] `make train TOURNAMENT=<name>` — обучение прошло
+- [ ] Результаты видны в MLflow
+
+---
+
+## Частые ошибки
+
+### 1. `KeyError: '<column_name>'`
+
+Проверьте `column_mapping` в спортивном конфиге. Исходные имена столбцов в CSV должны точно соответствовать ключам маппинга.
+
+### 2. `Target contains only one class`
+
+Таргет вычисляется некорректно. Проверьте `target_sources` — правильные ли столбцы используются для сравнения.
+
+### 3. `No data for tournament <name>`
+
+Source конфиг или split rules не находят данные. Проверьте `split_strategy.split_column` и условия `rules`.
+
+### 4. Пустые фичи
+
+Проверьте `data_clean.select_columns` — все необходимые столбцы должны быть в списке.
+
+### 5. `odds_raw` не проходит через pipeline
+
+Убедитесь, что `column_mapping` содержит маппинг для odds столбца:
+```yaml
+column_mapping:
+  your_odds_column_name: odds_raw
+```

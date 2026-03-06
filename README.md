@@ -5,11 +5,42 @@
 
 # Sports Probabilistic Forecasting
 
-Система вероятностного прогнозирования спортивных событий с использованием машинного обучения.
+MLOps-система промышленного уровня для вероятностного прогнозирования спортивных событий.
+Калибровка вероятностей влияет на итоговую доходность от value-ставок в беттинге.
 
 ---
 
-## 🚀 Для проверяющего (Quick Start)
+## Архитектура
+
+```
+┌─────────────────────────────────────────────────────────┐
+│              DATA PIPELINE (DVC)                        │
+│  source → raw → interim → processed                    │
+│  Pandera validation на каждом слое                      │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│           TRAINING PIPELINE (Hydra + MLflow)            │
+│  Config → Features → TSCV → Calibration → MLflow       │
+│  Feature Selection · Optuna · Stacking                  │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│         INFERENCE PIPELINE (Batch + FastAPI)            │
+│  materialize → Prediction Store → FastAPI API           │
+│  Prometheus + Grafana · A/B Testing                     │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│           ORCHESTRATION (Airflow)                       │
+│  DAG: Data Refresh · Training · Materialization ·       │
+│       Monitoring · Model Promotion                      │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Quick Start
 
 ### 1. Установка зависимостей
 
@@ -17,260 +48,326 @@
 make install
 ```
 
-### 2. Загрузка демо-данных
-
-```bash
-make download-demo-data URL="ссылка по запросу"
-```
-
-### 3. Запуск полного пайплайна
+### 2. Запуск data pipeline (DVC)
 
 ```bash
 make dvc-repro
 ```
-Это выполнит последовательно все этапы:
-- Ingest: загрузка и конвертация данных в Parquet
-- Clean: очистка, валидация и маппинг колонок
-- Features: генерация признаков и подготовка датасетов
-- Train: обучение модели CatBoost
 
-### 4. Проверка результатов
-```commandline
-# Просмотр структуры данных
-ls -R data/
+Выполняет последовательно:
+- **Ingest:** CSV/JSON → Parquet, разделение подтурниров, извлечение odds
+- **Clean:** типизация, маппинг колонок, валидация (Pandera)
+- **Features:** генерация признаков (EWM, Count, Form, Time)
 
-# Проверка обученной модели
-ls -R models/
+### 3. Обучение модели
 
-# Запуск тестов
-make test
-
-# Проверка качества кода
-make lint
-```
-## ✅ Что уже реализовано
-### Спринт 1 — Фундамент и качество кода
-#### 📦 Структура проекта
-- Пакет sports_forecast с модульной архитектурой
-- Подмодули: data/, features/, utils/
-- Чистое разделение ответственности
-#### 🔧 Управление окружением
-- uv + pyproject.toml для управления зависимостями
-- Dev-зависимости: ruff, pytest, pre-commit, cookiecutter
-- Изолированное виртуальное окружение
-#### ✨ Качество кода
-- ruff для форматирования и линтинга (ruff.toml)
-- Автоматическая сортировка импортов (isort)
-- pre-commit хуки:
-  - Проверка стиля кода
-  - Валидация YAML/TOML
-  - Проверка размера файлов
-  - Статический анализ типов (mypy)
-
-#### 🎯 Makefile-пульт управления
-Удобные команды для всех операций:
 ```bash
-make install        # Установка зависимостей
-make lint          # Проверка кода
-make format        # Форматирование
-make test          # Запуск тестов
-make dvc-repro     # Полный пайплайн
-make train         # Обучение модели
-make docs          # Генерация документации
+# Одиночный эксперимент
+make train TOURNAMENT=uel_kz_1 MARKET=winner SPEC=winner ALG=catboost FEAT=basic
+
+# Sweep моделей (CatBoost, LightGBM, LogReg)
+make train-sweep TOURNAMENT=uel_kz_1
+
+# Sweep с расширенными фичами
+make train-sweep-full TOURNAMENT=uel_kz_1
 ```
-#### 🔐 Git/GitHub
-- Аккуратный .gitignore (игнорирует data/, mlruns/, models/)
-- Структурированные коммиты
-- Готовность к CI/CD
-### Спринт 2 — Данные и DVC
-#### 📊 Слои данных
-Четкое разделение этапов обработки:
-- source/ — исходные данные (CSV/JSON)
-- raw/ — Parquet после первичной загрузки
-- interim/ — очищенные и валидированные данные
-- processed/ — финальные датасеты с признаками
-#### 🔄 Модуль Ingestion (sports_forecast.data.ingest)
-- Автоматический обход турниров в data/source/
-- Чтение JSON/CSV с обработкой ошибок
-- Конвертация в оптимизированный Parquet
-- Сохранение в data/raw/{tournament}/matches.parquet
-- Подробное логирование процесса
-#### 🧹 Модуль Clean (sports_forecast.data.clean)
-- Маппинг колонок через конфигурацию
-- Приведение типов:
-  - Numeric (int64, float64)
-  - Datetime (с автоопределением формата)
-  - String (категориальные данные)
-- Валидация обязательных полей
-- Управление через conf/data_clean.yaml
-- Сохранение в data/interim/{tournament}/matches_interim.parquet
-#### 🔗 DVC Pipeline
-- Инициализация DVC репозитория
-- Настроенные стадии:
-  - ingest — загрузка данных
-  - clean — очистка и валидация
-  - features — генерация признаков
-  - train — обучение модели
-- Автоматическое отслеживание зависимостей
-- Воспроизводимость экспериментов
-### Спринт 3 — Признаки, обучение и инференс
-#### 🎨 Генерация признаков (sports_forecast.features.features_build)
-##### Базовые признаки:
-- Разность очков команд
-- Сумма очков
-- Статистики по командам
 
-##### Лаговые признаки:
-- shift(1) — данные предыдущего матча
-- История встреч команд
+### 4. MLflow UI
 
-##### Таргет:
-- Бинарный флаг победы хозяев (home_win)
-#### 📈 Разделение данных по статусу
-Колонка status определяет назначение данных:
-- finished → train.parquet (есть таргет, для обучения)
-- upcoming → inference.parquet (таргет удалён, для предсказаний)
-- live → обработка в реальном времени (в планах)
-#### 🤖 Обучение модели (sports_forecast.train)
-Реализовано:
-- Модель: CatBoostClassifier
-- Конфигурация: conf/train_catboost.yaml
-- Автоматическая загрузка feature_columns и target_column
-- Train/Valid split с настраиваемым соотношением
-- Метрики: AUC-ROC, Accuracy
-- Сохранение модели: models/{tournament}/{model_name}.cbm
-
-Особенности:
-- Поддержка категориальных признаков
-- Логирование процесса обучения
-- Валидация на отложенной выборке
-#### 🔮 Инференс
-Статус: В разработке 🚧
-Планируется:
-- Загрузка обученной модели
-- Предсказание на inference.parquet
-- Калибровка вероятностей
-- Экспорт результатов
-### Логирование и документация
-#### 📝 Система логирования
-- Единый модуль: sports_forecast.utils.log_config
-- Консольный логгер с цветным выводом
-- Настраиваемые уровни логов
-- Форматирование сообщений с временными метками
-#### 📚 Документация (Sphinx)
-Структура docs/:
-- index.rst — главная страница
-- installation.rst — установка и настройка
-- quickstart.rst — быстрый старт
-- api/ — автогенерация API из docstrings
-
-Возможности:
-- Автодокументация (autodoc)
-- Поддержка Google/NumPy стиля (napoleon)
-- Генерация HTML/PDF
-
-Сборка:
 ```bash
-make docs
+make mlflow-ui
+# http://127.0.0.1:5000
 ```
-## 🚀 Планы развития
-### 1. Улучшение признаков и генераторов
-##### Продвинутые признаки
-- Rolling/EWM статистики:
-- Скользящие средние по командам/игрокам
-- Экспоненциально взвешенные метрики
-- Тренды формы команд
 
-##### Рейтинговые системы:
-- ELO рейтинг
+### 5. FastAPI сервис (dev)
 
-##### Контекстные признаки:
-- Учёт разных турниров и уровней
-- Домашнее/выездное преимущество
-- Временные паттерны (день недели, сезон)
-
-##### Feature Registry
-- Избавление от ручного перечисления фичей в YAML
-- Regex-отбор признаков: ^f_, include/exclude правила
-- Автоматическое обнаружение и регистрация фичей
-- Версионирование наборов признаков
-### 2. Калибровка и оценка качества
-##### Метрики
-- Brier Score — точность вероятностных предсказаний
-- Expected Calibration Error (ECE) — качество калибровки
-- Reliability Diagrams — визуализация калибровки
-
-##### Калибровка вероятностей
-- CalibratedClassifierCV из sklearn
-- Isotonic regression
-- Platt scaling
-- Сравнение методов калибровки
--
-##### Бэктестинг
-- Моделирование value-betting стратегий
-- Оценка ROI и просадок
-- Доверительные интервалы
-- Анализ чувствительности к параметрам
-### 3. MLOps-слой
-#### MLflow интеграция
-##### Tracking:
-- Логирование параметров экспериментов
-- Сохранение метрик обучения
-- Версионирование данных и моделей
-
-##### Model Registry:
-- Централизованное хранилище моделей
-- Управление версиями
-- Staging/Production окружения
-
-##### Artifacts:
-- Сохранение графиков и отчётов
-- История экспериментов
-- Сравнение моделей
-##### Apache Airflow
-DAG для пайплайна:
-- Регулярный запуск dvc repro
-- Мониторинг успешности этапов
-- Алерты при ошибках
-DAG для переобучения:
-- Периодическое обновление моделей
-- Автоматический выбор лучшей модели
-- Деплой в production
-Мониторинг:
-- Отслеживание дрифта данных
-- Метрики качества в production
-- Логирование предсказаний
-### 4. API и Production
-#### FastAPI сервис
+```bash
+make api-dev
+# http://127.0.0.1:8000/docs
 ```
-@app.post("/predict")
-async def predict(match_data: MatchInput) -> PredictionOutput:
-    """Эндпоинт для получения прогноза"""
-    # Загрузка модели из MLflow
-    # Предобработка данных
-    # Предсказание вероятностей
-    # Возврат результата
+
+### 6. Docker (полный стек)
+
+```bash
+make docker-build
+make docker-up
+# API:        http://localhost:8000
+# MLflow:     http://localhost:5000
+# Prometheus: http://localhost:9090
+# Grafana:    http://localhost:3000 (admin/admin)
 ```
-##### Возможности:
-- Онлайн-предсказания
-- Batch-обработка
-- Валидация входных данных (Pydantic)
-- Swagger документация
-- Метрики производительности
-- Контейнеризация
 
-##### Docker:
-- Multi-stage build
-- Оптимизация размера образа
-- Health checks
+---
 
-##### Docker Compose:
-- API + База данных
-- MLflow сервер
-- Мониторинг (Prometheus + Grafana)
+## Технологический стек
 
-##### Деплой:
-- Kubernetes манифесты
-- CI/CD pipeline (GitHub Actions)
-- Blue-Green deployment
-- Автоматическое масштабирование
+| Компонент | Инструмент |
+|-----------|-----------|
+| ML Framework | CatBoost, LightGBM, scikit-learn |
+| Конфигурация | Hydra |
+| Эксперименты | MLflow (tracking + Model Registry) |
+| Data Pipeline | DVC |
+| Оркестрация | Apache Airflow |
+| API | FastAPI + Uvicorn |
+| Валидация данных | Pandera |
+| Database | PostgreSQL / SQLite |
+| Мониторинг | Prometheus + Grafana |
+| Контейнеризация | Docker + Docker Compose |
+| Оптимизация | Optuna |
+| Качество кода | ruff, mypy, pre-commit, pytest |
+
+---
+
+## Структура проекта
+
+```
+SportsProbabilisticForecasting/
+├── conf/                              # Hydra конфиги
+│   ├── config.yaml                    # Root config
+│   ├── tournament/                    # Турниры (7 шт.)
+│   ├── sport/                         # Спорты (cyberhockey, table_tennis)
+│   ├── source/                        # Sources (uel, lp_*)
+│   ├── market/                        # Market families (winner, total)
+│   ├── market_spec/                   # Спецификации (winner, total_over, ...)
+│   ├── algorithm/                     # Алгоритмы (catboost, lgbm, logreg, ...)
+│   ├── features/                      # Наборы фичей (basic, advanced)
+│   │   └── generators/                # Генераторы (rolling, form, time)
+│   ├── feature_selection/             # Feature selection (default, aggressive)
+│   ├── hyper/                         # Оптимизация (none, optuna, grid_small)
+│   ├── bookmaker/                     # Букмекеры (fonbet)
+│   ├── betting.yaml                   # Betting simulator
+│   ├── calibration.yaml               # Калибровка
+│   ├── split.yaml                     # Train/test split
+│   ├── metrics.yaml                   # Метрики
+│   └── mlflow/                        # MLflow tracking
+│
+├── sports_forecast/                   # Основной пакет
+│   ├── data/                          # Data pipeline
+│   │   ├── ingest.py                  # source → raw
+│   │   └── clean.py                   # raw → interim
+│   ├── features/                      # Feature engineering
+│   │   ├── features_build.py          # Orchestrator
+│   │   ├── pipeline.py                # FeaturePipeline
+│   │   ├── generators/                # EWM, Count, Form, Time
+│   │   └── selection/                 # Feature selection (rankers + selector)
+│   ├── training/                      # ML training
+│   │   ├── trainer.py                 # ExperimentRunner
+│   │   ├── calibration.py             # Isotonic/Sigmoid calibration
+│   │   ├── models/                    # CatBoost, LGBM, LogReg, Dummy
+│   │   ├── ensembles/                 # Stacking
+│   │   └── optimization/              # TSCV, Optuna
+│   ├── betting/                       # Betting simulation
+│   │   ├── simulator.py               # BettingSimulator + BettingResult
+│   │   └── odds.py                    # Odds extraction
+│   ├── service/                       # FastAPI service
+│   │   ├── app.py                     # FastAPI app + Prometheus
+│   │   ├── routers/                   # /health, /predict
+│   │   ├── db/                        # SQLAlchemy models + repository
+│   │   └── schemas.py                 # Pydantic models
+│   ├── monitoring/                    # Monitoring
+│   │   ├── metrics.py                 # Prometheus gauges
+│   │   ├── drift.py                   # PSI + KS drift detection
+│   │   ├── performance.py             # ML performance tracking
+│   │   └── ab_testing.py              # A/B model comparison
+│   ├── validation/                    # Data validation (Pandera)
+│   │   ├── schemas.py                 # Raw/Interim/Processed schemas
+│   │   └── gates.py                   # Quality gates
+│   ├── deploy/                        # Model promotion
+│   ├── utils/                         # Targets, metrics, logging
+│   ├── train.py                       # Training entry point
+│   ├── predict.py                     # Inference
+│   └── materialize.py                 # Batch prediction → DB
+│
+├── airflow/                           # Airflow DAGs
+│   ├── dags/                          # 5 DAGs (data, train, materialize, monitor)
+│   ├── Dockerfile                     # Airflow worker image
+│   └── docker-compose.airflow.yml     # Airflow services
+│
+├── monitoring/                        # Prometheus + Grafana configs
+│   ├── prometheus/                    # prometheus.yml, alert_rules.yml
+│   └── grafana/                       # Dashboards, datasources
+│
+├── data/                              # Данные (DVC-tracked)
+│   ├── source/                        # Исходные CSV/JSON
+│   ├── raw/                           # Parquet
+│   ├── interim/                       # Очищенные
+│   └── processed/                     # С фичами
+│
+├── models/                            # Обученные модели
+├── tests/                             # 358+ unit-тестов
+├── docs/                              # Документация
+│
+├── dvc.yaml                           # DVC pipeline
+├── params.yaml                        # DVC параметры
+├── docker-compose.yml                 # Docker stack
+├── Dockerfile                         # FastAPI image
+├── Makefile                           # Все команды
+├── pyproject.toml                     # Зависимости
+└── .pre-commit-config.yaml            # Pre-commit hooks
+```
+
+---
+
+## Data Pipeline
+
+### Слои данных
+
+| Слой | Путь | Описание |
+|------|------|----------|
+| source | `data/source/` | Исходные CSV/JSON от провайдеров |
+| raw | `data/raw/` | Parquet, разделённые по подтурнирам |
+| interim | `data/interim/` | Очищенные, типизированные, валидированные |
+| processed | `data/processed/` | С фичами, готовые для обучения |
+
+### Турниры
+
+| Турнир | Спорт | Регион |
+|--------|-------|--------|
+| uel_kz_1, uel_kz_2 | Cyberhockey | Kazakhstan |
+| uel_cz | Cyberhockey | Czech Republic |
+| lp_ru | Table Tennis | Russia |
+| lp_eu, lp_eu_a18 | Table Tennis | Europe |
+| lp_by | Table Tennis | Belarus |
+
+---
+
+## Training Pipeline
+
+### Алгоритмы
+
+- **CatBoost** — gradient boosting (Yandex)
+- **LightGBM** — gradient boosting (Microsoft)
+- **Logistic Regression** — линейная модель
+- **Stacking Ensemble** — мета-модель поверх base моделей
+- **Dummy** — baseline (частоты классов)
+
+### Наборы фичей
+
+- **basic** (~50 фичей) — для быстрого тестирования
+- **advanced** (~1000+ фичей) — для исследования сигналов
+
+### Генераторы фичей
+
+- **EWM** — экспоненциально взвешенные скользящие средние
+- **Count** — счётчики матчей (global, h2h, по турниру)
+- **Form** — First Game / Double Play индикаторы
+- **Time** — день недели, час матча
+
+### Процесс обучения
+
+1. TSCV (Time Series Cross-Validation) на train данных
+2. Shadow модель — обучена на последнем TSCV fold
+3. Калибровка (Isotonic/Sigmoid) если ECE > порог
+4. Production модель — обучена на всём датасете
+5. Feature Selection — ранжирование и отбор фичей
+6. Betting Simulation — ROI, threshold sweep, equity curve
+
+### Метрики (MLflow)
+
+**ML:** LogLoss, Brier, AUC, Accuracy, ECE, MCE
+**Betting:** ROI, Profit, Sharpe, Max Drawdown, EV Realization, Hit Rate
+**Артефакты:** equity_curve.csv, threshold_sweep.csv, per_bet_df.parquet, feature_ranking.csv
+
+---
+
+## Inference & Service
+
+### Batch Prediction (Materialization)
+
+```bash
+make materialize TOURNAMENT=uel_kz_1
+```
+
+Загружает trained модель → инференс на upcoming матчах → сохраняет в PostgreSQL/SQLite.
+
+### FastAPI Endpoints
+
+| Endpoint | Метод | Описание |
+|----------|-------|----------|
+| `/health` | GET | Health check |
+| `/predict/{match_id}` | GET | Предсказание для матча |
+| `/predict/match/{match_id}/all` | GET | Все предсказания для матча |
+| `/predict/upcoming/{tournament}` | GET | Upcoming матчи турнира |
+| `/metrics` | GET | Prometheus метрики |
+
+### Monitoring
+
+- **Prometheus:** AUC, LogLoss, ECE, ROI, drift score, request latency
+- **Grafana:** dashboards с автоматическим provisioning
+- **Alerts:** ModelAUCDegraded, ModelLogLossHigh, DataDriftSignificant
+- **A/B Testing:** сравнение prod vs shadow моделей
+
+---
+
+## Orchestration (Airflow)
+
+| DAG | Описание | Расписание |
+|-----|----------|------------|
+| dag_data_refresh | Ingest → Clean → Features | Ежедневно |
+| dag_training | Training sweep + promotion | Еженедельно |
+| dag_materialize | Batch prediction | Каждые 2 часа |
+| dag_monitoring | Drift detection + retraining | Ежедневно |
+
+---
+
+## Makefile команды
+
+```bash
+# Окружение
+make install          # Установка зависимостей
+make init             # + pre-commit hooks
+
+# Качество кода
+make lint             # ruff check
+make format           # ruff format
+make pre-commit       # Все хуки
+make test             # pytest (358+ тестов)
+make test-cov         # С coverage
+
+# Data pipeline
+make dvc-repro        # Полный pipeline
+make features-basic   # Фичи (basic)
+make features-advanced # Фичи (advanced)
+make validate-data    # Pandera валидация
+
+# Training
+make train            # Одиночный эксперимент
+make train-sweep      # Sweep моделей
+make train-sweep-full # Sweep: все модели × все фичи
+make promote          # Выбор лучшей модели
+
+# Service
+make api-dev          # FastAPI (dev, SQLite)
+make materialize      # Batch prediction
+make mlflow-ui        # MLflow UI
+
+# Docker
+make docker-build     # Собрать образы
+make docker-up        # Запустить все сервисы
+make docker-down      # Остановить
+
+# Airflow
+make airflow-init     # Инициализация
+make airflow-up       # Запустить
+make airflow-down     # Остановить
+```
+
+---
+
+## Документация
+
+| Документ | Описание |
+|----------|----------|
+| [HOW_TO_ADD_NEW_TOURNAMENT.md](docs/HOW_TO_ADD_NEW_TOURNAMENT.md) | Добавление нового турнира |
+| [HOW_TO_ADD_NEW_MARKET.md](docs/HOW_TO_ADD_NEW_MARKET.md) | Добавление нового маркета |
+| [CURRENT_TRAINING_STATUS.md](docs/CURRENT_TRAINING_STATUS.md) | Статус обучения моделей |
+| [SYSTEM_ARCHITECTURE.md](docs/SYSTEM_ARCHITECTURE.md) | Архитектура системы |
+| [service_orchestration_architecture.md](docs/service_orchestration_architecture.md) | Сервисная архитектура |
+| [FEATURE_GENERATION_ARCHITECTURE.md](docs/FEATURE_GENERATION_ARCHITECTURE.md) | Система генерации фичей |
+| [DATA_PIPELINE.md](docs/DATA_PIPELINE.md) | Data pipeline |
+
+---
+
+## Лицензия
+
+MIT License — см. [LICENSE](LICENSE).

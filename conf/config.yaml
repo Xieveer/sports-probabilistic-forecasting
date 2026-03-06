@@ -19,6 +19,7 @@ defaults:
   - features: ???          # REQUIRED: features=basic
 
   - hyper: none               # По умолчанию без оптимизации
+  - feature_selection: default  # Feature selection (по умолчанию отключён)
 
   - _self_
 

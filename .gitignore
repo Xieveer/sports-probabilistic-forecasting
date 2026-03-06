@@ -58,6 +58,7 @@ multirun/
 /data/processed
 /data/predictions
 /data/source
+/data/.schema_snapshots
 /models/*.cbm
 /models/*/*.cbm
 .dvc/tmp

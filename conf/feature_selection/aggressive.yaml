@@ -1,0 +1,24 @@
+# Feature Selection — агрессивный отбор.
+#
+# Использует все доступные методы для максимального сокращения фичей.
+# Подходит для advanced featureset (1000+ фичей).
+
+enabled: true
+
+methods:
+  - model_importance
+  - mutual_info
+  - permutation_importance
+
+strategy: vote
+min_votes: 2
+
+top_k: 0
+min_score_pct: 0.05  # Более жёсткий порог (5% от max)
+
+mi_n_neighbors: 5
+perm_n_repeats: 10
+shap_max_samples: 1000
+
+log_to_mlflow: true
+save_selected_features: true

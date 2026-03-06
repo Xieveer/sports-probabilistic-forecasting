@@ -12,6 +12,7 @@ DOCS_BUILD := docs/build
 .PHONY: docs docs-serve docs-clean docs-open docs-coverage docs-linkcheck tree
 .PHONY: api api-dev materialize docker-up docker-down docker-build docker-logs db-init
 .PHONY: airflow-init airflow-up airflow-down airflow-logs
+.PHONY: monitoring-up monitoring-down
 
 # ---------- Справка ----------
 
@@ -332,15 +333,17 @@ docker-build:
 	@echo "🐳 Сборка Docker образов..."
 	docker compose build
 
-# Запустить все сервисы (API + DB + MLflow)
+# Запустить все сервисы (API + DB + MLflow + Monitoring)
 docker-up:
 	@echo "🐳 Запуск сервисов..."
 	docker compose up -d
 	@echo ""
 	@echo "✅ Сервисы запущены:"
-	@echo "   API:    http://localhost:8000"
-	@echo "   MLflow: http://localhost:5000"
-	@echo "   DB:     postgresql://localhost:5432/sports_forecast"
+	@echo "   API:        http://localhost:8000"
+	@echo "   MLflow:     http://localhost:5000"
+	@echo "   Prometheus: http://localhost:9090"
+	@echo "   Grafana:    http://localhost:3000 (admin/admin)"
+	@echo "   DB:         postgresql://localhost:5432/sports_forecast"
 
 # Остановить все сервисы
 docker-down:

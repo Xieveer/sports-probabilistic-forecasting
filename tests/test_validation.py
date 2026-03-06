@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pandera.errors
 import pytest
 
 from sports_forecast.validation.gates import (
+    SchemaDriftResult,
     ValidationResult,
+    check_schema_drift,
+    report_duplicate_ids,
+    save_schema_snapshot,
     validate_dataframe,
     validate_interim,
     validate_processed,
@@ -234,3 +240,100 @@ class TestQualityGates:
         df = raw_df.drop(columns=["id"])
         result = validate_dataframe(df, RawSchema, stage="raw", raise_on_error=False)
         assert not result.is_valid
+
+
+# ============================================================================
+# Tests — Schema Drift Detection
+# ============================================================================
+
+
+class TestSchemaDrift:
+    """Тесты для обнаружения schema drift."""
+
+    def test_save_and_check_no_drift(self, raw_df: pd.DataFrame, tmp_path: Path) -> None:
+        """Сохранение snapshot и проверка — нет дрифта."""
+        save_schema_snapshot(raw_df, "raw", "test_tournament", tmp_path)
+        result = check_schema_drift(raw_df, "raw", "test_tournament", tmp_path)
+        assert not result.has_drift
+        assert result.added_columns == []
+        assert result.removed_columns == []
+        assert result.type_changes == {}
+
+    def test_detect_added_column(self, raw_df: pd.DataFrame, tmp_path: Path) -> None:
+        """Обнаружение добавленного столбца."""
+        save_schema_snapshot(raw_df, "raw", "test_tournament", tmp_path)
+        df_new = raw_df.copy()
+        df_new["new_column"] = 42
+        result = check_schema_drift(df_new, "raw", "test_tournament", tmp_path)
+        assert result.has_drift
+        assert "new_column" in result.added_columns
+
+    def test_detect_removed_column(self, raw_df: pd.DataFrame, tmp_path: Path) -> None:
+        """Обнаружение удалённого столбца."""
+        save_schema_snapshot(raw_df, "raw", "test_tournament", tmp_path)
+        df_new = raw_df.drop(columns=["status"])
+        result = check_schema_drift(df_new, "raw", "test_tournament", tmp_path)
+        assert result.has_drift
+        assert "status" in result.removed_columns
+
+    def test_detect_type_change(self, raw_df: pd.DataFrame, tmp_path: Path) -> None:
+        """Обнаружение изменения типа столбца."""
+        save_schema_snapshot(raw_df, "raw", "test_tournament", tmp_path)
+        df_new = raw_df.copy()
+        df_new["id"] = df_new["id"].astype(int, errors="ignore")
+        # Принудительно меняем тип
+        df_new["id"] = range(len(df_new))
+        result = check_schema_drift(df_new, "raw", "test_tournament", tmp_path)
+        assert result.has_drift
+        assert "id" in result.type_changes
+
+    def test_no_snapshot_creates_one(self, raw_df: pd.DataFrame, tmp_path: Path) -> None:
+        """Если snapshot нет — создаётся новый, дрифта нет."""
+        result = check_schema_drift(raw_df, "raw", "new_tournament", tmp_path)
+        assert not result.has_drift
+        assert (tmp_path / "raw__new_tournament.json").exists()
+
+    def test_schema_drift_result_defaults(self) -> None:
+        """Дефолтные значения SchemaDriftResult."""
+        result = SchemaDriftResult()
+        assert not result.has_drift
+        assert result.added_columns == []
+        assert result.removed_columns == []
+        assert result.type_changes == {}
+
+
+# ============================================================================
+# Tests — Duplicate ID Reporting
+# ============================================================================
+
+
+class TestDuplicateIds:
+    """Тесты для отчёта о дублях ID."""
+
+    def test_no_duplicates(self, raw_df: pd.DataFrame) -> None:
+        """Нет дублей — отчёт чистый."""
+        report = report_duplicate_ids(raw_df, "raw", "test")
+        assert report["duplicated_rows"] == 0
+        assert report["duplicated_ids"] == 0
+
+    def test_with_duplicates(self, raw_df: pd.DataFrame) -> None:
+        """Есть дубли — отчёт содержит информацию."""
+        df = pd.concat([raw_df, raw_df.head(1)], ignore_index=True)
+        report = report_duplicate_ids(df, "raw", "test")
+        assert report["duplicated_rows"] > 0
+        assert report["duplicated_ids"] > 0
+        assert "top_duplicates" in report
+
+    def test_missing_id_column(self, raw_df: pd.DataFrame) -> None:
+        """Если id столбец отсутствует — ошибка."""
+        df = raw_df.drop(columns=["id"])
+        report = report_duplicate_ids(df, "raw", "test", id_column="id")
+        assert "error" in report
+
+    def test_duplicate_pct(self) -> None:
+        """Проверяем корректность вычисления процента дублей."""
+        df = pd.DataFrame({"id": ["a", "a", "b", "c"]})
+        report = report_duplicate_ids(df, "raw", "test")
+        assert report["duplicated_rows"] == 2
+        assert report["duplicated_ids"] == 1
+        assert report["duplicate_pct"] == 50.0

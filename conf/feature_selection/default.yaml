@@ -1,0 +1,50 @@
+# Feature Selection — конфигурация отбора фичей.
+#
+# Включается через: feature_selection.enabled=true
+# Методы выбираются через: feature_selection.methods=[...]
+#
+# Стратегии агрегации:
+#   union        — объединение (наиболее полный набор)
+#   intersection — пересечение (только фичи, одобренные всеми)
+#   vote         — голосование (>= min_votes методов)
+#   rank_average — усреднение рангов
+
+enabled: false  # Включить/выключить feature selection
+
+# Методы ранжирования фичей:
+#   model_importance       — native importance из CatBoost/LightGBM
+#   mutual_info            — sklearn mutual_info_classif
+#   permutation_importance — sklearn permutation_importance
+#   shap                   — SHAP TreeExplainer / LinearExplainer
+methods:
+  - model_importance
+  - mutual_info
+
+# Стратегия агрегации результатов
+strategy: vote
+
+# Минимальное количество голосов для strategy=vote
+min_votes: 2
+
+# Количество лучших фичей (0 = отбирать по min_score_pct)
+top_k: 0
+
+# Минимальный % от max score для отбора (используется если top_k=0)
+min_score_pct: 0.01
+
+# --- Параметры отдельных методов ---
+
+# Mutual Information: количество соседей для KNN-оценки
+mi_n_neighbors: 5
+
+# Permutation Importance: количество перемешиваний
+perm_n_repeats: 5
+
+# SHAP: максимальное число сэмплов
+shap_max_samples: 1000
+
+# Сохранять ли результаты отбора как артефакт MLflow
+log_to_mlflow: true
+
+# Сохранять ли отобранные фичи в файл
+save_selected_features: true

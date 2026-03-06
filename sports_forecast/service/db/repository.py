@@ -276,3 +276,32 @@ class PredictionRepository:
             self.session.query(Prediction).filter(Prediction.prediction_ts < before_ts).delete()
         )
         return result
+
+    def get_stale_predictions(
+        self,
+        cutoff: datetime,
+        tournament: str | None = None,
+    ) -> list[Prediction]:
+        """Получить предсказания, которые устарели (prediction_ts < cutoff).
+
+        Args:
+            cutoff: Порог: предсказания старше этого времени считаются stale.
+            tournament: Фильтр по турниру (опционально).
+
+        Returns:
+            Список устаревших Prediction.
+        """
+        query = self.session.query(Prediction).filter(
+            and_(
+                Prediction.status == "ok",
+                Prediction.prediction_ts < cutoff,
+            )
+        )
+
+        if tournament is not None:
+            query = query.filter(Prediction.tournament == tournament)
+
+        rows: list[Prediction] = query.order_by(
+            Prediction.prediction_ts.asc()  # type: ignore[attr-defined]
+        ).all()
+        return rows

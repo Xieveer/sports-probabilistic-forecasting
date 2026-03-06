@@ -1,0 +1,98 @@
+# Prometheus Alert Rules for Sports Forecast
+
+groups:
+  - name: model_degradation
+    rules:
+      # AUC dropped below threshold
+      - alert: ModelAUCDegraded
+        expr: sf_model_auc < 0.55
+        for: 1h
+        labels:
+          severity: warning
+          component: ml
+        annotations:
+          summary: "Model AUC degradation detected"
+          description: >
+            Model AUC for {{ $labels.tournament }}/{{ $labels.market_spec }}
+            dropped to {{ $value | printf "%.4f" }}.
+            Threshold: 0.55.
+
+      # LogLoss spiked
+      - alert: ModelLogLossHigh
+        expr: sf_model_logloss > 0.75
+        for: 1h
+        labels:
+          severity: warning
+          component: ml
+        annotations:
+          summary: "Model LogLoss is too high"
+          description: >
+            LogLoss for {{ $labels.tournament }}/{{ $labels.market_spec }}
+            is {{ $value | printf "%.4f" }}.
+
+      # ECE high (miscalibrated)
+      - alert: ModelECEHigh
+        expr: sf_model_ece > 0.15
+        for: 1h
+        labels:
+          severity: warning
+          component: ml
+        annotations:
+          summary: "Model ECE is high (miscalibrated)"
+          description: >
+            ECE for {{ $labels.tournament }}/{{ $labels.market_spec }}
+            is {{ $value | printf "%.4f" }}. Consider recalibration.
+
+  - name: data_drift
+    rules:
+      # Significant data drift
+      - alert: DataDriftSignificant
+        expr: sf_drift_score > 0.25
+        for: 30m
+        labels:
+          severity: critical
+          component: data
+        annotations:
+          summary: "Significant data drift detected"
+          description: >
+            Feature {{ $labels.feature }} for {{ $labels.tournament }}
+            has PSI {{ $value | printf "%.4f" }} (threshold: 0.25).
+
+      # Prediction distribution drift
+      - alert: PredictionDrift
+        expr: sf_prediction_drift > 0.20
+        for: 30m
+        labels:
+          severity: warning
+          component: ml
+        annotations:
+          summary: "Prediction distribution drift"
+          description: >
+            Prediction PSI for {{ $labels.tournament }}/{{ $labels.market_spec }}
+            is {{ $value | printf "%.4f" }}.
+
+  - name: system_health
+    rules:
+      # No predictions served for too long
+      - alert: NoPredictions
+        expr: increase(sf_model_predictions_total[1h]) == 0
+        for: 2h
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "No predictions served"
+          description: "No predictions have been served in the last 2 hours."
+
+      # Model not retrained recently
+      - alert: ModelStale
+        expr: (time() - sf_model_last_retrained_timestamp) > 604800  # 7 days
+        for: 1h
+        labels:
+          severity: info
+          component: ml
+        annotations:
+          summary: "Model has not been retrained for 7+ days"
+          description: >
+            Model {{ $labels.tournament }}/{{ $labels.market_spec }}
+            last retrained {{ $value | humanizeDuration }} ago.

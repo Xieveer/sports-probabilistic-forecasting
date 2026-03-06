@@ -17,6 +17,7 @@ Usage::
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -354,3 +355,206 @@ def check_model_quality(
     logger.info("⚠ Полноценная проверка качества модели — TODO (требует Evidently/MLflow)")
     logger.info("✓ Качество модели: OK (placeholder)")
     return True
+
+
+# ============================================================================
+# SCHEMA DRIFT DETECTION
+# ============================================================================
+
+_SNAPSHOT_DIR = Path("data/.schema_snapshots")
+
+
+@dataclass
+class SchemaDriftResult:
+    """Результат проверки schema drift.
+
+    Attributes:
+        has_drift: Обнаружен ли дрифт.
+        added_columns: Новые столбцы, отсутствующие в snapshot.
+        removed_columns: Столбцы из snapshot, отсутствующие в текущих данных.
+        type_changes: Столбцы с изменённым типом.
+        snapshot_path: Путь к файлу snapshot.
+    """
+
+    has_drift: bool = False
+    added_columns: list[str] = field(default_factory=list)
+    removed_columns: list[str] = field(default_factory=list)
+    type_changes: dict[str, dict[str, str]] = field(default_factory=dict)
+    snapshot_path: str = ""
+
+
+def save_schema_snapshot(
+    df: pd.DataFrame,
+    stage: str,
+    tournament: str,
+    snapshot_dir: Path | None = None,
+) -> Path:
+    """Сохранить snapshot схемы DataFrame для будущего сравнения.
+
+    Args:
+        df: DataFrame для создания snapshot.
+        stage: Этап pipeline (raw, interim, processed).
+        tournament: Название турнира.
+        snapshot_dir: Директория для сохранения. По умолчанию data/.schema_snapshots.
+
+    Returns:
+        Путь к сохранённому snapshot.
+    """
+    out_dir = snapshot_dir or _SNAPSHOT_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    snapshot = {
+        "stage": stage,
+        "tournament": tournament,
+        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+        "n_rows": len(df),
+        "n_cols": len(df.columns),
+        "columns": {
+            col: {
+                "dtype": str(df[col].dtype),
+                "null_pct": round(float(df[col].isnull().mean() * 100), 2),
+                "n_unique": int(df[col].nunique()),
+            }
+            for col in sorted(df.columns)
+        },
+    }
+
+    filename = f"{stage}__{tournament}.json"
+    path = out_dir / filename
+    path.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
+    logger.info("📸 Schema snapshot сохранён: %s", path)
+    return path
+
+
+def check_schema_drift(
+    df: pd.DataFrame,
+    stage: str,
+    tournament: str,
+    snapshot_dir: Path | None = None,
+) -> SchemaDriftResult:
+    """Сравнить текущую схему DataFrame с сохранённым snapshot.
+
+    Args:
+        df: Текущий DataFrame.
+        stage: Этап pipeline.
+        tournament: Название турнира.
+        snapshot_dir: Директория со snapshots.
+
+    Returns:
+        SchemaDriftResult с информацией о дрифте.
+    """
+    snap_dir = snapshot_dir or _SNAPSHOT_DIR
+    filename = f"{stage}__{tournament}.json"
+    snap_path = snap_dir / filename
+
+    result = SchemaDriftResult(snapshot_path=str(snap_path))
+
+    if not snap_path.exists():
+        logger.info(
+            "📋 Snapshot не найден для [%s / %s] — создаём первый",
+            stage,
+            tournament,
+        )
+        save_schema_snapshot(df, stage, tournament, snap_dir)
+        return result
+
+    # Загружаем snapshot
+    snapshot = json.loads(snap_path.read_text(encoding="utf-8"))
+    saved_columns = set(snapshot.get("columns", {}).keys())
+    current_columns = set(df.columns)
+
+    # Новые столбцы
+    result.added_columns = sorted(current_columns - saved_columns)
+
+    # Удалённые столбцы
+    result.removed_columns = sorted(saved_columns - current_columns)
+
+    # Изменения типов
+    for col in sorted(saved_columns & current_columns):
+        saved_dtype = snapshot["columns"][col]["dtype"]
+        current_dtype = str(df[col].dtype)
+        if saved_dtype != current_dtype:
+            result.type_changes[col] = {
+                "was": saved_dtype,
+                "now": current_dtype,
+            }
+
+    result.has_drift = bool(result.added_columns or result.removed_columns or result.type_changes)
+
+    if result.has_drift:
+        logger.warning("⚠ Schema drift обнаружен [%s / %s]:", stage, tournament)
+        if result.added_columns:
+            logger.warning("  + Новые столбцы: %s", result.added_columns)
+        if result.removed_columns:
+            logger.warning("  - Удалённые столбцы: %s", result.removed_columns)
+        if result.type_changes:
+            for col, change in result.type_changes.items():
+                logger.warning("  ~ Тип изменён: %s (%s → %s)", col, change["was"], change["now"])
+    else:
+        logger.info("✓ Schema drift [%s / %s]: нет изменений", stage, tournament)
+
+    return result
+
+
+def report_duplicate_ids(
+    df: pd.DataFrame,
+    stage: str,
+    tournament: str,
+    id_column: str = "id",
+) -> dict[str, Any]:
+    """Отчёт о дублях ID в данных.
+
+    Args:
+        df: DataFrame для анализа.
+        stage: Этап pipeline.
+        tournament: Название турнира.
+        id_column: Имя столбца с идентификатором.
+
+    Returns:
+        Словарь с информацией о дублях.
+    """
+    if id_column not in df.columns:
+        logger.warning("Столбец '%s' не найден в [%s / %s]", id_column, stage, tournament)
+        return {"error": f"column '{id_column}' not found"}
+
+    total_rows = len(df)
+    unique_ids = df[id_column].nunique()
+    duplicated_mask = df.duplicated(subset=[id_column], keep=False)
+    n_duplicated_rows = int(duplicated_mask.sum())
+    n_duplicated_ids = int(df[duplicated_mask][id_column].nunique()) if n_duplicated_rows else 0
+
+    report: dict[str, Any] = {
+        "stage": stage,
+        "tournament": tournament,
+        "total_rows": total_rows,
+        "unique_ids": unique_ids,
+        "duplicated_rows": n_duplicated_rows,
+        "duplicated_ids": n_duplicated_ids,
+        "duplicate_pct": round(n_duplicated_rows / total_rows * 100, 2) if total_rows else 0,
+    }
+
+    if n_duplicated_ids > 0:
+        # Топ-5 дублей
+        dup_counts = df[duplicated_mask][id_column].value_counts().head(5).to_dict()
+        report["top_duplicates"] = dup_counts
+
+        logger.warning(
+            "⚠ Дубли ID [%s / %s]: %d строк (%d уникальных ID), %.1f%%",
+            stage,
+            tournament,
+            n_duplicated_rows,
+            n_duplicated_ids,
+            report["duplicate_pct"],
+        )
+        for dup_id, count in dup_counts.items():
+            logger.warning("  → ID '%s': %d записей", dup_id, count)
+    else:
+        logger.info(
+            "✓ Дубли ID [%s / %s]: нет (%d уникальных из %d строк)",
+            stage,
+            tournament,
+            unique_ids,
+            total_rows,
+        )
+
+    return report

@@ -89,6 +89,42 @@ services:
     profiles:
       - worker  # Не запускается автоматически
 
+  # ── Prometheus ──────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.54.0
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+    depends_on:
+      api:
+        condition: service_started
+
+  # ── Grafana ────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.2.0
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
 volumes:
   pg_data:
   mlflow_artifacts:
+  prometheus_data:
+  grafana_data:

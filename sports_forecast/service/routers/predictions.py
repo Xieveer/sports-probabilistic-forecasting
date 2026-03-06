@@ -3,11 +3,17 @@ Prediction API endpoints.
 
 Все endpoints — **read-only**: предсказания предвычисляются
 batch pipeline и сохраняются в БД.
+
+Дополнительно предоставляет:
+- In-memory LRU кеш для горячих предсказаний
+- ``/predict/stale`` — список устаревших предсказаний для пересчёта
 """
 
 from __future__ import annotations
 
 import json
+import time
+from functools import lru_cache
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -18,6 +24,7 @@ from sports_forecast.service.schemas import (
     ModelInfo,
     PredictionListResponse,
     PredictionResponse,
+    StaleInfo,
 )
 
 
@@ -148,3 +155,219 @@ def get_upcoming(
         count=len(preds),
         predictions=[_to_response(p) for p in preds],
     )
+
+
+# ============================================================================
+# CACHE: In-memory LRU для горячих предсказаний
+# ============================================================================
+
+# Время жизни кеша (секунды). После этого кеш инвалидируется.
+_CACHE_TTL_SECONDS = 300  # 5 минут
+_cache_timestamp: float = 0.0
+
+
+def _is_cache_valid() -> bool:
+    """Проверить, не истёк ли TTL кеша."""
+    return (time.time() - _cache_timestamp) < _CACHE_TTL_SECONDS
+
+
+@lru_cache(maxsize=512)
+def _cached_prediction(match_id: str, market: str, market_spec: str | None) -> dict | None:
+    """Кешированный запрос предсказания из БД.
+
+    Args:
+        match_id: ID матча.
+        market: Тип рынка.
+        market_spec: Спецификация рынка.
+
+    Returns:
+        Словарь с предсказанием или None.
+    """
+    with get_session() as session:
+        repo = PredictionRepository(session)
+        pred = repo.get_latest_prediction(
+            match_id=match_id,
+            market=market,
+            market_spec=market_spec,
+        )
+    if pred is None:
+        return None
+
+    predictions = json.loads(pred.predictions_json)
+    return {
+        "match_id": pred.match_id,
+        "tournament": pred.tournament,
+        "market": pred.market,
+        "market_spec": pred.market_spec,
+        "home_player": pred.home_player,
+        "away_player": pred.away_player,
+        "match_datetime": pred.match_datetime.isoformat() if pred.match_datetime else None,
+        "predictions": predictions,
+        "model_version": pred.model_version,
+        "algorithm": pred.algorithm,
+        "featureset": pred.featureset,
+        "prediction_ts": pred.prediction_ts.isoformat() if pred.prediction_ts else None,
+        "status": pred.status,
+    }
+
+
+@router.get(
+    "/cached/{match_id}",
+    response_model=PredictionResponse,
+    summary="Предсказание с LRU кешированием",
+    responses={404: {"description": "Предсказание не найдено"}},
+)
+def get_prediction_cached(
+    match_id: str,
+    market: str = Query("winner", description="Тип рынка"),
+    market_spec: str | None = Query(None, description="Спецификация рынка"),
+) -> PredictionResponse:
+    """Получить предсказание с in-memory LRU кешем.
+
+    Кеш инвалидируется каждые 5 минут.
+    Для сброса кеша используйте ``POST /predict/cache/clear``.
+
+    Args:
+        match_id: ID матча.
+        market: Тип рынка.
+        market_spec: Спецификация рынка.
+
+    Returns:
+        Предсказание с вероятностями.
+
+    Raises:
+        HTTPException: 404 если предсказание не найдено.
+    """
+    global _cache_timestamp  # noqa: PLW0603
+
+    if not _is_cache_valid():
+        _cached_prediction.cache_clear()
+        _cache_timestamp = time.time()
+
+    result = _cached_prediction(match_id, market, market_spec)
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Предсказание для match_id={match_id}, market={market} не найдено",
+        )
+
+    from datetime import datetime
+
+    return PredictionResponse(
+        match_id=result["match_id"],
+        tournament=result["tournament"],
+        market=result["market"],
+        market_spec=result["market_spec"],
+        home_player=result["home_player"],
+        away_player=result["away_player"],
+        match_datetime=(
+            datetime.fromisoformat(result["match_datetime"]) if result["match_datetime"] else None
+        ),
+        predictions=result["predictions"],
+        model=ModelInfo(
+            version=result["model_version"],
+            algorithm=result["algorithm"],
+            featureset=result["featureset"],
+        ),
+        prediction_ts=(
+            datetime.fromisoformat(result["prediction_ts"])
+            if result["prediction_ts"]
+            else datetime.now()
+        ),
+        status=result["status"],
+    )
+
+
+@router.post(
+    "/cache/clear",
+    summary="Очистить кеш предсказаний",
+)
+def clear_cache() -> dict[str, str]:
+    """Очистить in-memory LRU кеш предсказаний.
+
+    Используйте после batch materialization для обновления кеша.
+
+    Returns:
+        Сообщение об успехе.
+    """
+    global _cache_timestamp  # noqa: PLW0603
+    _cached_prediction.cache_clear()
+    _cache_timestamp = 0.0
+    return {"status": "ok", "message": "Кеш очищен"}
+
+
+@router.get(
+    "/cache/stats",
+    summary="Статистика кеша",
+)
+def cache_stats() -> dict[str, object]:
+    """Получить статистику LRU кеша.
+
+    Returns:
+        Информация о кеше (hits, misses, size).
+    """
+    info = _cached_prediction.cache_info()
+    return {
+        "hits": info.hits,
+        "misses": info.misses,
+        "size": info.currsize,
+        "maxsize": info.maxsize,
+        "ttl_seconds": _CACHE_TTL_SECONDS,
+        "cache_valid": _is_cache_valid(),
+    }
+
+
+# ============================================================================
+# STALE PREDICTIONS: для batch scheduling
+# ============================================================================
+
+
+@router.get(
+    "/stale",
+    response_model=list[StaleInfo],
+    summary="Список устаревших предсказаний",
+)
+def get_stale_predictions(
+    max_age_hours: int = Query(6, description="Максимальный возраст в часах"),
+    tournament: str | None = Query(None, description="Фильтр по турниру"),
+) -> list[StaleInfo]:
+    """Получить список предсказаний, которые устарели и требуют пересчёта.
+
+    Используется batch scheduler для определения, какие предсказания
+    нужно обновить.
+
+    Args:
+        max_age_hours: Предсказания старше этого порога считаются stale.
+        tournament: Опциональный фильтр по турниру.
+
+    Returns:
+        Список устаревших предсказаний.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=max_age_hours)
+
+    with get_session() as session:
+        repo = PredictionRepository(session)
+        preds = repo.get_stale_predictions(cutoff=cutoff, tournament=tournament)
+
+    return [
+        StaleInfo(
+            match_id=p.match_id,
+            tournament=p.tournament,
+            market=p.market,
+            market_spec=p.market_spec,
+            prediction_ts=p.prediction_ts,
+            age_hours=round(
+                (
+                    datetime.now(tz=timezone.utc) - p.prediction_ts.replace(tzinfo=timezone.utc)
+                ).total_seconds()
+                / 3600,
+                1,
+            )
+            if p.prediction_ts
+            else 0,
+        )
+        for p in preds
+    ]

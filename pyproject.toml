@@ -23,6 +23,7 @@ dependencies = [
     "psycopg2-binary>=2.9.11",
     "alembic>=1.17.2",
     "pandera>=0.29.0",
+    "prometheus-client>=0.24.1",
 ]
 
 [dependency-groups]

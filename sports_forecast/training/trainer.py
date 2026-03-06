@@ -356,6 +356,14 @@ class SingleExperimentRunner:
             # 12. Feature importance
             feature_importance = self._get_feature_importance(shadow_model)
 
+            # 12.1. Feature Selection (если включён)
+            feature_selection_result = self._run_feature_selection(
+                shadow_model,
+                train_features,
+                train_target,
+                cfg,
+            )
+
             # 13. Сохраняем Shadow модель
             shadow_path = self._get_model_path(cfg, version="shadow")
             shadow_model.save(shadow_path, version="shadow")
@@ -390,6 +398,7 @@ class SingleExperimentRunner:
                 stability_metrics=stability_metrics,
                 optuna_metrics=optuna_metrics,
                 feature_importance=feature_importance,
+                feature_selection_result=feature_selection_result,
                 cfg=cfg,
                 feature_names=feature_names,
             )
@@ -586,6 +595,49 @@ class SingleExperimentRunner:
                 model.get_name(),
             )
         return importance
+
+    def _run_feature_selection(
+        self,
+        model: BaseModel,
+        train_features: pd.DataFrame,
+        train_target: pd.Series,
+        cfg: DictConfig,
+    ) -> Any:
+        """Запустить Feature Selection (если включён в конфиге).
+
+        Args:
+            model: Обученная Shadow модель.
+            train_features: Обучающие фичи.
+            train_target: Обучающий таргет.
+            cfg: Конфигурация.
+
+        Returns:
+            FeatureSelectionResult или None если отключён.
+        """
+        from sports_forecast.features.selection.selector import FeatureSelector
+
+        fs_cfg = cfg.get("feature_selection", {})
+        if not fs_cfg.get("enabled", False):
+            logger.info("Feature Selection отключён (feature_selection.enabled=false)")
+            return None
+
+        logger.info("=" * 60)
+        logger.info("FEATURE SELECTION")
+        logger.info("=" * 60)
+
+        selector = FeatureSelector.from_config(fs_cfg)
+        result = selector.select(train_features, train_target, model=model)
+
+        # Сохраняем в файл если настроено
+        if fs_cfg.get("save_selected_features", True):
+            model_path = self._get_model_path(cfg, version="shadow")
+            selected_path = model_path.parent / "selected_features.txt"
+            result.save_selected(selected_path)
+
+            ranking_path = model_path.parent / "feature_ranking.csv"
+            result.save_ranking(ranking_path)
+
+        return result
 
     def _train_with_tscv(
         self,
@@ -1193,6 +1245,7 @@ class SingleExperimentRunner:
         stability_metrics: dict[str, Any],
         optuna_metrics: dict[str, Any],
         feature_importance: pd.DataFrame | None,
+        feature_selection_result: Any,
         cfg: DictConfig,
         feature_names: list[str],
     ) -> None:
@@ -1206,6 +1259,7 @@ class SingleExperimentRunner:
             stability_metrics: Анализ стабильности.
             optuna_metrics: Метрики Optuna оптимизации.
             feature_importance: DataFrame с важностью фичей.
+            feature_selection_result: Результат отбора фичей.
             cfg: Конфигурация.
             feature_names: Список фичей.
         """
@@ -1288,6 +1342,40 @@ class SingleExperimentRunner:
                     float(row["importance"]),
                 )
                 mlflow.set_tag(f"fi_top{idx + 1}_name", feat_name)
+
+        # ── Feature Selection ────────────────────────────────────────
+        if feature_selection_result is not None:
+            mlflow.log_metric("fs_n_selected", feature_selection_result.n_selected)
+            mlflow.log_metric("fs_n_total", feature_selection_result.n_total)
+            mlflow.log_metric("fs_reduction_pct", feature_selection_result.reduction_pct)
+            mlflow.set_tag("fs_strategy", feature_selection_result.strategy)
+            mlflow.set_tag(
+                "fs_methods",
+                ",".join(feature_selection_result.metadata.get("methods", [])),
+            )
+
+            # Агрегированное ранжирование как артефакт
+            if not feature_selection_result.aggregated_ranking.empty:
+                ranking_csv = feature_selection_result.aggregated_ranking.to_csv(index=False)
+                mlflow.log_text(ranking_csv, "feature_selection/aggregated_ranking.csv")
+
+            # Отобранные фичи
+            mlflow.log_text(
+                "\n".join(feature_selection_result.selected_features),
+                "feature_selection/selected_features.txt",
+            )
+
+            # Ранжирование каждого метода
+            for method, ranking_result in feature_selection_result.rankings.items():
+                method_csv = ranking_result.ranking.to_csv(index=False)
+                mlflow.log_text(method_csv, f"feature_selection/{method}_ranking.csv")
+
+            logger.info(
+                "Feature Selection: %d → %d фичей (%.1f%% reduction)",
+                feature_selection_result.n_total,
+                feature_selection_result.n_selected,
+                feature_selection_result.reduction_pct,
+            )
 
         # ── Артефакты ────────────────────────────────────────────────
         mlflow.log_text("\n".join(feature_names), "features.txt")

@@ -1,0 +1,237 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Model AUC",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+      "targets": [
+        {
+          "expr": "sf_model_auc",
+          "legendFormat": "{{ tournament }} / {{ market_spec }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"thresholdsStyle": {"mode": "line"}},
+          "thresholds": {
+            "steps": [
+              {"color": "red", "value": 0.55},
+              {"color": "green", "value": 0.65}
+            ]
+          },
+          "min": 0.4,
+          "max": 1.0,
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "title": "Model LogLoss",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+      "targets": [
+        {
+          "expr": "sf_model_logloss",
+          "legendFormat": "{{ tournament }} / {{ market_spec }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"thresholdsStyle": {"mode": "line"}},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "red", "value": 0.75}
+            ]
+          },
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "title": "Model ECE (Calibration)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+      "targets": [
+        {
+          "expr": "sf_model_ece",
+          "legendFormat": "{{ tournament }} / {{ market_spec }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"thresholdsStyle": {"mode": "line"}},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "yellow", "value": 0.08},
+              {"color": "red", "value": 0.15}
+            ]
+          },
+          "min": 0,
+          "max": 0.3,
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "title": "ROI %",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 8},
+      "targets": [
+        {
+          "expr": "sf_model_roi_pct",
+          "legendFormat": "{{ tournament }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "steps": [
+              {"color": "red", "value": -10},
+              {"color": "yellow", "value": 0},
+              {"color": "green", "value": 5}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Total Bets",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 8},
+      "targets": [
+        {
+          "expr": "sf_model_n_bets",
+          "legendFormat": "{{ tournament }}"
+        }
+      ]
+    },
+    {
+      "title": "Profit (units)",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 8},
+      "targets": [
+        {
+          "expr": "sf_model_profit_units",
+          "legendFormat": "{{ tournament }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              {"color": "red", "value": -100},
+              {"color": "yellow", "value": 0},
+              {"color": "green", "value": 50}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Data Drift (PSI)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+      "targets": [
+        {
+          "expr": "sf_drift_score",
+          "legendFormat": "{{ tournament }} / {{ feature }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"thresholdsStyle": {"mode": "area"}},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "yellow", "value": 0.10},
+              {"color": "red", "value": 0.25}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Prediction Drift (PSI)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+      "targets": [
+        {
+          "expr": "sf_prediction_drift",
+          "legendFormat": "{{ tournament }} / {{ market_spec }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"thresholdsStyle": {"mode": "area"}},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "yellow", "value": 0.10},
+              {"color": "red", "value": 0.20}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Predictions Served (rate)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+      "targets": [
+        {
+          "expr": "rate(sf_model_predictions_total[5m])",
+          "legendFormat": "{{ tournament }} / {{ market }}"
+        }
+      ]
+    },
+    {
+      "title": "Prediction Latency (p99)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, rate(sf_model_prediction_latency_seconds_bucket[5m]))",
+          "legendFormat": "p99 {{ tournament }}"
+        },
+        {
+          "expr": "histogram_quantile(0.50, rate(sf_model_prediction_latency_seconds_bucket[5m]))",
+          "legendFormat": "p50 {{ tournament }}"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["sports-forecast", "ml-monitoring"],
+  "templating": {
+    "list": [
+      {
+        "name": "tournament",
+        "type": "query",
+        "query": "label_values(sf_model_auc, tournament)",
+        "datasource": "Prometheus",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true
+      }
+    ]
+  },
+  "time": {"from": "now-24h", "to": "now"},
+  "title": "Sports Forecast — ML Monitoring",
+  "uid": "sports-forecast-ml",
+  "version": 1
+}

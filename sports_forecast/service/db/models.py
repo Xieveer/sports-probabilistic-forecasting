@@ -81,6 +81,9 @@ class Prediction(Base):
     model_version: str = Column(String(128), nullable=False)
     algorithm: str = Column(String(32), nullable=False)
     featureset: str = Column(String(32), nullable=False)
+    model_tag: str = Column(
+        String(16), nullable=False, default="prod"
+    )  # prod / shadow / challenger
 
     # Predictions
     predictions_json: str = Column(Text, nullable=False)

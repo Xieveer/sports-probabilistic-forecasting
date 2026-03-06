@@ -22,8 +22,10 @@ ignore = [
 
 [lint.per-file-ignores]
 "__init__.py" = ["F401"]  # разрешить неиспользуемые импорты
-"tests/**/*.py" = ["ARG"]  # в тестах могут быть неиспользуемые аргументы (fixtures)
+"tests/**/*.py" = ["ARG", "N803", "N806"]  # в тестах: fixtures, ML-конвенция X/y
 "sports_forecast/training/**/*.py" = ["ARG002"]  # абстрактные методы могут иметь неиспользуемые аргументы
+"sports_forecast/features/selection/**/*.py" = ["N803", "N806", "ARG002"]  # ML-конвенция X/y, абстрактные методы
+"sports_forecast/monitoring/**/*.py" = ["N803", "N806"]  # ML-конвенция X/y
 
 [lint.isort]
 known-first-party = ["sports_forecast"]

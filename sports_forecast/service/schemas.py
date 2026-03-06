@@ -72,3 +72,14 @@ class ErrorResponse(BaseModel):
 
     error: str
     detail: str | None = None
+
+
+class StaleInfo(BaseModel):
+    """Информация об устаревшем предсказании (для batch scheduling)."""
+
+    match_id: str = Field(..., description="ID матча")
+    tournament: str = Field(..., description="Турнир")
+    market: str = Field(..., description="Тип рынка")
+    market_spec: str = Field(..., description="Спецификация")
+    prediction_ts: datetime | None = Field(None, description="Время последнего расчёта")
+    age_hours: float = Field(0, description="Возраст предсказания в часах")
