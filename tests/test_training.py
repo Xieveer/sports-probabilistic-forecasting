@@ -344,7 +344,8 @@ def test_calibrator_no_calibration_needed(sample_data):
     # Калибровка не должна была применяться
     assert not is_calibrated
     assert ece_before is not None
-    assert ece_after is None
+    # Когда калибровка не нужна, ece_after == ece_before
+    assert ece_after == ece_before
 
 
 # ==================== Save/Load Tests ====================

@@ -393,13 +393,27 @@ class BaseSingleModel(BaseModel):
         # Предобработка данных (если нужна)
         features_processed, _ = self._preprocess_data(features, target=None, fit=False)
 
-        # ВАЖНО: НЕ используем calibrated_model_ здесь чтобы избежать рекурсии!
-        # CalibratedClassifierCV сам вызовет этот метод predict_proba
         proba = self.model_.predict_proba(features_processed)
 
         # Для sklearn моделей может вернуться только один столбец для бинарной классификации
         if proba.ndim == 1:
             proba = np.column_stack([1 - proba, proba])
+
+        proba = np.asarray(proba)
+
+        # Применяем калибровочный маппинг, если он обучен
+        if hasattr(self, "calibration_mapper_") and self.calibration_mapper_ is not None:
+            from sklearn.isotonic import IsotonicRegression
+
+            raw_p1 = proba[:, 1]
+            if isinstance(self.calibration_mapper_, IsotonicRegression):
+                cal_p1 = np.asarray(self.calibration_mapper_.predict(raw_p1))
+            else:
+                cal_p1 = np.asarray(
+                    self.calibration_mapper_.predict_proba(raw_p1.reshape(-1, 1))[:, 1]
+                )
+            cal_p1 = np.clip(cal_p1, 1e-15, 1 - 1e-15)
+            proba = np.column_stack([1 - cal_p1, cal_p1])
 
         return np.asarray(proba)
 
@@ -447,13 +461,13 @@ class BaseSingleModel(BaseModel):
             joblib.dump(self.preprocessor_, preprocessor_path)
             logger.debug("Preprocessor сохранён: %s", preprocessor_path)
 
-        # Сохраняем calibrated_model отдельно (если есть)
-        if hasattr(self, "calibrated_model_") and self.calibrated_model_ is not None:
+        # Сохраняем калибровочный маппинг (если есть)
+        if hasattr(self, "calibration_mapper_") and self.calibration_mapper_ is not None:
             import joblib
 
-            calibrated_path = path.parent / f"{path.name}_{version}_calibrated.pkl"
-            joblib.dump(self.calibrated_model_, calibrated_path)
-            logger.debug("Calibrated model сохранён: %s", calibrated_path)
+            calibration_path = path / f"{path.name}_{version}_calibration.pkl"
+            joblib.dump(self.calibration_mapper_, calibration_path)
+            logger.debug("Calibration mapper сохранён: %s", calibration_path)
 
         logger.info("Модель '%s' (%s) сохранена: %s", self.name, version, save_path)
 
@@ -498,14 +512,14 @@ class BaseSingleModel(BaseModel):
             self.preprocessor_ = joblib.load(preprocessor_path)
             logger.debug("Preprocessor загружен из: %s", preprocessor_path)
 
-        # Загружаем calibrated_model (если есть)
-        calibrated_path = path.parent / f"{path.stem}_calibrated.pkl"
-        if calibrated_path.exists():
+        # Загружаем калибровочный маппинг (если есть)
+        calibration_path = path.parent / f"{path.stem}_calibration.pkl"
+        if calibration_path.exists():
             import joblib
 
-            self.calibrated_model_ = joblib.load(calibrated_path)
+            self.calibration_mapper_ = joblib.load(calibration_path)
             self.is_calibrated_ = True
-            logger.debug("Calibrated model загружен из: %s", calibrated_path)
+            logger.debug("Calibration mapper загружен из: %s", calibration_path)
 
         self.is_fitted_ = True
         logger.info("Модель '%s' загружена из: %s", self.name, path)

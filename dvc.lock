@@ -57,18 +57,21 @@ stages:
       size: 9148
     - path: sports_forecast/features/generators/
       hash: md5
-      md5: c91c3c8ccda6dad4f8339ad21985ee76.dir
-      size: 80038
+      md5: 4776a76d5d5afeafe361cb3e6ba91325.dir
+      size: 80401
       nfiles: 12
     - path: sports_forecast/features/pipeline.py
       hash: md5
-      md5: ae582afbf8535de8c28281f255daf368
-      size: 16593
+      md5: eb68e39cf8cafff9a1cc2f04478573da
+      size: 17275
+    params:
+      params.yaml:
+        features.config: basic
     outs:
     - path: data/processed/
       hash: md5
-      md5: 2daa192ad49e5b093deda952c0300efd.dir
-      size: 129428015
+      md5: 7501c3868533a7dcc185b116017d790b.dir
+      size: 129520360
       nfiles: 20
   clean:
     cmd: uv run python -m sports_forecast.data.clean

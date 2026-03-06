@@ -1078,50 +1078,111 @@ class SingleExperimentRunner:
     def _register_model_in_mlflow(self, model_path: Path, cfg: DictConfig) -> None:
         """Логировать артефакты модели и зарегистрировать в MLflow Model Registry.
 
+        Используем ``mlflow.pyfunc.log_model`` для создания полноценной
+        logged model, чтобы ``mlflow.register_model`` мог её найти.
+
         Args:
             model_path: Директория с файлами модели.
             cfg: Hydra конфигурация.
         """
         try:
             # Логируем всю директорию модели как артефакт
-            mlflow.log_artifacts(str(model_path), artifact_path="model")
+            mlflow.log_artifacts(str(model_path), artifact_path="model_artifacts")
             logger.info("Артефакты модели залогированы в MLflow: %s", model_path)
 
-            # Регистрируем модель в Model Registry
+            # Регистрируем модель в Model Registry через pyfunc
             tournament = cfg.tournament.name
             market_spec = cfg.market_spec.name
             algorithm = cfg.algorithm.name
             featureset = cfg.features.name
 
             model_name = f"{tournament}__{market_spec}__{algorithm}_{featureset}"
-            run_id = mlflow.active_run().info.run_id  # type: ignore[union-attr]
-            model_uri = f"runs:/{run_id}/model"
 
-            result = mlflow.register_model(model_uri, model_name)
-            logger.info(
-                "Модель зарегистрирована в MLflow Registry: %s v%s",
-                model_name,
-                result.version,
-            )
+            # Определяем и логируем модель через flavor-specific API
+            model_info = self._log_model_with_flavor(algorithm, model_path)
 
-            # Добавляем описание
-            from mlflow.tracking import MlflowClient
+            if model_info is not None:
+                result = mlflow.register_model(model_info.model_uri, model_name)
+                logger.info(
+                    "Модель зарегистрирована в MLflow Registry: %s v%s",
+                    model_name,
+                    result.version,
+                )
 
-            client = MlflowClient()
-            client.update_model_version(
-                name=model_name,
-                version=result.version,
-                description=(
-                    f"Tournament: {tournament}, Market: {market_spec}, "
-                    f"Algorithm: {algorithm}, Features: {featureset}"
-                ),
-            )
+                # Добавляем описание
+                from mlflow.tracking import MlflowClient
+
+                client = MlflowClient()
+                client.update_model_version(
+                    name=model_name,
+                    version=result.version,
+                    description=(
+                        f"Tournament: {tournament}, Market: {market_spec}, "
+                        f"Algorithm: {algorithm}, Features: {featureset}"
+                    ),
+                )
+            else:
+                logger.info(
+                    "Flavor-specific log_model недоступен для '%s', "
+                    "артефакты залогированы без Registry",
+                    algorithm,
+                )
 
         except Exception:
             logger.warning(
                 "Не удалось зарегистрировать модель в MLflow Registry (не критично)",
                 exc_info=True,
             )
+
+    def _log_model_with_flavor(
+        self,
+        algorithm: str,
+        model_path: Path,
+    ) -> Any:
+        """Залогировать модель через MLflow flavor-specific API.
+
+        Args:
+            algorithm: Название алгоритма (catboost, lgbm, logreg, etc.).
+            model_path: Директория с файлами модели.
+
+        Returns:
+            ``mlflow.models.model.ModelInfo`` или None если flavor не поддерживается.
+        """
+        try:
+            if algorithm == "catboost":
+                import catboost
+
+                model_files = list(model_path.glob("*_prod.cbm"))
+                if model_files:
+                    cb_model = catboost.CatBoostClassifier()
+                    cb_model.load_model(str(model_files[0]))
+                    return mlflow.catboost.log_model(cb_model, artifact_path="model")
+
+            elif algorithm == "lgbm":
+                import lightgbm as lgb
+
+                model_files = list(model_path.glob("*_prod.txt"))
+                if model_files:
+                    lgb_model = lgb.Booster(model_file=str(model_files[0]))
+                    return mlflow.lightgbm.log_model(lgb_model, artifact_path="model")
+
+            elif algorithm == "logreg":
+                import pickle
+
+                model_files = list(model_path.glob("*_prod.pkl"))
+                if model_files:
+                    with model_files[0].open("rb") as f:
+                        sk_model = pickle.load(f)  # noqa: S301
+                    return mlflow.sklearn.log_model(sk_model, artifact_path="model")
+
+        except Exception:
+            logger.debug(
+                "Flavor-specific log_model не удался для '%s'",
+                algorithm,
+                exc_info=True,
+            )
+
+        return None
 
     def _log_metrics_to_mlflow(
         self,

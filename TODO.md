@@ -1,102 +1,90 @@
 # TODO — Sports Probabilistic Forecasting
 
 > Актуальный список задач на развитие проекта.
-> Обновлено: 2026-03-04
+> Обновлено: 2026-03-06
 
 ---
 
 ## 🔴 High Priority
 
-### 1. Проверка утечек данных (Data Leakage Audit)
-- [ ] Проанализировать top-10 важных фичей CatBoost/LGBM на предмет leakage
-- [ ] Проверить корреляцию фичей с таргетом (EDA notebook)
-- [ ] Убедиться что `shift=1` в EWM/Count генераторах работает корректно
-- [ ] Проверить что `match_state` (form/fg/dp) вычисляется ДО матча, а не после
-- [ ] На подозрительно хороших метриках (LogLoss ≈ 0.0, AUC = 1.0) разобраться с причиной
+### 1. Airflow DAGs (A–E)
+- [ ] DAG A: Data Ingestion (парсеры → raw layer)
+- [ ] DAG B: Data Processing (clean → interim → features → processed)
+- [ ] DAG C: Training Pipeline (per tournament / per market)
+- [ ] DAG D: Prediction Materialization (model → predictions DB)
+- [ ] DAG E: Model Monitoring & Retraining triggers
+- [ ] Все DAGs запускаются через CLI, без airflow-логики в ML-коде
+- [ ] Docker Compose: Airflow как отдельный контейнер
 
-### 2. Re-run clean stage после изменений
-- [ ] Перезапустить `data_clean` для всех турниров (weekday/hour удалены из derived_columns)
-- [ ] Проверить что `odds_raw` корректно проходит через clean → interim → processed
-- [ ] Убедиться что `TimeFeatureGenerator` генерирует weekday/hour в pipeline
-
-### 3. Полный end-to-end тест обучения
-- [ ] Запустить обучение на одном турнире (uel_kz_1 / lp_eu) с CatBoost
-- [ ] Проверить MLflow: все ML + betting метрики логируются
-- [ ] Проверить артефакты: equity_curve.csv, per_bet_df.parquet, threshold_sweep.csv
-- [ ] Проверить что odds_raw → extract_odds_from_raw корректно работает в training pipeline
+### 2. Data Validation (Pandera)
+- [ ] Определить Pandera-схемы для raw → clean → processed слоёв
+- [ ] Quality Gate: блокировать pipeline при невалидных данных
+- [ ] Алерты при schema drift
 
 ---
 
 ## 🟡 Medium Priority
 
-### 4. Stacking Ensemble
-- [ ] Протестировать ensemble конфиг (stacking CatBoost + LGBM + LogReg)
-- [ ] Подключить к v2.0 архитектуре через ModelFactory
-- [ ] Логирование в MLflow для ensemble
+### 3. Мониторинг деградации (Prometheus/Grafana)
+- [ ] Отслеживание prod метрик на новых данных
+- [ ] Алерты при падении AUC/LogLoss
+- [ ] Grafana дашборд с ключевыми метриками
 
-### 5. Optuna оптимизация
-- [ ] Модуль готов (`sports_forecast/training/optimization/optuna_optimizer.py`)
-- [ ] Протестировать с CatBoost: подбор depth, lr, l2
-- [ ] Добавить конфиги для LGBM
+### 4. Feature Selection Service
+- [ ] Автоматический отбор фичей (Boruta / SHAP / mutual_info)
+- [ ] Сравнение basic vs advanced наборов
+- [ ] Интеграция с MLflow (логирование набора фичей для каждого эксперимента)
 
-### 6. Калибровка моделей
-- [ ] Оценить baseline ECE/MCE по турнирам
-- [ ] Включить `calibration.enabled: true` при ECE > 0.10
-- [ ] Протестировать Isotonic vs Sigmoid
+### 5. A/B тестирование моделей
+- [ ] Split traffic между Shadow/Prod
+- [ ] Логирование реальных результатов
+- [ ] Автоматическое переключение на лучшую модель
 
-### 7. DVC интеграция
-- [ ] Обновить `dvc.yaml` для текущей архитектуры (train.py v2.0)
-- [ ] Убедиться что `dvc repro` воспроизводит full pipeline
-- [ ] Добавить стадии: clean → features → train → deploy
-
-### 8. Formula-based targets
-- [ ] Реализовать `formula` в `utils/targets.py` (сейчас TODO в коде)
-- [ ] Позволит определять таргет через формулу в конфиге (например, `home_sets > away_sets`)
+### 6. Feature Store
+- [ ] Централизованное хранилище фичей
+- [ ] Offline: для training
+- [ ] Online: для inference
 
 ---
 
 ## 🟢 Low Priority
 
-### 9. FastAPI Inference Endpoint
-- [ ] REST API для async predictions
-- [ ] Роуты: `/predict/winner`, `/predict/total`
-- [ ] Загрузка модели из MLflow Model Registry
-
-### 10. Мониторинг деградации
-- [ ] Отслеживание prod метрик на новых данных
-- [ ] Алерты при падении AUC/LogLoss
-- [ ] Автоматический ретрейн при drift
-
-### 11. A/B тестирование моделей
-- [ ] Split traffic между Shadow/Prod
-- [ ] Логирование реальных результатов
-- [ ] Автоматическое переключение на лучшую модель
-
-### 12. Feature Store
-- [ ] Централизованное хранилище фичей
-- [ ] Offline: для training
-- [ ] Online: для inference
-
-### 13. Airflow оркестрация
-- [ ] DAG для daily re-training
-- [ ] DAG для inference
-- [ ] Все через CLI, без airflow-логики в ML-коде
-
-### 14. Документация
+### 7. Документация
 - [ ] Обновить `docs/CURRENT_TRAINING_STATUS.md`
 - [ ] Создать `docs/HOW_TO_ADD_NEW_TOURNAMENT.md`
 - [ ] Создать `docs/HOW_TO_ADD_NEW_MARKET.md`
 - [ ] Обновить README с актуальной архитектурой
 
+### 8. DVC стадии для v2.0
+- [ ] Обновить `dvc.yaml` для новых стадий (train → materialize → deploy)
+- [ ] Интеграция с Airflow DAGs
+
 ---
 
-## ✅ Недавно завершено
+## ✅ Недавно завершено (2026-03-06)
 
-- [x] **Odds passthrough**: raw odds проходят через все слои (clean → interim → features → trainer)
-- [x] **extract_odds_from_raw**: парсинг dict-строки из odds_raw для BettingSimulator
-- [x] **TimeFeatureGenerator**: weekday/hour генерируются в FeaturePipeline, убраны из clean
-- [x] **MLflow метрики v2**: полный набор ML + betting метрик, threshold sweep, odds bins
+- [x] **Data Leakage Audit**: все генераторы (EWM, Count, Form, Time) проверены, утечек нет
+- [x] **DVC repro**: полный pipeline up to date
+- [x] **E2E test**: CatBoost на uel_kz_1, все метрики в MLflow
+- [x] **MLflow Model Registry**: pyfunc log_model + register
+- [x] **Stacking Ensemble**: CatBoost + LGBM + LogReg мета-модель (ROI 10.2%)
+- [x] **Optuna оптимизация**: 5 trials CatBoost (ROI 10.81%), SQLite storage
+- [x] **Калибровка модели**: Isotonic regression, ECE 0.074 → 0.018
+- [x] **Formula-based targets**: FormulaTargetBuilder + 14 unit тестов
+
+## ✅ Ранее завершено
+
+- [x] **FastAPI сервис**: /predict/{match_id}, /upcoming/{tournament}, /health
+- [x] **Prediction Store**: SQLAlchemy + SQLite/PostgreSQL
+- [x] **Batch Prediction**: materialize.py → DB + parquet
+- [x] **Docker stack**: PostgreSQL + FastAPI + MLflow + Worker
+- [x] **Odds passthrough**: raw odds через все слои (clean → trainer)
+- [x] **extract_odds_from_raw**: парсинг dict-строки для BettingSimulator
+- [x] **TimeFeatureGenerator**: weekday/hour в FeaturePipeline
+- [x] **MLflow метрики v2**: ML + betting метрики, threshold sweep, odds bins
 - [x] **BettingResult dataclass**: расширенные метрики, per_bet_df, equity_curve
 - [x] **MCE (Max Calibration Error)**: добавлен в metrics и trainer
-- [x] **Hydra @package directives**: betting, calibration, split, metrics правильно изолированы
+- [x] **Hydra @package directives**: правильная изоляция конфигов
 - [x] **MLflow tracking URI**: синхронизация train.py ↔ mlflow-ui через sqlite
+- [x] **DVC параметризация**: basic/advanced feature sets через params.yaml
+- [x] **Bookmaker config**: динамический маппинг odds ключей из fonbet.yaml

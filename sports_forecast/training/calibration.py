@@ -1,15 +1,15 @@
 """
 Калибровка моделей для улучшения вероятностных прогнозов.
 
-Использует sklearn.calibration.CalibratedClassifierCV с методами:
-- Isotonic Regression (рекомендуется, для небольших выборок)
-- Platt Scaling (сигмоид)
+Реализует post-hoc калибровку (Isotonic / Sigmoid) непосредственно
+на предсказанных вероятностях — без зависимости от sklearn-интерфейса
+``get_params()`` / ``clone()``.
 
 Автоматически проверяет ECE и применяет калибровку только при необходимости.
 
 Примеры:
     >>> calibrator = ModelCalibrator(threshold_ece=0.1)
-    >>> calibrated_model = calibrator.calibrate_if_needed(
+    >>> calibrated_model, applied, ece_before, ece_after = calibrator.calibrate_if_needed(
     ...     model, cal_features, cal_target, val_features, val_target
     ... )
 """
@@ -20,7 +20,8 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.calibration import CalibratedClassifierCV
+from sklearn.isotonic import IsotonicRegression
+from sklearn.linear_model import LogisticRegression as SklearnLR
 
 from sports_forecast.utils.log_config import get_logger
 from sports_forecast.utils.metrics import compute_expected_calibration_error
@@ -87,6 +88,48 @@ class ModelCalibrator:
             method,
         )
 
+    def _fit_calibration_map(
+        self,
+        raw_proba: np.ndarray,
+        targets: np.ndarray,
+    ) -> IsotonicRegression | SklearnLR:
+        """Обучить маппинг вероятностей (Isotonic или Sigmoid).
+
+        Args:
+            raw_proba: Некалиброванные вероятности класса 1.
+            targets: Бинарные метки (0/1).
+
+        Returns:
+            Обученный маппинг (IsotonicRegression или LogisticRegression).
+        """
+        if self.method == "isotonic":
+            mapper = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
+            mapper.fit(raw_proba, targets)
+        else:
+            # Sigmoid (Platt scaling)
+            mapper = SklearnLR(C=1e10, solver="lbfgs", max_iter=1000)
+            mapper.fit(raw_proba.reshape(-1, 1), targets)
+        return mapper
+
+    def _apply_calibration_map(
+        self,
+        mapper: IsotonicRegression | SklearnLR,
+        raw_proba: np.ndarray,
+    ) -> np.ndarray:
+        """Применить маппинг к вероятностям.
+
+        Args:
+            mapper: Обученный маппинг.
+            raw_proba: Некалиброванные вероятности.
+
+        Returns:
+            Калиброванные вероятности.
+        """
+        if isinstance(mapper, IsotonicRegression):
+            return np.asarray(mapper.predict(raw_proba))
+        # Sigmoid
+        return np.asarray(mapper.predict_proba(raw_proba.reshape(-1, 1))[:, 1])
+
     def calibrate_if_needed(
         self,
         model: Any,
@@ -95,15 +138,20 @@ class ModelCalibrator:
         val_features: pd.DataFrame | np.ndarray,
         val_target: pd.Series | np.ndarray,
     ) -> tuple[Any, bool, float, float]:
-        """
-        Калибровать модель, если ECE > threshold.
+        """Калибровать модель, если ECE > threshold.
 
-        Проверяет ECE на валидационной выборке ПЕРЕД калибровкой.
-        Если ECE > threshold, применяет калибровку на калибровочной выборке.
-        Проверяет ECE ПОСЛЕ калибровки.
+        Процесс:
+            1. Получить вероятности модели на cal и val.
+            2. Посчитать ECE на val (before).
+            3. Если ECE > threshold — обучить калибровочный маппинг на cal.
+            4. Применить маппинг к val и проверить ECE (after).
+            5. Если стало лучше — сохранить маппинг в модель.
+
+        Работает с **любыми** моделями, у которых есть
+        ``predict_proba()`` — без sklearn ``get_params()`` / ``clone()``.
 
         Args:
-            model: Модель с методом predict_proba().
+            model: Модель с ``predict_proba()``.
             cal_features: Фичи для калибровки.
             cal_target: Таргет для калибровки.
             val_features: Фичи для валидации (проверка ECE).
@@ -111,61 +159,63 @@ class ModelCalibrator:
 
         Returns:
             Tuple:
-                - model: Калиброванная модель (или исходная, если калибровка не нужна).
+                - model: Модель (с маппингом или без).
                 - is_calibrated: Была ли применена калибровка.
                 - ece_before: ECE до калибровки.
-                - ece_after: ECE после калибровки (или None, если калибровка не применялась).
+                - ece_after: ECE после калибровки (или ece_before).
 
         Examples:
             >>> model, calibrated, ece_before, ece_after = calibrator.calibrate_if_needed(
             ...     catboost_model, cal_features, cal_target, val_features, val_target
             ... )
-            >>> if calibrated:
-            ...     print(f"ECE improved: {ece_before:.4f} -> {ece_after:.4f}")
         """
-        # Предсказания на валидации ДО калибровки
-        proba_before = model.predict_proba(val_features)[:, 1]
-        ece_before = compute_expected_calibration_error(np.array(val_target), proba_before)
+        # Вероятности на калибровочном и валидационном наборах
+        cal_proba = model.predict_proba(cal_features)[:, 1]
+        val_proba = model.predict_proba(val_features)[:, 1]
 
+        ece_before = compute_expected_calibration_error(
+            np.array(val_target),
+            val_proba,
+        )
         logger.info("ECE до калибровки: %.4f (порог: %.2f)", ece_before, self.threshold_ece)
 
-        # Проверяем, нужна ли калибровка
         if ece_before <= self.threshold_ece:
             logger.info("✓ Калибровка НЕ нужна (ECE <= %.2f)", self.threshold_ece)
-            return model, False, ece_before, None
+            return model, False, ece_before, ece_before
 
-        # Применяем калибровку
+        # Обучаем маппинг на калибровочном наборе
         logger.info(
-            "⚠ Калибровка нужна (ECE > %.2f). Применяю метод: %s", self.threshold_ece, self.method
+            "⚠ Калибровка нужна (ECE > %.2f). Применяю метод: %s",
+            self.threshold_ece,
+            self.method,
         )
+        mapper = self._fit_calibration_map(cal_proba, np.array(cal_target))
 
-        calibrated_model = CalibratedClassifierCV(
-            model,
-            method=self.method,
-            cv=self.cv,
+        # Проверяем на валидации
+        val_proba_after = self._apply_calibration_map(mapper, val_proba)
+        ece_after = compute_expected_calibration_error(
+            np.array(val_target),
+            val_proba_after,
         )
-
-        calibrated_model.fit(cal_features, cal_target)
-
-        # Предсказания на валидации ПОСЛЕ калибровки
-        proba_after = calibrated_model.predict_proba(val_features)[:, 1]
-        ece_after = compute_expected_calibration_error(np.array(val_target), proba_after)
-
         logger.info("ECE после калибровки: %.4f", ece_after)
 
-        # Проверяем, что калибровка действительно улучшила ECE
         if ece_after < ece_before:
-            logger.info("✓ Калибровка улучшила ECE: %.4f -> %.4f", ece_before, ece_after)
-            # Сохраняем калиброванную модель как атрибут оригинальной модели
-            model.calibrated_model_ = calibrated_model
+            logger.info(
+                "✓ Калибровка улучшила ECE: %.4f → %.4f",
+                ece_before,
+                ece_after,
+            )
+            model.calibration_mapper_ = mapper
+            model.calibration_method_ = self.method
             model.is_calibrated_ = True
             return model, True, ece_before, ece_after
+
         logger.warning(
-            "⚠ Калибровка НЕ улучшила ECE: %.4f -> %.4f. Используем исходную модель.",
+            "⚠ Калибровка НЕ улучшила ECE: %.4f → %.4f. Используем исходную модель.",
             ece_before,
             ece_after,
         )
-        return model, False, ece_before, None
+        return model, False, ece_before, ece_before
 
     def calibrate(
         self,
@@ -173,32 +223,27 @@ class ModelCalibrator:
         cal_features: pd.DataFrame | np.ndarray,
         cal_target: pd.Series | np.ndarray,
     ) -> Any:
-        """
-        Калибровать модель (без проверки ECE).
-
-        Используется когда нужно явно калибровать модель, независимо от ECE.
+        """Калибровать модель (без проверки ECE).
 
         Args:
-            model: Модель с методом predict_proba().
+            model: Модель с ``predict_proba()``.
             cal_features: Фичи для калибровки.
             cal_target: Таргет для калибровки.
 
         Returns:
-            Калиброванная модель.
+            Модель с калибровочным маппингом.
 
         Examples:
-            >>> calibrated_model = calibrator.calibrate(model, cal_features, cal_target)
+            >>> calibrated = calibrator.calibrate(model, cal_features, cal_target)
         """
         logger.info("Применяю калибровку (метод: %s) БЕЗ проверки ECE", self.method)
 
-        calibrated_model = CalibratedClassifierCV(
-            model,
-            method=self.method,
-            cv=self.cv,
-        )
+        cal_proba = model.predict_proba(cal_features)[:, 1]
+        mapper = self._fit_calibration_map(cal_proba, np.array(cal_target))
 
-        calibrated_model.fit(cal_features, cal_target)
+        model.calibration_mapper_ = mapper
+        model.calibration_method_ = self.method
+        model.is_calibrated_ = True
 
         logger.info("Калибровка применена")
-
-        return calibrated_model
+        return model

@@ -15,6 +15,7 @@ import pytest
 from omegaconf import DictConfig
 
 from sports_forecast.utils.targets import (
+    FormulaTargetBuilder,
     TargetComputationError,
     compute_target_from_market_spec,
     get_target_name,
@@ -313,3 +314,180 @@ class TestGetTargetName:
         market_spec = DictConfig({"name": "test", "market_family": "winner"})
         name = get_target_name(market_spec)
         assert name == "target"
+
+
+# ==================== FormulaTargetBuilder Tests ====================
+
+
+class TestFormulaTargetBuilder:
+    """Тесты для FormulaTargetBuilder (декларативные формулы)."""
+
+    @pytest.fixture
+    def df(self) -> pd.DataFrame:
+        """Данные для тестирования формул."""
+        return pd.DataFrame(
+            {
+                "pl_points": [5, 3, 7, 4, 6],
+                "opp_points": [3, 5, 2, 4, 8],
+                "home_points": [5, 3, 7, 4, 6],
+                "away_points": [3, 5, 2, 4, 8],
+            }
+        )
+
+    def test_simple_comparison(self, df: pd.DataFrame) -> None:
+        """Простое сравнение двух колонок: pl_points > opp_points."""
+        builder = FormulaTargetBuilder("pl_points > opp_points")
+        target = builder.compute(df)
+
+        assert len(target) == 5
+        assert target.iloc[0] == 1  # 5 > 3
+        assert target.iloc[1] == 0  # 3 > 5 → False
+        assert target.iloc[2] == 1  # 7 > 2
+        assert target.iloc[3] == 0  # 4 > 4 → False (strict)
+        assert target.iloc[4] == 0  # 6 > 8 → False
+
+    def test_sum_comparison_with_literal(self, df: pd.DataFrame) -> None:
+        """Сумма колонок vs числовой литерал: (pl_points + opp_points) > 6.5."""
+        builder = FormulaTargetBuilder("(pl_points + opp_points) > 6.5")
+        target = builder.compute(df)
+
+        # Суммы: 8, 8, 9, 8, 14 — все > 6.5
+        assert target.sum() == 5
+
+    def test_sum_comparison_with_line_placeholder(self, df: pd.DataFrame) -> None:
+        """Подстановка {line}: (pl_points + opp_points) > {line}."""
+        builder = FormulaTargetBuilder("(pl_points + opp_points) > {line}", line=9.5)
+        target = builder.compute(df)
+
+        # Суммы: 8, 8, 9, 8, 14 → только 14 > 9.5
+        assert target.iloc[0] == 0  # 8 <= 9.5
+        assert target.iloc[4] == 1  # 14 > 9.5
+
+    def test_difference_comparison(self, df: pd.DataFrame) -> None:
+        """Разность колонок: pl_points - opp_points >= 0."""
+        builder = FormulaTargetBuilder("pl_points - opp_points >= 0")
+        target = builder.compute(df)
+
+        # Разности: 2, -2, 5, 0, -2
+        assert target.iloc[0] == 1  # 2 >= 0
+        assert target.iloc[1] == 0  # -2 >= 0 → False
+        assert target.iloc[3] == 1  # 0 >= 0 → True
+
+    def test_less_than_operator(self, df: pd.DataFrame) -> None:
+        """Оператор <: pl_points < opp_points."""
+        builder = FormulaTargetBuilder("pl_points < opp_points")
+        target = builder.compute(df)
+
+        assert target.iloc[0] == 0  # 5 < 3 → False
+        assert target.iloc[1] == 1  # 3 < 5 → True
+        assert target.iloc[3] == 0  # 4 < 4 → False (strict)
+        assert target.iloc[4] == 1  # 6 < 8 → True
+
+    def test_equality_operator(self, df: pd.DataFrame) -> None:
+        """Оператор ==: pl_points == opp_points."""
+        builder = FormulaTargetBuilder("pl_points == opp_points")
+        target = builder.compute(df)
+
+        assert target.iloc[3] == 1  # 4 == 4
+        assert target.iloc[0] == 0  # 5 != 3
+
+    def test_not_equal_operator(self, df: pd.DataFrame) -> None:
+        """Оператор !=: pl_points != opp_points."""
+        builder = FormulaTargetBuilder("pl_points != opp_points")
+        target = builder.compute(df)
+
+        assert target.iloc[3] == 0  # 4 != 4 → False
+        assert target.iloc[0] == 1  # 5 != 3 → True
+
+    def test_line_placeholder_missing_raises(self) -> None:
+        """Формула с {line} без указания line вызывает ошибку."""
+        with pytest.raises(TargetComputationError, match="line не указан"):
+            FormulaTargetBuilder("pl_points > {line}")
+
+    def test_invalid_formula_raises(self) -> None:
+        """Невалидная формула вызывает ошибку."""
+        with pytest.raises(TargetComputationError, match="Невалидная формула"):
+            FormulaTargetBuilder("just_a_word")
+
+    def test_missing_column_raises(self, df: pd.DataFrame) -> None:
+        """Ссылка на несуществующую колонку вызывает ошибку."""
+        builder = FormulaTargetBuilder("nonexistent_col > pl_points")
+        with pytest.raises(TargetComputationError, match="Невозможно вычислить"):
+            builder.compute(df)
+
+    def test_get_referenced_columns(self, df: pd.DataFrame) -> None:
+        """get_referenced_columns возвращает реальные колонки из формулы."""
+        builder = FormulaTargetBuilder("pl_points + opp_points > 6.5")
+        refs = builder.get_referenced_columns(df)
+
+        assert "pl_points" in refs
+        assert "opp_points" in refs
+        assert len(refs) == 2
+
+    def test_repr(self) -> None:
+        """Проверка __repr__."""
+        builder = FormulaTargetBuilder("a > b")
+        assert "FormulaTargetBuilder" in repr(builder)
+        assert "a > b" in repr(builder)
+
+
+# ==================== Formula via compute_target_from_market_spec ====================
+
+
+class TestFormulaIntegration:
+    """Интеграционные тесты: формула через compute_target_from_market_spec."""
+
+    def test_formula_in_market_spec(self) -> None:
+        """Formula из market_spec.target.formula корректно вычисляется."""
+        df = pd.DataFrame(
+            {
+                "pl_points": [5, 3, 7],
+                "opp_points": [3, 5, 2],
+            }
+        )
+        market_spec = DictConfig(
+            {
+                "name": "winner",
+                "market_family": "winner",
+                "data_format": "long",
+                "side": "home",
+                "target": {
+                    "name": "target_win",
+                    "formula": "pl_points > opp_points",
+                    "source_columns": [],
+                },
+            }
+        )
+
+        target = compute_target_from_market_spec(df, market_spec)
+        assert target.iloc[0] == 1  # 5 > 3
+        assert target.iloc[1] == 0  # 3 > 5 → False
+        assert target.iloc[2] == 1  # 7 > 2
+
+    def test_formula_with_line_in_market_spec(self) -> None:
+        """Formula с {line} корректно подставляет значение."""
+        df = pd.DataFrame(
+            {
+                "home_points": [5, 3, 7],
+                "away_points": [3, 5, 2],
+            }
+        )
+        market_spec = DictConfig(
+            {
+                "name": "total_over",
+                "market_family": "total",
+                "data_format": "wide",
+                "side": "over",
+                "target": {
+                    "name": "target_total",
+                    "formula": "(home_points + away_points) > {line}",
+                    "source_columns": [],
+                },
+            }
+        )
+
+        target = compute_target_from_market_spec(df, market_spec, line=8.5)
+        # Суммы: 8, 8, 9 → только 9 > 8.5
+        assert target.iloc[0] == 0
+        assert target.iloc[1] == 0
+        assert target.iloc[2] == 1

@@ -2,7 +2,22 @@
 Target Computation Module для архитектуры v2.0.
 
 Вычисление таргетов на основе MarketSpec вместо старых target_sources.
+
+Поддерживаемые способы задания таргета:
+    1. **target_source_key** (новая архитектура) — ссылка на
+       ``tournament.target_sources.<key>`` с ``comparison`` и колонками.
+    2. **formula** (декларативная формула) — строка вида
+       ``"col_a > col_b"`` или ``"(col_a + col_b) > {line}"``.
+       Обрабатывается безопасным парсером ``FormulaTargetBuilder``
+       (без использования ``eval()``).
+    3. **market_family** (старая архитектура) — switch по типу маркета
+       (``winner``, ``total``, ``handicap``).
 """
+
+from __future__ import annotations
+
+import re
+from typing import Any
 
 import pandas as pd
 from omegaconf import DictConfig
@@ -17,6 +32,204 @@ class TargetComputationError(Exception):
     """Ошибка при вычислении таргета."""
 
     pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Formula-based Target Builder (safe, no eval())
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Допустимые операторы сравнения
+_COMPARISON_OPS: dict[str, str] = {
+    ">": "gt",
+    "<": "lt",
+    ">=": "ge",
+    "<=": "le",
+    "==": "eq",
+    "!=": "ne",
+}
+
+# Допустимые арифметические операторы
+_ARITH_OPS = {"+", "-", "*", "/"}
+
+# Regex для разбора формулы: left_expr COMP right_expr
+_FORMULA_RE = re.compile(r"^(?P<left>.+?)\s*(?P<op>>=|<=|!=|==|>|<)\s*(?P<right>.+)$")
+
+
+class FormulaTargetBuilder:
+    """Безопасный вычислитель формул для таргетов.
+
+    Парсит декларативную формулу и вычисляет бинарный таргет
+    без использования ``eval()``.
+
+    Поддерживаемые форматы формул::
+
+        "col_a > col_b"
+        "(col_a + col_b) > 6.5"
+        "col_a - col_b >= {line}"
+        "col_a > 0"
+
+    Placeholder ``{line}`` подставляется из параметра ``line``.
+
+    Args:
+        formula: Строка формулы.
+        line: Значение линии для подстановки ``{line}`` (опционально).
+
+    Examples:
+        >>> builder = FormulaTargetBuilder("pl_points > opp_points")
+        >>> target = builder.compute(df)
+
+        >>> builder = FormulaTargetBuilder("(pl_points + opp_points) > {line}", line=6.5)
+        >>> target = builder.compute(df)
+    """
+
+    def __init__(self, formula: str, line: float | None = None) -> None:
+        self.raw_formula = formula
+        self.line = line
+
+        # Подставляем {line} если есть
+        resolved = formula
+        if "{line}" in formula:
+            if line is None:
+                raise TargetComputationError(
+                    f"Формула '{formula}' содержит {{line}}, но line не указан"
+                )
+            resolved = formula.replace("{line}", str(line))
+
+        self.formula = resolved.strip()
+        self._left_expr: str = ""
+        self._right_expr: str = ""
+        self._op: str = ""
+        self._parse()
+
+    def _parse(self) -> None:
+        """Разобрать формулу на left, op, right."""
+        match = _FORMULA_RE.match(self.formula)
+        if not match:
+            raise TargetComputationError(
+                f"Невалидная формула: '{self.formula}'. "
+                "Ожидается формат: 'expr OPERATOR expr' "
+                f"(операторы: {list(_COMPARISON_OPS.keys())})"
+            )
+        self._left_expr = match.group("left").strip()
+        self._op = match.group("op").strip()
+        self._right_expr = match.group("right").strip()
+
+    def compute(self, df: pd.DataFrame) -> pd.Series:
+        """Вычислить бинарный таргет по формуле.
+
+        Args:
+            df: DataFrame с данными.
+
+        Returns:
+            Series с бинарным таргетом (0/1).
+
+        Raises:
+            TargetComputationError: Если вычисление невозможно.
+        """
+        left_val = self._eval_expr(df, self._left_expr)
+        right_val = self._eval_expr(df, self._right_expr)
+
+        op_name = _COMPARISON_OPS.get(self._op)
+        if op_name is None:
+            raise TargetComputationError(f"Неподдерживаемый оператор: '{self._op}'")
+
+        # Применяем оператор сравнения
+        comparison_fn = getattr(left_val, op_name, None)
+        if comparison_fn is None:
+            # Fallback для скаляров
+            comparison_fn = getattr(pd.Series(left_val), op_name)
+
+        result = comparison_fn(right_val)
+        return pd.Series(result.astype(int))
+
+    def _eval_expr(self, df: pd.DataFrame, expr: str) -> Any:
+        """Вычислить арифметическое выражение (безопасно).
+
+        Поддерживает:
+            - Ссылки на колонки: ``col_name``
+            - Числовые литералы: ``6.5``, ``-1``
+            - Бинарные арифметические операции: ``col_a + col_b``
+
+        Args:
+            df: DataFrame.
+            expr: Строковое выражение.
+
+        Returns:
+            pd.Series или float.
+        """
+        expr = expr.strip().strip("()")
+
+        # 1. Попробуем как число
+        try:
+            return float(expr)
+        except ValueError:
+            pass
+
+        # 2. Попробуем как бинарную арифметическую операцию
+        for op_char in _ARITH_OPS:
+            # Ищем оператор не внутри скобок
+            parts = self._split_by_operator(expr, op_char)
+            if parts is not None:
+                left_val = self._eval_expr(df, parts[0])
+                right_val = self._eval_expr(df, parts[1])
+                if op_char == "+":
+                    return left_val + right_val
+                if op_char == "-":
+                    return left_val - right_val
+                if op_char == "*":
+                    return left_val * right_val
+                if op_char == "/":
+                    return left_val / right_val
+
+        # 3. Как имя колонки
+        if expr in df.columns:
+            return df[expr]
+
+        raise TargetComputationError(
+            f"Невозможно вычислить выражение: '{expr}'. "
+            f"Это не число и не колонка DataFrame. "
+            f"Доступные колонки: {list(df.columns)[:20]}..."
+        )
+
+    @staticmethod
+    def _split_by_operator(expr: str, op: str) -> tuple[str, str] | None:
+        """Разделить выражение по оператору (вне скобок).
+
+        Args:
+            expr: Выражение.
+            op: Оператор для поиска.
+
+        Returns:
+            Кортеж (left, right) или None.
+        """
+        depth = 0
+        for i, ch in enumerate(expr):
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            elif ch == op and depth == 0 and i > 0:
+                left = expr[:i].strip()
+                right = expr[i + 1 :].strip()
+                if left and right:
+                    return (left, right)
+        return None
+
+    def get_referenced_columns(self, df: pd.DataFrame) -> list[str]:
+        """Получить список колонок, на которые ссылается формула.
+
+        Args:
+            df: DataFrame для проверки наличия колонок.
+
+        Returns:
+            Список имён колонок.
+        """
+        # Извлекаем все слова из формулы и проверяем наличие в df
+        tokens = re.findall(r"[a-zA-Z_]\w*", self.formula)
+        return [t for t in tokens if t in df.columns]
+
+    def __repr__(self) -> str:
+        return f"FormulaTargetBuilder('{self.raw_formula}', line={self.line})"
 
 
 def _compute_target_from_source(
@@ -167,8 +380,22 @@ def compute_target_from_market_spec(
         )
 
     source_columns = market_spec.target.get("source_columns", [])
-    # formula = market_spec.target.get("formula")  # TODO: implement formula-based targets
+    formula = market_spec.target.get("formula")
     target_name = market_spec.target.get("name", "target")
+
+    # ── Formula-based target (если указана формула) ──
+    if formula:
+        builder = FormulaTargetBuilder(formula, line=line)
+        target = builder.compute(df)
+        refs = builder.get_referenced_columns(df)
+        logger.info(
+            "✓ Таргет '%s' (formula): %s, positive_rate=%.2f%%, cols=%s",
+            target_name,
+            formula,
+            target.mean() * 100,
+            refs,
+        )
+        return target  # type: ignore[return-value]
 
     # Проверяем наличие колонок
     for col in source_columns:
