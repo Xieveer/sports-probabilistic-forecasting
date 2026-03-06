@@ -1,8 +1,20 @@
 # Документация проекта
 
-## Актуальные документы
+## Структура
 
-Все актуальные документы находятся в `docs/instructor/`:
+- **`instructor/`** — актуальные руководства и архитектурные документы
+- **`source/`** — исходники Sphinx (RST-файлы)
+- **`build/`** — собранная HTML-документация
+
+## Сборка Sphinx
+
+```bash
+cd docs && uv run sphinx-build -b html source build
+```
+
+Результат: `docs/build/index.html`
+
+## Актуальные документы (instructor/)
 
 | Документ | Описание |
 |----------|----------|
@@ -10,25 +22,3 @@
 | [HOW_TO_ADD_NEW_TOURNAMENT.md](instructor/HOW_TO_ADD_NEW_TOURNAMENT.md) | Пошаговое руководство по добавлению турнира |
 | [HOW_TO_ADD_NEW_MARKET.md](instructor/HOW_TO_ADD_NEW_MARKET.md) | Пошаговое руководство по добавлению маркета |
 | [service_orchestration_architecture.md](instructor/service_orchestration_architecture.md) | Архитектура сервиса (FastAPI, Airflow, мониторинг) |
-
-## Быстрый старт
-
-```bash
-# Data pipeline
-make dvc-repro
-
-# Обучение
-uv run python -m sports_forecast.train \
-    tournament=uel_kz_1 market=winner market_spec=winner \
-    algorithm=catboost features=advanced
-
-# MLflow UI
-make mlflow-ui
-# → http://127.0.0.1:5000
-
-# API
-make api-dev
-# → http://127.0.0.1:8000/docs
-```
-
-**Последнее обновление:** 2026-03-06
