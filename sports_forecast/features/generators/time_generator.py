@@ -74,6 +74,10 @@ class TimeFeatureGenerator(BaseFeatureGenerator):
     def __init__(self, config: dict[str, Any]) -> None:
         self.datetime_column: str = config.get("datetime_column", "datetime")
         self.requested_features: list[str] = list(config.get("features", ["weekday", "hour"]))
+        # Пре-генераторы НЕ добавляют f_ префикс.
+        # Они создают контекстные колонки (weekday, hour) для wide→long,
+        # которые потом используются как ключи группировки в EWM/Count.
+        config["add_prefix"] = False
         super().__init__(config)
 
     # ------------------------------------------------------------------

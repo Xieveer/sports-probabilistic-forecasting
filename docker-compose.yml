@@ -1,0 +1,90 @@
+# ─────────────────────────────────────────────────────────────────
+# Docker Compose for Sports Probabilistic Forecasting
+#
+# Services:
+#   db       — PostgreSQL for prediction store
+#   api      — FastAPI read-only prediction server
+#   mlflow   — MLflow tracking server
+#   worker   — batch prediction materialization (on-demand)
+# ─────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── PostgreSQL ────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sports_forecast
+      POSTGRES_USER: sf_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sf_dev_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sf_user -d sports_forecast"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI prediction server ─────────────────────────────────
+  api:
+    build:
+      context: .
+      target: api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: "postgresql://sf_user:${POSTGRES_PASSWORD:-sf_dev_password}@db:5432/sports_forecast"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./models:/app/models:ro
+      - ./conf:/app/conf:ro
+
+  # ── MLflow tracking server ───────────────────────────────────
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.19.0
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      MLFLOW_BACKEND_STORE_URI: "postgresql://sf_user:${POSTGRES_PASSWORD:-sf_dev_password}@db:5432/sports_forecast"
+      MLFLOW_DEFAULT_ARTIFACT_ROOT: "/mlflow/artifacts"
+    command: >
+      mlflow server
+        --host 0.0.0.0
+        --port 5000
+        --backend-store-uri postgresql://sf_user:${POSTGRES_PASSWORD:-sf_dev_password}@db:5432/sports_forecast
+        --default-artifact-root /mlflow/artifacts
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - mlflow_artifacts:/mlflow/artifacts
+
+  # ── Worker: batch prediction materialization ──────────────────
+  # Запускается on-demand: docker compose run worker <command>
+  worker:
+    build:
+      context: .
+      target: worker
+    environment:
+      DATABASE_URL: "postgresql://sf_user:${POSTGRES_PASSWORD:-sf_dev_password}@db:5432/sports_forecast"
+      MLFLOW_TRACKING_URI: "http://mlflow:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./conf:/app/conf:ro
+    profiles:
+      - worker  # Не запускается автоматически
+
+volumes:
+  pg_data:
+  mlflow_artifacts:

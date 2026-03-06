@@ -317,7 +317,18 @@ class FeaturePipeline:
                 logger.error("  Ошибка в %s: %s", generator.name, e)
                 raise
 
-        # 4. Итоговая статистика
+        # 4. Продвигаем pre-generator колонки в фичи (f_ копии)
+        #    weekday → f_weekday, hour → f_hour, и т.д.
+        #    Оригиналы остаются (нужны как ключи группировки для EWM/Count).
+        for pg in self.pre_generators:
+            for col_name in pg.get_feature_names():
+                f_col = f"f_{col_name}"
+                if col_name in result_df.columns and f_col not in result_df.columns:
+                    result_df[f_col] = result_df[col_name]
+                    all_features.append(f_col)
+                    logger.debug("Pre-gen → feature: %s → %s", col_name, f_col)
+
+        # 5. Итоговая статистика
         elapsed = time.time() - start_time
         actual_features = get_feature_columns(result_df)
 

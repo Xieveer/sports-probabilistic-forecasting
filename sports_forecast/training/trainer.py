@@ -375,6 +375,9 @@ class SingleExperimentRunner:
             self._save_feature_names(prod_path, feature_names)
             logger.info("Prod модель сохранена: %s", prod_path)
 
+            # 15.1. MLflow: логируем артефакты модели и регистрируем в Model Registry
+            self._register_model_in_mlflow(prod_path, cfg)
+
             # 16. Анализ стабильности
             stability_metrics = self._analyze_training_stability(shadow_metrics)
 
@@ -1071,6 +1074,54 @@ class SingleExperimentRunner:
         )
         model_dir.mkdir(parents=True, exist_ok=True)
         return model_dir
+
+    def _register_model_in_mlflow(self, model_path: Path, cfg: DictConfig) -> None:
+        """Логировать артефакты модели и зарегистрировать в MLflow Model Registry.
+
+        Args:
+            model_path: Директория с файлами модели.
+            cfg: Hydra конфигурация.
+        """
+        try:
+            # Логируем всю директорию модели как артефакт
+            mlflow.log_artifacts(str(model_path), artifact_path="model")
+            logger.info("Артефакты модели залогированы в MLflow: %s", model_path)
+
+            # Регистрируем модель в Model Registry
+            tournament = cfg.tournament.name
+            market_spec = cfg.market_spec.name
+            algorithm = cfg.algorithm.name
+            featureset = cfg.features.name
+
+            model_name = f"{tournament}__{market_spec}__{algorithm}_{featureset}"
+            run_id = mlflow.active_run().info.run_id  # type: ignore[union-attr]
+            model_uri = f"runs:/{run_id}/model"
+
+            result = mlflow.register_model(model_uri, model_name)
+            logger.info(
+                "Модель зарегистрирована в MLflow Registry: %s v%s",
+                model_name,
+                result.version,
+            )
+
+            # Добавляем описание
+            from mlflow.tracking import MlflowClient
+
+            client = MlflowClient()
+            client.update_model_version(
+                name=model_name,
+                version=result.version,
+                description=(
+                    f"Tournament: {tournament}, Market: {market_spec}, "
+                    f"Algorithm: {algorithm}, Features: {featureset}"
+                ),
+            )
+
+        except Exception:
+            logger.warning(
+                "Не удалось зарегистрировать модель в MLflow Registry (не критично)",
+                exc_info=True,
+            )
 
     def _log_metrics_to_mlflow(
         self,

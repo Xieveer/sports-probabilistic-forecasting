@@ -9,6 +9,7 @@ defaults:
   - betting
   - bookmaker: fonbet       # Маппинг ключей odds (fonbet)
   - mlflow: mlflow
+  - database
 
   # Основные компоненты (обязательны через CLI)
   - tournament: ???        # REQUIRED: tournament=uel_kz_1

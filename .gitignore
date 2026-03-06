@@ -71,6 +71,7 @@ catboost_info/
 mlflow_ui.log
 mlflow_ui.pid
 mlflow.db
+predictions.db
 mlruns.backup.*
 
 # Logs

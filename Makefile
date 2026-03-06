@@ -10,6 +10,7 @@ DOCS_BUILD := docs/build
 
 .PHONY: help init install lint format fix test test-unit test-cov test-watch test-file pre-commit train train-sweep promote clean dvc-repro
 .PHONY: docs docs-serve docs-clean docs-open docs-coverage docs-linkcheck tree
+.PHONY: api api-dev materialize docker-up docker-down docker-build docker-logs db-init
 
 # ---------- Справка ----------
 
@@ -46,6 +47,17 @@ help:
 	@echo "  make train-sweep  - запустить sweep через Hydra --multirun"
 	@echo "  make promote      - сравнить модели и выбрать лучшую для продакшена"
 	@echo "  make dvc-repro    - перепроизвести датасет с DVC"
+	@echo ""
+	@echo "Сервис:"
+	@echo "  make api-dev       - запустить FastAPI локально (dev, SQLite)"
+	@echo "  make materialize   - материализовать предсказания в DB"
+	@echo "  make db-init       - инициализировать таблицы DB (SQLite)"
+	@echo ""
+	@echo "Docker:"
+	@echo "  make docker-build  - собрать Docker образы"
+	@echo "  make docker-up     - запустить все сервисы (API + DB + MLflow)"
+	@echo "  make docker-down   - остановить все сервисы"
+	@echo "  make docker-logs   - показать логи сервисов"
 	@echo ""
 	@echo "Утилиты:"
 	@echo "  make clean        - удалить кеши и временные файлы"
@@ -167,25 +179,48 @@ tree:
 		echo "❌ Команда 'tree' не найдена. Установите: sudo apt install tree (Linux) или brew install tree (macOS)"; \
 	fi
 
+# ---------- Feature Generation ----------
+
+# Генерация фичей basic (быстро, для dev)
+features-basic:
+	@echo "⚡ Генерация фичей (basic)..."
+	uv run python -m sports_forecast.features.features_build --multirun \
+		tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by \
+		features=basic
+
+# Генерация фичей advanced (полный набор, для research)
+features-advanced:
+	@echo "🔬 Генерация фичей (advanced)..."
+	uv run python -m sports_forecast.features.features_build --multirun \
+		tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by \
+		features=advanced
+
 # ---------- Основной пайплайн обучения ----------
 
 # Запуск одиночного эксперимента (архитектура v2.0)
 train:
 	uv run python -m sports_forecast.train \
-		tournament=uel_kz_1 \
-		market=total \
-		market_spec=total_over \
-		market_spec.line=6.5 \
-		algorithm=dummy \
-		features=basic
+		tournament=$(or $(TOURNAMENT),uel_kz_1) \
+		market=$(or $(MARKET),winner) \
+		market_spec=$(or $(SPEC),winner) \
+		algorithm=$(or $(ALG),catboost) \
+		features=$(or $(FEAT),basic)
 
-# Sweep через Hydra --multirun (все комбинации)
+# Sweep моделей на одном турнире (winner market)
 train-sweep:
 	uv run python -m sports_forecast.train --multirun \
-		tournament=uel_kz_1 \
-		market=total \
-		market_spec=total_over \
-		market_spec.line=6.5 \
+		tournament=$(or $(TOURNAMENT),uel_kz_1) \
+		market=winner \
+		market_spec=winner \
+		algorithm=catboost,lgbm,logreg \
+		features=basic
+
+# Sweep: все модели × все фичи
+train-sweep-full:
+	uv run python -m sports_forecast.train --multirun \
+		tournament=$(or $(TOURNAMENT),uel_kz_1) \
+		market=winner \
+		market_spec=winner \
 		algorithm=catboost,lgbm,logreg \
 		features=basic,advanced
 
@@ -193,7 +228,7 @@ train-sweep:
 promote:
 	@echo "🏆 Сравнение моделей..."
 	uv run python main.py promote compare \
-		--experiment $(or $(EXP),uel_kz_1__total__over_6.5) \
+		--experiment $(or $(EXP),uel_kz_1__winner) \
 		--metric $(or $(METRIC),test_logloss) \
 		--direction $(or $(DIR),minimize) \
 		--top-n $(or $(TOP),5)
@@ -256,6 +291,64 @@ mlflow-stop:  ## Остановить MLflow UI
 	@-fuser -k 5000/tcp 2>/dev/null || true
 	@rm -f mlflow_ui.pid
 	@echo "✅ MLflow UI остановлен"
+
+# ---------- Service (FastAPI / Prediction Store) ----------
+
+# Запустить FastAPI локально (dev mode, SQLite)
+api-dev:
+	@echo "🚀 Запуск FastAPI (dev mode)..."
+	uv run uvicorn sports_forecast.service.app:app \
+		--host 127.0.0.1 --port 8000 --reload
+
+# Инициализация БД (создание таблиц)
+db-init:
+	@echo "🗄️  Инициализация Prediction Store..."
+	uv run python -c "from sports_forecast.service.db.engine import init_db; init_db(); print('✅ Таблицы созданы')"
+
+# Материализация предсказаний
+materialize:
+	@echo "🔮 Материализация предсказаний..."
+	uv run python -m sports_forecast.materialize \
+		tournament=$(or $(TOURNAMENT),uel_kz_1) \
+		market=$(or $(MARKET),winner) \
+		market_spec=$(or $(SPEC),winner) \
+		algorithm=$(or $(ALG),catboost) \
+		features=$(or $(FEAT),basic)
+
+# ---------- Docker ----------
+
+# Собрать Docker образы
+docker-build:
+	@echo "🐳 Сборка Docker образов..."
+	docker compose build
+
+# Запустить все сервисы (API + DB + MLflow)
+docker-up:
+	@echo "🐳 Запуск сервисов..."
+	docker compose up -d
+	@echo ""
+	@echo "✅ Сервисы запущены:"
+	@echo "   API:    http://localhost:8000"
+	@echo "   MLflow: http://localhost:5000"
+	@echo "   DB:     postgresql://localhost:5432/sports_forecast"
+
+# Остановить все сервисы
+docker-down:
+	@echo "🛑 Остановка сервисов..."
+	docker compose down
+
+# Показать логи
+docker-logs:
+	docker compose logs -f --tail=50
+
+# Запустить worker для материализации (через Docker)
+docker-materialize:
+	docker compose run --rm worker uv run python -m sports_forecast.materialize \
+		tournament=$(or $(TOURNAMENT),uel_kz_1) \
+		market=$(or $(MARKET),winner) \
+		market_spec=$(or $(SPEC),winner) \
+		algorithm=$(or $(ALG),catboost) \
+		features=$(or $(FEAT),basic)
 
 # ---------- Демо доступ ----------
 download-demo-data:

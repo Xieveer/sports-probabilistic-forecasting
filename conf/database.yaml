@@ -1,0 +1,10 @@
+# @package database
+# Database configuration for Prediction Store.
+#
+# Dev:  SQLite (по умолчанию, без внешних зависимостей)
+# Prod: PostgreSQL (через docker-compose или DATABASE_URL env)
+
+url: "sqlite:///predictions.db"
+
+# Override для PostgreSQL:
+# url: "postgresql://sf_user:sf_dev_password@localhost:5432/sports_forecast"

@@ -4,6 +4,11 @@
 # Обработка данных от источников до готовых фичей
 # Запуск: dvc repro
 # Результат: data/processed/ готов для обучения моделей
+#
+# Параметризация:
+#   features.config (params.yaml) — набор фичей:
+#     basic    — минимальный, для dev/e2e тестирования  (~50 фичей)
+#     advanced — полный, для feature-research           (~1000+ фичей)
 
 stages:
   # Шаг 1: Ingest (source → raw)
@@ -36,12 +41,14 @@ stages:
 
   # Шаг 3: Features (interim → processed)
   # Генерация фичей для обучения
-  # Используется features_pipeline.yaml (не требует market/algorithm)
+  # Набор фичей определяется параметром features.config из params.yaml
   features:
     cmd: >-
       uv run python -m sports_forecast.features.features_build --multirun
       tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by
-      features=basic
+      features=${features.config}
+    params:
+      - features.config
     deps:
       - sports_forecast/features/features_build.py
       - sports_forecast/features/pipeline.py
