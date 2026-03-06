@@ -1,0 +1,236 @@
+"""Тесты для Pandera-валидации данных (sports_forecast.validation)."""
+
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+import pandera.errors
+import pytest
+
+from sports_forecast.validation.gates import (
+    ValidationResult,
+    validate_dataframe,
+    validate_interim,
+    validate_processed,
+    validate_raw,
+)
+from sports_forecast.validation.schemas import (
+    RawSchema,
+)
+
+
+# ============================================================================
+# Fixtures
+# ============================================================================
+
+
+@pytest.fixture()
+def raw_df() -> pd.DataFrame:
+    """Минимальный корректный raw DataFrame."""
+    return pd.DataFrame(
+        {
+            "id": ["m1", "m2", "m3"],
+            "datetime": ["2026-01-01 10:00", "2026-01-01 11:00", "2026-01-01 12:00"],
+            "status": ["end", "end", "upcoming"],
+            "home_short_name_en": ["Player A", "Player B", "Player C"],
+            "away_short_name_en": ["Player D", "Player E", "Player F"],
+        }
+    )
+
+
+@pytest.fixture()
+def interim_df() -> pd.DataFrame:
+    """Минимальный корректный interim DataFrame."""
+    return pd.DataFrame(
+        {
+            "id": [f"m{i}" for i in range(20)],
+            "datetime": pd.date_range("2026-01-01", periods=20, freq="h"),
+            "status": ["finished"] * 18 + ["upcoming"] * 2,
+            "home_points": np.random.randint(0, 10, 20).astype(float),
+            "away_points": np.random.randint(0, 10, 20).astype(float),
+        }
+    )
+
+
+@pytest.fixture()
+def processed_long_df() -> pd.DataFrame:
+    """Минимальный корректный processed long DataFrame."""
+    n_matches = 20
+    rows = []
+    for i in range(n_matches):
+        for side in ["h", "a"]:
+            rows.append(
+                {
+                    "id": f"m{i}",
+                    "datetime": pd.Timestamp("2026-01-01") + pd.Timedelta(hours=i),
+                    "side": side,
+                    "is_home": 1 if side == "h" else 0,
+                    "pl_points": float(np.random.randint(0, 10)),
+                    "opp_points": float(np.random.randint(0, 10)),
+                    "f_ewm_10": np.random.randn(),
+                    "f_count": float(np.random.randint(1, 100)),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+# ============================================================================
+# Tests — Raw Schema
+# ============================================================================
+
+
+class TestRawSchema:
+    """Тесты валидации raw-данных."""
+
+    def test_valid_raw(self, raw_df: pd.DataFrame) -> None:
+        result = validate_raw(raw_df, tournament="test", raise_on_error=False)
+        assert result.is_valid
+
+    def test_missing_id_column(self, raw_df: pd.DataFrame) -> None:
+        df = raw_df.drop(columns=["id"])
+        result = validate_raw(df, tournament="test", raise_on_error=False)
+        assert not result.is_valid
+
+    def test_duplicate_ids_allowed(self, raw_df: pd.DataFrame) -> None:
+        """Raw-данные допускают дублирующиеся id (до split на подтурниры)."""
+        df = raw_df.copy()
+        df.loc[1, "id"] = df.loc[0, "id"]
+        result = validate_raw(df, tournament="test", raise_on_error=False)
+        assert result.is_valid
+
+    def test_null_ids(self, raw_df: pd.DataFrame) -> None:
+        df = raw_df.copy()
+        df.loc[0, "id"] = None
+        result = validate_raw(df, tournament="test", raise_on_error=False)
+        assert not result.is_valid
+
+
+# ============================================================================
+# Tests — Interim Schema
+# ============================================================================
+
+
+class TestInterimSchema:
+    """Тесты валидации interim-данных."""
+
+    def test_valid_interim(self, interim_df: pd.DataFrame) -> None:
+        result = validate_interim(interim_df, tournament="test", raise_on_error=False)
+        assert result.is_valid
+
+    def test_negative_points(self, interim_df: pd.DataFrame) -> None:
+        df = interim_df.copy()
+        df.loc[0, "home_points"] = -5.0
+        result = validate_interim(df, tournament="test", raise_on_error=False)
+        assert not result.is_valid
+
+    def test_too_few_rows(self) -> None:
+        df = pd.DataFrame(
+            {
+                "id": ["m1"],
+                "datetime": [pd.Timestamp("2026-01-01")],
+                "status": ["finished"],
+                "home_points": [5.0],
+                "away_points": [3.0],
+            }
+        )
+        result = validate_interim(df, tournament="test", raise_on_error=False)
+        assert not result.is_valid
+
+    def test_datetime_warnings(self, interim_df: pd.DataFrame) -> None:
+        """Проверяет предупреждения о подозрительных датах."""
+        df = interim_df.copy()
+        df.loc[0, "datetime"] = pd.Timestamp("2015-01-01")
+        result = validate_interim(df, tournament="test", raise_on_error=False)
+        assert result.is_valid  # Warning, не ошибка
+        assert len(result.warnings) > 0
+
+
+# ============================================================================
+# Tests — Processed Long Schema
+# ============================================================================
+
+
+class TestProcessedLongSchema:
+    """Тесты валидации processed long-данных."""
+
+    def test_valid_processed(self, processed_long_df: pd.DataFrame) -> None:
+        result = validate_processed(
+            processed_long_df, data_format="long", tournament="test", raise_on_error=False
+        )
+        assert result.is_valid
+
+    def test_invalid_side(self, processed_long_df: pd.DataFrame) -> None:
+        df = processed_long_df.copy()
+        df.loc[0, "side"] = "x"
+        result = validate_processed(df, data_format="long", tournament="test", raise_on_error=False)
+        assert not result.is_valid
+
+    def test_invalid_is_home(self, processed_long_df: pd.DataFrame) -> None:
+        df = processed_long_df.copy()
+        df.loc[0, "is_home"] = 2
+        result = validate_processed(df, data_format="long", tournament="test", raise_on_error=False)
+        assert not result.is_valid
+
+    def test_no_features_warning(self) -> None:
+        """Предупреждение если нет f_ столбцов."""
+        df = pd.DataFrame(
+            {
+                "id": [f"m{i // 2}" for i in range(20)],
+                "datetime": [
+                    pd.Timestamp("2026-01-01") + pd.Timedelta(hours=i // 2) for i in range(20)
+                ],
+                "side": ["h", "a"] * 10,
+                "is_home": [1, 0] * 10,
+                "pl_points": np.random.rand(20) * 10,
+                "opp_points": np.random.rand(20) * 10,
+            }
+        )
+        result = validate_processed(df, data_format="long", tournament="test", raise_on_error=False)
+        assert result.is_valid  # Warning, не ошибка
+        assert any("f_" in w for w in result.warnings)
+
+
+# ============================================================================
+# Tests — ValidationResult
+# ============================================================================
+
+
+class TestValidationResult:
+    """Тесты для ValidationResult dataclass."""
+
+    def test_default_values(self) -> None:
+        result = ValidationResult(is_valid=True, stage="test")
+        assert result.is_valid
+        assert result.errors == []
+        assert result.warnings == []
+        assert result.stats == {}
+
+    def test_with_errors(self) -> None:
+        result = ValidationResult(
+            is_valid=False,
+            stage="raw",
+            errors=["missing column", "duplicate id"],
+        )
+        assert not result.is_valid
+        assert len(result.errors) == 2
+
+
+# ============================================================================
+# Tests — Quality Gate functions
+# ============================================================================
+
+
+class TestQualityGates:
+    """Тесты для функций Quality Gate."""
+
+    def test_validate_dataframe_raise_on_error(self, raw_df: pd.DataFrame) -> None:
+        """Проверяем что raise_on_error=True бросает исключение."""
+        df = raw_df.drop(columns=["id"])
+        with pytest.raises((pandera.errors.SchemaError, pandera.errors.SchemaErrors)):
+            validate_dataframe(df, RawSchema, stage="raw", raise_on_error=True)
+
+    def test_validate_dataframe_no_raise(self, raw_df: pd.DataFrame) -> None:
+        """Проверяем что raise_on_error=False возвращает результат без исключения."""
+        df = raw_df.drop(columns=["id"])
+        result = validate_dataframe(df, RawSchema, stage="raw", raise_on_error=False)
+        assert not result.is_valid

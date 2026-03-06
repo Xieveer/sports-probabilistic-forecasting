@@ -11,6 +11,7 @@ DOCS_BUILD := docs/build
 .PHONY: help init install lint format fix test test-unit test-cov test-watch test-file pre-commit train train-sweep promote clean dvc-repro
 .PHONY: docs docs-serve docs-clean docs-open docs-coverage docs-linkcheck tree
 .PHONY: api api-dev materialize docker-up docker-down docker-build docker-logs db-init
+.PHONY: airflow-init airflow-up airflow-down airflow-logs
 
 # ---------- Справка ----------
 
@@ -58,6 +59,15 @@ help:
 	@echo "  make docker-up     - запустить все сервисы (API + DB + MLflow)"
 	@echo "  make docker-down   - остановить все сервисы"
 	@echo "  make docker-logs   - показать логи сервисов"
+	@echo ""
+	@echo "Airflow:"
+	@echo "  make airflow-init  - инициализация Airflow (БД + admin user)"
+	@echo "  make airflow-up    - запустить Airflow (webserver + scheduler)"
+	@echo "  make airflow-down  - остановить Airflow"
+	@echo "  make airflow-logs  - логи Airflow"
+	@echo ""
+	@echo "Валидация:"
+	@echo "  make validate-data - проверить качество данных (Pandera)"
 	@echo ""
 	@echo "Утилиты:"
 	@echo "  make clean        - удалить кеши и временные файлы"
@@ -349,6 +359,40 @@ docker-materialize:
 		market_spec=$(or $(SPEC),winner) \
 		algorithm=$(or $(ALG),catboost) \
 		features=$(or $(FEAT),basic)
+
+# ---------- Airflow ----------
+
+# Инициализация Airflow (создание БД, admin user)
+airflow-init:
+	@echo "✈️  Инициализация Airflow..."
+	docker compose -f docker-compose.yml -f airflow/docker-compose.airflow.yml \
+		--profile init run --rm airflow-init
+
+# Запустить Airflow (webserver + scheduler)
+airflow-up:
+	@echo "✈️  Запуск Airflow..."
+	docker compose -f docker-compose.yml -f airflow/docker-compose.airflow.yml up -d
+	@echo ""
+	@echo "✅ Airflow запущен:"
+	@echo "   Web UI:  http://localhost:8080"
+	@echo "   Login:   admin / admin"
+
+# Остановить Airflow
+airflow-down:
+	@echo "✈️  Остановка Airflow..."
+	docker compose -f docker-compose.yml -f airflow/docker-compose.airflow.yml down
+
+# Логи Airflow
+airflow-logs:
+	docker compose -f docker-compose.yml -f airflow/docker-compose.airflow.yml \
+		logs -f --tail=50 airflow-webserver airflow-scheduler
+
+# ---------- Валидация данных ----------
+
+# Проверка качества данных (Pandera)
+validate-data:
+	@echo "🔍 Валидация данных..."
+	uv run python -m sports_forecast.validation.run_validation
 
 # ---------- Демо доступ ----------
 download-demo-data:

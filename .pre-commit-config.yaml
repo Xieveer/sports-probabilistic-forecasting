@@ -27,6 +27,7 @@ repos:
           --no-strict-optional,  # Мягче с Optional типами
           --warn-return-any,     # Предупреждать о Any
         ]
+        exclude: ^airflow/  # Airflow DAGs запускаются в отдельном контейнере
         additional_dependencies: [
           types-requests,      # Типы для requests
           types-PyYAML,        # Типы для PyYAML

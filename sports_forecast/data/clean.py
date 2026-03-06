@@ -376,6 +376,11 @@ def process_tournament(
         logger.warning("Турнир %s: пустой датафрейм, пропускаю", tournament_name)
         return
 
+    # ── Quality Gate: валидация raw-данных ──
+    from sports_forecast.validation.gates import validate_raw
+
+    validate_raw(df, tournament=tournament_name, raise_on_error=False)
+
     logger.info(
         "Турнир %s: загружено %d записей, %d колонок",
         tournament_name,
@@ -471,6 +476,11 @@ def process_tournament(
     out_dir = interim_root / tournament_name
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "matches_interim.parquet"
+
+    # ── Quality Gate: валидация interim-данных ──
+    from sports_forecast.validation.gates import validate_interim
+
+    validate_interim(df, tournament=tournament_name, raise_on_error=False)
 
     logger.info(
         "Турнир %s: записываю interim (%d записей) → %s",

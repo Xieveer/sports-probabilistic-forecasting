@@ -5,42 +5,24 @@
 
 ---
 
-## 🔴 High Priority
-
-### 1. Airflow DAGs (A–E)
-- [ ] DAG A: Data Ingestion (парсеры → raw layer)
-- [ ] DAG B: Data Processing (clean → interim → features → processed)
-- [ ] DAG C: Training Pipeline (per tournament / per market)
-- [ ] DAG D: Prediction Materialization (model → predictions DB)
-- [ ] DAG E: Model Monitoring & Retraining triggers
-- [ ] Все DAGs запускаются через CLI, без airflow-логики в ML-коде
-- [ ] Docker Compose: Airflow как отдельный контейнер
-
-### 2. Data Validation (Pandera)
-- [ ] Определить Pandera-схемы для raw → clean → processed слоёв
-- [ ] Quality Gate: блокировать pipeline при невалидных данных
-- [ ] Алерты при schema drift
-
----
-
 ## 🟡 Medium Priority
 
-### 3. Мониторинг деградации (Prometheus/Grafana)
+### 1. Мониторинг деградации (Prometheus/Grafana)
 - [ ] Отслеживание prod метрик на новых данных
 - [ ] Алерты при падении AUC/LogLoss
 - [ ] Grafana дашборд с ключевыми метриками
 
-### 4. Feature Selection Service
+### 2. Feature Selection Service
 - [ ] Автоматический отбор фичей (Boruta / SHAP / mutual_info)
 - [ ] Сравнение basic vs advanced наборов
 - [ ] Интеграция с MLflow (логирование набора фичей для каждого эксперимента)
 
-### 5. A/B тестирование моделей
+### 3. A/B тестирование моделей
 - [ ] Split traffic между Shadow/Prod
 - [ ] Логирование реальных результатов
 - [ ] Автоматическое переключение на лучшую модель
 
-### 6. Feature Store
+### 4. Feature Store
 - [ ] Централизованное хранилище фичей
 - [ ] Offline: для training
 - [ ] Online: для inference
@@ -49,20 +31,41 @@
 
 ## 🟢 Low Priority
 
-### 7. Документация
+### 5. Документация
 - [ ] Обновить `docs/CURRENT_TRAINING_STATUS.md`
 - [ ] Создать `docs/HOW_TO_ADD_NEW_TOURNAMENT.md`
 - [ ] Создать `docs/HOW_TO_ADD_NEW_MARKET.md`
 - [ ] Обновить README с актуальной архитектурой
 
-### 8. DVC стадии для v2.0
+### 6. DVC стадии для v2.0
 - [ ] Обновить `dvc.yaml` для новых стадий (train → materialize → deploy)
 - [ ] Интеграция с Airflow DAGs
+
+### 7. Data Quality — улучшения
+- [ ] Дубли id в cyberhockey данных — расследовать root cause (OT матчи?)
+- [ ] Pandera: добавить проверку schema drift (сравнение со snapshot)
+- [ ] Pandera: алерты в Slack/Email при нарушении quality gates
+
+### 8. Inference pipeline — улучшения
+- [ ] On-demand inference endpoint (POST /predict) для single match
+- [ ] Cache layer (Redis) для горячих предсказаний
+- [ ] Batch scheduling: автоматическое обновление stale предсказаний
 
 ---
 
 ## ✅ Недавно завершено (2026-03-06)
 
+- [x] **Airflow DAGs (A–E)**: 5 DAGs для полного ML lifecycle
+  - DAG A: Data Refresh (ingest → clean → features)
+  - DAG B/C: Training Sweep + Model Promotion
+  - DAG D: Prediction Materialization
+  - DAG E: Model Monitoring & Retraining triggers
+- [x] **Airflow Docker Compose**: отдельный контейнер, LocalExecutor, PostgreSQL backend
+- [x] **Data Validation (Pandera)**: схемы для raw/interim/processed слоёв
+  - RawSchema, InterimSchema, ProcessedLongSchema, ProcessedWideSchema, PredictionSchema
+  - Quality Gates интегрированы в clean.py и features_build.py
+  - CLI: `make validate-data` — проверка 29 файлов, все OK
+  - 16 unit-тестов для валидации
 - [x] **Data Leakage Audit**: все генераторы (EWM, Count, Form, Time) проверены, утечек нет
 - [x] **DVC repro**: полный pipeline up to date
 - [x] **E2E test**: CatBoost на uel_kz_1, все метрики в MLflow

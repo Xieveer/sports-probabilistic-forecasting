@@ -120,6 +120,17 @@ def process_tournament_new(
             len(inference_wide),
         )
 
+    # 5.5. Quality Gate: валидация processed-данных
+    from sports_forecast.validation.gates import validate_processed
+
+    validate_processed(
+        train_long, data_format="long", tournament=tournament_name, raise_on_error=False
+    )
+    if len(train_wide) > 0:
+        validate_processed(
+            train_wide, data_format="wide", tournament=tournament_name, raise_on_error=False
+        )
+
     # 6. Сохранение
     output_dir = processed_root / tournament_name
     output_dir.mkdir(parents=True, exist_ok=True)

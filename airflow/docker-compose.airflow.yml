@@ -1,0 +1,94 @@
+# ─────────────────────────────────────────────────────────────────
+# Docker Compose: Airflow для Sports Probabilistic Forecasting
+#
+# Использование:
+#   docker compose -f docker-compose.yml -f airflow/docker-compose.airflow.yml up -d
+#
+# Сервисы:
+#   airflow-init       — одноразовая инициализация (создание БД, admin-юзер)
+#   airflow-webserver  — Web UI (порт 8080)
+#   airflow-scheduler  — планировщик DAGs
+# ─────────────────────────────────────────────────────────────────
+
+x-airflow-common: &airflow-common
+  build:
+    context: ..
+    dockerfile: airflow/Dockerfile
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__FERNET_KEY: ""
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://sf_user:${POSTGRES_PASSWORD:-sf_dev_password}@db:5432/airflow"
+    # Переменные для DAGs
+    AIRFLOW_VAR_SF_PROJECT_DIR: "/app"
+    AIRFLOW_VAR_SF_UV_RUN: "uv run"
+    AIRFLOW_VAR_SF_TOURNAMENTS: "uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by"
+    AIRFLOW_VAR_SF_FEATURES_CONFIG: "basic"
+    AIRFLOW_VAR_SF_TRAIN_TOURNAMENTS: "uel_kz_1"
+    AIRFLOW_VAR_SF_TRAIN_ALGORITHMS: "catboost,lgbm,logreg"
+    AIRFLOW_VAR_SF_TRAIN_FEATURES: "basic"
+    AIRFLOW_VAR_SF_TRAIN_MARKET: "winner"
+    AIRFLOW_VAR_SF_TRAIN_MARKET_SPEC: "winner"
+    AIRFLOW_VAR_SF_PROMOTE_METRIC: "test_logloss"
+    AIRFLOW_VAR_SF_PROMOTE_DIRECTION: "minimize"
+    # БД предсказаний (PostgreSQL)
+    DATABASE_URL: "postgresql://sf_user:${POSTGRES_PASSWORD:-sf_dev_password}@db:5432/sports_forecast"
+    MLFLOW_TRACKING_URI: "http://mlflow:5000"
+  volumes:
+    - ../airflow/dags:/opt/airflow/dags:ro
+    - ../data:/app/data
+    - ../models:/app/models
+    - ../conf:/app/conf:ro
+    - ../sports_forecast:/app/sports_forecast:ro
+    - ../params.yaml:/app/params.yaml:ro
+    - ../pyproject.toml:/app/pyproject.toml:ro
+    - airflow-logs:/opt/airflow/logs
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+
+  # ── Инициализация Airflow (одноразовая) ─────────────────────────
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username admin \
+          --password admin \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com || true
+        echo "✅ Airflow initialized"
+    restart: "no"
+    profiles:
+      - init
+
+  # ── Airflow Web UI ──────────────────────────────────────────────
+  airflow-webserver:
+    <<: *airflow-common
+    command: airflow webserver --port 8080
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ── Airflow Scheduler ──────────────────────────────────────────
+  airflow-scheduler:
+    <<: *airflow-common
+    command: airflow scheduler
+    restart: unless-stopped
+
+volumes:
+  airflow-logs:

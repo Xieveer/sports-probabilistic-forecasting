@@ -2,10 +2,13 @@
 # Docker Compose for Sports Probabilistic Forecasting
 #
 # Services:
-#   db       — PostgreSQL for prediction store
+#   db       — PostgreSQL for prediction store + Airflow metadata
 #   api      — FastAPI read-only prediction server
 #   mlflow   — MLflow tracking server
 #   worker   — batch prediction materialization (on-demand)
+#
+# Airflow (дополнительно):
+#   docker compose -f docker-compose.yml -f airflow/docker-compose.airflow.yml up -d
 # ─────────────────────────────────────────────────────────────────
 
 services:
@@ -22,6 +25,7 @@ services:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - ./airflow/init-airflow-db.sh:/docker-entrypoint-initdb.d/init-airflow-db.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sf_user -d sports_forecast"]
       interval: 10s
