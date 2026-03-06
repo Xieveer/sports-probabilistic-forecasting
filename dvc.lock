@@ -31,7 +31,7 @@ stages:
   features:
     cmd: uv run python -m sports_forecast.features.features_build --multirun
       tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by
-      features=basic
+      features=advanced
     deps:
     - path: conf/features/
       hash: md5
@@ -53,8 +53,8 @@ stages:
       nfiles: 7
     - path: sports_forecast/features/features_build.py
       hash: md5
-      md5: 22ca673f66a630d01873279d015ab5e5
-      size: 9148
+      md5: a9a65d1e514ba32a6f01def58619cc11
+      size: 9563
     - path: sports_forecast/features/generators/
       hash: md5
       md5: 4776a76d5d5afeafe361cb3e6ba91325.dir
@@ -66,12 +66,12 @@ stages:
       size: 17275
     params:
       params.yaml:
-        features.config: basic
+        features.config: advanced
     outs:
     - path: data/processed/
       hash: md5
-      md5: 7501c3868533a7dcc185b116017d790b.dir
-      size: 129520360
+      md5: 464d78762b21ad605fa44caeec5aca9c.dir
+      size: 733201983
       nfiles: 20
   clean:
     cmd: uv run python -m sports_forecast.data.clean
@@ -80,6 +80,11 @@ stages:
       hash: md5
       md5: 13a08ff4d363534b6ba112d37150e148
       size: 252
+    - path: conf/sport/
+      hash: md5
+      md5: 25f7e21bf933fe13c9b10b088a295600.dir
+      size: 7776
+      nfiles: 2
     - path: conf/tournament/
       hash: md5
       md5: d033d98672d99c9306534d347c52aa43.dir
@@ -92,11 +97,45 @@ stages:
       nfiles: 15
     - path: sports_forecast/data/clean.py
       hash: md5
-      md5: 0ff5601746f63982940bad37655b5438
-      size: 20931
+      md5: c5259919179c8ab8ca8c1fe1c1d9eacb
+      size: 21353
+    - path: sports_forecast/validation/schemas.py
+      hash: md5
+      md5: 0cbc158d72d66fd073cd7d10b53c18ee
+      size: 10378
     outs:
     - path: data/interim/
       hash: md5
       md5: 3bcb2409ce9fe07cd1b8a216506f06e1.dir
       size: 11544871
       nfiles: 7
+  validate:
+    cmd: uv run python -m sports_forecast.validation.run_validation
+    deps:
+    - path: data/interim/
+      hash: md5
+      md5: 3bcb2409ce9fe07cd1b8a216506f06e1.dir
+      size: 11544871
+      nfiles: 7
+    - path: data/processed/
+      hash: md5
+      md5: 464d78762b21ad605fa44caeec5aca9c.dir
+      size: 733201983
+      nfiles: 20
+    - path: data/raw/
+      hash: md5
+      md5: a821315fce82c0841c8c0f5b348b856a.dir
+      size: 199014346
+      nfiles: 15
+    - path: sports_forecast/validation/gates.py
+      hash: md5
+      md5: a7993c9cccd72cdd44fb50c794185a25
+      size: 19615
+    - path: sports_forecast/validation/run_validation.py
+      hash: md5
+      md5: 6c65d9b0b025616e01712151ebc5d01b
+      size: 5235
+    - path: sports_forecast/validation/schemas.py
+      hash: md5
+      md5: 0cbc158d72d66fd073cd7d10b53c18ee
+      size: 10378

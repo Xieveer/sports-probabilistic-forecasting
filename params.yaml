@@ -2,4 +2,4 @@
 # Изменение этих параметров триггерит пересборку зависимых стадий
 
 features:
-  config: basic  # basic = быстрый набор для dev, advanced = полный набор для research
+  config: advanced  # basic = быстрый набор для dev, advanced = полный набор для research
