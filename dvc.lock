@@ -100,39 +100,3 @@ stages:
       md5: 3bcb2409ce9fe07cd1b8a216506f06e1.dir
       size: 11544871
       nfiles: 7
-  train:
-    cmd: uv run python -m sports_forecast.train tournament=all model=is_home_win
-    deps:
-    - path: conf/config.yaml
-      hash: md5
-      md5: 6e5a28b08e39e17df1e847d5c019a90d
-      size: 1300
-    - path: conf/model
-      hash: md5
-      md5: 84ce9b71e1069928996e3eabca918c80.dir
-      size: 6728
-      nfiles: 4
-    - path: conf/paths.yaml
-      hash: md5
-      md5: 37255be8c77c777bcf8382e851be222e
-      size: 224
-    - path: conf/tournament
-      hash: md5
-      md5: 7d04b1efa3694318d2aa8d29dadc81d5.dir
-      size: 17623
-      nfiles: 8
-    - path: data/processed
-      hash: md5
-      md5: 8a094efac99bbf647495ece4389464e2.dir
-      size: 32975664
-      nfiles: 20
-    - path: sports_forecast/train.py
-      hash: md5
-      md5: bcc620b2fa3a677feedb4a1f33581cc5
-      size: 34274
-    outs:
-    - path: models
-      hash: md5
-      md5: bfc56ed8d4ece5f0ba88ba96af6e132c.dir
-      size: 167024
-      nfiles: 7

@@ -38,9 +38,8 @@
 
 - [x] **DVC стадии v2.0**
   - Добавлена стадия `validate` (Pandera validation)
-  - Добавлена стадия `train_prod` (production training, параметризована через params.yaml)
-  - Добавлена стадия `materialize` (batch prediction → DB)
-  - `params.yaml` расширен секцией `prod.*` для production конфигурации
+  - `train_prod` и `materialize` убраны из DVC — обучение и inference оркестрируются Airflow / CLI
+  - DVC управляет только данными: `ingest → clean → features → validate`
 
 - [x] **Data Quality — улучшения**
   - `check_schema_drift()` — обнаружение изменений в схеме данных

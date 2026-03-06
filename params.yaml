@@ -3,12 +3,3 @@
 
 features:
   config: basic  # basic = быстрый набор для dev, advanced = полный набор для research
-
-# Продакшен конфигурация (для стадий train_prod, materialize)
-# Эти стадии запускаются вручную: dvc repro train_prod / dvc repro materialize
-prod:
-  tournament: uel_kz_1
-  market: winner
-  market_spec: winner
-  algorithm: catboost
-  features: basic

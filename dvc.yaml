@@ -5,13 +5,11 @@
 # Основной pipeline (dvc repro):
 #   ingest → clean → features → validate
 #
-# Production workflow (запускается вручную):
-#   dvc repro train_prod      — обучение продакшен модели
-#   dvc repro materialize     — материализация предсказаний
+# Обучение и inference — через CLI / Airflow (не через DVC).
+# См. комментарии в конце файла.
 #
 # Параметризация (params.yaml):
 #   features.config — набор фичей (basic / advanced)
-#   prod.*          — конфигурация для продакшен обучения
 
 stages:
   # ========================================================================
@@ -82,73 +80,27 @@ stages:
       - data/interim/
       - data/processed/
 
-  # ========================================================================
-  # PRODUCTION WORKFLOW (запускается вручную)
-  # ========================================================================
-  # Использование:
-  #   dvc repro train_prod       — обучить production модель
-  #   dvc repro materialize      — материализовать предсказания
-  #
-  # Параметры берутся из params.yaml (секция prod.*)
-  # Для смены турнира/алгоритма отредактируйте params.yaml
-
-  # Шаг 5: Train production model
-  # Обучение одной prod модели с логированием в MLflow
-  train_prod:
-    cmd: >-
-      uv run python -m sports_forecast.train
-      tournament=${prod.tournament}
-      market=${prod.market}
-      market_spec=${prod.market_spec}
-      algorithm=${prod.algorithm}
-      features=${prod.features}
-    params:
-      - prod.tournament
-      - prod.market
-      - prod.market_spec
-      - prod.algorithm
-      - prod.features
-    deps:
-      - sports_forecast/train.py
-      - sports_forecast/training/trainer.py
-      - conf/algorithm/
-      - conf/features/
-      - data/processed/
-    outs:
-      - models/${prod.tournament}/${prod.market_spec}/:
-          cache: true
-          persist: true
-
-  # Шаг 6: Materialize predictions
-  # Batch inference на upcoming матчах → запись в DB
-  materialize:
-    cmd: >-
-      uv run python -m sports_forecast.materialize
-      tournament=${prod.tournament}
-      market=${prod.market}
-      market_spec=${prod.market_spec}
-      algorithm=${prod.algorithm}
-      features=${prod.features}
-    params:
-      - prod.tournament
-      - prod.market
-      - prod.market_spec
-      - prod.algorithm
-      - prod.features
-    deps:
-      - sports_forecast/materialize.py
-      - models/${prod.tournament}/${prod.market_spec}/
-      - data/processed/
-
 # ============================================================================
-# ЭКСПЕРИМЕНТАЛЬНОЕ ОБУЧЕНИЕ
+# ОБУЧЕНИЕ И INFERENCE — вне DVC
 # ============================================================================
-# Для экспериментов (sweep, multirun, Optuna) используйте CLI напрямую:
+# Обучение и материализация НЕ входят в dvc repro.
+# DVC управляет только данными (source → raw → interim → processed).
 #
+# Обучение (эксперименты):
 #   make train-sweep TOURNAMENT=uel_kz_1
-#   make train-sweep-full TOURNAMENT=uel_kz_1
-#
 #   uv run python -m sports_forecast.train --multirun \
 #       tournament=uel_kz_1 algorithm=catboost,lgbm features=basic,advanced
 #
-# Airflow DAGs также запускают обучение через CLI (не через DVC).
+# Обучение (prod модель):
+#   uv run python -m sports_forecast.train \
+#       tournament=uel_kz_1 algorithm=catboost features=advanced
+#
+# Материализация предсказаний:
+#   uv run python -m sports_forecast.materialize \
+#       tournament=uel_kz_1 algorithm=catboost features=advanced
+#
+# В production всё оркестрируется через Airflow DAGs:
+#   dag_data_refresh  → dvc repro (данные)
+#   dag_training      → CLI train + promote (модели)
+#   dag_materialize   → CLI materialize (предсказания → DB)
+#   dag_monitoring    → drift + performance checks
