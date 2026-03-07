@@ -317,23 +317,46 @@ class StackingEnsemble(BaseModel):
 
         # Загружаем базовые модели
         for base_model in self.base_models:
-            # Ищем файл модели (расширение зависит от типа модели)
-            model_files = list(path.glob(f"{base_model.get_name()}*"))
-            if not model_files:
+            model_dir = path / base_model.get_name()
+            if not model_dir.exists() or not model_dir.is_dir():
                 raise FileNotFoundError(
-                    f"Файл базовой модели '{base_model.get_name()}' не найден в {path}"
+                    f"Директория базовой модели '{base_model.get_name()}' не найдена в {path}"
                 )
 
-            model_path = model_files[0]
-            base_model.load(model_path)
+            # Ищем файл модели внутри поддиректории (расширение зависит от типа).
+            # Исключаем вспомогательные файлы (preprocessor, calibration).
+            model_files = [
+                f
+                for f in model_dir.iterdir()
+                if f.is_file()
+                and "_prod" in f.stem
+                and "_preprocessor" not in f.stem
+                and "_calibration" not in f.stem
+            ]
+            if not model_files:
+                raise FileNotFoundError(
+                    f"Файл базовой модели '{base_model.get_name()}' не найден в {model_dir}"
+                )
+
+            base_model.load(model_files[0])
 
         # Загружаем мета-модель
-        meta_files = list(path.glob("meta*"))
-        if not meta_files:
-            raise FileNotFoundError(f"Файл мета-модели не найден в {path}")
+        meta_dir = path / "meta"
+        if not meta_dir.exists() or not meta_dir.is_dir():
+            raise FileNotFoundError(f"Директория мета-модели не найдена в {path}")
 
-        meta_path = meta_files[0]
-        self.meta_model.load(meta_path)
+        meta_files = [
+            f
+            for f in meta_dir.iterdir()
+            if f.is_file()
+            and "_prod" in f.stem
+            and "_preprocessor" not in f.stem
+            and "_calibration" not in f.stem
+        ]
+        if not meta_files:
+            raise FileNotFoundError(f"Файл мета-модели не найден в {meta_dir}")
+
+        self.meta_model.load(meta_files[0])
 
         self.is_fitted_ = True
 

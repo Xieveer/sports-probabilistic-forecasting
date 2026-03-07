@@ -23,8 +23,12 @@ meta_model:
 # TSCV для stacking (используется для получения OOF предсказаний)
 tscv_n_splits: 4
 
-# Гиперпараметры (пока не используются)
+# params не используется для stacking:
+# базовые модели получают параметры через _create_stacking_ensemble(),
+# мета-модель — через meta_model.params выше.
+# Поле существует для совместимости с ModelFactory.create_model(),
+# который вызывает algorithm_cfg.get("params", {}) для всех алгоритмов.
 params: {}
 
-# Optuna space (не используется для ансамбля)
+# Optuna не поддерживается для stacking (tuning базовых моделей — отдельно)
 optuna_space: null

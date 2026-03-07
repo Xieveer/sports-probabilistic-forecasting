@@ -16,6 +16,7 @@ import pytest
 from omegaconf import DictConfig
 
 from sports_forecast.training.calibration import ModelCalibrator
+from sports_forecast.training.ensembles.stacking import StackingEnsemble
 from sports_forecast.training.model_factory import ModelFactory
 from sports_forecast.training.models.catboost import CatBoostModel
 from sports_forecast.training.models.dummy import DummyModel
@@ -488,6 +489,137 @@ class TestModelFactory:
         )
         with pytest.raises(ValueError, match="base_models"):
             ModelFactory.create_model(cfg)
+
+    def test_stacking_factory_creates_ensemble(self):
+        """ModelFactory корректно создаёт StackingEnsemble из конфига."""
+        cfg = DictConfig(
+            {
+                "name": "stacking",
+                "_target_": "StackingEnsemble",
+                "params": {},
+                "base_models": ["logreg", "dummy"],
+                "meta_model": {"type": "logreg", "params": {"C": 0.1}},
+                "tscv_n_splits": 3,
+                "optuna_space": None,
+            }
+        )
+        model = ModelFactory.create_model(cfg)
+        assert isinstance(model, StackingEnsemble)
+        assert len(model.base_models) == 2
+        assert model.n_splits == 3
+
+
+# ==================== Stacking Integration Tests ====================
+
+
+class TestStackingEnsemble:
+    """Интеграционные тесты для полного цикла Stacking Ensemble."""
+
+    def test_fit_predict_cycle(self, sample_data):
+        """Полный цикл: create → fit → predict_proba."""
+        features, target = sample_data
+
+        base_models = [
+            LogRegModel(name="logreg_base", params={"max_iter": 200}),
+            DummyModel(name="dummy_base"),
+        ]
+        meta_model = LogRegModel(name="meta_logreg", params={"C": 0.1, "max_iter": 200})
+
+        stacking = StackingEnsemble(
+            name="test_stacking",
+            base_models=base_models,
+            meta_model=meta_model,
+            n_splits=3,
+        )
+
+        # fit
+        stacking.fit(features, target)
+        assert stacking.is_fitted_
+
+        # predict_proba
+        proba = stacking.predict_proba(features)
+        assert proba.shape == (len(features), 2)
+        assert np.allclose(proba.sum(axis=1), 1.0, atol=1e-6)
+        assert (proba >= 0).all()
+        assert (proba <= 1).all()
+
+    def test_predict_before_fit_raises_error(self, sample_data):
+        """predict_proba до fit вызывает ValueError."""
+        features, _ = sample_data
+
+        stacking = StackingEnsemble(
+            name="test_stacking",
+            base_models=[DummyModel(name="dummy")],
+            meta_model=LogRegModel(name="meta"),
+        )
+
+        with pytest.raises(ValueError, match="не обучен"):
+            stacking.predict_proba(features)
+
+    def test_save_load_cycle(self, sample_data, tmp_path):
+        """Полный цикл: fit → save → load → predict_proba."""
+        features, target = sample_data
+
+        base_models = [
+            LogRegModel(name="logreg_base", params={"max_iter": 200}),
+            DummyModel(name="dummy_base"),
+        ]
+        meta_model = LogRegModel(name="meta_logreg", params={"C": 0.1, "max_iter": 200})
+
+        stacking = StackingEnsemble(
+            name="test_stacking",
+            base_models=base_models,
+            meta_model=meta_model,
+            n_splits=3,
+        )
+        stacking.fit(features, target)
+
+        # save
+        save_path = tmp_path / "stacking_test"
+        stacking.save(save_path, version="prod")
+
+        # Проверяем что файлы созданы
+        saved_dir = tmp_path / "stacking_test_prod"
+        assert saved_dir.exists()
+
+        # load в новый экземпляр
+        new_base = [
+            LogRegModel(name="logreg_base"),
+            DummyModel(name="dummy_base"),
+        ]
+        new_meta = LogRegModel(name="meta_logreg")
+        new_stacking = StackingEnsemble(
+            name="test_stacking",
+            base_models=new_base,
+            meta_model=new_meta,
+        )
+        new_stacking.load(saved_dir)
+        assert new_stacking.is_fitted_
+
+        # predict_proba должен давать тот же результат
+        proba_orig = stacking.predict_proba(features)
+        proba_loaded = new_stacking.predict_proba(features)
+        np.testing.assert_allclose(proba_orig, proba_loaded, atol=1e-6)
+
+    def test_no_base_models_raises_error(self):
+        """Конструктор отклоняет пустой список base_models."""
+        with pytest.raises(ValueError, match="base_models"):
+            StackingEnsemble(name="bad", base_models=[], meta_model=LogRegModel("m"))
+
+    def test_no_meta_model_raises_error(self):
+        """Конструктор отклоняет None meta_model."""
+        with pytest.raises(ValueError, match="meta_model"):
+            StackingEnsemble(name="bad", base_models=[DummyModel("d")], meta_model=None)
+
+    def test_save_before_fit_raises_error(self, tmp_path):
+        """save до fit вызывает ValueError."""
+        stacking = StackingEnsemble(
+            name="test",
+            base_models=[DummyModel(name="d")],
+            meta_model=LogRegModel(name="m"),
+        )
+        with pytest.raises(ValueError, match="не обучен"):
+            stacking.save(tmp_path / "model", version="prod")
 
 
 # ==================== Integration Tests ====================

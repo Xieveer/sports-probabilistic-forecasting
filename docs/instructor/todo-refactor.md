@@ -144,24 +144,21 @@ repository, engine, schemas) и `materialize.py`. Текущее покрыти�
 
 ---
 
-## R6. 🟢 Проверить и почистить stacking config
+## R6. ✅ ~~Проверить и почистить stacking config~~
 
-**Проблема:** В `conf/algorithm/stacking.yaml` есть `params: {}` после
-`base_models` и `meta_model`. Это потенциально создаёт путаницу.
+> **Выполнено: 2026-03-07**
 
-**Что сделать:**
+**Решение:**
+- `params: {}` — подтверждено: не мешает, добавлен поясняющий комментарий
+- Написаны 7 тестов для StackingEnsemble (create, fit, predict_proba, save/load, ошибки)
+- **Обнаружен и исправлен баг** в `StackingEnsemble.load()`: glob на верхнем уровне
+  находил директорию вместо файла модели. Исправлено — теперь load ищет файлы
+  внутри поддиректорий и фильтрует preprocessor/calibration артефакты.
 
-- [ ] **R6.1** Протестировать полный цикл stacking: создание через
-  `ModelFactory`, обучение, predict_proba, сохранение/загрузка
-- [ ] **R6.2** Проверить что `params: {}` не мешает
-  (ModelFactory.create_model использует `base_models` и `meta_model` напрямую,
-  не через `params`) — по аудиту: не мешает, но добавить комментарий
-- [ ] **R6.3** Уточнить комментарий в `stacking.yaml`:
-  `params: {}  # не используется для stacking (base_models и meta_model выше)`
-
-**Файлы:**
-- `conf/algorithm/stacking.yaml`
-- `sports_forecast/training/model_factory.py`
+**Изменённые файлы:**
+- `conf/algorithm/stacking.yaml` — расширенный комментарий к `params: {}`
+- `sports_forecast/training/ensembles/stacking.py` — исправлен `load()` (баг-фикс)
+- `tests/test_training.py` — добавлены `TestStackingEnsemble` (7 тестов)
 
 ---
 
