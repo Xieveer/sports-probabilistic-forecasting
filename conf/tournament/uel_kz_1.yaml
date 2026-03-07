@@ -50,8 +50,8 @@ data_clean:
     - status
     - home_points
     - away_points
-    - home_short_name_en
-    - away_short_name_en
+    - home_team
+    - away_team
     - tour_match_num
     - tour_num
 

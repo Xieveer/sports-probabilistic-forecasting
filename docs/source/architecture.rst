@@ -30,7 +30,7 @@
     conf/
     ├── config.yaml              # Корневой конфиг
     ├── tournament/              # Турниры + target_sources
-    ├── sport/                   # Настройки спорта (player_id_attr, form)
+    ├── sport/                   # Настройки спорта (column_mapping, form)
     ├── source/                  # Правила ingest + split
     ├── market/                  # Семейства маркетов (winner, total)
     ├── market_spec/             # Конкретные спецификации

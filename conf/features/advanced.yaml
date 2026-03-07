@@ -15,6 +15,3 @@ defaults:
 
 name: advanced
 description: "Advanced featureset with multiple spans (5, 25, 100)"
-
-# Идентификатор участника (из tournament конфига)
-player_id_attr: ${tournament.player_id_attr}

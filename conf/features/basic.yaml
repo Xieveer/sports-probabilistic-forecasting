@@ -15,6 +15,3 @@ defaults:
 
 name: basic
 description: "Basic featureset for fast testing"
-
-# Идентификатор участника (из tournament конфига)
-player_id_attr: ${tournament.player_id_attr}

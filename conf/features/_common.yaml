@@ -32,13 +32,9 @@ result_cols:
   - away_sets
   - total
   - diff
-  # Названия команд/игроков
-  - pl_short_name_en
-  - opp_short_name_en
-  - home_name
-  - away_name
-  - home_short_name_en
-  - away_short_name_en
+  # Названия команд/игроков (стандартизированы)
+  - home_team
+  - away_team
 
 # Префикс для всех генерируемых фичей
 feature_prefix: "f_"

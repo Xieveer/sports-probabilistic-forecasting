@@ -7,15 +7,15 @@
 
 ## Поддерживаемые турниры
 
-| Турнир | Спорт | Регион | player_id_attr | Фичей (advanced) | Статус |
-|--------|-------|--------|----------------|-------------------|--------|
-| uel_kz_1 | Cyberhockey | Kazakhstan | short_name_en | 75 | ✅ Готов |
-| uel_kz_2 | Cyberhockey | Kazakhstan | short_name_en | 60 | ✅ Готов |
-| uel_cz | Cyberhockey | Czech Republic | short_name_en | 60 | ✅ Готов |
-| lp_ru | Table Tennis | Russia | name | 52 | ✅ Готов |
-| lp_eu | Table Tennis | Europe | name | 52 | ✅ Готов |
-| lp_eu_a18 | Table Tennis | Europe (A18) | name | 52 | ✅ Готов |
-| lp_by | Table Tennis | Belarus | name | 52 | ✅ Готов |
+| Турнир | Спорт | Регион | Фичей (advanced) | Статус |
+|--------|-------|--------|-------------------|--------|
+| uel_kz_1 | Cyberhockey | Kazakhstan | 75 | ✅ Готов |
+| uel_kz_2 | Cyberhockey | Kazakhstan | 60 | ✅ Готов |
+| uel_cz | Cyberhockey | Czech Republic | 60 | ✅ Готов |
+| lp_ru | Table Tennis | Russia | 52 | ✅ Готов |
+| lp_eu | Table Tennis | Europe | 52 | ✅ Готов |
+| lp_eu_a18 | Table Tennis | Europe (A18) | 52 | ✅ Готов |
+| lp_by | Table Tennis | Belarus | 52 | ✅ Готов |
 
 ---
 

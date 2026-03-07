@@ -21,7 +21,6 @@
 
 Турнир всегда привязан к спорту. Спорт определяет:
 
-- `player_id_attr` — атрибут идентификации участников
 - `target_sources` — как вычислять таргеты
 - `allowed_market_specs` — допустимые рынки и линии
 - `data_clean` — маппинг колонок, типы данных
@@ -29,10 +28,13 @@
 
 ### Существующие спорты
 
-| Спорт | Конфиг | player_id_attr |
-|-------|--------|----------------|
-| Cyberhockey | `conf/sport/cyberhockey.yaml` | short_name_en |
-| Table Tennis | `conf/sport/table_tennis.yaml` | name |
+| Спорт | Конфиг | Участники (wide) |
+|-------|--------|------------------|
+| Cyberhockey | `conf/sport/cyberhockey.yaml` | `home_team` / `away_team` |
+| Table Tennis | `conf/sport/table_tennis.yaml` | `home_team` / `away_team` |
+
+> **Стандартизация:** Имена участников всегда приводятся к `home_team` / `away_team`
+> на clean-стадии (через `column_mapping`). В long format: `pl` / `opp`.
 
 Если ваш турнир относится к существующему спорту, переходите к **Шагу 2**.
 
@@ -43,8 +45,6 @@
 ```yaml
 # conf/sport/basketball.yaml
 sport: basketball
-
-player_id_attr: "team_name"
 
 form_params:
   fg_trigger_minutes: 1440    # 24 часа → First Game
@@ -86,6 +86,8 @@ data_clean:
   column_mapping:
     raw_home_score: home_points
     raw_away_score: away_points
+    raw_home_team: home_team      # ← обязательно привести к home_team / away_team
+    raw_away_team: away_team
     odds_column: odds_raw
 
   required_columns: [id, status, datetime]
@@ -225,8 +227,8 @@ data_clean:
     - status
     - home_points
     - away_points
-    - home_team_name
-    - away_team_name
+    - home_team
+    - away_team
 
 # Метаданные (опционально)
 stats:
@@ -260,14 +262,6 @@ features:
     uv run python -m sports_forecast.features.features_build --multirun
     tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by,nba
     features=${features.config}
-```
-
-### Добавить конфиг `conf/tournament/all.yaml` (если используется)
-
-```yaml
-# Если есть all.yaml, добавьте новый турнир
-tournaments:
-  - nba
 ```
 
 ---

@@ -273,20 +273,9 @@ class FeaturePipeline:
                 ]
                 context_columns = [col for col in possible_context if col in df_wide.columns]
 
-            # ОБЯЗАТЕЛЬНЫЙ параметр: атрибут для идентификации участника
-            player_id_attr = self.config.get("player_id_attr")
-            if player_id_attr is None:
-                raise ValueError(
-                    "Параметр 'player_id_attr' обязателен в конфиге фичей. "
-                    "Укажите атрибут для идентификации участника (например, 'short_name_en', 'name', 'team')"
-                )
-
             logger.info("  Контекстные колонки: %s", context_columns if context_columns else "нет")
-            logger.info("  ID участника: %s", player_id_attr)
 
-            df_long = wide_to_long(
-                df_wide, context_columns=context_columns, player_id_attr=player_id_attr
-            )
+            df_long = wide_to_long(df_wide, context_columns=context_columns)
             validate_long_format(df_long)
 
             logger.info("  wide → long: %d матчей → %d строк", df_wide.shape[0], df_long.shape[0])

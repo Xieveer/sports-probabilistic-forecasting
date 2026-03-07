@@ -495,7 +495,6 @@ class TestFeaturePipelineDictFormat:
                 },
             },
             "requires_long": False,
-            "player_id_attr": "short_name_en",
         }
         pipeline = FeaturePipeline(config)
         assert len(pipeline.generators) == 2

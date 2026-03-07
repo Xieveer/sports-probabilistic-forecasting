@@ -179,7 +179,7 @@ def run(cfg: DictConfig) -> None:
     """Entry point для генерации фичей для одного турнира.
 
     Турнир задаётся через Hydra CLI (``tournament=uel_kz_1``).
-    Features конфиг резолвит ``player_id_attr`` и ``form_params``
+    Features конфиг резолвит ``form_params``
     из конфига турнира, поэтому каждый запуск — один турнир.
 
     Для обработки нескольких турниров используйте Hydra multirun::
@@ -218,7 +218,6 @@ def run(cfg: DictConfig) -> None:
     tournament_name = cfg.tournament.name
     logger.info("Конфиг фичей: %s", cfg.features.get("name", "N/A"))
     logger.info("Турнир: %s", tournament_name)
-    logger.info("player_id_attr: %s", cfg.features.get("player_id_attr", "N/A"))
 
     # paths уже скомпонованы через features_pipeline.yaml defaults
     interim_root = PROJECT_ROOT / cfg.paths.interim_dir

@@ -68,9 +68,9 @@ ewm:
       h2h: true
       output_suffix: "_diff"
 
-    # H2H + side
+    # H2H + side (pl/opp + сторона)
     - name: "h2h_side"
-      keys: ["pl", "opp", "side", "pl_name", "opp_name"]
+      keys: ["pl", "opp", "side"]
       h2h: true
       output_suffix: "_diff"
 
@@ -127,7 +127,7 @@ count:
       keys: ["pl", "opp", "tour_match_num"]
       h2h: true
 
-    # H2H + side
+    # H2H + side (pl/opp + сторона)
     - name: "h2h_side"
-      keys: ["pl", "opp", "side", "pl_team", "opp_team"]
+      keys: ["pl", "opp", "side"]
       h2h: true

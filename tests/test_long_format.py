@@ -2,6 +2,10 @@
 Тесты для трансформации wide ↔ long форматов данных.
 
 Тестируем критическую логику разворота датафрейма для Feature Generation System.
+
+Стандартизированные имена участников:
+    Wide: ``home_team`` / ``away_team``
+    Long: ``pl`` / ``opp`` (напрямую, без промежуточного ``pl_team``)
 """
 
 import pandas as pd
@@ -21,15 +25,15 @@ class TestWideToLong:
                 "id": [1],
                 "datetime": pd.to_datetime(["2024-01-01"]),
                 "status": ["finished"],
-                "home_name": ["Team A"],
-                "away_name": ["Team B"],
+                "home_team": ["Team A"],
+                "away_team": ["Team B"],
                 "home_points": [10],
                 "away_points": [8],
             }
         )
 
         # Act
-        long = wide_to_long(df, player_id_attr="name")
+        long = wide_to_long(df)
 
         # Assert
         assert len(long) == 2, "Один матч должен дать две строки"
@@ -54,8 +58,8 @@ class TestWideToLong:
             {
                 "id": [1],
                 "datetime": pd.to_datetime(["2024-01-01"]),
-                "home_name": ["Player1"],
-                "away_name": ["Player2"],
+                "home_team": ["Player1"],
+                "away_team": ["Player2"],
                 "home_points": [70],
                 "away_points": [65],
                 "home_sets": [3],
@@ -64,7 +68,7 @@ class TestWideToLong:
         )
 
         # Act
-        long = wide_to_long(df, player_id_attr="name")
+        long = wide_to_long(df)
 
         # Assert
         assert len(long) == 2
@@ -87,8 +91,8 @@ class TestWideToLong:
             {
                 "id": [1],
                 "datetime": pd.to_datetime(["2024-01-01"]),
-                "home_name": ["Player1"],
-                "away_name": ["Player2"],
+                "home_team": ["Player1"],
+                "away_team": ["Player2"],
                 "home_points": [10],
                 "away_points": [8],
                 "tour_num": [5],
@@ -97,7 +101,7 @@ class TestWideToLong:
         )
 
         # Act
-        long = wide_to_long(df, context_columns=["tour_num", "weekday"], player_id_attr="name")
+        long = wide_to_long(df, context_columns=["tour_num", "weekday"])
 
         # Assert
         assert "tour_num" in long.columns
@@ -108,26 +112,30 @@ class TestWideToLong:
         assert long["tour_num"].iloc[0] == 5
         assert long["weekday"].iloc[0] == 3
 
-    def test_player_name_aliases(self):
-        """Создание алиасов pl/opp из pl_name/opp_name."""
+    def test_pl_opp_identity(self):
+        """Колонки pl/opp содержат идентификаторы участников из home_team/away_team."""
         # Arrange
         df = pd.DataFrame(
             {
                 "id": [1],
                 "datetime": pd.to_datetime(["2024-01-01"]),
-                "home_name": ["Team A"],
-                "away_name": ["Team B"],
+                "home_team": ["Team A"],
+                "away_team": ["Team B"],
                 "home_points": [10],
                 "away_points": [8],
             }
         )
 
         # Act
-        long = wide_to_long(df, player_id_attr="name")
+        long = wide_to_long(df)
 
         # Assert
         assert "pl" in long.columns
         assert "opp" in long.columns
+
+        # pl_team / opp_team НЕ должны быть в long (team → pl/opp напрямую)
+        assert "pl_team" not in long.columns
+        assert "opp_team" not in long.columns
 
         home_row = long[long["side"] == "h"].iloc[0]
         assert home_row["pl"] == "Team A"
@@ -144,15 +152,15 @@ class TestWideToLong:
             {
                 "id": [1, 2, 3],
                 "datetime": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]),
-                "home_name": ["A", "B", "C"],
-                "away_name": ["X", "Y", "Z"],
+                "home_team": ["A", "B", "C"],
+                "away_team": ["X", "Y", "Z"],
                 "home_points": [10, 12, 8],
                 "away_points": [8, 9, 11],
             }
         )
 
         # Act
-        long = wide_to_long(df, player_id_attr="name")
+        long = wide_to_long(df)
 
         # Assert
         assert len(long) == 6, "3 матча должны дать 6 строк"
@@ -167,15 +175,15 @@ class TestWideToLong:
             {
                 "id": [2, 1, 3],
                 "datetime": pd.to_datetime(["2024-01-02", "2024-01-01", "2024-01-03"]),
-                "home_name": ["P1", "P2", "P3"],
-                "away_name": ["P4", "P5", "P6"],
+                "home_team": ["P1", "P2", "P3"],
+                "away_team": ["P4", "P5", "P6"],
                 "home_points": [10, 12, 8],
                 "away_points": [8, 9, 11],
             }
         )
 
         # Act
-        long = wide_to_long(df, player_id_attr="name")
+        long = wide_to_long(df)
 
         # Assert
         # Должны быть отсортированы по datetime (возрастание), затем по id (убывание)
@@ -189,39 +197,41 @@ class TestWideToLong:
             {
                 "id": [1],
                 "datetime": pd.to_datetime(["2024-01-01"]),
-                "h_name": ["Home"],
-                "a_name": ["Away"],
+                "h_team": ["Home"],
+                "a_team": ["Away"],
                 "h_score": [10],
                 "a_score": [8],
             }
         )
 
         # Act
-        long = wide_to_long(df, home_prefix="h_", away_prefix="a_", player_id_attr="name")
+        long = wide_to_long(df, home_prefix="h_", away_prefix="a_")
 
         # Assert
         assert len(long) == 2
         assert "pl_score" in long.columns
         assert "opp_score" in long.columns
+        assert "pl" in long.columns
+        assert "opp" in long.columns
 
-    def test_no_common_columns_raises_error(self):
-        """Если нет общих колонок home/away - должна быть ошибка."""
+    def test_no_home_team_raises_error(self):
+        """Если home_team/away_team отсутствуют — должна быть ошибка."""
         # Arrange
         df = pd.DataFrame(
             {
                 "id": [1],
                 "datetime": pd.to_datetime(["2024-01-01"]),
                 "home_points": [10],
-                "away_score": [8],  # Разные названия: points vs score
+                "away_points": [8],
             }
         )
 
         # Act & Assert
-        with pytest.raises(ValueError, match="Не найдено общих колонок"):
-            wide_to_long(df, player_id_attr="name")
+        with pytest.raises(ValueError, match="должен содержать"):
+            wide_to_long(df)
 
-    def test_missing_player_id_attr_raises_error(self):
-        """Если player_id_attr не указан - должна быть ошибка."""
+    def test_missing_home_team_raises_error(self):
+        """Если home_team/away_team отсутствуют — должна быть ошибка."""
         # Arrange
         df = pd.DataFrame(
             {
@@ -235,24 +245,8 @@ class TestWideToLong:
         )
 
         # Act & Assert
-        with pytest.raises(ValueError, match="Параметр player_id_attr обязателен"):
-            wide_to_long(df)  # НЕ передаём player_id_attr
-
-    def test_player_id_attr_column_not_found_raises_error(self):
-        """Если указанный player_id_attr не найден - должна быть ошибка."""
-        # Arrange
-        df = pd.DataFrame(
-            {
-                "id": [1],
-                "datetime": pd.to_datetime(["2024-01-01"]),
-                "home_points": [10],
-                "away_points": [8],
-            }
-        )
-
-        # Act & Assert
-        with pytest.raises(ValueError, match="Колонка 'pl_name' не найдена"):
-            wide_to_long(df, player_id_attr="name")
+        with pytest.raises(ValueError, match="должен содержать 'home_team' и 'away_team'"):
+            wide_to_long(df)
 
     def test_empty_dataframe(self):
         """Пустой датафрейм должен вернуть пустой long формат."""
@@ -261,15 +255,15 @@ class TestWideToLong:
             {
                 "id": [],
                 "datetime": [],
-                "home_name": [],
-                "away_name": [],
+                "home_team": [],
+                "away_team": [],
                 "home_points": [],
                 "away_points": [],
             }
         )
 
         # Act
-        long = wide_to_long(df, player_id_attr="name")
+        long = wide_to_long(df)
 
         # Assert
         assert len(long) == 0
@@ -285,15 +279,15 @@ class TestWideToLong:
                 "datetime": pd.to_datetime(["2024-01-01"]),
                 "status": ["finished"],
                 "tournament": ["UEL"],
-                "home_name": ["Team1"],
-                "away_name": ["Team2"],
+                "home_team": ["Team1"],
+                "away_team": ["Team2"],
                 "home_points": [10],
                 "away_points": [8],
             }
         )
 
         # Act
-        long = wide_to_long(df, player_id_attr="name")
+        long = wide_to_long(df)
 
         # Assert
         assert "id" in long.columns
@@ -389,15 +383,15 @@ class TestRoundTrip:
                 "id": [1],
                 "datetime": pd.to_datetime(["2024-01-01"]),
                 "status": ["finished"],
-                "home_name": ["Team1"],
-                "away_name": ["Team2"],
+                "home_team": ["Team1"],
+                "away_team": ["Team2"],
                 "home_points": [10],
                 "away_points": [8],
             }
         )
 
         # Act
-        long = wide_to_long(original, player_id_attr="name")
+        long = wide_to_long(original)
         restored = long_to_wide(long, aggregate_features=False)
 
         # Assert
@@ -412,15 +406,15 @@ class TestRoundTrip:
             {
                 "id": [1, 2, 3],
                 "datetime": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]),
-                "home_name": ["A", "B", "C"],
-                "away_name": ["X", "Y", "Z"],
+                "home_team": ["A", "B", "C"],
+                "away_team": ["X", "Y", "Z"],
                 "home_points": [10, 12, 8],
                 "away_points": [8, 9, 11],
             }
         )
 
         # Act
-        long = wide_to_long(original, player_id_attr="name")
+        long = wide_to_long(original)
         restored = long_to_wide(long, aggregate_features=False)
 
         # Assert

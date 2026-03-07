@@ -12,10 +12,18 @@ Long format используется для:
     - Моделей победителя (is_home_win, is_away_win)
     - Генерации фичей на основе истории игрока
 
+Стандартизация имён участников:
+    Wide: ``home_team`` / ``away_team`` — основной идентификатор участника.
+    Long: ``pl`` / ``opp`` — основной идентификатор (без промежуточного ``pl_team``).
+
+    Все колонки с префиксами ``home_`` / ``away_`` в wide превращаются
+    в ``pl_`` / ``opp_`` в long, за исключением ``home_team`` / ``away_team``,
+    которые становятся ``pl`` / ``opp`` напрямую.
+
 Примеры:
     Wide → Long:
 
-    id | datetime   | home_name | away_name | home_points | away_points | tour_num
+    id | datetime   | home_team | away_team | home_points | away_points | tour_num
     1  | 2024-01-01 | Team A    | Team B    | 10          | 8           | 5
 
     →
@@ -40,44 +48,44 @@ def wide_to_long(
     player_name: str = "pl",
     opponent_name: str = "opp",
     context_columns: list[str] | None = None,
-    player_id_attr: str | None = None,
 ) -> pd.DataFrame:
-    """
-    Трансформация wide → long format.
+    """Трансформация wide → long format.
 
     Разворачивает один матч (home vs away) в две строки (player vs opponent).
 
+    Колонка ``home_team`` / ``away_team`` обязательна — из неё создаются
+    идентификаторы ``pl`` / ``opp``. Остальные ``home_*`` / ``away_*``
+    колонки получают префиксы ``pl_`` / ``opp_`` (например,
+    ``home_points`` → ``pl_points``).
+
     Args:
-        df: Wide format датафрейм
-        home_prefix: Префикс для колонок хозяев (default: "home_")
-        away_prefix: Префикс для колонок гостей (default: "away_")
-        player_name: Имя для колонки текущего игрока (default: "pl")
-        opponent_name: Имя для колонки оппонента (default: "opp")
+        df: Wide format датафрейм. Обязательно содержит ``home_team`` и
+            ``away_team``.
+        home_prefix: Префикс для колонок хозяев (default: ``"home_"``).
+        away_prefix: Префикс для колонок гостей (default: ``"away_"``).
+        player_name: Короткое имя для текущего участника (default: ``"pl"``).
+        opponent_name: Короткое имя для оппонента (default: ``"opp"``).
         context_columns: Колонки контекста (tour_num, weekday, etc.), которые
-                        копируются в обе строки без изменений
-        player_id_attr: ОБЯЗАТЕЛЬНЫЙ атрибут для идентификации участника.
-                       Это основной идентификатор (например, "short_name_en" для ника игрока,
-                       "name" для имени теннисиста, "team" для футбольной команды).
-                       Должен существовать как home_{attr} и away_{attr} в исходных данных.
-                       Если не указан, выбрасывается ошибка.
+            копируются в обе строки без изменений.
 
     Returns:
-        Long format датафрейм (в 2 раза больше строк)
+        Long format датафрейм (в 2 раза больше строк).
 
     Raises:
-        ValueError: Если player_id_attr не указан или отсутствует в данных
+        ValueError: Если ``home_team`` / ``away_team`` отсутствуют в данных
+            или нет общих ``home_`` / ``away_`` колонок.
 
     Examples:
         >>> df = pd.DataFrame({
         ...     'id': [1],
         ...     'datetime': ['2024-01-01'],
-        ...     'home_short_name_en': ['ovi'],
-        ...     'away_short_name_en': ['iceman'],
+        ...     'home_team': ['ovi'],
+        ...     'away_team': ['iceman'],
         ...     'home_points': [10],
         ...     'away_points': [8],
         ...     'tour_num': [5]
         ... })
-        >>> long = wide_to_long(df, player_id_attr='short_name_en', context_columns=['tour_num'])
+        >>> long = wide_to_long(df, context_columns=['tour_num'])
         >>> len(long)
         2
         >>> long.loc[long['side'] == 'h', 'pl'].iloc[0]
@@ -85,6 +93,17 @@ def wide_to_long(
     """
     if context_columns is None:
         context_columns = []
+
+    # Проверяем наличие стандартизированных колонок идентификатора
+    _team_col_home = f"{home_prefix}team"
+    _team_col_away = f"{away_prefix}team"
+
+    if _team_col_home not in df.columns or _team_col_away not in df.columns:
+        raise ValueError(
+            f"Wide format должен содержать '{_team_col_home}' и '{_team_col_away}'. "
+            f"Стандартизируйте имена участников на clean-стадии. "
+            f"Доступные колонки: {list(df.columns)}"
+        )
 
     # Найти колонки с префиксами home_ и away_
     home_cols = [col for col in df.columns if col.startswith(home_prefix)]
@@ -104,9 +123,13 @@ def wide_to_long(
             f"Away колонки: {list(base_away_cols.values())}"
         )
 
+    # «team» обрабатывается особо → pl/opp, а не pl_team/opp_team
+    common_base_no_team = common_base - {"team"}
+
     logger.debug(
-        f"Трансформация wide → long: найдено {len(common_base)} общих атрибутов: "
-        f"{sorted(common_base)}"
+        "Трансформация wide → long: найдено %d общих атрибутов: %s",
+        len(common_base),
+        sorted(common_base),
     )
 
     # Колонки, которые остаются без изменений (id, datetime, status, etc.)
@@ -116,23 +139,27 @@ def wide_to_long(
         if col not in home_cols and col not in away_cols and col not in context_columns
     ]
 
-    # Создаем строки для home (side='h', is_home=1)
+    # ── home rows (side='h', is_home=1) ──
     home_rows = df[meta_cols + context_columns].copy()
     home_rows["side"] = "h"
     home_rows["is_home"] = 1
+    home_rows[player_name] = df[_team_col_home]
+    home_rows[opponent_name] = df[_team_col_away]
 
-    for base_name in common_base:
+    for base_name in common_base_no_team:
         home_col = f"{home_prefix}{base_name}"
         away_col = f"{away_prefix}{base_name}"
         home_rows[f"{player_name}_{base_name}"] = df[home_col]
         home_rows[f"{opponent_name}_{base_name}"] = df[away_col]
 
-    # Создаем строки для away (side='a', is_home=0)
+    # ── away rows (side='a', is_home=0) ──
     away_rows = df[meta_cols + context_columns].copy()
     away_rows["side"] = "a"
     away_rows["is_home"] = 0
+    away_rows[player_name] = df[_team_col_away]
+    away_rows[opponent_name] = df[_team_col_home]
 
-    for base_name in common_base:
+    for base_name in common_base_no_team:
         home_col = f"{home_prefix}{base_name}"
         away_col = f"{away_prefix}{base_name}"
         # Меняем местами: для away игрока pl=away, opp=home
@@ -142,41 +169,6 @@ def wide_to_long(
     # Объединяем
     long = pd.concat([home_rows, away_rows], ignore_index=True)
 
-    # Создаем алиасы pl/opp для основного идентификатора участника
-    # player_id_attr должен быть ОБЯЗАТЕЛЬНО указан в конфиге
-    if player_id_attr is None:
-        raise ValueError(
-            "Параметр player_id_attr обязателен для wide_to_long. "
-            "Укажите атрибут для идентификации участника (например, 'short_name_en', 'name', 'team')"
-        )
-
-    # Проверяем наличие колонок с идентификатором
-    pl_id_col = f"{player_name}_{player_id_attr}"
-    opp_id_col = f"{opponent_name}_{player_id_attr}"
-
-    if pl_id_col not in long.columns:
-        raise ValueError(
-            f"Колонка '{pl_id_col}' не найдена в long format. "
-            f"Убедитесь, что '{home_prefix}{player_id_attr}' и '{away_prefix}{player_id_attr}' "
-            f"присутствуют в исходном wide датафрейме. "
-            f"Доступные колонки: {list(long.columns)}"
-        )
-
-    if opp_id_col not in long.columns:
-        raise ValueError(
-            f"Колонка '{opp_id_col}' не найдена в long format. "
-            f"Убедитесь, что '{home_prefix}{player_id_attr}' и '{away_prefix}{player_id_attr}' "
-            f"присутствуют в исходном wide датафрейме."
-        )
-
-    # Создаем алиасы для удобства использования генераторами
-    long["pl"] = long[pl_id_col]
-    long["opp"] = long[opp_id_col]
-
-    logger.debug(
-        f"Создали алиасы pl/opp на основе атрибута '{player_id_attr}' ({pl_id_col}, {opp_id_col})"
-    )
-
     # Сортируем по datetime и id для правильной последовательности
     if "datetime" in long.columns and "id" in long.columns:
         long = long.sort_values(
@@ -184,8 +176,11 @@ def wide_to_long(
         ).reset_index(drop=True)
 
     logger.info(
-        f"Wide → Long: {len(df)} матчей → {len(long)} строк "
-        f"({len(common_base)} атрибутов: {sorted(common_base)})"
+        "Wide → Long: %d матчей → %d строк (%d атрибутов: %s)",
+        len(df),
+        len(long),
+        len(common_base),
+        sorted(common_base),
     )
 
     return long
@@ -220,8 +215,8 @@ def long_to_wide(
         >>> long = pd.DataFrame({
         ...     'id': [1, 1],
         ...     'datetime': ['2024-01-01', '2024-01-01'],
-        ...     'pl_name': ['Team A', 'Team B'],
-        ...     'opp_name': ['Team B', 'Team A'],
+        ...     'pl': ['Team A', 'Team B'],
+        ...     'opp': ['Team B', 'Team A'],
         ...     'pl_points': [10, 8],
         ...     'opp_points': [8, 10],
         ...     'side': ['h', 'a'],
@@ -230,8 +225,6 @@ def long_to_wide(
         >>> wide = long_to_wide(long)
         >>> len(wide)
         1
-        >>> wide['home_name'].iloc[0]
-        'Team A'
     """
     if "side" not in df.columns or "id" not in df.columns:
         raise ValueError("Long format должен содержать колонки 'side' и 'id'")
@@ -347,8 +340,8 @@ def validate_long_format(df: pd.DataFrame) -> None:
         >>> df = pd.DataFrame({
         ...     'id': [1, 1],
         ...     'datetime': ['2024-01-01', '2024-01-01'],
-        ...     'pl_name': ['A', 'B'],
-        ...     'opp_name': ['B', 'A'],
+        ...     'pl': ['A', 'B'],
+        ...     'opp': ['B', 'A'],
         ...     'side': ['h', 'a'],
         ...     'is_home': [1, 0]
         ... })

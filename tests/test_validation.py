@@ -38,8 +38,8 @@ def raw_df() -> pd.DataFrame:
             "id": ["m1", "m2", "m3"],
             "datetime": ["2026-01-01 10:00", "2026-01-01 11:00", "2026-01-01 12:00"],
             "status": ["end", "end", "upcoming"],
-            "home_short_name_en": ["Player A", "Player B", "Player C"],
-            "away_short_name_en": ["Player D", "Player E", "Player F"],
+            "home_team": ["Player A", "Player B", "Player C"],
+            "away_team": ["Player D", "Player E", "Player F"],
         }
     )
 
