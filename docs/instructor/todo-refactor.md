@@ -165,27 +165,17 @@ repository, engine, schemas) и `materialize.py`. Текущее покрыти�
 
 ---
 
-## R7. 🟢 Удалить устаревший `tournament/all.yaml`
+## R7. ✅ ~~Удалить устаревший `tournament/all.yaml`~~
 
-**Проблема:** `conf/tournament/all.yaml` не используется нигде в коде, Makefile,
-DVC, Airflow DAGs. Содержит TODO о рефакторинге и хардкод дефолтных значений
-для cyberhockey (`player_id_attr: "short_name_en"`), что некорректно для table
-tennis.
+> **Выполнено: 2026-03-07**
 
-**Проверено:** `grep` по всему проекту не находит ссылок на `tournament=all` или
-`load_tournament_config("all")`. Конфиг мёртвый.
+**Решение:** `conf/tournament/all.yaml` удалён. Grep подтвердил отсутствие
+ссылок на этот конфиг в коде, Makefile, DVC, Airflow DAGs.
+`features_build.py` использует Hydra `--multirun` с перечислением конкретных
+турниров — `all.yaml` не участвовал.
 
-**Что сделать:**
-
-- [ ] **R7.1** Удалить `conf/tournament/all.yaml`
-- [ ] **R7.2** Проверить что ничего не сломалось (`make test`, `make pre-commit`)
-- [ ] **R7.3** Если `features_build.py` использовал `all.yaml` ранее — убедиться
-  что текущая логика (Hydra `--multirun` с перечислением турниров) работает
-  корректно
-
-**Файлы:**
-- `conf/tournament/all.yaml` (удалить)
-- `sports_forecast/features/features_build.py` (проверить)
+**Изменённые файлы:**
+- `conf/tournament/all.yaml` — удалён
 
 ---
 
