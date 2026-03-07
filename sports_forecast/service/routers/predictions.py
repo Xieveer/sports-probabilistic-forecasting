@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 
 from fastapi import APIRouter, HTTPException, Query
@@ -252,8 +253,6 @@ def get_prediction_cached(
             detail=f"Предсказание для match_id={match_id}, market={market} не найдено",
         )
 
-    from datetime import datetime
-
     return PredictionResponse(
         match_id=result["match_id"],
         tournament=result["tournament"],
@@ -273,7 +272,7 @@ def get_prediction_cached(
         prediction_ts=(
             datetime.fromisoformat(result["prediction_ts"])
             if result["prediction_ts"]
-            else datetime.now()
+            else datetime.now(tz=timezone.utc)
         ),
         status=result["status"],
     )
@@ -344,8 +343,6 @@ def get_stale_predictions(
     Returns:
         Список устаревших предсказаний.
     """
-    from datetime import datetime, timedelta, timezone
-
     cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=max_age_hours)
 
     with get_session() as session:

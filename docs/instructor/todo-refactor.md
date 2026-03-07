@@ -65,25 +65,19 @@
 
 ---
 
-## R3. 🟢 Унифицировать datetime API (utcnow → timezone-aware)
+## R3. ✅ ~~Унифицировать datetime API (utcnow → timezone-aware)~~
 
-**Проблема:** В `repository.py` и `health.py` используется `datetime.utcnow()`
-(deprecated с Python 3.12). В остальном коде уже используется
-`datetime.now(tz=timezone.utc)`. Нужна консистентность.
+> **Выполнено: 2026-03-07**
 
-**Что сделать:**
+**Решение:** Все `datetime.utcnow()` заменены на `datetime.now(tz=timezone.utc)`.
+Inline импорты в `predictions.py` перенесены в начало файла.
+Также исправлен `datetime.now()` → `datetime.now(tz=timezone.utc)` в fallback-ветке.
 
-- [ ] **R3.1** Заменить `datetime.utcnow()` → `datetime.now(tz=timezone.utc)` в:
-  - `sports_forecast/service/db/repository.py`
-  - `sports_forecast/service/routers/health.py`
-- [ ] **R3.2** Grep по всему проекту на оставшиеся `utcnow()` — заменить все
-- [ ] **R3.3** Убрать inline `from datetime import datetime` в
-  `routers/predictions.py` (перенести в imports файла)
-
-**Файлы:**
-- `sports_forecast/service/db/repository.py`
-- `sports_forecast/service/routers/health.py`
-- `sports_forecast/service/routers/predictions.py`
+**Изменённые файлы:**
+- `sports_forecast/service/db/repository.py` — `utcnow()` → `now(tz=timezone.utc)`
+- `sports_forecast/service/routers/health.py` — `utcnow()` → `now(tz=timezone.utc)`
+- `sports_forecast/service/routers/predictions.py` — inline imports → top-level,
+  `datetime.now()` → `datetime.now(tz=timezone.utc)`
 
 ---
 

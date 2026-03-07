@@ -17,7 +17,7 @@ CRUD операции над таблицей ``predictions``.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import and_
@@ -179,7 +179,7 @@ class PredictionRepository:
         )
 
         predictions_json = json.dumps(predictions, ensure_ascii=False)
-        now = datetime.utcnow()
+        now = datetime.now(tz=timezone.utc)
 
         if existing is not None:
             # Update
