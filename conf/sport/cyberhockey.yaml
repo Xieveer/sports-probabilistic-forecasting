@@ -72,7 +72,7 @@ data_clean:
     a_m_s: away_points
     home_short_name_en: home_team
     away_short_name_en: away_team
-    fon_bet_odds_feed: odds_raw
+    odds_feed: odds_raw
 
   # Обязательные колонки
   required_columns: [id, status, datetime]

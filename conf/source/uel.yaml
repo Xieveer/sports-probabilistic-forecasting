@@ -38,6 +38,6 @@ split_strategy:
 
 odds:
   enabled: true
-  source_column: fon_bet_odds_feed
+  source_column: odds_feed
   bookmaker: fonbet
   format: python_dict

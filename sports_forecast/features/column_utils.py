@@ -61,7 +61,7 @@ META_COLUMNS = {
     # Турнирные мета-данные (используются для контекста, не для обучения)
     "tour_name",
     "tour_name_en",
-    "tour_name_g",
+    "_tour_name",
     # Odds (passthrough для BettingSimulator, не для обучения)
     "odds_raw",
 }

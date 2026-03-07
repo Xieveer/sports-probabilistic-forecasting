@@ -9,22 +9,24 @@ description: "Liga Pro Europe - Table Tennis"
 # ============================================================================
 # РАЗДЕЛЕНИЕ НА ПОДТУРНИРЫ (SPLIT STRATEGY)
 # ============================================================================
-# LP_EU разделяется на два подтурнира по полю tour_name_g
+# LP_EU разделяется на два подтурнира по полю _tour_name (название стола):
+#   a18               → lp_eu_a18  (другой город, игроки не пересекаются)
+#   a12/a14/a16/a17   → lp_eu      (основные евро-столы)
 
 split_strategy:
   enabled: true
   method: column_based
-  split_column: tour_name_g
+  split_column: _tour_name
 
   # Правила разделения
   rules:
     - condition: "equals('a18')"
       output_tournament: lp_eu_a18
-      description: "Liga Pro Europe A18"
+      description: "Liga Pro Europe A18 (separate venue)"
 
     - condition: default
       output_tournament: lp_eu
-      description: "Liga Pro Europe (main)"
+      description: "Liga Pro Europe (tables a12/a14/a16/a17)"
 
 # ============================================================================
 # БУКМЕКЕРСКИЕ КОЭФФИЦИЕНТЫ
@@ -32,6 +34,6 @@ split_strategy:
 
 odds:
   enabled: true
-  source_column: sdf_odds_feed
-  bookmaker: fonbet  # sdf - это на самом деле fonbet
+  source_column: odds_feed
+  bookmaker: fonbet
   format: python_dict
