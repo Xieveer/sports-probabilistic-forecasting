@@ -81,11 +81,13 @@ data_clean:
   # Обязательные колонки
   required_columns: [id, datetime]
 
-  # Колонки для dropna
+  # Колонки для dropna (НЕ включать score-колонки — у upcoming матчей они пусты)
   drop_na_columns: [id, datetime]
 
-  # Дефолтный статус (LP турниры не имеют колонки status)
-  default_status: finished
+  # Колонки счёта (после column_mapping) — для определения status из match_is_end.
+  # upcoming = match_is_end != 1 AND все score_columns пусты
+  # live (фильтруется) = match_is_end != 1 AND хотя бы один score не пуст
+  score_columns: [home_sets, away_sets]
 
   # Типизация
   dtype_mapping:

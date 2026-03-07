@@ -74,11 +74,16 @@ data_clean:
     away_short_name_en: away_team
     odds_feed: odds_raw
 
-  # Обязательные колонки
-  required_columns: [id, status, datetime]
+  # Обязательные колонки (status деривируется из match_is_end, не требует наличия в raw)
+  required_columns: [id, datetime]
 
-  # Колонки для dropna
-  drop_na_columns: [id, datetime, status]
+  # Колонки для dropna (НЕ включать score-колонки — у upcoming матчей они пусты)
+  drop_na_columns: [id, datetime]
+
+  # Колонки счёта (после column_mapping) — для определения status из match_is_end.
+  # upcoming = match_is_end != 1 AND все score_columns пусты
+  # live (фильтруется) = match_is_end != 1 AND хотя бы один score не пуст
+  score_columns: [home_points, away_points]
 
   # Типизация
   dtype_mapping:

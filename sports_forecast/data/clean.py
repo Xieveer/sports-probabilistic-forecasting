@@ -43,6 +43,63 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 logger = get_logger(__name__)
 
 
+def _derive_status(
+    df: pd.DataFrame,
+    score_columns: list[str],
+    tournament_name: str,
+) -> pd.DataFrame:
+    """Определить статус матча по флагу match_is_end и наличию счёта.
+
+    Логика:
+        - match_is_end == 1 → ``"finished"``
+        - match_is_end != 1 AND все score_columns пусты → ``"upcoming"``
+        - match_is_end != 1 AND есть хотя бы один score → ``"live"`` (фильтруется)
+
+    Args:
+        df: DataFrame с колонкой ``match_is_end`` и score-колонками.
+        score_columns: Список колонок со счётом (после column_mapping).
+        tournament_name: Название турнира (для логирования).
+
+    Returns:
+        DataFrame с добавленной колонкой ``status`` и отфильтрованными live-событиями.
+    """
+    is_ended = df["match_is_end"].astype(str).str.strip().isin(["1", "True", "true"])
+
+    existing_score_cols = [c for c in score_columns if c in df.columns]
+    if existing_score_cols:
+        has_score = df[existing_score_cols].notna().any(axis=1)
+    else:
+        has_score = pd.Series(False, index=df.index)
+
+    df = df.copy()
+    df["status"] = "unknown"
+    df.loc[is_ended, "status"] = "finished"
+    df.loc[~is_ended & ~has_score, "status"] = "upcoming"
+    df.loc[~is_ended & has_score, "status"] = "live"
+
+    finished_n = (df["status"] == "finished").sum()
+    upcoming_n = (df["status"] == "upcoming").sum()
+    live_n = (df["status"] == "live").sum()
+
+    logger.info(
+        "Турнир %s: status derived — finished=%d, upcoming=%d, live=%d",
+        tournament_name,
+        finished_n,
+        upcoming_n,
+        live_n,
+    )
+
+    if live_n > 0:
+        logger.info(
+            "Турнир %s: отфильтровано %d live-событий (match_is_end=0, но есть счёт)",
+            tournament_name,
+            live_n,
+        )
+        df = df[df["status"] != "live"]
+
+    return df
+
+
 def _apply_column_mapping(
     df: pd.DataFrame,
     mapping_cfg: DictConfig | None,
@@ -400,11 +457,26 @@ def process_tournament(
     if required and not _validate_required_columns(df, required, tournament_name):
         return
 
-    # 3. Применяем типизацию (ВАЖНО: до dropna!)
+    # 3. Определяем status из match_is_end + score columns
+    #    ВАЖНО: ДО dtype_mapping, т.к. fillna(0) для int-колонок
+    #    превратит NaN-счёт upcoming-матчей в 0 и сломает notna()-проверку.
+    score_columns = list(clean_cfg.get("score_columns", []))
+    if "match_is_end" in df.columns and score_columns:
+        df = _derive_status(df, score_columns, tournament_name)
+    elif hasattr(clean_cfg, "default_status") and clean_cfg.default_status:
+        # Fallback: default_status для источников без match_is_end
+        df["status"] = clean_cfg.default_status
+        logger.info(
+            "Турнир %s: добавлена колонка status = '%s'",
+            tournament_name,
+            clean_cfg.default_status,
+        )
+
+    # 4. Применяем типизацию (ВАЖНО: до dropna!)
     if hasattr(clean_cfg, "dtype_mapping"):
         df = _apply_dtype_conversion(df, clean_cfg.dtype_mapping, tournament_name)
 
-    # 4. Удаляем строки с NaN
+    # 5. Удаляем строки с NaN
     drop_na_cols = clean_cfg.drop_na_columns or []
     if drop_na_cols:
         before = len(df)
@@ -418,15 +490,6 @@ def process_tournament(
             before,
         )
 
-    # 5. Добавляем default_status если указан (для турниров без колонки status)
-    if hasattr(clean_cfg, "default_status") and clean_cfg.default_status:
-        df["status"] = clean_cfg.default_status
-        logger.info(
-            "Турнир %s: добавлена колонка status = '%s'",
-            tournament_name,
-            clean_cfg.default_status,
-        )
-
     # 5.5. Добавляем производные колонки (derived_columns) из конфига
     derived_cfg = clean_cfg.derived_columns if hasattr(clean_cfg, "derived_columns") else None
     df = _apply_derived_columns(df, derived_cfg, tournament_name)
@@ -434,12 +497,8 @@ def process_tournament(
     # 6. Выбираем нужные колонки
     select_cols = clean_cfg.select_columns or []
     if select_cols:
-        # Добавляем status в список если есть default_status
-        if (
-            hasattr(clean_cfg, "default_status")
-            and clean_cfg.default_status
-            and "status" not in select_cols
-        ):
+        # Добавляем status в список если он есть в данных, но не указан явно
+        if "status" in df.columns and "status" not in select_cols:
             select_cols = list(select_cols) + ["status"]
 
         # Автоматически включаем odds_raw если он есть в данных (для BettingSimulator)
