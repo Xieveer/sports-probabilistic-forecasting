@@ -251,8 +251,13 @@ def _aggregate_rank_average(
     merged[rank_cols] = merged[rank_cols].fillna(max_rank)
     merged["avg_rank"] = merged[rank_cols].mean(axis=1)
 
-    # Score = 1 / avg_rank (нормализованный)
+    # Score aggregation: fill missing scores with per-method minimum observed score.
+    # Consistent with rank penalty: unevaluated feature gets the worst observed score
+    # from each method (not hardcoded 0.0, which conflates "not evaluated" with "zero importance").
     score_cols = [c for c in merged.columns if c.startswith("score_")]
+    for col in score_cols:
+        merged[col] = merged[col].fillna(merged[col].min())
+    # Ultimate fallback: if a column is entirely NaN (extremely unlikely), use 0.0
     merged[score_cols] = merged[score_cols].fillna(0.0)
     merged["avg_score"] = merged[score_cols].mean(axis=1)
 
@@ -449,8 +454,12 @@ class FeatureSelector:
                 how="left",
             )
 
+        # Fill missing scores with per-method minimum observed score.
+        # Consistent with rank_average strategy: "not evaluated" = worst observed.
         score_cols = [c for c in agg.columns if c.startswith("score_")]
-        agg[score_cols] = agg[score_cols].fillna(0.0)
+        for col in score_cols:
+            agg[col] = agg[col].fillna(agg[col].min())
+        agg[score_cols] = agg[score_cols].fillna(0.0)  # fallback for all-NaN
         agg["avg_score"] = agg[score_cols].mean(axis=1)
 
         return agg.sort_values("avg_score", ascending=False).reset_index(drop=True)

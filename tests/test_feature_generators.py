@@ -405,6 +405,28 @@ class TestEWMFeatureGenerator:
         assert "h2h_ewm_5_diff" in names
         assert "h2h_ewm_10_diff" in names
 
+    def test_feature_names_with_warmup(self) -> None:
+        """get_feature_names включает warmup когда enabled=True."""
+        config = {
+            "type": "ewm",
+            "metric": "diff_ps",
+            "spans": [5],
+            "contexts": [
+                {
+                    "name": "global",
+                    "keys": ["pl"],
+                    "players": ["pl"],
+                    "compute_diff": False,
+                },
+            ],
+            "warmup": {"enabled": True, "threshold": 10, "players": ["pl", "opp"]},
+        }
+        gen = EWMFeatureGenerator(config)
+        names = gen.get_feature_names()
+
+        assert "pl_ewm_warmup" in names
+        assert "opp_ewm_warmup" in names
+
     def test_ewm_values_not_all_nan(self, long_df: pd.DataFrame) -> None:
         """EWM значения не все NaN (минимум некоторые заполнены)."""
         config = {
@@ -427,6 +449,192 @@ class TestEWMFeatureGenerator:
         result = gen.generate(long_df)
 
         assert not result["pl_global_ewm_3"].isna().all(), "Все EWM значения NaN!"
+
+    def test_cold_start_produces_nan(self) -> None:
+        """Первые матчи (< min_periods) дают NaN — не фиктивный 0."""
+        df = pd.DataFrame(
+            {
+                "pl": ["A"] * 5,
+                "opp": ["B"] * 5,
+                "diff_ps": [3.0, -1.0, 5.0, 2.0, -4.0],
+            }
+        )
+        config = {
+            "type": "ewm",
+            "metric": "diff_ps",
+            "spans": [3],
+            "shift": 1,
+            "min_periods": 3,
+            "adjust": False,
+            "contexts": [
+                {
+                    "name": "global",
+                    "keys": ["pl"],
+                    "players": ["pl"],
+                    "compute_diff": False,
+                }
+            ],
+        }
+        gen = EWMFeatureGenerator(config)
+        result = gen.generate(df)
+
+        ewm_col = result["pl_global_ewm_3"]
+        # Первые 3 строки (shift=1 + min_periods=3): NaN
+        assert ewm_col.iloc[0:3].isna().all(), "Cold-start строки должны быть NaN"
+        # 4-я строка и далее: есть значение
+        assert ewm_col.iloc[3:].notna().all(), "После cold-start должны быть значения"
+
+    def test_upcoming_nan_metric_does_not_affect_ewm(self) -> None:
+        """Upcoming-матчи (metric=NaN) не влияют на EWM — ignore_na."""
+        df = pd.DataFrame(
+            {
+                "pl": ["A"] * 6,
+                "opp": ["B"] * 6,
+                "diff_ps": [3.0, -1.0, 5.0, 2.0, float("nan"), float("nan")],
+            }
+        )
+        config = {
+            "type": "ewm",
+            "metric": "diff_ps",
+            "spans": [3],
+            "shift": 1,
+            "min_periods": 1,
+            "adjust": False,
+            "contexts": [
+                {
+                    "name": "global",
+                    "keys": ["pl"],
+                    "players": ["pl"],
+                    "compute_diff": False,
+                }
+            ],
+        }
+        gen = EWMFeatureGenerator(config)
+        result = gen.generate(df)
+
+        ewm_col = result["pl_global_ewm_3"]
+        # Строка 4 (shift=1 → видит diff_ps[3]=2.0): имеет EWM значение
+        assert pd.notna(ewm_col.iloc[4]), "Строка после finished должна иметь EWM"
+        # Строка 5 (shift=1 → видит diff_ps[4]=NaN): EWM carry-forward
+        assert pd.notna(ewm_col.iloc[5]), "Upcoming строка: EWM carry-forward"
+        # EWM для upcoming = EWM для предыдущей строки (NaN не обновляет)
+        assert ewm_col.iloc[4] == ewm_col.iloc[5], (
+            "Upcoming NaN не должен менять EWM (carry-forward)"
+        )
+
+    def test_no_fillna_zero_in_ewm(self) -> None:
+        """EWM не содержит артефактов от fillna(0) — первые значения основаны на реальных данных."""
+        df = pd.DataFrame(
+            {
+                "pl": ["A"] * 4,
+                "opp": ["B"] * 4,
+                "diff_ps": [10.0, 12.0, 8.0, 11.0],
+            }
+        )
+        config = {
+            "type": "ewm",
+            "metric": "diff_ps",
+            "spans": [3],
+            "shift": 1,
+            "min_periods": 1,
+            "adjust": False,
+            "contexts": [
+                {
+                    "name": "global",
+                    "keys": ["pl"],
+                    "players": ["pl"],
+                    "compute_diff": False,
+                }
+            ],
+        }
+        gen = EWMFeatureGenerator(config)
+        result = gen.generate(df)
+
+        ewm_col = result["pl_global_ewm_3"]
+        # Строка 1 (shift=1 → видит diff_ps[0]=10.0): EWM = 10.0 (первое значение)
+        assert ewm_col.iloc[1] == 10.0, (
+            f"Первое EWM должно быть == первому реальному значению, а не 0. "
+            f"Получили: {ewm_col.iloc[1]}"
+        )
+
+    def test_warmup_feature_values(self) -> None:
+        """Warmup-фича: 0→1 по мере накопления матчей."""
+        df = pd.DataFrame(
+            {
+                "pl": ["A"] * 15,
+                "opp": ["B"] * 15,
+                "diff_ps": list(range(15)),
+            }
+        )
+        config = {
+            "type": "ewm",
+            "metric": "diff_ps",
+            "spans": [3],
+            "shift": 1,
+            "min_periods": 1,
+            "adjust": False,
+            "contexts": [
+                {
+                    "name": "global",
+                    "keys": ["pl"],
+                    "players": ["pl"],
+                    "compute_diff": False,
+                }
+            ],
+            "warmup": {"enabled": True, "threshold": 10, "players": ["pl"]},
+        }
+        gen = EWMFeatureGenerator(config)
+        result = gen.generate(df)
+
+        warmup = result["pl_ewm_warmup"]
+        # Первая строка: shift=1 → 0 наблюдений → warmup = 0
+        assert warmup.iloc[0] == 0.0, f"Warmup[0] должен быть 0, получили {warmup.iloc[0]}"
+        # 5-я строка: 4 наблюдения → warmup = 4/10 = 0.4
+        assert warmup.iloc[4] == pytest.approx(0.4), f"Warmup[4] ≈ 0.4, получили {warmup.iloc[4]}"
+        # 10-я строка: 9 наблюдений → warmup = 0.9
+        assert warmup.iloc[9] == pytest.approx(0.9), f"Warmup[9] ≈ 0.9, получили {warmup.iloc[9]}"
+        # 11-я строка и далее: warmup = 1.0 (cap)
+        assert warmup.iloc[10] == 1.0, f"Warmup[10] должен быть 1.0, получили {warmup.iloc[10]}"
+        assert warmup.iloc[14] == 1.0, f"Warmup[14] должен быть 1.0, получили {warmup.iloc[14]}"
+
+    def test_warmup_with_upcoming_nan(self) -> None:
+        """Warmup не считает upcoming-матчи (NaN metric) как наблюдения."""
+        df = pd.DataFrame(
+            {
+                "pl": ["A"] * 6,
+                "opp": ["B"] * 6,
+                "diff_ps": [1.0, 2.0, 3.0, 4.0, float("nan"), float("nan")],
+            }
+        )
+        config = {
+            "type": "ewm",
+            "metric": "diff_ps",
+            "spans": [3],
+            "shift": 1,
+            "min_periods": 1,
+            "adjust": False,
+            "contexts": [
+                {
+                    "name": "global",
+                    "keys": ["pl"],
+                    "players": ["pl"],
+                    "compute_diff": False,
+                }
+            ],
+            "warmup": {"enabled": True, "threshold": 10, "players": ["pl"]},
+        }
+        gen = EWMFeatureGenerator(config)
+        result = gen.generate(df)
+
+        warmup = result["pl_ewm_warmup"]
+        # Строка 4: shift=1 → видит [1, 2, 3] → 3 наблюдения → 3/10 = 0.3
+        assert warmup.iloc[3] == pytest.approx(0.3), f"Warmup[3] ≈ 0.3, получили {warmup.iloc[3]}"
+        # Строка 5 (upcoming): shift=1 → видит [1, 2, 3, 4] → 4 наблюдения → 0.4
+        assert warmup.iloc[4] == pytest.approx(0.4), f"Warmup[4] ≈ 0.4, получили {warmup.iloc[4]}"
+        # Строка 6 (upcoming): shift=1 → видит [1, 2, 3, 4, NaN] → 4 наблюдения → 0.4
+        assert warmup.iloc[5] == pytest.approx(0.4), (
+            f"Warmup[5] ≈ 0.4 (NaN не считается), получили {warmup.iloc[5]}"
+        )
 
 
 # ==================== Base Generator Tests ====================

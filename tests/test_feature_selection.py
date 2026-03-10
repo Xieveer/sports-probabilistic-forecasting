@@ -15,6 +15,7 @@ from sports_forecast.features.selection.selector import (
     FeatureSelectionResult,
     FeatureSelector,
     _aggregate_intersection,
+    _aggregate_rank_average,
     _aggregate_union,
     _aggregate_vote,
 )
@@ -194,6 +195,69 @@ class TestMutualInfoRanker:
         top_2 = set(result.ranking.head(2)["feature"])
         assert "f_useful_1" in top_2 or "f_useful_2" in top_2
 
+    def test_rank_with_nan_uses_median(self, sample_data: tuple[pd.DataFrame, pd.Series]) -> None:
+        """MI ранкер корректно работает с NaN (импутация медианой)."""
+        X, y = sample_data
+        # Вносим 20% NaN в полезную фичу
+        rng = np.random.RandomState(99)
+        nan_mask = rng.random(len(X)) < 0.2
+        X_with_nan = X.copy()
+        X_with_nan.loc[nan_mask, "f_useful_1"] = np.nan
+
+        ranker = MutualInfoRanker()
+        result = ranker.rank(X_with_nan, y)
+
+        assert result.method == "mutual_info"
+        assert result.n_total == 5
+        # Полезная фича с NaN всё ещё должна быть в top-3
+        # (медиана не искажает распределение, в отличие от fillna(0))
+        top_3 = set(result.ranking.head(3)["feature"])
+        assert "f_useful_1" in top_3
+
+    def test_rank_with_all_nan_column(self, sample_data: tuple[pd.DataFrame, pd.Series]) -> None:
+        """MI ранкер не падает при полностью NaN-колонке (fallback на 0.0)."""
+        X, y = sample_data
+        X_with_nan = X.copy()
+        X_with_nan["f_all_nan"] = np.nan
+
+        ranker = MutualInfoRanker()
+        result = ranker.rank(X_with_nan, y)
+
+        assert result.n_total == 6
+        # all-NaN колонка должна получить низкий score
+        all_nan_score = result.ranking.loc[result.ranking["feature"] == "f_all_nan", "score"].iloc[
+            0
+        ]
+        assert all_nan_score <= 0.1  # Практически нулевой MI
+
+    def test_no_fillna_zero_in_mi(self, sample_data: tuple[pd.DataFrame, pd.Series]) -> None:
+        """Проверяем, что MI не использует fillna(0) — полезная фича с NaN > 0
+        не должна получить score ниже, чем без NaN."""
+        X, y = sample_data
+        ranker = MutualInfoRanker(random_state=42)
+
+        # Baseline: без NaN
+        result_clean = ranker.rank(X, y)
+        score_clean = result_clean.ranking.loc[
+            result_clean.ranking["feature"] == "f_useful_1", "score"
+        ].iloc[0]
+
+        # С 10% NaN в f_useful_1
+        X_nan = X.copy()
+        rng = np.random.RandomState(42)
+        nan_mask = rng.random(len(X)) < 0.1
+        X_nan.loc[nan_mask, "f_useful_1"] = np.nan
+
+        result_nan = ranker.rank(X_nan, y)
+        score_nan = result_nan.ranking.loc[
+            result_nan.ranking["feature"] == "f_useful_1", "score"
+        ].iloc[0]
+
+        # Score не должен деградировать сильнее чем на 50% (медиана сохраняет распределение)
+        assert score_nan > score_clean * 0.5, (
+            f"Score деградировал слишком сильно: {score_clean:.3f} → {score_nan:.3f}"
+        )
+
 
 # ── Aggregation Tests ────────────────────────────────────────────────
 
@@ -236,6 +300,102 @@ class TestAggregation:
         """Vote с min_votes=1: эквивалентно union."""
         selected = _aggregate_vote(two_rankings, min_votes=1)
         assert set(selected) == {"a", "b", "c"}
+
+    def test_rank_average_missing_feature_uses_min_score(self) -> None:
+        """rank_average: фича, отсутствующая в одном методе, получает min score, не 0.0."""
+        rankings = {
+            "method_a": FeatureRankingResult(
+                method="method_a",
+                ranking=pd.DataFrame(
+                    {
+                        "feature": ["a", "b", "c"],
+                        "score": [1.0, 0.5, 0.2],
+                    }
+                ),
+                selected=["a", "b"],
+            ),
+            "method_b": FeatureRankingResult(
+                method="method_b",
+                # "c" отсутствует в этом методе, "d" — только здесь
+                ranking=pd.DataFrame(
+                    {
+                        "feature": ["a", "b", "d"],
+                        "score": [0.9, 0.6, 0.3],
+                    }
+                ),
+                selected=["a", "b"],
+            ),
+        }
+
+        selected, agg_df = _aggregate_rank_average(rankings)
+
+        # "c" отсутствует в method_b → score_method_b = min(method_b scores) = 0.3
+        row_c = agg_df.loc[agg_df["feature"] == "c"]
+        assert row_c["score_method_b"].iloc[0] == pytest.approx(0.3), (
+            "Отсутствующая фича должна получить min score метода, а не 0.0"
+        )
+
+        # "d" отсутствует в method_a → score_method_a = min(method_a scores) = 0.2
+        row_d = agg_df.loc[agg_df["feature"] == "d"]
+        assert row_d["score_method_a"].iloc[0] == pytest.approx(0.2), (
+            "Отсутствующая фича должна получить min score метода, а не 0.0"
+        )
+
+    def test_rank_average_no_nan_when_all_features_present(self) -> None:
+        """rank_average: если все фичи присутствуют во всех методах, NaN нет."""
+        rankings = {
+            "method_a": FeatureRankingResult(
+                method="method_a",
+                ranking=pd.DataFrame(
+                    {
+                        "feature": ["a", "b"],
+                        "score": [1.0, 0.5],
+                    }
+                ),
+                selected=["a", "b"],
+            ),
+            "method_b": FeatureRankingResult(
+                method="method_b",
+                ranking=pd.DataFrame(
+                    {
+                        "feature": ["a", "b"],
+                        "score": [0.8, 0.6],
+                    }
+                ),
+                selected=["a", "b"],
+            ),
+        }
+
+        _, agg_df = _aggregate_rank_average(rankings)
+
+        assert not agg_df.isna().any().any(), "NaN не должно быть при полном покрытии"
+        # avg_score корректный
+        row_a = agg_df.loc[agg_df["feature"] == "a"]
+        assert row_a["avg_score"].iloc[0] == pytest.approx((1.0 + 0.8) / 2)
+
+    def test_build_aggregated_df_uses_min_score(self) -> None:
+        """_build_aggregated_df: пропуски заполняются min score метода."""
+        rankings = {
+            "method_a": FeatureRankingResult(
+                method="method_a",
+                ranking=pd.DataFrame(
+                    {
+                        "feature": ["a", "b"],
+                        "score": [1.0, 0.4],
+                    }
+                ),
+                selected=["a", "b"],
+            ),
+        }
+        X = pd.DataFrame({"a": [1], "b": [2], "c": [3]})
+
+        agg_df = FeatureSelector._build_aggregated_df(rankings, X)
+
+        # "c" не в method_a → score_method_a = min(1.0, 0.4) = 0.4
+        row_c = agg_df.loc[agg_df["feature"] == "c"]
+        assert row_c["score_method_a"].iloc[0] == pytest.approx(0.4), (
+            "Пропуск заполнен min score, а не 0.0"
+        )
 
 
 # ── FeatureSelector Tests ────────────────────────────────────────────

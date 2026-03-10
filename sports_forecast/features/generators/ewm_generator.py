@@ -10,11 +10,21 @@
 
 Для каждого контекста генерируются фичи для разных размеров окна (spans).
 
+NaN-стратегия:
+    - ``ignore_na=True`` — EWM пропускает NaN-наблюдения (upcoming-матчи,
+      cold-start), carry-forward последнего значения.
+    - ``min_periods`` — EWM выдаёт NaN пока не увидит достаточно реальных
+      данных. Это лучше чем fillna(0) или fillna(median), т.к. CatBoost/LGBM
+      обрабатывают NaN нативно.
+    - Опциональная ``warmup``-фича показывает модели уровень достоверности
+      EWM-оценки: ``min(n_observed / threshold, 1.0)`` ∈ [0, 1].
+
 Генерирует:
 - pl_global_ewm_10, pl_global_ewm_20, ...: EWM для игрока
 - opp_global_ewm_10, opp_global_ewm_20, ...: EWM для оппонента
 - all_global_ewm_10_diff, ...: Разница EWM между игроками
 - h2h_ewm_10_diff, ...: Head-to-head EWM
+- pl_ewm_warmup, opp_ewm_warmup: (опционально) уверенность EWM [0, 1]
 """
 
 from typing import Any
@@ -60,6 +70,12 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
             h2h: true
             output_suffix: "_diff"
 
+        # Опциональная warmup-фича
+        warmup:
+          enabled: true
+          threshold: 10  # сколько матчей нужно для "полной уверенности"
+          players: ["pl", "opp"]
+
     Фичи (для spans=[10, 20]):
         - pl_global_ewm_10, pl_global_ewm_20
         - opp_global_ewm_10, opp_global_ewm_20
@@ -67,6 +83,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
         - pl_match_state_ewm_10, pl_match_state_ewm_20
         - ...
         - h2h_ewm_10_diff, h2h_ewm_20_diff
+        - pl_ewm_warmup, opp_ewm_warmup (если warmup.enabled=true)
     """
 
     def validate_config(self) -> None:
@@ -130,6 +147,12 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
                     long, ctx, metric_col, span, shift, min_periods, adjust
                 )
                 total_features += count
+
+        # Warmup-фича (опционально)
+        warmup_cfg = self.config.get("warmup", {})
+        if warmup_cfg.get("enabled", False):
+            warmup_count = self._generate_warmup_features(long, metric_col, shift, warmup_cfg)
+            total_features += warmup_count
 
         logger.info(
             f"{self.name}: сгенерировано {total_features} фичей "
@@ -226,6 +249,59 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
 
         return features_created
 
+    def _generate_warmup_features(
+        self,
+        df: pd.DataFrame,
+        metric: str,
+        shift: int,
+        warmup_cfg: dict[str, Any],
+    ) -> int:
+        """
+        Генерация warmup-фичей — коэффициентов уверенности EWM.
+
+        Формула: ``min(n_observed / threshold, 1.0)``
+
+        Где ``n_observed`` — кумулятивное число не-NaN наблюдений метрики
+        (со сдвигом ``shift``), ``threshold`` — порог «полной уверенности».
+
+        Значение 0 → у игрока нет истории, EWM = NaN (модель не должна
+        опираться на EWM-фичи). Значение 1 → достаточно матчей, EWM надёжен.
+
+        Args:
+            df: Датафрейм (изменяется in-place).
+            metric: Колонка с метрикой.
+            shift: Сдвиг (исключаем текущий матч).
+            warmup_cfg: Конфигурация warmup (threshold, players).
+
+        Returns:
+            Количество созданных фичей.
+        """
+        threshold = warmup_cfg.get("threshold", 10)
+        players = warmup_cfg.get("players", ["pl", "opp"])
+        features_created = 0
+
+        for player in players:
+            feature_name = f"{player}_ewm_warmup"
+
+            df[feature_name] = df.groupby(player, dropna=False)[metric].transform(
+                lambda x: x.shift(shift).expanding().count().div(threshold).clip(upper=1.0)
+            )
+            features_created += 1
+            logger.debug(
+                "%s: %s создан (threshold=%d)",
+                self.name,
+                feature_name,
+                threshold,
+            )
+
+        logger.info(
+            "%s: warmup фичей: %d (threshold=%d)",
+            self.name,
+            features_created,
+            threshold,
+        )
+        return features_created
+
     def _calculate_ewm(
         self,
         df: pd.DataFrame,
@@ -239,22 +315,29 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
         """
         Вычисление EWM для группы.
 
+        NaN-стратегия (без ffill / fillna):
+            - ``shift(shift)`` сдвигает метрику → первые строки каждой группы
+              становятся NaN (cold-start).
+            - ``ignore_na=True`` пропускает NaN-наблюдения: upcoming-матчи
+              (метрика = NaN из-за отсутствия счёта) не обновляют EWM-весá,
+              а последнее значение carry-forward.
+            - ``min_periods`` гарантирует NaN на выходе пока реальных
+              наблюдений меньше порога → модель видит «нет данных».
+
         Args:
-            df: Датафрейм
-            group_keys: Ключи для группировки
-            metric: Колонка с метрикой
-            span: Размер окна
-            shift: Сдвиг
-            min_periods: Минимальное количество наблюдений
-            adjust: Параметр adjust для EWM
+            df: Датафрейм.
+            group_keys: Ключи для группировки.
+            metric: Колонка с метрикой.
+            span: Размер окна EWM.
+            shift: Сдвиг (исключаем текущий матч).
+            min_periods: Минимальное количество не-NaN наблюдений.
+            adjust: Параметр adjust для EWM.
 
         Returns:
-            Series с EWM значениями
+            Series с EWM значениями.
         """
         return df.groupby(group_keys, dropna=False)[metric].transform(
             lambda x: x.shift(shift)
-            .ffill()
-            .fillna(0.0)
             .ewm(span=span, min_periods=min_periods, adjust=adjust, ignore_na=True)
             .mean()
         )
@@ -286,5 +369,12 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
                     # Diff фича
                     if ctx.get("compute_diff", False) and "pl" in players and "opp" in players:
                         features.append(f"all_{name}_ewm_{span}_diff")
+
+        # Warmup-фичи
+        warmup_cfg = self.config.get("warmup", {})
+        if warmup_cfg.get("enabled", False):
+            warmup_players = warmup_cfg.get("players", ["pl", "opp"])
+            for player in warmup_players:
+                features.append(f"{player}_ewm_warmup")
 
         return features

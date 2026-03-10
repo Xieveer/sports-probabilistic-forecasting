@@ -11,6 +11,12 @@ ewm:
   min_periods: 3
   adjust: false
 
+  # Warmup-фича: уверенность EWM [0, 1].
+  warmup:
+    enabled: true
+    threshold: 10
+    players: ["pl", "opp"]
+
   contexts:
     # Глобальная форма игрока
     - name: "global"

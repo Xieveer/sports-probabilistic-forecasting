@@ -11,6 +11,14 @@ ewm:
   min_periods: 3
   adjust: false
 
+  # Warmup-фича: уверенность EWM [0, 1].
+  # min(n_observed / threshold, 1.0) — сколько реальных матчей видел EWM.
+  # При < threshold матчей модель знает, что EWM ненадёжен.
+  warmup:
+    enabled: true
+    threshold: 10
+    players: ["pl", "opp"]
+
   contexts:
     # Глобальная форма игрока
     - name: "global"

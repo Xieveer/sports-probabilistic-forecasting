@@ -61,8 +61,17 @@ class MutualInfoRanker(BaseFeatureRanker):
         """
         t0 = time.perf_counter()
 
-        # Заполняем NaN нулями для MI
-        X_filled = X.fillna(0)
+        # Impute NaN column-wise median for MI scoring.
+        # Median is robust to outliers and doesn't conflate "missing" with "zero"
+        # (0 is a valid value for many features like score, total, etc.).
+        # Fallback to 0.0 for all-NaN columns (extremely unlikely).
+        nan_frac = X.isna().mean().mean()
+        if nan_frac > 0.0:
+            logger.info(
+                "MutualInfoRanker: %.1f%% значений — NaN, импутация медианой",
+                nan_frac * 100,
+            )
+        X_filled = X.fillna(X.median()).fillna(0.0)
 
         mi_scores = mutual_info_classif(
             X_filled,

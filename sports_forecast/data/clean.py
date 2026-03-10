@@ -209,8 +209,9 @@ def _apply_dtype_conversion(
 
                 # Приводим к нужному типу (int/float)
                 if dtype == "int":
-                    # Для int заполняем NaN нулями
-                    df[col] = df[col].fillna(0).astype("int64")
+                    # Nullable Int64: корректно хранит NaN
+                    # (upcoming матчи не получат фиктивный счёт 0-0)
+                    df[col] = df[col].astype("Int64")
                 elif dtype == "float":
                     df[col] = df[col].astype("float64")
 

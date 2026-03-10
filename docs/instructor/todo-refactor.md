@@ -176,14 +176,146 @@ repository, engine, schemas) и `materialize.py`. Текущее покрыти�
 
 ---
 
+## R8. ✅ ~~Исправить `fillna(0)` для int-колонок в `_apply_dtype_conversion`~~
+
+> **Выполнено: 2026-03-08**
+
+**Проблема:** `_apply_dtype_conversion` использовал `fillna(0).astype("int64")`
+для числовых int-колонок (включая `home_sets`, `away_sets`, `home_points`,
+`away_points`). Для upcoming-матчей это превращало `NaN`-счёт в `0-0`, что
+является валидным результатом и искажает downstream-логику.
+
+**Решение:** Заменено на nullable `Int64` (`pd.Int64Dtype()`), который корректно
+хранит `<NA>` вместо заполнения нулями.
+
+**Изменённые файлы:**
+- `sports_forecast/data/clean.py` — `fillna(0).astype("int64")` → `.astype("Int64")`
+
+---
+
+## R9. 🟡 Ревизия fillna-стратегий в feature pipeline
+
+**Проблема:** Несколько мест используют `fillna(0)` или `fillna(max_rank)` без
+документирования причин. Это может искажать данные: ноль — осмысленное значение,
+а замена пропуска на ноль подразумевает «нулевой показатель», а не «нет данных».
+
+**Список мест:**
+
+### R9.1. ✅ ~~`ewm_generator.py` — `fillna(0.0)` в EWM-цепочке~~
+
+> **Выполнено: 2026-03-10**
+
+**Было:**
+```python
+x.shift(shift).ffill().fillna(0.0).ewm(span=..., ignore_na=True).mean()
+```
+
+**Стало:**
+```python
+x.shift(shift).ewm(span=..., min_periods=..., ignore_na=True).mean()
+```
+
+**Решение:** Убраны `ffill()` и `fillna(0.0)`. `ignore_na=True` корректно
+обрабатывает оба типа NaN:
+- **Cold-start** (< min_periods матчей) → EWM = NaN (модель видит «нет данных»)
+- **Upcoming-матчи** (metric = NaN из-за отсутствия счёта) → EWM carry-forward
+  от последнего known результата
+
+Дополнительно добавлена **warmup-фича** `pl_ewm_warmup` / `opp_ewm_warmup`:
+- Formula: `min(n_observed / threshold, 1.0)` ∈ [0, 1]
+- threshold=10 (конфигурируемо)
+- Показывает модели уровень достоверности EWM-оценки
+
+**Изменённые файлы:**
+- `sports_forecast/features/generators/ewm_generator.py` — рефакторинг
+  `_calculate_ewm()`, добавлен `_generate_warmup_features()`
+- `conf/features/generators/rolling/standard.yaml` — добавлен `warmup` блок
+- `conf/features/generators/rolling/minimal.yaml` — добавлен `warmup` блок
+- `tests/test_feature_generators.py` — 7 новых тестов (cold-start NaN,
+  upcoming NaN carry-forward, no-fillna-zero, warmup values, warmup with NaN)
+
+### R9.2. ✅ ~~`mutual_info_ranker.py` — `X.fillna(0)` перед MI scoring~~
+
+> **Выполнено: 2026-03-11**
+
+**Было:**
+```python
+X_filled = X.fillna(0)
+```
+
+**Стало:**
+```python
+X_filled = X.fillna(X.median()).fillna(0.0)  # median + fallback for all-NaN
+```
+
+**Решение:** `fillna(0)` → `fillna(X.median())`. Медиана устойчива к выбросам
+и не смешивает «нет данных» с «нулевой показатель». Fallback `fillna(0.0)` для
+теоретически возможных полностью NaN-колонок. Добавлено логирование при >0% NaN.
+
+**Изменённые файлы:**
+- `sports_forecast/features/selection/mutual_info_ranker.py` — median imputation
+- `tests/test_feature_selection.py` — 3 новых теста (NaN median, all-NaN column,
+  no-fillna-zero degradation)
+
+### R9.3. ✅ ~~`selector.py` — агрегация рангов/скоров с fillna~~
+
+> **Выполнено: 2026-03-11**
+
+**Было:**
+```python
+merged[score_cols] = merged[score_cols].fillna(0.0)
+```
+
+**Стало:**
+```python
+for col in score_cols:
+    merged[col] = merged[col].fillna(merged[col].min())
+merged[score_cols] = merged[score_cols].fillna(0.0)  # fallback
+```
+
+**Решение:** `fillna(0.0)` → `fillna(per_column_min)`. Согласовано с подходом
+для рангов (`fillna(max_rank)`): отсутствие в ранкере = худший наблюдаемый score
+данного метода. Применено в двух местах: `_aggregate_rank_average()` и
+`_build_aggregated_df()`.
+
+**Изменённые файлы:**
+- `sports_forecast/features/selection/selector.py` — per-method min score
+- `tests/test_feature_selection.py` — 4 новых теста (missing feature min score,
+  no NaN when full coverage, build_aggregated_df min score)
+
+### R9.4. `logreg.py` — `SimpleImputer(strategy="mean")` для numeric
+
+```python
+numeric_pipeline = Pipeline([
+    ("imputer", SimpleImputer(strategy="mean")),
+    ("scaler", StandardScaler()),
+])
+```
+
+- **Контекст:** Стандартный подход для LogReg. Mean-импутация корректна,
+  но может искажать распределение при большой доле пропусков.
+- **Риск:** Низкий. Это internal model preprocessing, не влияет на данные
+  для других моделей (CatBoost/LGBM обрабатывают NaN нативно).
+- [ ] При необходимости: добавить фичу-индикатор пропуска (`add_indicator=True`)
+
+**Файлы:**
+- `sports_forecast/features/generators/ewm_generator.py`
+- `sports_forecast/features/selection/mutual_info_ranker.py`
+- `sports_forecast/features/selection/selector.py`
+- `sports_forecast/training/models/logreg.py`
+
+---
+
 ## Приоритизация
 
 | Задача | Критичность | Сложность | Рекомендуемый порядок |
 |--------|-------------|-----------|----------------------|
-| R1     | 🔴 High     | Medium    | 1-й                  |
-| R3     | 🟢 Low      | Trivial   | 2-й (быстро)         |
-| R7     | 🟢 Low      | Trivial   | 3-й (быстро)         |
-| R6     | 🟢 Low      | Low       | 4-й (быстро)         |
-| R2     | 🟡 Medium   | Medium    | 5-й (требует данных)  |
-| R5     | 🟡 Medium   | High      | 6-й (объёмный)       |
-| R4     | 🟡 Medium   | High      | 7-й (зависит от R5)  |
+| R1     | 🔴 High     | Medium    | 1-й ✅               |
+| R3     | 🟢 Low      | Trivial   | 2-й ✅               |
+| R7     | 🟢 Low      | Trivial   | 3-й ✅               |
+| R6     | 🟢 Low      | Low       | 4-й ✅               |
+| R8     | 🔴 High     | Trivial   | 5-й ✅               |
+| R9     | 🟡 Medium   | Medium    | 6-й (R9.1-3 ✅, R9.4 ост.)|
+| R2     | 🟡 Medium   | Medium    | 7-й (требует данных) |
+| R5     | 🟡 Medium   | High      | 8-й (объёмный)       |
+| R4     | 🟡 Medium   | High      | 9-й (зависит от R5) |
