@@ -39,14 +39,15 @@
 - [x] **R9.3** — `selector.py` — агрегация рангов/скоров с fillna
 - [x] **R11** — Исправить PerformanceWarning о фрагментации DataFrame в long_to_wide
 - [x] **R10** — Исправить порядок генераторов и расхождение в количестве фичей (R10.3 сводка, R10.5 проверка, R10.6 исследование; R10.4 пропущено)
+- [x] **R12.4** — Training uel_kz_1 (winner): make train TOURNAMENT=uel_kz_1 MARKET=winner; предупреждения MLflow зафиксированы в issues-winner-full-cycle.md
 
 ### В работе / Backlog 🟡
 
 - [ ] **R12** — Полный цикл обучения для market=winner (uel_kz_1 + lp_ru)
   - [x] R12.1 — Создать документ для фиксации недочётов (issues-winner-full-cycle.md)
-  - [ ] R12.2 — Проверить конфиги uel_kz_1, lp_ru, winner
-  - [ ] R12.3 — Data pipeline: make dvc-repro
-  - [ ] R12.4 — Training uel_kz_1 (winner)
+  - [x] R12.2 — Проверить конфиги uel_kz_1, lp_ru, winner
+  - [x] R12.3 — Data pipeline: make dvc-repro
+  - [x] R12.4 — Training uel_kz_1 (winner)
   - [ ] R12.5 — Training lp_ru (winner)
   - [ ] R12.6 — (Опционально) Promote по турнирам
   - [ ] R12.7 — (Опционально) Materialize по турнирам
