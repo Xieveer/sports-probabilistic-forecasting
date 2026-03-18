@@ -320,6 +320,12 @@ class FeaturePipeline:
         # 5. Итоговая статистика
         elapsed = time.time() - start_time
         actual_features = get_feature_columns(result_df)
+        total_expected = self.get_total_feature_count()
+        total_actual = len(actual_features)
+        total_skipped_contexts = sum(
+            getattr(g, "_last_run_skipped_contexts", 0) for g in self.generators
+        )
+        features_not_created = total_expected - total_actual
 
         logger.info("\n" + "=" * 70)
         logger.info("ГЕНЕРАЦИЯ ФИЧЕЙ ЗАВЕРШЕНА")
@@ -327,6 +333,11 @@ class FeaturePipeline:
         logger.info("Время выполнения: %.2f секунд", elapsed)
         logger.info("Генераторов применено: %d", len(self.generators))
         logger.info("Фичей сгенерировано: %d", len(actual_features))
+        logger.info(
+            "Итоговая сводка: контекстов пропущено %d, фичей не создано %d",
+            total_skipped_contexts,
+            features_not_created,
+        )
         logger.info(
             f"Итоговый датафрейм: {result_df.shape[0]} строк × {result_df.shape[1]} колонок"
         )

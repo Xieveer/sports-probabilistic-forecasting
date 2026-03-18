@@ -86,6 +86,7 @@ class CountFeatureGenerator(BaseFeatureGenerator):
             ValueError: Если отсутствуют обязательные колонки
         """
         long = df.copy()
+        self._last_run_skipped_contexts = 0
 
         shift = self.config.get("shift", 1)
         contexts = self.config["contexts"]
@@ -117,6 +118,7 @@ class CountFeatureGenerator(BaseFeatureGenerator):
             logger.warning(
                 f"{self.name}: контекст '{name}' пропущен, отсутствуют колонки: {missing}"
             )
+            self._last_run_skipped_contexts = getattr(self, "_last_run_skipped_contexts", 0) + 1
             return
 
         if is_h2h:

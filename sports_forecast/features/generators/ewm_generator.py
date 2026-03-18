@@ -145,6 +145,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
             ValueError: Если отсутствуют обязательные колонки
         """
         long = df.copy()
+        self._last_run_skipped_contexts = 0
 
         # Параметры из конфига
         metric_col = self.config["metric"]
@@ -226,6 +227,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
                 f"{self.name}: контекст '{name}' (span={span}) пропущен, "
                 f"отсутствуют колонки: {missing}"
             )
+            self._last_run_skipped_contexts = getattr(self, "_last_run_skipped_contexts", 0) + 1
             return 0
 
         if is_h2h:
