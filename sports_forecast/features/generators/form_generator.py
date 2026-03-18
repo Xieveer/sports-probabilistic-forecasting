@@ -155,6 +155,12 @@ class FormFeatureGenerator(BaseFeatureGenerator):
         """
         Возвращает список имен фичей (без префикса f_).
 
+        Note:
+            ``match_state``, ``pl_state``, ``opp_state`` — это КОНТЕКСТНЫЕ
+            колонки для группировки в EWM/Count. Они НЕ включаются в feature
+            names, чтобы не получить ``f_`` префикс и остаться доступными
+            для downstream генераторов как ключи группировки.
+
         Returns:
             Список имен фичей
         """
@@ -171,8 +177,9 @@ class FormFeatureGenerator(BaseFeatureGenerator):
                 ]
             )
 
-        # Комбинированные фичи (если оба игрока указаны)
+        # diff_mins_prev_match — это реальная фича
+        # match_state — это контекстная колонка для группировки (НЕ фича)
         if "pl" in players and "opp" in players:
-            features.extend(["match_state", "diff_mins_prev_match"])
+            features.append("diff_mins_prev_match")
 
         return features

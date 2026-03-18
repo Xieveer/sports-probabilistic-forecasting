@@ -3,15 +3,18 @@
 #
 # Композиция:
 #   _common        → exclude_cols, result_cols, prefix, requires_long
-#   rolling/minimal → ewm (span=10) + count (global + h2h)
-#   form/default    → form (fg/dp из tournament конфига)
-#   time/default    → long_format_context_columns
+#   time/default   → long_format_context_columns (pre-generator, работает на wide)
+#   form/default   → form (fg/dp из tournament конфига, создает pl_state, match_state)
+#   rolling/minimal → ewm (span=10) + count (global + h2h, используют form)
+#
+# Порядок важен: form должен быть перед rolling, т.к. создает контекстные колонки
+# (pl_state, opp_state, match_state), которые используются в ewm и count генераторах.
 
 defaults:
   - _common
-  - generators/rolling@generators: minimal
-  - generators/form@generators: default
   - generators/time@generators: default
+  - generators/form@generators: default
+  - generators/rolling@generators: minimal
 
 name: basic
 description: "Basic featureset for fast testing"

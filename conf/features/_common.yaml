@@ -9,7 +9,6 @@ exclude_cols:
   - datetime
   - tournament
   - status
-  - match_state
   - odds_raw
 
 # Колонки с результатами матчей (для защиты от утечек)

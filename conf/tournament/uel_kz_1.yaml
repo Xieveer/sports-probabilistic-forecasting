@@ -34,15 +34,10 @@ data:
 # ============================================================================
 # DATA CLEAN: Турнир-специфичная конкретика
 # ============================================================================
-# column_mapping, dtype_mapping, required_columns — наследуются из sport
+# column_mapping, dtype_mapping, required_columns, derived_columns — наследуются из sport
+# weekday, hour — генерируются в FeaturePipeline (TimeFeatureGenerator)
+# tour_num — генерируется из tour_datetime (sport-level derived_columns)
 data_clean:
-  # Генерация производных колонок (специфично для UEL)
-  # weekday, hour — генерируются в FeaturePipeline (TimeFeatureGenerator)
-  derived_columns:
-    tour_num:
-      source: tour_name_en
-      transform: extract_last_char
-
   # Финальный набор колонок для interim (специфичен для турнира)
   select_columns:
     - id
@@ -52,6 +47,8 @@ data_clean:
     - away_points
     - home_team
     - away_team
+    - home_cteam
+    - away_cteam
     - tour_match_num
     - tour_num
 

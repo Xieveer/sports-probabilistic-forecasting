@@ -245,8 +245,12 @@ def long_to_wide(
         and col not in ["side", "is_home"]
     ]
 
-    # Начинаем с мета-колонок из home строк
-    wide = home_df[meta_cols].copy()
+    # Собираем все колонки в словарь для избежания фрагментации DataFrame
+    wide_data = {}
+
+    # Мета-колонки из home строк
+    for col in meta_cols:
+        wide_data[col] = home_df[col].values
 
     # Колонки с префиксами pl_ и opp_
     pl_cols = [col for col in df.columns if col.startswith(player_prefix)]
@@ -255,26 +259,30 @@ def long_to_wide(
     # Переименовываем pl_ → home_, opp_ → away_ для home строк
     for col in pl_cols:
         base_name = col[len(player_prefix) :]
-        wide[f"{home_prefix}{base_name}"] = home_df[col].values
+        wide_data[f"{home_prefix}{base_name}"] = home_df[col].values
 
     for col in opp_cols:
         base_name = col[len(opponent_prefix) :]
-        wide[f"{away_prefix}{base_name}"] = home_df[col].values
+        wide_data[f"{away_prefix}{base_name}"] = home_df[col].values
 
     # Если нужно агрегировать фичи (с префиксом f_), добавляем их из обеих строк
     if aggregate_features:
         feature_cols = [col for col in df.columns if col.startswith("f_")]
 
+        # Выравниваем away_df по id из home_df один раз
+        away_aligned = away_df.set_index("id").reindex(home_df["id"].values)
+
         for col in feature_cols:
             # Для home берем значение из home строки
             if col in home_df.columns:
-                wide[f"{home_prefix}{col}"] = home_df[col].values
+                wide_data[f"{home_prefix}{col}"] = home_df[col].values
 
             # Для away берем значение из away строки
             if col in away_df.columns:
-                # Убедимся что порядок id совпадает
-                away_aligned = away_df.set_index("id").reindex(home_df["id"].values)
-                wide[f"{away_prefix}{col}"] = away_aligned[col].values
+                wide_data[f"{away_prefix}{col}"] = away_aligned[col].values
+
+    # Создаем DataFrame одним вызовом (избегаем фрагментации)
+    wide = pd.DataFrame(wide_data, index=home_df.index)
 
     logger.info("Long → Wide: %d строк → %d матчей", len(df), len(wide))
 

@@ -15,11 +15,8 @@ data:
     long: inference_long.parquet
     wide: inference_wide.parquet
 
-# column_mapping, dtype_mapping, target_sources — наследуются из sport
+# column_mapping, dtype_mapping, target_sources, derived_columns — наследуются из sport
 # weekday, hour — генерируются в FeaturePipeline (TimeFeatureGenerator)
+# tour_num — генерируется из tour_datetime (sport-level)
 data_clean:
-  derived_columns:
-    tour_num:
-      source: tour_name_en
-      transform: extract_last_char
-  select_columns: [id, datetime, status, home_points, away_points, home_team, away_team, tour_num]
+  select_columns: [id, datetime, status, home_points, away_points, home_team, away_team, home_cteam, away_cteam, tour_match_num, tour_num]

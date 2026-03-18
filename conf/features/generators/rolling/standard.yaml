@@ -1,11 +1,24 @@
-# Rolling features: полный набор скользящих и count фичей.
-# EWM с 3 spans (5, 25, 100) + Count по всем контекстам.
+# Rolling features: полный набор EWM и Count фичей.
+#
+# ДВА EWM-генератора: ewm_diff (по diff_ps) и ewm_total (по total_ps).
+# Count — ОДИН раз на контекст (не зависит от метрики).
+#
+# Именование фичей:
+#   pl_global_diff_ewm_5, opp_global_diff_ewm_5, all_global_diff_ewm_5
+#   pl_global_total_ewm_5, opp_global_total_ewm_5
+#   h2h_global_diff_ewm_5, h2h_global_total_ewm_5
+#   pl_global_count, h2h_global_count  (один раз)
+#
 # Используется в features/advanced.yaml.
 
-ewm:
+# =====================================================================
+# EWM по diff_ps (разница очков pl - opp)
+# =====================================================================
+ewm_diff:
   type: "ewm"
   enabled: true
   metric: "diff_ps"
+  metric_label: "diff"
   spans: [5, 25, 100]
   shift: 1
   min_periods: 3
@@ -13,13 +26,15 @@ ewm:
 
   # Warmup-фича: уверенность EWM [0, 1].
   # min(n_observed / threshold, 1.0) — сколько реальных матчей видел EWM.
-  # При < threshold матчей модель знает, что EWM ненадёжен.
+  # Генерируется ОДИН раз (diff_ps и total_ps имеют одинаковый NaN-паттерн).
   warmup:
     enabled: true
     threshold: 10
     players: ["pl", "opp"]
 
   contexts:
+    # ===== pl/opp контексты (compute_diff=true для diff_ps) =====
+
     # Глобальная форма игрока
     - name: "global"
       keys: ["pl"]
@@ -44,7 +59,7 @@ ewm:
       players: ["pl", "opp"]
       compute_diff: true
 
-    # Форма в зависимости от номера турнира
+    # Форма по времени суток турнира (1=ночь, 2=утро, 3=день, 4=вечер)
     - name: "tour_num"
       keys: ["pl", "tour_num"]
       players: ["pl", "opp"]
@@ -56,32 +71,137 @@ ewm:
       players: ["pl", "opp"]
       compute_diff: true
 
+    # Форма (state-level): fg/dp/form context
+    - name: "form"
+      keys: ["pl", "pl_state"]
+      players: ["pl", "opp"]
+      compute_diff: true
+
+    # Форма по консольной команде (cyberhockey only, soft-fail для TT)
+    - name: "team"
+      keys: ["pl", "pl_cteam"]
+      players: ["pl", "opp"]
+      compute_diff: true
+
     # ===== H2H контексты =====
 
-    # H2H базовый
-    - name: "h2h"
+    # H2H базовый (все очные встречи)
+    - name: "h2h_global"
       keys: ["pl", "opp"]
       h2h: true
-      output_suffix: "_diff"
 
     # H2H + match_state
     - name: "h2h_match_state"
       keys: ["pl", "opp", "match_state"]
       h2h: true
-      output_suffix: "_diff"
 
     # H2H + match_num
     - name: "h2h_match_num"
       keys: ["pl", "opp", "tour_match_num"]
       h2h: true
-      output_suffix: "_diff"
 
     # H2H + side (pl/opp + сторона)
     - name: "h2h_side"
       keys: ["pl", "opp", "side"]
       h2h: true
-      output_suffix: "_diff"
 
+    # H2H + form
+    - name: "h2h_form"
+      keys: ["pl", "opp", "pl_state"]
+      h2h: true
+
+    # H2H + team (cyberhockey only, soft-fail для TT)
+    - name: "h2h_team"
+      keys: ["pl", "opp", "pl_cteam", "opp_cteam"]
+      h2h: true
+
+# =====================================================================
+# EWM по total_ps (сумма очков pl + opp)
+# =====================================================================
+ewm_total:
+  type: "ewm"
+  enabled: true
+  metric: "total_ps"
+  metric_label: "total"
+  spans: [5, 25, 100]
+  shift: 1
+  min_periods: 3
+  adjust: false
+
+  # Warmup НЕ включён: NaN-паттерн идентичен diff_ps, один warmup достаточно.
+
+  contexts:
+    # ===== pl/opp контексты (compute_diff=false для total_ps) =====
+
+    - name: "global"
+      keys: ["pl"]
+      players: ["pl", "opp"]
+      compute_diff: false
+
+    - name: "match_state"
+      keys: ["pl", "match_state"]
+      players: ["pl", "opp"]
+      compute_diff: false
+
+    - name: "match_num"
+      keys: ["pl", "tour_match_num"]
+      players: ["pl", "opp"]
+      compute_diff: false
+
+    - name: "weekday"
+      keys: ["pl", "weekday"]
+      players: ["pl", "opp"]
+      compute_diff: false
+
+    - name: "tour_num"
+      keys: ["pl", "tour_num"]
+      players: ["pl", "opp"]
+      compute_diff: false
+
+    - name: "tour_side"
+      keys: ["pl", "side"]
+      players: ["pl", "opp"]
+      compute_diff: false
+
+    - name: "form"
+      keys: ["pl", "pl_state"]
+      players: ["pl", "opp"]
+      compute_diff: false
+
+    - name: "team"
+      keys: ["pl", "pl_cteam"]
+      players: ["pl", "opp"]
+      compute_diff: false
+
+    # ===== H2H контексты =====
+
+    - name: "h2h_global"
+      keys: ["pl", "opp"]
+      h2h: true
+
+    - name: "h2h_match_state"
+      keys: ["pl", "opp", "match_state"]
+      h2h: true
+
+    - name: "h2h_match_num"
+      keys: ["pl", "opp", "tour_match_num"]
+      h2h: true
+
+    - name: "h2h_side"
+      keys: ["pl", "opp", "side"]
+      h2h: true
+
+    - name: "h2h_form"
+      keys: ["pl", "opp", "pl_state"]
+      h2h: true
+
+    - name: "h2h_team"
+      keys: ["pl", "opp", "pl_cteam", "opp_cteam"]
+      h2h: true
+
+# =====================================================================
+# Count — один раз на контекст (не зависит от метрики)
+# =====================================================================
 count:
   type: "count"
   enabled: true
@@ -118,24 +238,38 @@ count:
       keys: ["pl", "side"]
       players: ["pl", "opp"]
 
+    # Количество матчей в form state
+    - name: "form"
+      keys: ["pl", "pl_state"]
+      players: ["pl", "opp"]
+
+    # Количество матчей по консольной команде (cyberhockey only)
+    - name: "team"
+      keys: ["pl", "pl_cteam"]
+      players: ["pl", "opp"]
+
     # ===== H2H count =====
 
-    # H2H базовый
-    - name: "h2h"
+    - name: "h2h_global"
       keys: ["pl", "opp"]
       h2h: true
 
-    # H2H + match_state
     - name: "h2h_match_state"
       keys: ["pl", "opp", "match_state"]
       h2h: true
 
-    # H2H + match_num
     - name: "h2h_match_num"
       keys: ["pl", "opp", "tour_match_num"]
       h2h: true
 
-    # H2H + side (pl/opp + сторона)
     - name: "h2h_side"
       keys: ["pl", "opp", "side"]
+      h2h: true
+
+    - name: "h2h_form"
+      keys: ["pl", "opp", "pl_state"]
+      h2h: true
+
+    - name: "h2h_team"
+      keys: ["pl", "opp", "pl_cteam", "opp_cteam"]
       h2h: true

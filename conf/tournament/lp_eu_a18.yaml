@@ -16,7 +16,8 @@ data:
     long: inference_long.parquet
     wide: inference_wide.parquet
 
-# target_sources, allowed_market_specs, column_mapping, dtype_mapping — наследуются из sport
+# target_sources, allowed_market_specs, column_mapping, dtype_mapping, derived_columns — наследуются из sport
 # weekday, hour — генерируются в FeaturePipeline (TimeFeatureGenerator)
+# tour_num — генерируется из tour_datetime (sport-level)
 data_clean:
-  select_columns: [id, datetime, status, home_sets, away_sets, home_points, away_points, home_team, away_team]
+  select_columns: [id, datetime, status, home_sets, away_sets, home_points, away_points, home_team, away_team, tour_match_num, tour_num]

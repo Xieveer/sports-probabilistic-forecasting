@@ -72,10 +72,22 @@ data_clean:
     a_m_s: away_points
     home_short_name_en: home_team
     away_short_name_en: away_team
+    # Консольная команда (Pittsburgh Penguins и т.д.) — используется
+    # как контекстная группировка в EWM/Count (team context).
+    # В long format: home_cteam → pl_cteam, away_cteam → opp_cteam
+    home_team_name_en: home_cteam
+    away_team_name_en: away_cteam
     odds_feed: odds_raw
 
   # Обязательные колонки (status деривируется из match_is_end, не требует наличия в raw)
   required_columns: [id, datetime]
+
+  # Производные колонки (общие для всех турниров спорта)
+  # tour_num = время суток турнира (1=ночь, 2=утро, 3=день, 4=вечер)
+  derived_columns:
+    tour_num:
+      source: tour_datetime
+      transform: hour_to_time_of_day
 
   # Колонки для dropna (НЕ включать score-колонки — у upcoming матчей они пусты)
   drop_na_columns: [id, datetime]

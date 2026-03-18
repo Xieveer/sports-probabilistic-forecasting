@@ -81,6 +81,13 @@ data_clean:
   # Обязательные колонки
   required_columns: [id, datetime]
 
+  # Производные колонки (общие для всех турниров спорта)
+  # tour_num = время суток турнира (1=ночь, 2=утро, 3=день, 4=вечер)
+  derived_columns:
+    tour_num:
+      source: tour_datetime
+      transform: hour_to_time_of_day
+
   # Колонки для dropna (НЕ включать score-колонки — у upcoming матчей они пусты)
   drop_na_columns: [id, datetime]
 

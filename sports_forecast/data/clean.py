@@ -341,6 +341,8 @@ def _apply_derived_columns(
             - dayofweek: день недели из datetime (0=Пн, 6=Вс)
             - hour: час из datetime
             - date: дата из datetime
+            - hour_to_time_of_day: время суток из datetime → 1(night), 2(morning),
+              3(day), 4(evening)
     """
     if not derived_cfg:
         logger.debug("Турнир %s: derived_columns не заданы в конфиге", tournament_name)
@@ -378,6 +380,20 @@ def _apply_derived_columns(
 
             elif transform == "date":
                 df[col_name] = pd.to_datetime(df[source_col]).dt.date
+                added_columns.append(col_name)
+
+            elif transform == "hour_to_time_of_day":
+                # Категориальная фича времени суток из datetime:
+                #   1 = ночь   (00:00–05:59)
+                #   2 = утро   (06:00–11:59)
+                #   3 = день   (12:00–17:59)
+                #   4 = вечер  (18:00–23:59)
+                hour_series = pd.to_datetime(df[source_col], errors="coerce").dt.hour
+                df[col_name] = pd.cut(
+                    hour_series,
+                    bins=[-1, 5, 11, 17, 23],
+                    labels=[1, 2, 3, 4],
+                ).astype("Int64")
                 added_columns.append(col_name)
 
             else:

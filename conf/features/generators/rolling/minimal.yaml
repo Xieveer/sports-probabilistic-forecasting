@@ -1,11 +1,12 @@
 # Rolling features: минимальный набор для быстрого тестирования.
-# EWM с 1 span + Count с 2 базовыми контекстами.
+# EWM с 1 span по обеим метрикам + Count с базовыми контекстами.
 # Используется в features/basic.yaml.
 
-ewm:
+ewm_diff:
   type: "ewm"
   enabled: true
   metric: "diff_ps"
+  metric_label: "diff"
   spans: [10]
   shift: 1
   min_periods: 3
@@ -25,10 +26,29 @@ ewm:
       compute_diff: true
 
     # H2H форма
-    - name: "h2h"
+    - name: "h2h_global"
       keys: ["pl", "opp"]
       h2h: true
-      output_suffix: "_diff"
+
+ewm_total:
+  type: "ewm"
+  enabled: true
+  metric: "total_ps"
+  metric_label: "total"
+  spans: [10]
+  shift: 1
+  min_periods: 3
+  adjust: false
+
+  contexts:
+    - name: "global"
+      keys: ["pl"]
+      players: ["pl", "opp"]
+      compute_diff: false
+
+    - name: "h2h_global"
+      keys: ["pl", "opp"]
+      h2h: true
 
 count:
   type: "count"
@@ -42,6 +62,6 @@ count:
       players: ["pl", "opp"]
 
     # Количество H2H встреч
-    - name: "h2h"
+    - name: "h2h_global"
       keys: ["pl", "opp"]
       h2h: true
