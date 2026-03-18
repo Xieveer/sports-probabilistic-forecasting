@@ -4,7 +4,7 @@
 Покрывают:
 - BaseFeatureGenerator: __call__, prefix logic, enabled/disabled
 - FormFeatureGenerator: формы игроков (FG, DP, Form)
-- EWMFeatureGenerator: EWM в разных контекстах
+- EWMFeatureGenerator: EWM в разных контекстах + multi-metric + warmup
 - CountFeatureGenerator: подсчёт встреч в контексте
 - FeaturePipeline: инициализация из dict и list конфигов
 - Обработка ошибок: отсутствующие колонки, невалидные конфиги
@@ -37,12 +37,13 @@ def long_df() -> pd.DataFrame:
         "datetime": pd.date_range("2024-01-01", periods=n, freq="30min"),
         "pl": [players[i % len(players)] for i in range(n)],
         "opp": [players[(i + 1) % len(players)] for i in range(n)],
-        "pl_points": np.random.randint(1, 10, n),
-        "opp_points": np.random.randint(1, 10, n),
+        "pl_points": np.random.randint(1, 10, n).astype(float),
+        "opp_points": np.random.randint(1, 10, n).astype(float),
         "side": ["h" if i % 2 == 0 else "a" for i in range(n)],
     }
     df = pd.DataFrame(data)
     df["diff_ps"] = df["pl_points"] - df["opp_points"]
+    df["total_ps"] = df["pl_points"] + df["opp_points"]
     return df
 
 
@@ -70,8 +71,31 @@ class TestFormFeatureGenerator:
         assert "f_pl_is_fg" in result.columns
         assert "f_pl_is_form" in result.columns
         assert "f_opp_mins_prev_match" in result.columns
-        assert "f_match_state" in result.columns
         assert "f_diff_mins_prev_match" in result.columns
+
+        # match_state — контекстная колонка, НЕ получает f_ префикс
+        assert "match_state" in result.columns
+        assert "f_match_state" not in result.columns
+
+    def test_match_state_stays_as_context(self, long_df: pd.DataFrame) -> None:
+        """match_state и pl_state остаются контекстными колонками (без f_ prefix)."""
+        config = {
+            "type": "form",
+            "enabled": True,
+            "fg_trigger_minutes": 480,
+            "dp_trigger_minutes": 30,
+            "players": ["pl", "opp"],
+        }
+        gen = FormFeatureGenerator(config)
+        result = gen(long_df)
+
+        # Контекстные колонки: доступны для EWM/Count group-by
+        assert "match_state" in result.columns
+        assert "pl_state" in result.columns
+        assert "opp_state" in result.columns
+        # Не должны иметь f_ prefix
+        assert "f_match_state" not in result.columns
+        assert "f_pl_state" not in result.columns
 
     def test_dp_fg_form_mutually_exclusive(self, long_df: pd.DataFrame) -> None:
         """DP, FG, Form взаимоисключающи для каждого игрока."""
@@ -118,8 +142,9 @@ class TestFormFeatureGenerator:
 
         assert "pl_mins_prev_match" in names
         assert "pl_is_dp" in names
-        assert "match_state" in names
         assert "diff_mins_prev_match" in names
+        # match_state НЕ в feature_names (контекстная колонка)
+        assert "match_state" not in names
 
     def test_prefixed_feature_names(self) -> None:
         """get_prefixed_feature_names добавляет f_ ко всем именам."""
@@ -177,7 +202,7 @@ class TestCountFeatureGenerator:
             "shift": 1,
             "contexts": [
                 {
-                    "name": "h2h",
+                    "name": "h2h_global",
                     "keys": ["pl", "opp"],
                     "h2h": True,
                 }
@@ -186,7 +211,7 @@ class TestCountFeatureGenerator:
         gen = CountFeatureGenerator(config)
         result = gen(long_df)
 
-        assert "f_h2h_count" in result.columns
+        assert "f_h2h_global_count" in result.columns
 
     def test_count_starts_at_zero_with_shift(self, long_df: pd.DataFrame) -> None:
         """С shift=1 первый матч каждого игрока = 0."""
@@ -251,7 +276,7 @@ class TestCountFeatureGenerator:
             "type": "count",
             "contexts": [
                 {"name": "global", "keys": ["pl"], "players": ["pl", "opp"]},
-                {"name": "h2h", "keys": ["pl", "opp"], "h2h": True},
+                {"name": "h2h_global", "keys": ["pl", "opp"], "h2h": True},
             ],
         }
         gen = CountFeatureGenerator(config)
@@ -259,7 +284,25 @@ class TestCountFeatureGenerator:
 
         assert "pl_global_count" in names
         assert "opp_global_count" in names
-        assert "h2h_count" in names
+        assert "h2h_global_count" in names
+
+    def test_actual_vs_expected_feature_names_count(self, long_df: pd.DataFrame) -> None:
+        """get_actual_feature_names(df) исключает пропущенные контексты."""
+        config = {
+            "type": "count",
+            "contexts": [
+                {"name": "global", "keys": ["pl"], "players": ["pl", "opp"]},
+                {"name": "team", "keys": ["pl", "pl_cteam"], "players": ["pl", "opp"]},
+            ],
+        }
+        gen = CountFeatureGenerator(config)
+        expected = gen.get_expected_feature_names()
+        actual = gen.get_actual_feature_names(long_df)
+
+        assert "pl_team_count" in expected
+        assert "pl_team_count" not in actual
+        assert len(actual) < len(expected)
+        assert set(actual).issubset(set(expected))
 
 
 # ==================== EWMFeatureGenerator Tests ====================
@@ -268,8 +311,10 @@ class TestCountFeatureGenerator:
 class TestEWMFeatureGenerator:
     """Тесты для EWMFeatureGenerator."""
 
-    def test_generates_global_ewm(self, long_df: pd.DataFrame) -> None:
-        """Генерирует глобальный EWM для игроков."""
+    # ---------- Backward compat (no metric_label) ----------
+
+    def test_backward_compat_no_metric_label(self, long_df: pd.DataFrame) -> None:
+        """Без metric_label → старое именование (обратная совместимость)."""
         config = {
             "type": "ewm",
             "metric": "diff_ps",
@@ -289,12 +334,13 @@ class TestEWMFeatureGenerator:
         gen = EWMFeatureGenerator(config)
         result = gen(long_df)
 
+        # Old naming: pl_global_ewm_5 (без metric_label)
         assert "f_pl_global_ewm_5" in result.columns
         assert "f_opp_global_ewm_5" in result.columns
         assert "f_all_global_ewm_5_diff" in result.columns
 
-    def test_h2h_ewm(self, long_df: pd.DataFrame) -> None:
-        """Head-to-head EWM с суффиксом _diff."""
+    def test_backward_compat_h2h_no_metric_label(self, long_df: pd.DataFrame) -> None:
+        """H2H без metric_label → old naming."""
         config = {
             "type": "ewm",
             "metric": "diff_ps",
@@ -304,23 +350,134 @@ class TestEWMFeatureGenerator:
             "adjust": False,
             "contexts": [
                 {
-                    "name": "h2h",
+                    "name": "h2h_global",
                     "keys": ["pl", "opp"],
                     "h2h": True,
-                    "output_suffix": "_diff",
                 }
             ],
         }
         gen = EWMFeatureGenerator(config)
         result = gen(long_df)
 
-        assert "f_h2h_ewm_5_diff" in result.columns
+        assert "f_h2h_global_ewm_5" in result.columns
+
+    # ---------- New metric_label naming ----------
+
+    def test_metric_label_diff_naming(self, long_df: pd.DataFrame) -> None:
+        """metric_label='diff' → pl_global_diff_ewm_5."""
+        config = {
+            "type": "ewm",
+            "metric": "diff_ps",
+            "metric_label": "diff",
+            "spans": [5],
+            "shift": 1,
+            "min_periods": 1,
+            "adjust": False,
+            "contexts": [
+                {
+                    "name": "global",
+                    "keys": ["pl"],
+                    "players": ["pl", "opp"],
+                    "compute_diff": True,
+                }
+            ],
+        }
+        gen = EWMFeatureGenerator(config)
+        result = gen(long_df)
+
+        assert "f_pl_global_diff_ewm_5" in result.columns
+        assert "f_opp_global_diff_ewm_5" in result.columns
+        assert "f_all_global_diff_ewm_5" in result.columns
+
+    def test_metric_label_total_naming(self, long_df: pd.DataFrame) -> None:
+        """metric_label='total' + compute_diff=false → no all_*."""
+        config = {
+            "type": "ewm",
+            "metric": "total_ps",
+            "metric_label": "total",
+            "spans": [5],
+            "shift": 1,
+            "min_periods": 1,
+            "adjust": False,
+            "contexts": [
+                {
+                    "name": "global",
+                    "keys": ["pl"],
+                    "players": ["pl", "opp"],
+                    "compute_diff": False,
+                }
+            ],
+        }
+        gen = EWMFeatureGenerator(config)
+        result = gen(long_df)
+
+        assert "f_pl_global_total_ewm_5" in result.columns
+        assert "f_opp_global_total_ewm_5" in result.columns
+        # compute_diff=false → нет all_*
+        assert "f_all_global_total_ewm_5" not in result.columns
+
+    def test_h2h_with_metric_label(self, long_df: pd.DataFrame) -> None:
+        """H2H с metric_label → h2h_global_diff_ewm_5."""
+        config = {
+            "type": "ewm",
+            "metric": "diff_ps",
+            "metric_label": "diff",
+            "spans": [5],
+            "shift": 1,
+            "min_periods": 1,
+            "adjust": False,
+            "contexts": [
+                {
+                    "name": "h2h_global",
+                    "keys": ["pl", "opp"],
+                    "h2h": True,
+                }
+            ],
+        }
+        gen = EWMFeatureGenerator(config)
+        result = gen(long_df)
+
+        assert "f_h2h_global_diff_ewm_5" in result.columns
+
+    def test_feature_names_with_metric_label(self) -> None:
+        """get_feature_names с metric_label корректен."""
+        config = {
+            "type": "ewm",
+            "metric": "diff_ps",
+            "metric_label": "diff",
+            "spans": [5, 10],
+            "contexts": [
+                {
+                    "name": "global",
+                    "keys": ["pl"],
+                    "players": ["pl", "opp"],
+                    "compute_diff": True,
+                },
+                {
+                    "name": "h2h_global",
+                    "keys": ["pl", "opp"],
+                    "h2h": True,
+                },
+            ],
+        }
+        gen = EWMFeatureGenerator(config)
+        names = gen.get_feature_names()
+
+        assert "pl_global_diff_ewm_5" in names
+        assert "opp_global_diff_ewm_5" in names
+        assert "all_global_diff_ewm_5" in names
+        assert "pl_global_diff_ewm_10" in names
+        assert "h2h_global_diff_ewm_5" in names
+        assert "h2h_global_diff_ewm_10" in names
+
+    # ---------- Multiple spans ----------
 
     def test_multiple_spans(self, long_df: pd.DataFrame) -> None:
         """Генерация для нескольких spans."""
         config = {
             "type": "ewm",
             "metric": "diff_ps",
+            "metric_label": "diff",
             "spans": [5, 10],
             "shift": 1,
             "min_periods": 1,
@@ -337,8 +494,10 @@ class TestEWMFeatureGenerator:
         gen = EWMFeatureGenerator(config)
         result = gen(long_df)
 
-        assert "f_pl_global_ewm_5" in result.columns
-        assert "f_pl_global_ewm_10" in result.columns
+        assert "f_pl_global_diff_ewm_5" in result.columns
+        assert "f_pl_global_diff_ewm_10" in result.columns
+
+    # ---------- Error handling ----------
 
     def test_missing_metric_raises(self, long_df: pd.DataFrame) -> None:
         """Отсутствие metric колонки вызывает ValueError."""
@@ -372,83 +531,56 @@ class TestEWMFeatureGenerator:
         with pytest.raises(ValueError, match="spans"):
             EWMFeatureGenerator(config)
 
-    def test_feature_names(self) -> None:
-        """get_feature_names корректен для разных contexts."""
+    def test_missing_context_column_skips(self, long_df: pd.DataFrame) -> None:
+        """Контекст с несуществующей колонкой пропускается (soft-fail)."""
         config = {
             "type": "ewm",
             "metric": "diff_ps",
-            "spans": [5, 10],
-            "contexts": [
-                {
-                    "name": "global",
-                    "keys": ["pl"],
-                    "players": ["pl", "opp"],
-                    "compute_diff": True,
-                },
-                {
-                    "name": "h2h",
-                    "keys": ["pl", "opp"],
-                    "h2h": True,
-                    "output_suffix": "_diff",
-                },
-            ],
-        }
-        gen = EWMFeatureGenerator(config)
-        names = gen.get_feature_names()
-
-        # Global: pl, opp, diff для каждого span
-        assert "pl_global_ewm_5" in names
-        assert "opp_global_ewm_5" in names
-        assert "all_global_ewm_5_diff" in names
-        assert "pl_global_ewm_10" in names
-        # H2H: один на span
-        assert "h2h_ewm_5_diff" in names
-        assert "h2h_ewm_10_diff" in names
-
-    def test_feature_names_with_warmup(self) -> None:
-        """get_feature_names включает warmup когда enabled=True."""
-        config = {
-            "type": "ewm",
-            "metric": "diff_ps",
+            "metric_label": "diff",
             "spans": [5],
-            "contexts": [
-                {
-                    "name": "global",
-                    "keys": ["pl"],
-                    "players": ["pl"],
-                    "compute_diff": False,
-                },
-            ],
-            "warmup": {"enabled": True, "threshold": 10, "players": ["pl", "opp"]},
-        }
-        gen = EWMFeatureGenerator(config)
-        names = gen.get_feature_names()
-
-        assert "pl_ewm_warmup" in names
-        assert "opp_ewm_warmup" in names
-
-    def test_ewm_values_not_all_nan(self, long_df: pd.DataFrame) -> None:
-        """EWM значения не все NaN (минимум некоторые заполнены)."""
-        config = {
-            "type": "ewm",
-            "metric": "diff_ps",
-            "spans": [3],
             "shift": 1,
             "min_periods": 1,
             "adjust": False,
             "contexts": [
                 {
-                    "name": "global",
-                    "keys": ["pl"],
-                    "players": ["pl"],
-                    "compute_diff": False,
+                    "name": "team",
+                    "keys": ["pl", "pl_cteam"],
+                    "players": ["pl", "opp"],
+                    "compute_diff": True,
                 }
             ],
         }
         gen = EWMFeatureGenerator(config)
-        result = gen.generate(long_df)
+        result = gen(long_df)
 
-        assert not result["pl_global_ewm_3"].isna().all(), "Все EWM значения NaN!"
+        # pl_cteam не существует → контекст пропущен
+        assert "f_pl_team_diff_ewm_5" not in result.columns
+
+    def test_actual_vs_expected_feature_names_ewm(self, long_df: pd.DataFrame) -> None:
+        """get_actual_feature_names(df) исключает пропущенные контексты; get_expected — полный список."""
+        config = {
+            "type": "ewm",
+            "metric": "diff_ps",
+            "metric_label": "diff",
+            "spans": [5],
+            "shift": 1,
+            "min_periods": 1,
+            "adjust": False,
+            "contexts": [
+                {"name": "global", "keys": ["pl"], "players": ["pl", "opp"], "compute_diff": True},
+                {"name": "team", "keys": ["pl", "pl_cteam"], "players": ["pl", "opp"]},
+            ],
+        }
+        gen = EWMFeatureGenerator(config)
+        expected = gen.get_expected_feature_names()
+        actual = gen.get_actual_feature_names(long_df)
+
+        assert "pl_team_diff_ewm_5" in expected
+        assert "pl_team_diff_ewm_5" not in actual
+        assert len(actual) < len(expected)
+        assert set(actual).issubset(set(expected))
+
+    # ---------- NaN strategy ----------
 
     def test_cold_start_produces_nan(self) -> None:
         """Первые матчи (< min_periods) дают NaN — не фиктивный 0."""
@@ -462,6 +594,7 @@ class TestEWMFeatureGenerator:
         config = {
             "type": "ewm",
             "metric": "diff_ps",
+            "metric_label": "diff",
             "spans": [3],
             "shift": 1,
             "min_periods": 3,
@@ -478,7 +611,7 @@ class TestEWMFeatureGenerator:
         gen = EWMFeatureGenerator(config)
         result = gen.generate(df)
 
-        ewm_col = result["pl_global_ewm_3"]
+        ewm_col = result["pl_global_diff_ewm_3"]
         # Первые 3 строки (shift=1 + min_periods=3): NaN
         assert ewm_col.iloc[0:3].isna().all(), "Cold-start строки должны быть NaN"
         # 4-я строка и далее: есть значение
@@ -496,6 +629,7 @@ class TestEWMFeatureGenerator:
         config = {
             "type": "ewm",
             "metric": "diff_ps",
+            "metric_label": "diff",
             "spans": [3],
             "shift": 1,
             "min_periods": 1,
@@ -512,7 +646,7 @@ class TestEWMFeatureGenerator:
         gen = EWMFeatureGenerator(config)
         result = gen.generate(df)
 
-        ewm_col = result["pl_global_ewm_3"]
+        ewm_col = result["pl_global_diff_ewm_3"]
         # Строка 4 (shift=1 → видит diff_ps[3]=2.0): имеет EWM значение
         assert pd.notna(ewm_col.iloc[4]), "Строка после finished должна иметь EWM"
         # Строка 5 (shift=1 → видит diff_ps[4]=NaN): EWM carry-forward
@@ -523,7 +657,7 @@ class TestEWMFeatureGenerator:
         )
 
     def test_no_fillna_zero_in_ewm(self) -> None:
-        """EWM не содержит артефактов от fillna(0) — первые значения основаны на реальных данных."""
+        """EWM не содержит артефактов от fillna(0)."""
         df = pd.DataFrame(
             {
                 "pl": ["A"] * 4,
@@ -534,6 +668,7 @@ class TestEWMFeatureGenerator:
         config = {
             "type": "ewm",
             "metric": "diff_ps",
+            "metric_label": "diff",
             "spans": [3],
             "shift": 1,
             "min_periods": 1,
@@ -550,12 +685,13 @@ class TestEWMFeatureGenerator:
         gen = EWMFeatureGenerator(config)
         result = gen.generate(df)
 
-        ewm_col = result["pl_global_ewm_3"]
-        # Строка 1 (shift=1 → видит diff_ps[0]=10.0): EWM = 10.0 (первое значение)
+        ewm_col = result["pl_global_diff_ewm_3"]
+        # Строка 1 (shift=1 → видит diff_ps[0]=10.0): EWM = 10.0
         assert ewm_col.iloc[1] == 10.0, (
-            f"Первое EWM должно быть == первому реальному значению, а не 0. "
-            f"Получили: {ewm_col.iloc[1]}"
+            f"Первое EWM должно быть == первому значению, получили: {ewm_col.iloc[1]}"
         )
+
+    # ---------- Warmup ----------
 
     def test_warmup_feature_values(self) -> None:
         """Warmup-фича: 0→1 по мере накопления матчей."""
@@ -569,6 +705,7 @@ class TestEWMFeatureGenerator:
         config = {
             "type": "ewm",
             "metric": "diff_ps",
+            "metric_label": "diff",
             "spans": [3],
             "shift": 1,
             "min_periods": 1,
@@ -587,15 +724,11 @@ class TestEWMFeatureGenerator:
         result = gen.generate(df)
 
         warmup = result["pl_ewm_warmup"]
-        # Первая строка: shift=1 → 0 наблюдений → warmup = 0
-        assert warmup.iloc[0] == 0.0, f"Warmup[0] должен быть 0, получили {warmup.iloc[0]}"
-        # 5-я строка: 4 наблюдения → warmup = 4/10 = 0.4
-        assert warmup.iloc[4] == pytest.approx(0.4), f"Warmup[4] ≈ 0.4, получили {warmup.iloc[4]}"
-        # 10-я строка: 9 наблюдений → warmup = 0.9
-        assert warmup.iloc[9] == pytest.approx(0.9), f"Warmup[9] ≈ 0.9, получили {warmup.iloc[9]}"
-        # 11-я строка и далее: warmup = 1.0 (cap)
-        assert warmup.iloc[10] == 1.0, f"Warmup[10] должен быть 1.0, получили {warmup.iloc[10]}"
-        assert warmup.iloc[14] == 1.0, f"Warmup[14] должен быть 1.0, получили {warmup.iloc[14]}"
+        assert warmup.iloc[0] == 0.0
+        assert warmup.iloc[4] == pytest.approx(0.4)
+        assert warmup.iloc[9] == pytest.approx(0.9)
+        assert warmup.iloc[10] == 1.0
+        assert warmup.iloc[14] == 1.0
 
     def test_warmup_with_upcoming_nan(self) -> None:
         """Warmup не считает upcoming-матчи (NaN metric) как наблюдения."""
@@ -609,6 +742,7 @@ class TestEWMFeatureGenerator:
         config = {
             "type": "ewm",
             "metric": "diff_ps",
+            "metric_label": "diff",
             "spans": [3],
             "shift": 1,
             "min_periods": 1,
@@ -627,14 +761,60 @@ class TestEWMFeatureGenerator:
         result = gen.generate(df)
 
         warmup = result["pl_ewm_warmup"]
-        # Строка 4: shift=1 → видит [1, 2, 3] → 3 наблюдения → 3/10 = 0.3
-        assert warmup.iloc[3] == pytest.approx(0.3), f"Warmup[3] ≈ 0.3, получили {warmup.iloc[3]}"
-        # Строка 5 (upcoming): shift=1 → видит [1, 2, 3, 4] → 4 наблюдения → 0.4
-        assert warmup.iloc[4] == pytest.approx(0.4), f"Warmup[4] ≈ 0.4, получили {warmup.iloc[4]}"
-        # Строка 6 (upcoming): shift=1 → видит [1, 2, 3, 4, NaN] → 4 наблюдения → 0.4
-        assert warmup.iloc[5] == pytest.approx(0.4), (
-            f"Warmup[5] ≈ 0.4 (NaN не считается), получили {warmup.iloc[5]}"
-        )
+        assert warmup.iloc[3] == pytest.approx(0.3)
+        assert warmup.iloc[4] == pytest.approx(0.4)
+        # NaN не увеличивает count
+        assert warmup.iloc[5] == pytest.approx(0.4)
+
+    def test_feature_names_with_warmup(self) -> None:
+        """get_feature_names включает warmup когда enabled=True."""
+        config = {
+            "type": "ewm",
+            "metric": "diff_ps",
+            "metric_label": "diff",
+            "spans": [5],
+            "contexts": [
+                {
+                    "name": "global",
+                    "keys": ["pl"],
+                    "players": ["pl"],
+                    "compute_diff": False,
+                },
+            ],
+            "warmup": {"enabled": True, "threshold": 10, "players": ["pl", "opp"]},
+        }
+        gen = EWMFeatureGenerator(config)
+        names = gen.get_feature_names()
+
+        assert "pl_ewm_warmup" in names
+        assert "opp_ewm_warmup" in names
+
+    # ---------- Total metric ----------
+
+    def test_total_ewm_values_are_positive(self, long_df: pd.DataFrame) -> None:
+        """EWM по total_ps > 0 (сумма очков всегда положительная)."""
+        config = {
+            "type": "ewm",
+            "metric": "total_ps",
+            "metric_label": "total",
+            "spans": [5],
+            "shift": 1,
+            "min_periods": 1,
+            "adjust": False,
+            "contexts": [
+                {
+                    "name": "global",
+                    "keys": ["pl"],
+                    "players": ["pl"],
+                    "compute_diff": False,
+                }
+            ],
+        }
+        gen = EWMFeatureGenerator(config)
+        result = gen.generate(long_df)
+
+        ewm_total = result["pl_global_total_ewm_5"].dropna()
+        assert (ewm_total > 0).all(), "EWM по total_ps должен быть > 0"
 
 
 # ==================== Base Generator Tests ====================
@@ -670,7 +850,6 @@ class TestBaseGenerator:
         config = {"type": "form", "enabled": True, "players": ["pl"]}
         gen = FormFeatureGenerator(config)
 
-        # __call__ должен работать
         result = gen(long_df)
         assert isinstance(result, pd.DataFrame)
         assert len(result) == len(long_df)
@@ -712,7 +891,6 @@ class TestFeaturePipelineDictFormat:
         config = {
             "generators": {
                 "form": {
-                    # type не указан — берём из ключа "form"
                     "enabled": True,
                     "fg_trigger_minutes": 480,
                     "dp_trigger_minutes": 30,
@@ -759,10 +937,11 @@ class TestFeaturePipelineDictFormat:
                     "dp_trigger_minutes": 30,
                     "players": ["pl", "opp"],
                 },
-                "ewm": {
+                "ewm_diff": {
                     "type": "ewm",
                     "enabled": True,
                     "metric": "diff_ps",
+                    "metric_label": "diff",
                     "spans": [5],
                     "shift": 1,
                     "min_periods": 1,
@@ -778,14 +957,85 @@ class TestFeaturePipelineDictFormat:
                 },
             },
             "requires_long": False,
-            "create_metrics": ["diff"],
+            "create_metrics": ["diff", "total"],
         }
         pipeline = FeaturePipeline(config)
         result_df, feature_names = pipeline.generate_features(long_df, format="long")
 
         assert len(feature_names) > 0
         assert "f_pl_is_dp" in result_df.columns
-        assert "f_pl_global_ewm_5" in result_df.columns
+        assert "f_pl_global_diff_ewm_5" in result_df.columns
+
+    def test_multi_metric_pipeline(self, long_df: pd.DataFrame) -> None:
+        """Pipeline с двумя EWM генераторами (diff + total)."""
+        config = {
+            "generators": {
+                "ewm_diff": {
+                    "type": "ewm",
+                    "enabled": True,
+                    "metric": "diff_ps",
+                    "metric_label": "diff",
+                    "spans": [5],
+                    "shift": 1,
+                    "min_periods": 1,
+                    "adjust": False,
+                    "contexts": [
+                        {
+                            "name": "global",
+                            "keys": ["pl"],
+                            "players": ["pl", "opp"],
+                            "compute_diff": True,
+                        },
+                        {
+                            "name": "h2h_global",
+                            "keys": ["pl", "opp"],
+                            "h2h": True,
+                        },
+                    ],
+                },
+                "ewm_total": {
+                    "type": "ewm",
+                    "enabled": True,
+                    "metric": "total_ps",
+                    "metric_label": "total",
+                    "spans": [5],
+                    "shift": 1,
+                    "min_periods": 1,
+                    "adjust": False,
+                    "contexts": [
+                        {
+                            "name": "global",
+                            "keys": ["pl"],
+                            "players": ["pl", "opp"],
+                            "compute_diff": False,
+                        },
+                        {
+                            "name": "h2h_global",
+                            "keys": ["pl", "opp"],
+                            "h2h": True,
+                        },
+                    ],
+                },
+            },
+            "requires_long": False,
+            "create_metrics": ["diff", "total"],
+        }
+        pipeline = FeaturePipeline(config)
+        result_df, feature_names = pipeline.generate_features(long_df, format="long")
+
+        # diff features
+        assert "f_pl_global_diff_ewm_5" in result_df.columns
+        assert "f_opp_global_diff_ewm_5" in result_df.columns
+        assert "f_all_global_diff_ewm_5" in result_df.columns
+        assert "f_h2h_global_diff_ewm_5" in result_df.columns
+
+        # total features
+        assert "f_pl_global_total_ewm_5" in result_df.columns
+        assert "f_opp_global_total_ewm_5" in result_df.columns
+        assert "f_h2h_global_total_ewm_5" in result_df.columns
+
+        # no diff for total (compute_diff=false)
+        assert "f_all_global_total_ewm_5" not in result_df.columns
 
     def test_unknown_generator_type_skipped(self) -> None:
         """Неизвестный тип генератора пропускается с warning."""

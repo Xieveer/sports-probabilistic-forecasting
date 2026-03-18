@@ -4,11 +4,20 @@
 Создает экспоненциально взвешенные скользящие средние по различным контекстам:
 - Глобальная форма игрока (global)
 - Форма в зависимости от состояния (match_state)
-- Форма в зависимости от времени суток (weekday)
-- Head-to-head форма (h2h)
+- Форма в зависимости от времени суток (tour_num)
+- Head-to-head форма (h2h_global, h2h_match_state, ...)
 - И т.д.
 
 Для каждого контекста генерируются фичи для разных размеров окна (spans).
+
+Поддержка нескольких метрик:
+    Каждый экземпляр генератора работает с ОДНОЙ метрикой (diff_ps или total_ps).
+    Поле ``metric_label`` определяет суффикс в именах фичей:
+    - ``metric_label: "diff"``  → pl_global_diff_ewm_10
+    - ``metric_label: "total"`` → pl_global_total_ewm_10
+
+    Для получения обоих типов фичей создаётся ДВА экземпляра генератора
+    (``ewm_diff`` и ``ewm_total``) через конфиг.
 
 NaN-стратегия:
     - ``ignore_na=True`` — EWM пропускает NaN-наблюдения (upcoming-матчи,
@@ -19,12 +28,15 @@ NaN-стратегия:
     - Опциональная ``warmup``-фича показывает модели уровень достоверности
       EWM-оценки: ``min(n_observed / threshold, 1.0)`` ∈ [0, 1].
 
-Генерирует:
-- pl_global_ewm_10, pl_global_ewm_20, ...: EWM для игрока
-- opp_global_ewm_10, opp_global_ewm_20, ...: EWM для оппонента
-- all_global_ewm_10_diff, ...: Разница EWM между игроками
-- h2h_ewm_10_diff, ...: Head-to-head EWM
-- pl_ewm_warmup, opp_ewm_warmup: (опционально) уверенность EWM [0, 1]
+Именование фичей (с metric_label="diff", span=10):
+    pl/opp stats:
+        - pl_global_diff_ewm_10
+        - opp_global_diff_ewm_10
+        - all_global_diff_ewm_10  (pl - opp, только при compute_diff=true)
+    h2h stats:
+        - h2h_global_diff_ewm_10
+    warmup:
+        - pl_ewm_warmup, opp_ewm_warmup  (один раз, не зависит от метрики)
 """
 
 from typing import Any
@@ -42,48 +54,61 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
     """
     Генератор экспоненциально взвешенных скользящих средних.
 
-    Пример конфига:
-        type: "ewm"
-        enabled: true
-        metric: "diff_ps"  # Колонка с метрикой (pl_points - opp_points)
-        spans: [5, 10, 20, 50, 100, 150, 200]
-        shift: 1
-        min_periods: 3
-        adjust: false
+    Пример конфига (multi-metric):
 
-        contexts:
-          # Глобальная форма игрока
-          - name: "global"
-            keys: ["pl"]
+        # --- diff_ps ---
+        ewm_diff:
+          type: "ewm"
+          metric: "diff_ps"
+          metric_label: "diff"
+          spans: [5, 25, 100]
+          shift: 1
+          min_periods: 3
+          adjust: false
+
+          contexts:
+            - name: "global"
+              keys: ["pl"]
+              players: ["pl", "opp"]
+              compute_diff: true           # all_global_diff_ewm_5 = pl - opp
+
+            - name: "h2h_global"
+              keys: ["pl", "opp"]
+              h2h: true                    # h2h_global_diff_ewm_5
+
+          warmup:
+            enabled: true
+            threshold: 10
             players: ["pl", "opp"]
-            compute_diff: true
 
-          # Форма в зависимости от match_state
-          - name: "match_state"
-            keys: ["pl", "match_state"]
-            players: ["pl", "opp"]
-            compute_diff: true
+        # --- total_ps ---
+        ewm_total:
+          type: "ewm"
+          metric: "total_ps"
+          metric_label: "total"
+          spans: [5, 25, 100]
+          shift: 1
+          min_periods: 3
+          adjust: false
 
-          # Head-to-head
-          - name: "h2h"
-            keys: ["pl", "opp"]
-            h2h: true
-            output_suffix: "_diff"
+          contexts:
+            - name: "global"
+              keys: ["pl"]
+              players: ["pl", "opp"]
+              compute_diff: false          # НЕТ all_*, только pl/opp
 
-        # Опциональная warmup-фича
-        warmup:
-          enabled: true
-          threshold: 10  # сколько матчей нужно для "полной уверенности"
-          players: ["pl", "opp"]
+            - name: "h2h_global"
+              keys: ["pl", "opp"]
+              h2h: true                    # h2h_global_total_ewm_5
 
-    Фичи (для spans=[10, 20]):
-        - pl_global_ewm_10, pl_global_ewm_20
-        - opp_global_ewm_10, opp_global_ewm_20
-        - all_global_ewm_10_diff, all_global_ewm_20_diff
-        - pl_match_state_ewm_10, pl_match_state_ewm_20
-        - ...
-        - h2h_ewm_10_diff, h2h_ewm_20_diff
-        - pl_ewm_warmup, opp_ewm_warmup (если warmup.enabled=true)
+    Фичи (для spans=[5]):
+        ewm_diff:
+            - pl_global_diff_ewm_5, opp_global_diff_ewm_5, all_global_diff_ewm_5
+            - h2h_global_diff_ewm_5
+            - pl_ewm_warmup, opp_ewm_warmup
+        ewm_total:
+            - pl_global_total_ewm_5, opp_global_total_ewm_5
+            - h2h_global_total_ewm_5
     """
 
     def validate_config(self) -> None:
@@ -109,7 +134,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
 
         Args:
             df: Long format датафрейм с колонками:
-                - metric (например, diff_ps = pl_points - opp_points)
+                - metric (например, diff_ps или total_ps)
                 - pl, opp (имена игроков)
                 - контекстные колонки (match_state, tour_num, weekday, etc.)
 
@@ -123,6 +148,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
 
         # Параметры из конфига
         metric_col = self.config["metric"]
+        metric_label = self.config.get("metric_label", "")
         spans = self.config["spans"]
         shift = self.config.get("shift", 1)
         min_periods = self.config.get("min_periods", 3)
@@ -134,8 +160,8 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
             raise ValueError(f"{self.name}: отсутствует колонка с метрикой: '{metric_col}'")
 
         logger.debug(
-            f"{self.name}: metric={metric_col}, spans={spans}, "
-            f"shift={shift}, min_periods={min_periods}, adjust={adjust}"
+            f"{self.name}: metric={metric_col}, metric_label={metric_label!r}, "
+            f"spans={spans}, shift={shift}, min_periods={min_periods}, adjust={adjust}"
         )
         logger.debug("%s: contexts=%d", self.name, len(contexts))
 
@@ -144,7 +170,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
         for span in spans:
             for ctx in contexts:
                 count = self._generate_context_features(
-                    long, ctx, metric_col, span, shift, min_periods, adjust
+                    long, ctx, metric_col, metric_label, span, shift, min_periods, adjust
                 )
                 total_features += count
 
@@ -156,7 +182,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
 
         logger.info(
             f"{self.name}: сгенерировано {total_features} фичей "
-            f"({len(spans)} spans × {len(contexts)} contexts)"
+            f"({len(spans)} spans × {len(contexts)} contexts, metric={metric_label!r})"
         )
 
         return long
@@ -166,6 +192,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
         df: pd.DataFrame,
         ctx: dict[str, Any],
         metric: str,
+        metric_label: str,
         span: int,
         shift: int,
         min_periods: int,
@@ -178,6 +205,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
             df: Датафрейм (изменяется in-place)
             ctx: Конфигурация контекста
             metric: Имя колонки с метрикой
+            metric_label: Метка метрики для именования (e.g. "diff", "total")
             span: Размер окна EWM
             shift: Сдвиг
             min_periods: Минимальное количество наблюдений
@@ -202,8 +230,9 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
 
         if is_h2h:
             # H2H фичи (один признак на пару игроков)
-            output_suffix = ctx.get("output_suffix", "_diff")
-            feature_name = f"{name}_ewm_{span}{output_suffix}"
+            # Naming: {context}_{metric_label}_ewm_{span}
+            # Example: h2h_global_diff_ewm_5
+            feature_name = self._feature_name_h2h(name, metric_label, span)
 
             df[feature_name] = self._calculate_ewm(
                 df, keys, metric, span, shift, min_periods, adjust
@@ -222,12 +251,14 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
                 missing_player = [k for k in player_keys if k not in df.columns]
                 if missing_player:
                     logger.warning(
-                        f"{self.name}: {player}_{name}_ewm_{span} пропущен, "
+                        f"{self.name}: {player}_{name} пропущен, "
                         f"отсутствуют колонки: {missing_player}"
                     )
                     continue
 
-                feature_name = f"{player}_{name}_ewm_{span}"
+                # Naming: {player}_{context}_{metric_label}_ewm_{span}
+                # Example: pl_global_diff_ewm_5
+                feature_name = self._feature_name_player(player, name, metric_label, span)
                 df[feature_name] = self._calculate_ewm(
                     df, player_keys, metric, span, shift, min_periods, adjust
                 )
@@ -236,15 +267,19 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
 
             # Разница между игроками
             if ctx.get("compute_diff", False) and "pl" in players and "opp" in players:
-                pl_feat = f"pl_{name}_ewm_{span}"
-                opp_feat = f"opp_{name}_ewm_{span}"
+                pl_feat = self._feature_name_player("pl", name, metric_label, span)
+                opp_feat = self._feature_name_player("opp", name, metric_label, span)
 
                 if pl_feat in df.columns and opp_feat in df.columns:
-                    diff_feat = f"all_{name}_ewm_{span}_diff"
+                    diff_feat = self._feature_name_diff(name, metric_label, span)
                     df[diff_feat] = df[pl_feat] - df[opp_feat]
                     features_created += 1
                     logger.debug(
-                        "%s: %s создан (diff: %s - %s)", self.name, diff_feat, pl_feat, opp_feat
+                        "%s: %s создан (diff: %s - %s)",
+                        self.name,
+                        diff_feat,
+                        pl_feat,
+                        opp_feat,
                     )
 
         return features_created
@@ -266,6 +301,10 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
 
         Значение 0 → у игрока нет истории, EWM = NaN (модель не должна
         опираться на EWM-фичи). Значение 1 → достаточно матчей, EWM надёжен.
+
+        Warmup НЕ зависит от metric_label: diff_ps и total_ps имеют одинаковый
+        паттерн NaN (оба вычисляются из pl_points/opp_points). Достаточно
+        одного warmup на игрока.
 
         Args:
             df: Датафрейм (изменяется in-place).
@@ -342,16 +381,77 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
             .mean()
         )
 
+    # ------------------------------------------------------------------
+    # Naming helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _feature_name_player(player: str, context: str, metric_label: str, span: int) -> str:
+        """Имя фичи для отдельного игрока.
+
+        Pattern: ``{player}_{context}_{metric_label}_ewm_{span}``
+        Example: ``pl_global_diff_ewm_5``
+
+        Если metric_label пустой (backward compat):
+            ``{player}_{context}_ewm_{span}``
+        """
+        if metric_label:
+            return f"{player}_{context}_{metric_label}_ewm_{span}"
+        return f"{player}_{context}_ewm_{span}"
+
+    @staticmethod
+    def _feature_name_diff(context: str, metric_label: str, span: int) -> str:
+        """Имя diff-фичи (pl - opp).
+
+        Pattern: ``all_{context}_{metric_label}_ewm_{span}``
+        Example: ``all_global_diff_ewm_5``
+
+        Если metric_label пустой:
+            ``all_{context}_ewm_{span}_diff``  (legacy)
+        """
+        if metric_label:
+            return f"all_{context}_{metric_label}_ewm_{span}"
+        return f"all_{context}_ewm_{span}_diff"
+
+    @staticmethod
+    def _feature_name_h2h(context: str, metric_label: str, span: int) -> str:
+        """Имя H2H фичи.
+
+        Pattern: ``{context}_{metric_label}_ewm_{span}``
+        Example: ``h2h_global_diff_ewm_5``
+
+        Если metric_label пустой:
+            ``{context}_ewm_{span}``
+        """
+        if metric_label:
+            return f"{context}_{metric_label}_ewm_{span}"
+        return f"{context}_ewm_{span}"
+
+    # ------------------------------------------------------------------
+    # Feature names
+    # ------------------------------------------------------------------
+
     def get_feature_names(self) -> list[str]:
         """
-        Возвращает список имен фичей (без префикса f_).
+        Возвращает список имен фичей (без префикса f_), которые генератор
+        может создать по конфигу (ожидаемый список, без учёта наличия колонок).
 
         Returns:
             Список имен фичей
         """
+        return self.get_expected_feature_names()
+
+    def get_expected_feature_names(self) -> list[str]:
+        """
+        Возвращает полный список имён фичей по конфигу (все контексты и spans).
+
+        Returns:
+            Список имен фичей без префикса f_
+        """
         features = []
         spans = self.config.get("spans", [])
         contexts = self.config.get("contexts", [])
+        metric_label = self.config.get("metric_label", "")
 
         for span in spans:
             for ctx in contexts:
@@ -359,18 +459,73 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
                 is_h2h = ctx.get("h2h", False)
 
                 if is_h2h:
-                    output_suffix = ctx.get("output_suffix", "_diff")
-                    features.append(f"{name}_ewm_{span}{output_suffix}")
+                    features.append(self._feature_name_h2h(name, metric_label, span))
                 else:
                     players = ctx.get("players", ["pl", "opp"])
                     for player in players:
-                        features.append(f"{player}_{name}_ewm_{span}")
+                        features.append(self._feature_name_player(player, name, metric_label, span))
 
                     # Diff фича
                     if ctx.get("compute_diff", False) and "pl" in players and "opp" in players:
-                        features.append(f"all_{name}_ewm_{span}_diff")
+                        features.append(self._feature_name_diff(name, metric_label, span))
 
         # Warmup-фичи
+        warmup_cfg = self.config.get("warmup", {})
+        if warmup_cfg.get("enabled", False):
+            warmup_players = warmup_cfg.get("players", ["pl", "opp"])
+            for player in warmup_players:
+                features.append(f"{player}_ewm_warmup")
+
+        return features
+
+    def get_actual_feature_names(self, df: pd.DataFrame) -> list[str]:
+        """
+        Возвращает список имён фичей, которые будут реально сгенерированы для df.
+
+        Пропущенные контексты (из-за отсутствующих колонок) не включаются.
+
+        Args:
+            df: Датафрейм с колонками метрик и контекстов (до или после generate).
+
+        Returns:
+            Список имён фичей без префикса f_
+        """
+        features: list[str] = []
+        spans = self.config.get("spans", [])
+        contexts = self.config.get("contexts", [])
+        metric_label = self.config.get("metric_label", "")
+
+        for span in spans:
+            for ctx in contexts:
+                name = ctx["name"]
+                keys = ctx["keys"]
+                is_h2h = ctx.get("h2h", False)
+
+                missing = [col for col in keys if col not in df.columns]
+                if missing:
+                    continue
+
+                if is_h2h:
+                    features.append(self._feature_name_h2h(name, metric_label, span))
+                else:
+                    players = ctx.get("players", ["pl", "opp"])
+                    added_players: list[str] = []
+                    for player in players:
+                        player_keys = [player if k == "pl" else k for k in keys]
+                        missing_player = [k for k in player_keys if k not in df.columns]
+                        if missing_player:
+                            continue
+                        features.append(self._feature_name_player(player, name, metric_label, span))
+                        added_players.append(player)
+
+                    if (
+                        ctx.get("compute_diff", False)
+                        and "pl" in added_players
+                        and "opp" in added_players
+                    ):
+                        features.append(self._feature_name_diff(name, metric_label, span))
+
+        # Warmup не зависит от контекстных колонок, создаётся всегда если включён
         warmup_cfg = self.config.get("warmup", {})
         if warmup_cfg.get("enabled", False):
             warmup_players = warmup_cfg.get("players", ["pl", "opp"])

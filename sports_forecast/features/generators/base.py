@@ -139,6 +139,35 @@ class BaseFeatureGenerator(ABC):
         if "type" not in self.config:
             raise ValueError(f"{self.name}: отсутствует обязательное поле 'type'")
 
+    def get_expected_feature_names(self) -> list[str]:
+        """
+        Возвращает список всех имён фичей, которые генератор может создать по конфигу.
+
+        Не учитывает пропуск контекстов из-за отсутствующих колонок в данных.
+        Для обратной совместимости по умолчанию делегирует в get_feature_names().
+
+        Returns:
+            Список имён фичей без префикса f_
+        """
+        return self.get_feature_names()
+
+    def get_actual_feature_names(self, _df: pd.DataFrame) -> list[str]:
+        """
+        Возвращает список имён фичей, которые будут реально сгенерированы для df.
+
+        Учитывает пропуск контекстов из-за отсутствующих колонок. Генераторы,
+        которые не пропускают контексты (form, time), по умолчанию возвращают
+        get_expected_feature_names(). EWM и Count переопределяют метод.
+
+        Args:
+            _df: Датафрейм, для которого планируется генерация (до вызова generate).
+                В базовой реализации не используется.
+
+        Returns:
+            Список имён фичей без префикса f_
+        """
+        return self.get_expected_feature_names()
+
     def get_prefixed_feature_names(self) -> list[str]:
         """
         Возвращает список имен фичей С префиксом f_.
@@ -152,6 +181,21 @@ class BaseFeatureGenerator(ABC):
             ['f_pl_global_ewm_10', 'f_opp_global_ewm_10', 'f_all_global_ewm_10_diff']
         """
         names = self.get_feature_names()
+        if self.add_prefix:
+            return [add_feature_prefix(name) for name in names]
+        return names
+
+    def get_prefixed_actual_feature_names(self, df: pd.DataFrame) -> list[str]:
+        """
+        Возвращает список имён фичей с префиксом f_, реально создаваемых для df.
+
+        Args:
+            df: Датафрейм после применения генератора (или с теми же колонками).
+
+        Returns:
+            Список имён фичей с префиксом f_
+        """
+        names = self.get_actual_feature_names(df)
         if self.add_prefix:
             return [add_feature_prefix(name) for name in names]
         return names
@@ -207,7 +251,7 @@ class BaseFeatureGenerator(ABC):
                     "%s: добавлен префикс f_ к %d колонкам", self.name, len(existing_renames)
                 )
 
-        features_count = len(self.get_feature_names())
+        features_count = len(self.get_actual_feature_names(result))
         logger.info("%s: сгенерировано %d фичей", self.name, features_count)
 
         return result

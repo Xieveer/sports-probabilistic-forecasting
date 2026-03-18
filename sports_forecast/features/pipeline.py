@@ -297,8 +297,8 @@ class FeaturePipeline:
             try:
                 result_df = generator(result_df)
 
-                # Собираем имена сгенерированных фичей (с префиксом)
-                gen_features = generator.get_prefixed_feature_names()
+                # Собираем имена реально сгенерированных фичей (с префиксом)
+                gen_features = generator.get_prefixed_actual_feature_names(result_df)
                 all_features.extend(gen_features)
 
                 logger.info("  Сгенерировано %d фичей", len(gen_features))
@@ -330,12 +330,6 @@ class FeaturePipeline:
         logger.info(
             f"Итоговый датафрейм: {result_df.shape[0]} строк × {result_df.shape[1]} колонок"
         )
-
-        # Проверка на расхождение
-        if len(actual_features) != len(all_features):
-            logger.warning(
-                f"Расхождение: ожидалось {len(all_features)} фичей, создано {len(actual_features)}"
-            )
 
         logger.info("=" * 70)
 

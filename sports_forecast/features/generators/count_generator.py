@@ -161,10 +161,20 @@ class CountFeatureGenerator(BaseFeatureGenerator):
 
     def get_feature_names(self) -> list[str]:
         """
-        Возвращает список имен фичей (без префикса f_).
+        Возвращает список имен фичей (без префикса f_), которые генератор
+        может создать по конфигу (ожидаемый список).
 
         Returns:
             Список имен фичей
+        """
+        return self.get_expected_feature_names()
+
+    def get_expected_feature_names(self) -> list[str]:
+        """
+        Возвращает полный список имён фичей по конфигу (все контексты).
+
+        Returns:
+            Список имен фичей без префикса f_
         """
         features = []
         contexts = self.config.get("contexts", [])
@@ -178,6 +188,43 @@ class CountFeatureGenerator(BaseFeatureGenerator):
             else:
                 players = ctx.get("players", ["pl", "opp"])
                 for player in players:
+                    features.append(f"{player}_{name}_count")
+
+        return features
+
+    def get_actual_feature_names(self, df: pd.DataFrame) -> list[str]:
+        """
+        Возвращает список имён фичей, которые будут реально сгенерированы для df.
+
+        Пропущенные контексты (из-за отсутствующих колонок) не включаются.
+
+        Args:
+            df: Датафрейм с контекстными колонками (до или после generate).
+
+        Returns:
+            Список имён фичей без префикса f_
+        """
+        features: list[str] = []
+        contexts = self.config.get("contexts", [])
+
+        for ctx in contexts:
+            name = ctx["name"]
+            keys = ctx["keys"]
+            is_h2h = ctx.get("h2h", False)
+
+            missing = [col for col in keys if col not in df.columns]
+            if missing:
+                continue
+
+            if is_h2h:
+                features.append(f"{name}_count")
+            else:
+                players = ctx.get("players", ["pl", "opp"])
+                for player in players:
+                    player_keys = [player if k == "pl" else k for k in keys]
+                    missing_player = [k for k in player_keys if k not in df.columns]
+                    if missing_player:
+                        continue
                     features.append(f"{player}_{name}_count")
 
         return features
