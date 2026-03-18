@@ -18,6 +18,7 @@
 | R2     | 🟡 Medium   | Medium    | ✅     | 7-й ✅               |
 | R10    | 🟡 Medium   | Medium    | ✅     | 8-й ✅                    |
 | R11    | 🟢 Low      | Trivial   | ✅     | 11-й ✅               |
+| R12    | 🟡 Medium   | Medium    | 🟡     | 12-й (winner full cycle) |
 | R5     | 🟡 Medium   | High      | 🟡     | 9-й (объёмный)       |
 | R4     | 🟡 Medium   | High      | 🟡     | 10-й (зависит от R5) |
 
@@ -40,6 +41,15 @@
 - [x] **R10** — Исправить порядок генераторов и расхождение в количестве фичей (R10.3 сводка, R10.5 проверка, R10.6 исследование; R10.4 пропущено)
 
 ### В работе / Backlog 🟡
+
+- [ ] **R12** — Полный цикл обучения для market=winner (uel_kz_1 + lp_ru)
+  - [x] R12.1 — Создать документ для фиксации недочётов (issues-winner-full-cycle.md)
+  - [ ] R12.2 — Проверить конфиги uel_kz_1, lp_ru, winner
+  - [ ] R12.3 — Data pipeline: make dvc-repro
+  - [ ] R12.4 — Training uel_kz_1 (winner)
+  - [ ] R12.5 — Training lp_ru (winner)
+  - [ ] R12.6 — (Опционально) Promote по турнирам
+  - [ ] R12.7 — (Опционально) Materialize по турнирам
 
 - [ ] **R4** — Реализовать рабочий monitoring DAG
   - [ ] R4.1 — Изучить модули мониторинга
