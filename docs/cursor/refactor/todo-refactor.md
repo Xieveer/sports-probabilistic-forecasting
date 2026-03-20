@@ -14,7 +14,7 @@
 | R7     | 🟢 Low      | Trivial   | ✅     | 3-й ✅               |
 | R6     | 🟢 Low      | Low       | ✅     | 4-й ✅               |
 | R8     | 🔴 High     | Trivial   | ✅     | 5-й ✅               |
-| R9     | 🟡 Medium   | Medium    | ✅     | 6-й ✅ (R9.1-3 fix, R9.4 skip)|
+| R9     | 🟡 Medium   | Medium    | ✅     | 6-й ✅ (R9.1-3 fix, R9.4 verified no-change)|
 | R2     | 🟡 Medium   | Medium    | ✅     | 7-й ✅               |
 | R10    | 🟡 Medium   | Medium    | ✅     | 8-й ✅                    |
 | R11    | 🟢 Low      | Trivial   | ✅     | 11-й ✅               |
@@ -37,6 +37,7 @@
 - [x] **R9.1** — `ewm_generator.py` — `fillna(0.0)` в EWM-цепочке
 - [x] **R9.2** — `mutual_info_ranker.py` — `X.fillna(0)` перед MI scoring
 - [x] **R9.3** — `selector.py` — агрегация рангов/скоров с fillna
+- [x] **R9.4** — `logreg.py` — `SimpleImputer(strategy="mean")` оставлено как есть (верификация, без изменений кода); см. `done_task/R9.4.md`
 - [x] **R11** — Исправить PerformanceWarning о фрагментации DataFrame в long_to_wide
 - [x] **R10** — Исправить порядок генераторов и расхождение в количестве фичей (R10.3 сводка, R10.5 проверка, R10.6 исследование; R10.4 пропущено)
 - [x] **R12.4** — Обучение winner: uel_kz_1 + lp_ru, catboost/lgbm/logreg/stacking, features=advanced; MLflow; см. `done_task/R12.4.md`
@@ -63,9 +64,6 @@
   - [ ] R5.5 — Тесты для FastAPI endpoints
   - [ ] R5.6 — Измерить покрытие, довести до 90%+
   - [ ] R5.7 — Рассмотреть интеграционные / e2e тесты
-
-- [ ] **R9.4** — `logreg.py` — `SimpleImputer(strategy="mean")` — оставлено как есть
-  - ⏭️ Решение: не требует изменений
 
 ---
 
