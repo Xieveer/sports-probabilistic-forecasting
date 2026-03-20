@@ -25,7 +25,7 @@ import os
 from collections.abc import Generator
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -120,6 +120,30 @@ def get_session(engine: Engine | None = None) -> Generator[Session, None, None]:
         session.close()
 
 
+def _ensure_sqlite_predictions_schema(eng: Engine) -> None:
+    """Для существующих SQLite-БД: добавить колонки, появившиеся в ORM после create_all.
+
+    ``create_all`` не изменяет уже созданные таблицы. При добавлении полей в
+    ``Prediction`` старые файлы ``predictions.db`` остаются без новых колонок;
+    здесь выполняется минимальный ALTER только для известных расхождений.
+
+    Args:
+        eng: SQLAlchemy Engine (ожидается SQLite).
+    """
+    if not str(eng.url).startswith("sqlite"):
+        return
+    insp = inspect(eng)
+    if not insp.has_table("predictions"):
+        return
+    column_names = {c["name"] for c in insp.get_columns("predictions")}
+    if "model_tag" in column_names:
+        return
+    with eng.begin() as conn:
+        conn.execute(
+            text("ALTER TABLE predictions ADD COLUMN model_tag VARCHAR(16) NOT NULL DEFAULT 'prod'")
+        )
+
+
 def init_db(engine: Engine | None = None) -> None:
     """Создать все таблицы (если не существуют).
 
@@ -128,6 +152,7 @@ def init_db(engine: Engine | None = None) -> None:
     """
     eng = engine or get_engine()
     Base.metadata.create_all(eng)
+    _ensure_sqlite_predictions_schema(eng)
 
 
 def reset_engine() -> None:

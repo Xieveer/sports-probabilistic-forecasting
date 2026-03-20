@@ -106,3 +106,48 @@
   WARNING mlflow.utils.environment: Failed to resolve installed pip version. ``pip`` will be added to conda.yaml environment spec without a version specifier.
   ```
 - **Описание:** При сборке conda.yaml для MLflow не удалось определить версию установленного pip; в спецификацию окружения pip попадёт без версии. На результат обучения не влияет; при желании можно зафиксировать версию pip в окружении или обновить MLflow.
+
+---
+
+### [Training uel_kz_1 / Training lp_ru] R12.4 multirun: 8 прогонов, features=advanced (R12.4)
+
+- **Шаг:** Training uel_kz_1, Training lp_ru
+- **Команда:** `uv run python -m sports_forecast.train --multirun tournament=uel_kz_1,lp_ru market=winner market_spec=winner algorithm=catboost,lgbm,logreg,stacking features=advanced`
+- **Ошибка/предупреждение:** В каждом из 8 прогонов повторяются те же предупреждения MLflow: `artifact_path` deprecated (использовать `name`), Failed to resolve installed pip version. См. записи выше по uel_kz_1.
+- **Описание:** Запущен один multirun: 2 турнира (uel_kz_1, lp_ru) × 4 алгоритма (catboost, lgbm, logreg, stacking), features=advanced. Полный вывод сохранён в `docs/cursor/refactor/training-r12.4.log`. Падения и отдельные предупреждения по lp_ru или stacking (если появятся) фиксировать отдельными записями ниже.
+
+---
+
+### [Training uel_kz_1 / Training lp_ru] R12.4 multirun не завершён (лог обрезан)
+
+- **Шаг:** Training uel_kz_1, Training lp_ru
+- **Команда:** `uv run python -m sports_forecast.train --multirun tournament=uel_kz_1,lp_ru market=winner market_spec=winner algorithm=catboost,lgbm,logreg,stacking features=advanced`
+- **Ошибка/предупреждение:** В `training-r12.4.log` зафиксировано только 3 полных завершения («Обучение завершено успешно»): #0 uel_kz_1+catboost, #1 uel_kz_1+lgbm, #2 uel_kz_1+logreg. Прогон #3 (uel_kz_1+stacking) обрывается на этапе обучения Prod-модели (фолд 3/4). Прогоны #4–#7 (lp_ru × все 4 алгоритма) в лог не попали — процесс, видимо, был прерван по таймауту или вручную.
+- **Описание:** Для полной проверки R12.4 (один киберхоккей, один настольный теннис, все алгоритмы включая stacking, features=advanced) нужно повторно запустить multirun и дождаться завершения всех 8 прогонов (например, в фоне без жёсткого таймаута). После завершения проверить лог на 8 строк «Обучение завершено успешно» и при ошибках в прогонах lp_ru или stacking добавить отдельные записи в этот документ.
+
+---
+
+### [Promote] Сравнение моделей в MLflow (R12.6)
+
+- **Шаг:** Promote
+- **Команда:** `make promote EXP=uel_kz_1__winner__player METRIC=test_logloss DIR=minimize TOP=8` и `make promote EXP=lp_ru__winner__player ...`
+- **Ошибка/предупреждение:** —
+- **Описание:** Имя эксперимента в MLflow для winner (long / player): `{tournament}__winner__player`, не `{tournament}__winner`. Топ по `test_logloss` (minimize): uel_kz_1 — logreg/advanced; lp_ru — logreg/advanced. Вывод таблицы compare — успешно.
+
+---
+
+### [Materialize] SQLite: отсутствует колонка `predictions.model_tag` (R12.7)
+
+- **Шаг:** Materialize
+- **Команда:** `make materialize TOURNAMENT=uel_kz_1 MARKET=winner SPEC=winner ALG=logreg FEAT=advanced` (и то же для `lp_ru`)
+- **Ошибка/предупреждение:** `sqlite3.OperationalError: no such column: predictions.model_tag`
+- **Описание:** ORM уже содержит `model_tag`, но старый файл `predictions.db` создан до появления поля; `create_all` не добавляет колонки. Исправление: в `sports_forecast/service/db/engine.py` в `init_db` после `create_all` вызывается `_ensure_sqlite_predictions_schema` — `ALTER TABLE predictions ADD COLUMN model_tag ... DEFAULT 'prod'`. После этого materialize проходит; записаны предсказания в БД и parquet `data/predictions/{tournament}/winner/predictions_prod.parquet`.
+
+---
+
+### [Materialize] Успешная материализация (R12.7)
+
+- **Шаг:** Materialize
+- **Команда:** см. запись выше (после миграции схемы)
+- **Ошибка/предупреждение:** —
+- **Описание:** uel_kz_1 и lp_ru: модель `logreg_advanced_prod` (лучшая по test_logloss среди advanced-прогонов), по 5 матчей записано в Prediction Store.
