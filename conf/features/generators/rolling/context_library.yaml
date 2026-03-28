@@ -1,0 +1,77 @@
+# Библиотека rolling-контекстов (EWM diff/total + Count): одно определение на имя.
+# Список активных имён задаётся в conf/sport/*.yaml → rolling_context_names.
+# Порядок ниже используется при подмножестве имён (стабильная сортировка).
+
+canonical_order:
+  - global
+  - match_state
+  - match_num
+  - weekday
+  - tour_num
+  - tour_side
+  - form
+  - team
+  - h2h_global
+  - h2h_match_state
+  - h2h_match_num
+  - h2h_side
+  - h2h_form
+  - h2h_team
+
+definitions:
+  global:
+    keys: ["pl"]
+    players: ["pl", "opp"]
+
+  match_state:
+    keys: ["pl", "match_state"]
+    players: ["pl", "opp"]
+
+  match_num:
+    keys: ["pl", "tour_match_num"]
+    players: ["pl", "opp"]
+
+  weekday:
+    keys: ["pl", "weekday"]
+    players: ["pl", "opp"]
+
+  tour_num:
+    keys: ["pl", "tour_num"]
+    players: ["pl", "opp"]
+
+  tour_side:
+    keys: ["pl", "side"]
+    players: ["pl", "opp"]
+
+  form:
+    keys: ["pl", "pl_state"]
+    players: ["pl", "opp"]
+
+  # Киберхоккей: консольная команда; в настольном теннисе колонок нет — исключить из rolling_context_names
+  team:
+    keys: ["pl", "pl_cteam"]
+    players: ["pl", "opp"]
+
+  h2h_global:
+    keys: ["pl", "opp"]
+    h2h: true
+
+  h2h_match_state:
+    keys: ["pl", "opp", "match_state"]
+    h2h: true
+
+  h2h_match_num:
+    keys: ["pl", "opp", "tour_match_num"]
+    h2h: true
+
+  h2h_side:
+    keys: ["pl", "opp", "side"]
+    h2h: true
+
+  h2h_form:
+    keys: ["pl", "opp", "pl_state"]
+    h2h: true
+
+  h2h_team:
+    keys: ["pl", "opp", "pl_cteam", "opp_cteam"]
+    h2h: true

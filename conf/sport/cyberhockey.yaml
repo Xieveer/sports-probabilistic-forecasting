@@ -10,6 +10,27 @@
 sport: cyberhockey
 
 # ============================================================================
+# ROLLING (EWM / Count): какие контексты из context_library.yaml включать
+# ============================================================================
+# Полный набор: есть pl_cteam / opp_cteam (консольная команда) — контексты team / h2h_team включены.
+# Список совпадает с canonical_order в context_library.yaml.
+rolling_context_names:
+  - global
+  - match_state
+  - match_num
+  - weekday
+  - tour_num
+  - tour_side
+  - form
+  - team
+  - h2h_global
+  - h2h_match_state
+  - h2h_match_num
+  - h2h_side
+  - h2h_form
+  - h2h_team
+
+# ============================================================================
 # FORM PARAMS (бизнес-логика формы — overridable на уровне турнира)
 # ============================================================================
 form_params:

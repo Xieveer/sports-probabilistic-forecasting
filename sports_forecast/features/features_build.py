@@ -30,6 +30,7 @@ from omegaconf import DictConfig
 
 from sports_forecast.features.long_format import long_to_wide
 from sports_forecast.features.pipeline import FeaturePipeline
+from sports_forecast.features.rolling_contexts import materialize_features_config
 from sports_forecast.utils.log_config import configure_logging, get_logger
 
 
@@ -42,6 +43,7 @@ def process_tournament_new(
     interim_root: Path,
     processed_root: Path,
     features_cfg: DictConfig,
+    tournament_cfg: DictConfig | None = None,
 ) -> None:
     """
     Обработка турнира с использованием НОВОГО Feature Generation System.
@@ -55,6 +57,7 @@ def process_tournament_new(
         interim_root: Корневая директория interim данных
         processed_root: Корневая директория processed данных
         features_cfg: Конфигурация фичей
+        tournament_cfg: Конфиг турнира (sport → rolling_context_names для rolling library)
     """
     logger.info("=" * 70)
     logger.info("ТУРНИР: %s (Feature Generation System)", tournament_name)
@@ -71,7 +74,8 @@ def process_tournament_new(
 
     # 2. Создание Feature Pipeline
     logger.info("\nИнициализация Feature Pipeline...")
-    pipeline = FeaturePipeline(dict(features_cfg))
+    features_dict = materialize_features_config(features_cfg, tournament_cfg=tournament_cfg)
+    pipeline = FeaturePipeline(features_dict)
     logger.info("  ✓ Pipeline готов: %s", pipeline)
 
     # Показываем сводку
@@ -229,6 +233,7 @@ def run(cfg: DictConfig) -> None:
             interim_root,
             processed_root,
             cfg.features,
+            tournament_cfg=cfg.tournament,
         )
     except Exception as e:
         logger.error("Ошибка обработки турнира %s: %s", tournament_name, e, exc_info=True)

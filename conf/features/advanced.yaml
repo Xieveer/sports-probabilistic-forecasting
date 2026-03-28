@@ -5,7 +5,7 @@
 #   _common          → exclude_cols, result_cols, prefix, requires_long
 #   time/default     → long_format_context_columns (pre-generator, работает на wide)
 #   form/default     → form (fg/dp из tournament конфига, создает pl_state, match_state)
-#   rolling/standard → ewm (spans=[5,25,100]) + count (все контексты, используют form)
+#   rolling/standard → ewm (spans=[5,25,100]) + count (контексты из library + sport.rolling_context_names)
 #
 # Порядок важен: form должен быть перед rolling, т.к. создает контекстные колонки
 # (pl_state, opp_state, match_state), которые используются в ewm и count генераторах.

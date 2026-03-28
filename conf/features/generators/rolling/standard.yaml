@@ -3,6 +3,9 @@
 # ДВА EWM-генератора: ewm_diff (по diff_ps) и ewm_total (по total_ps).
 # Count — ОДИН раз на контекст (не зависит от метрики).
 #
+# Контексты подставляются из context_library.yaml по списку rolling_context_names
+# из conf/sport/*.yaml (см. context_source: library ниже).
+#
 # Именование фичей:
 #   pl_global_diff_ewm_5, opp_global_diff_ewm_5, all_global_diff_ewm_5
 #   pl_global_total_ewm_5, opp_global_total_ewm_5
@@ -23,6 +26,7 @@ ewm_diff:
   shift: 1
   min_periods: 3
   adjust: false
+  context_source: library
 
   # Warmup-фича: уверенность EWM [0, 1].
   # min(n_observed / threshold, 1.0) — сколько реальных матчей видел EWM.
@@ -31,89 +35,6 @@ ewm_diff:
     enabled: true
     threshold: 10
     players: ["pl", "opp"]
-
-  contexts:
-    # ===== pl/opp контексты (compute_diff=true для diff_ps) =====
-
-    # Глобальная форма игрока
-    - name: "global"
-      keys: ["pl"]
-      players: ["pl", "opp"]
-      compute_diff: true
-
-    # Форма в зависимости от состояния (fg/dp/form)
-    - name: "match_state"
-      keys: ["pl", "match_state"]
-      players: ["pl", "opp"]
-      compute_diff: true
-
-    # Форма в зависимости от номера матча в турнире
-    - name: "match_num"
-      keys: ["pl", "tour_match_num"]
-      players: ["pl", "opp"]
-      compute_diff: true
-
-    # Форма по дням недели
-    - name: "weekday"
-      keys: ["pl", "weekday"]
-      players: ["pl", "opp"]
-      compute_diff: true
-
-    # Форма по времени суток турнира (1=ночь, 2=утро, 3=день, 4=вечер)
-    - name: "tour_num"
-      keys: ["pl", "tour_num"]
-      players: ["pl", "opp"]
-      compute_diff: true
-
-    # Форма в зависимости от стороны (home/away)
-    - name: "tour_side"
-      keys: ["pl", "side"]
-      players: ["pl", "opp"]
-      compute_diff: true
-
-    # Форма (state-level): fg/dp/form context
-    - name: "form"
-      keys: ["pl", "pl_state"]
-      players: ["pl", "opp"]
-      compute_diff: true
-
-    # Форма по консольной команде (cyberhockey only, soft-fail для TT)
-    - name: "team"
-      keys: ["pl", "pl_cteam"]
-      players: ["pl", "opp"]
-      compute_diff: true
-
-    # ===== H2H контексты =====
-
-    # H2H базовый (все очные встречи)
-    - name: "h2h_global"
-      keys: ["pl", "opp"]
-      h2h: true
-
-    # H2H + match_state
-    - name: "h2h_match_state"
-      keys: ["pl", "opp", "match_state"]
-      h2h: true
-
-    # H2H + match_num
-    - name: "h2h_match_num"
-      keys: ["pl", "opp", "tour_match_num"]
-      h2h: true
-
-    # H2H + side (pl/opp + сторона)
-    - name: "h2h_side"
-      keys: ["pl", "opp", "side"]
-      h2h: true
-
-    # H2H + form
-    - name: "h2h_form"
-      keys: ["pl", "opp", "pl_state"]
-      h2h: true
-
-    # H2H + team (cyberhockey only, soft-fail для TT)
-    - name: "h2h_team"
-      keys: ["pl", "opp", "pl_cteam", "opp_cteam"]
-      h2h: true
 
 # =====================================================================
 # EWM по total_ps (сумма очков pl + opp)
@@ -127,77 +48,9 @@ ewm_total:
   shift: 1
   min_periods: 3
   adjust: false
+  context_source: library
 
   # Warmup НЕ включён: NaN-паттерн идентичен diff_ps, один warmup достаточно.
-
-  contexts:
-    # ===== pl/opp контексты (compute_diff=false для total_ps) =====
-
-    - name: "global"
-      keys: ["pl"]
-      players: ["pl", "opp"]
-      compute_diff: false
-
-    - name: "match_state"
-      keys: ["pl", "match_state"]
-      players: ["pl", "opp"]
-      compute_diff: false
-
-    - name: "match_num"
-      keys: ["pl", "tour_match_num"]
-      players: ["pl", "opp"]
-      compute_diff: false
-
-    - name: "weekday"
-      keys: ["pl", "weekday"]
-      players: ["pl", "opp"]
-      compute_diff: false
-
-    - name: "tour_num"
-      keys: ["pl", "tour_num"]
-      players: ["pl", "opp"]
-      compute_diff: false
-
-    - name: "tour_side"
-      keys: ["pl", "side"]
-      players: ["pl", "opp"]
-      compute_diff: false
-
-    - name: "form"
-      keys: ["pl", "pl_state"]
-      players: ["pl", "opp"]
-      compute_diff: false
-
-    - name: "team"
-      keys: ["pl", "pl_cteam"]
-      players: ["pl", "opp"]
-      compute_diff: false
-
-    # ===== H2H контексты =====
-
-    - name: "h2h_global"
-      keys: ["pl", "opp"]
-      h2h: true
-
-    - name: "h2h_match_state"
-      keys: ["pl", "opp", "match_state"]
-      h2h: true
-
-    - name: "h2h_match_num"
-      keys: ["pl", "opp", "tour_match_num"]
-      h2h: true
-
-    - name: "h2h_side"
-      keys: ["pl", "opp", "side"]
-      h2h: true
-
-    - name: "h2h_form"
-      keys: ["pl", "opp", "pl_state"]
-      h2h: true
-
-    - name: "h2h_team"
-      keys: ["pl", "opp", "pl_cteam", "opp_cteam"]
-      h2h: true
 
 # =====================================================================
 # Count — один раз на контекст (не зависит от метрики)
@@ -206,70 +59,4 @@ count:
   type: "count"
   enabled: true
   shift: 1
-
-  contexts:
-    # Общее количество матчей игрока
-    - name: "global"
-      keys: ["pl"]
-      players: ["pl", "opp"]
-
-    # Количество матчей в match_state
-    - name: "match_state"
-      keys: ["pl", "match_state"]
-      players: ["pl", "opp"]
-
-    # Количество матчей с tour_match_num
-    - name: "match_num"
-      keys: ["pl", "tour_match_num"]
-      players: ["pl", "opp"]
-
-    # Количество матчей по weekday
-    - name: "weekday"
-      keys: ["pl", "weekday"]
-      players: ["pl", "opp"]
-
-    # Количество матчей в tour_num
-    - name: "tour_num"
-      keys: ["pl", "tour_num"]
-      players: ["pl", "opp"]
-
-    # Количество матчей на side
-    - name: "tour_side"
-      keys: ["pl", "side"]
-      players: ["pl", "opp"]
-
-    # Количество матчей в form state
-    - name: "form"
-      keys: ["pl", "pl_state"]
-      players: ["pl", "opp"]
-
-    # Количество матчей по консольной команде (cyberhockey only)
-    - name: "team"
-      keys: ["pl", "pl_cteam"]
-      players: ["pl", "opp"]
-
-    # ===== H2H count =====
-
-    - name: "h2h_global"
-      keys: ["pl", "opp"]
-      h2h: true
-
-    - name: "h2h_match_state"
-      keys: ["pl", "opp", "match_state"]
-      h2h: true
-
-    - name: "h2h_match_num"
-      keys: ["pl", "opp", "tour_match_num"]
-      h2h: true
-
-    - name: "h2h_side"
-      keys: ["pl", "opp", "side"]
-      h2h: true
-
-    - name: "h2h_form"
-      keys: ["pl", "opp", "pl_state"]
-      h2h: true
-
-    - name: "h2h_team"
-      keys: ["pl", "opp", "pl_cteam", "opp_cteam"]
-      h2h: true
+  context_source: library
