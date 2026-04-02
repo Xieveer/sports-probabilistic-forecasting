@@ -1,0 +1,54 @@
+"""Builders for tournament-scoped refresh orchestration commands."""
+
+from __future__ import annotations
+
+
+def _render_source_stage_command(source_cmd: str) -> str:
+    """Render source stage shell snippet for a tournament.
+
+    Contract:
+    - Preferred: command template contains ``{tournament}`` placeholder.
+    - Legacy: plain command without placeholder receives ``"$tournament"``
+      as a positional argument.
+    """
+    if "{tournament}" in source_cmd:
+        return source_cmd.replace("{tournament}", '"$tournament"')
+    return f'{source_cmd} "$tournament"'
+
+
+def build_refresh_per_tournament_command(
+    *,
+    project_dir: str,
+    uv_run: str,
+    tournaments_expr: str,
+    features_config: str,
+    market: str,
+    market_spec: str,
+    source_cmd: str,
+    lock_file: str,
+    lock_wait_seconds: int,
+) -> str:
+    """Build a fail-fast shell command for tournament refresh pipeline.
+
+    Pipeline for each tournament:
+    ``source -> ingest -> clean -> features -> materialize``.
+    """
+    return (
+        "set -e && "
+        f'flock -w {lock_wait_seconds} "{lock_file}" /bin/bash -lc \''
+        f"set -e && cd {project_dir} && "
+        f"IFS=',' read -r -a tournaments <<< \"{tournaments_expr}\" && "
+        "valid_count=0; "
+        'for tournament in "${tournaments[@]}"; do '
+        'tournament="${tournament// /}"; '
+        '[ -n "$tournament" ] || continue; '
+        "valid_count=$((valid_count + 1)); "
+        f"{_render_source_stage_command(source_cmd)} && "
+        f'SF_TOURNAMENT_FILTER="$tournament" {uv_run} python -m sports_forecast.data.ingest && '
+        f'SF_TOURNAMENT_FILTER="$tournament" {uv_run} python -m sports_forecast.data.clean && '
+        f'{uv_run} python -m sports_forecast.features.features_build tournament="$tournament" features={features_config} && '
+        f'{uv_run} python -m sports_forecast.materialize tournament="$tournament" market={market} market_spec={market_spec} || exit 1; '
+        "done; "
+        '[ "$valid_count" -gt 0 ]'
+        "'"
+    )
