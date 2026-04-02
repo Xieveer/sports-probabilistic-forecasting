@@ -19,6 +19,7 @@
 | R10    | 🟡 Medium   | Medium    | ✅     | 8-й ✅                    |
 | R11    | 🟢 Low      | Trivial   | ✅     | 11-й ✅               |
 | R12    | 🟡 Medium   | Medium    | ✅     | 12-й ✅ (winner full cycle) |
+| R13    | 🔴 High     | Medium    | 🟡     | 13-й (архитектурное выравнивание) |
 | R5     | 🟡 Medium   | High      | 🟡     | 9-й (объёмный)       |
 | R4     | 🟡 Medium   | High      | 🟡     | 10-й (зависит от R5) |
 
@@ -45,8 +46,18 @@
 - [x] **R12** — Полный цикл winner (uel_kz_1 + lp_ru): данные → обучение → promote → materialize; см. `docs/cursor/refactor/done_task/R12.md`, `done_task/R12.*.md`
 - [x] **R12.6** — Promote compare в MLflow (`{tournament}__winner__player`); см. `done_task/R12.6.md`
 - [x] **R12.7** — Materialize logreg/advanced + миграция SQLite `model_tag`; см. `done_task/R12.7.md`
+- [x] **R13.1** — Добавлен validate-этап в `data_refresh` DAG (`ingest → clean → features → validate`) и зафиксирован fail-fast контракт; см. `done_task/R13.1.md`
 
 ### В работе / Backlog 🟡
+
+- [ ] **R13** — Выравнивание реализации с Service & Orchestration Architecture
+  - [x] R13.1 — Добавить validate-этап в `data_refresh` DAG и fail-fast контракт
+  - [ ] R13.2 — Перевести materialize на явный promoted-контракт (`deploy.yaml`/метаданные)
+  - [ ] R13.3 — Исправить promote в `training_sweep` для мульти-турнирного режима
+  - [ ] R13.4 — Зафиксировать operational-контракт DVC по средам (prod/dev/CI)
+  - [ ] R13.5 — Ввести инкрементальную декомпозицию по турнирам + политику конкуренции
+  - [ ] R13.6 — Разделить read-only API и операционные endpoint-ы на уровне контракта
+  - [ ] R13.7 — Добавить smoke/integration acceptance для оркестрационного контура
 
 - [ ] **R4** — Реализовать рабочий monitoring DAG
   - [ ] R4.1 — Изучить модули мониторинга

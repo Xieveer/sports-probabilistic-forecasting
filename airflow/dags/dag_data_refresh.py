@@ -1,9 +1,10 @@
-"""DAG A — Data Refresh: source → raw → interim → processed.
+"""DAG A — Data Refresh: source → raw → interim → processed → validate.
 
 Оркестрирует полный цикл обновления данных:
     1. Ingest:   source CSV → raw parquet
     2. Clean:    raw → interim (типизация, валидация)
     3. Features: interim → processed (генерация фичей)
+    4. Validate: проверка quality gates для raw/interim/processed
 
 Все задачи запускаются через CLI (BashOperator).
 Никакой ML-логики внутри Airflow.
@@ -71,5 +72,11 @@ with DAG(
         execution_timeout=timedelta(hours=1),
     )
 
+    # ── Step 4: Validate ──────────────────────────────────────────
+    validate = BashOperator(
+        task_id="validate",
+        bash_command=f"cd {PROJECT_DIR} && {UV_RUN} python -m sports_forecast.validation.run_validation",
+    )
+
     # ── Dependencies ──────────────────────────────────────────────
-    ingest >> clean >> features
+    ingest >> clean >> features >> validate
