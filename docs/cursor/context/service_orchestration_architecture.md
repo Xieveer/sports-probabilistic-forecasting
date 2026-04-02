@@ -4,60 +4,139 @@
 
 ML-сервис прогнозирования с низкой latency API и вынесенными в фоновые процессы тяжёлыми вычислениями.
 
-**Ключевой принцип**: Онлайн-сервис не выполняет тяжёлые вычисления. Все предикты вычисляются batch pipeline и сохраняются в витрине предсказаний.
+**Ключевой принцип**: онлайн-сервис не выполняет тяжёлые вычисления. Все предикты считаются batch-пайплайнами и сохраняются в витрине предсказаний.
 
-## Архитектура
+---
 
-**Компоненты**: FastAPI (read-only API), Airflow (4 DAG), MLflow (tracking + registry), DVC (версионирование), PostgreSQL/SQLite (витрины), Prometheus + Grafana (мониторинг).
+## Архитектурные контуры
 
-## Стратегия inference: Precomputed Predictions
+### 1) Пайплайн предиктов (онлайн-данные)
 
-**Проблема on-demand**: высокая latency, нагрузка на feature generation, риск падения SLA.
+**Назначение:** при появлении новых сырых данных по турниру пройти подготовку `source → raw → interim → processed (фичи)` и выполнить инференс уже выбранной production-моделью для новых или актуальных матчей с записью результатов в БД.
 
-**Решение**: batch prediction → predictions in DB → API reads. API только читает, вычисления асинхронно в фоне.
+**Свойства:**
 
-## Online API (FastAPI)
+- Триггер новых данных не запускает обучение.
+- Тяжелые вычисления находятся вне HTTP-запроса (Airflow или воркеры).
+- Источники обновляются по турнирам примерно раз в 30 минут, и обновления обычно не пересекаются по времени.
 
-**Endpoints**: `GET /predict/{match_id}`, `/predict/upcoming/{tournament}`, `/predict/stale`, `/metrics`.
+**Ограничение EWM:** EWM/rolling-фичи зависят от истории и в batch-режиме обычно требуют пересчета ряда по турниру целиком. Это связано с семантикой фич, а не с DVC. Отдельная эволюция - инкрементальное состояние (stateful EWM) с аккуратной обработкой исправлений истории.
 
-**Ответ**: `match_id`, `predictions`, `model` (version/algorithm/featureset), `prediction_ts`, `status` (ok/stale/error). In-memory LRU кеш (TTL 5 минут).
+### 2) Офлайн-обучение и отбор моделей
 
-## Prediction Materialization
+**Назначение:** обучение и сравнение моделей/фич/алгоритмов на зафиксированном датасете, который обновляется периодически по решению команды.
 
-Batch-процесс (`materialize.py`): `active matches → features → prod model → inference → DB`.
+**Свойства:**
 
-**Хранилище**: таблица `predictions` (SQLAlchemy): `match_id`, `tournament`, `market`, `market_spec`, `model_version`, `algorithm`, `featureset`, `predictions_json`, `prediction_ts`, `status`.
+- Не привязано к каждому обновлению данных с источников.
+- Запускается по расписанию или вручную.
+- Эксперименты и метрики хранятся в MLflow; promote отделен от онлайн-контура.
 
-## Orchestration (Airflow)
+### 3) API
 
-**4 DAG**:
+**Назначение:** постоянно доступный read-only слой, который выдает предикты из БД.
 
-1. **`data_refresh`** (при получение новых данных в source): `source → ingest → clean → features`
-2. **`training_sweep`** (ручной): `Hydra multirun → MLflow → model promotion` (выбор лучшего run → копирование в `models/`)
-3. **`prediction_materialize`** (после data_refresh): batch inference → DB
-4. **`monitoring`**: data freshness, feature drift (PSI/KS), prediction distribution
+**Свойства:**
 
-Все задачи через CLI (BashOperator), ML-логика вне Airflow.
+- API не выполняет feature generation и обучение в runtime.
+- Критичны стабильность, latency и управляемая деградация (stale status/кеш).
+
+---
+
+## Компоненты платформы
+
+- **FastAPI** - read-only API поверх витрины предсказаний.
+- **Airflow** - оркестрация data refresh, materialize, monitoring и offline training DAG.
+- **MLflow** - tracking/registry и управление жизненным циклом моделей.
+- **DVC** - воспроизводимость и версионирование наборов данных в инженерном контуре.
+- **PostgreSQL/SQLite** - хранение materialized predictions.
+- **Prometheus + Grafana** - технический и ML-мониторинг.
+
+---
+
+## Роль DVC и operational-контракт по средам
+
+### Runtime-границы
+
+- **API runtime**: только чтение materialized-предиктов из БД; вызовы DVC и feature/training-модулей запрещены.
+- **Airflow runtime (prod)**: допускаются прямые вызовы доменных модулей (`ingest/clean/features/materialize`) через CLI/модули DAG.
+- **Offline runtime (dev/CI)**: подготовка датасетов и обучение выполняются через `dvc repro` для воспроизводимости состояния.
+
+### Матрица operational-контракта DVC
+
+| Среда | Прямые вызовы модулей | Когда обязателен `dvc repro` | Синхронизация артефактов |
+|---|---|---|---|
+| `prod` (Airflow data/materialize) | Разрешены для `source → ingest → clean → features → materialize`; оркестрация через DAG, без тяжелых операций в API | Не обязателен на каждый триггер обновления данных | Результаты materialize пишутся в БД; production-модель читается из promote-контракта (MLflow/deploy-метаданные); при необходимости репликации датасетов в инженерный контур — публикация в DVC remote по регламенту |
+| `dev` (локальная разработка) | Допустимы для быстрой отладки отдельных шагов | Обязателен перед фиксацией изменений пайплайна/данных и перед сравнением метрик между ветками | `dvc push/pull` + зафиксированные `dvc.lock`/git-коммит для обмена воспроизводимыми данными |
+| `CI` | Только в рамках тестовых/проверочных сценариев | Обязателен для сценариев валидации пайплайна и регрессионных проверок данных | CI делает `dvc pull` для входов и проверяет консистентность `dvc.lock`; запись в remote разрешена только в специализированных job |
+
+**Правило консистентности:** если в `prod` использовались прямые вызовы модулей без `dvc repro`, это состояние не считается автоматически воспроизводимым в инженерном контуре, пока соответствующие артефакты не синхронизированы через DVC remote и не зафиксированы в git/DVC-метаданных.
+
+**Важно про текущий граф:** в текущем `dvc.yaml` стадия `features` задана как один multirun по нескольким турнирам. Это ограничивает инкрементальность на уровне DVC при сценарии "обновился один турнир".
+
+---
+
+## Оркестрация (Airflow)
+
+Базовый набор DAG:
+
+1. **`data_refresh`**: `source → ingest → clean → features`
+2. **`training_sweep`**: офлайн-обучение и сравнение запусков в MLflow
+3. **`prediction_materialize`**: batch inference и запись в БД
+4. **`monitoring`**: freshness, drift, качество и операционные метрики
+
+Все задачи запускают CLI/модули, бизнес-логика остается в коде доменных модулей, а не в DAG.
+
+---
+
+## Inference-стратегия
+
+**Precomputed predictions**: предикты считаются в фоне и сохраняются в БД.
+
+Плюсы:
+
+- предсказуемая latency API;
+- отсутствие тяжелых вычислений в запросе;
+- отдельное масштабирование API и batch-контуров.
+
+---
 
 ## Model Registry & Promotion
 
-**MLflow Model Registry**: версионирование, артефакты, метрики, stages (Staging/Production/Archived). `ModelPromoter` выбирает лучшую модель по метрике (`test_logloss`) и копирует артефакты в `models/{tournament}/{market_spec}/{algorithm}_{features}/`.
+MLflow Model Registry хранит версии, артефакты и метрики. Promote переводит лучшую модель в production-контур; materialize использует именно production-артефакт.
+
+---
 
 ## Monitoring
 
-**Service** (Prometheus): request latency, error rate, throughput. **ML** (модуль `monitoring/`): data drift (PSI/KS), performance (AUC/LogLoss/ECE/ROI), A/B testing (shadow vs prod).
+- **Service-monitoring**: latency, error rate, throughput.
+- **ML-monitoring**: drift (PSI/KS), performance-метрики, распределения предсказаний.
+
+---
 
 ## Принципы
 
-- **Разделение**: API → чтение, pipeline → вычисления
-- **Воспроизводимость**: DVC + MLflow + versioned configs
-- **Изоляция**: обучение не влияет на API
-- **Масштабируемость**: компоненты масштабируются отдельно
+- Разделение ответственности: API читает, пайплайны считают.
+- Воспроизводимость экспериментов: MLflow + DVC + versioned configs.
+- Изоляция контуров: обучение не влияет напрямую на API runtime.
+- Масштабируемость: API, data pipeline и training масштабируются независимо.
+
+---
+
+## Сводная таблица
+
+| Контур | Триггер | DVC в рантайме |
+|---|---|---|
+| Данные → фичи → предикты (`prod`) | Новые данные по турниру | Опционально (по operational-контракту среды) |
+| Офлайн-обучение (`dev/CI`) | Расписание / ручной запуск | Обязателен |
+| API | HTTP | Нет |
+
+---
 
 ## Технологический стек
 
 | Компонент | Инструмент |
-|-----------|------------|
+|---|---|
 | API | FastAPI |
 | Validation | Pandera |
 | Orchestration | Airflow |
@@ -65,3 +144,11 @@ Batch-процесс (`materialize.py`): `active matches → features → prod m
 | Datasets | DVC |
 | Monitoring | Prometheus + Grafana |
 | Drift | PSI/KS (собственный модуль) |
+
+---
+
+## Связанные документы
+
+- `docs/cursor/context/project_info.md`
+- `docs/cursor/context/repo-index.md`
+- `dvc.yaml`

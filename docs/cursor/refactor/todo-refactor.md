@@ -48,6 +48,7 @@
 - [x] **R12.7** — Materialize logreg/advanced + миграция SQLite `model_tag`; см. `done_task/R12.7.md`
 - [x] **R13.1** — Добавлен validate-этап в `data_refresh` DAG (`ingest → clean → features → validate`) и зафиксирован fail-fast контракт; см. `done_task/R13.1.md`
 - [x] **R13.2** — Materialize переведён на promoted-контракт (`deploy.yaml`/метаданные) вместо DAG `algorithm/features`; см. `done_task/R13.2.md`
+- [x] **R13.4** — Зафиксирован operational-контракт DVC по средам (`prod/dev/CI`) в архитектурной документации; см. `done_task/R13.4.md`
 
 ### В работе / Backlog 🟡
 
@@ -55,7 +56,7 @@
   - [x] R13.1 — Добавить validate-этап в `data_refresh` DAG и fail-fast контракт
   - [x] R13.2 — Перевести materialize на явный promoted-контракт (`deploy.yaml`/метаданные)
   - [x] R13.3 — Исправить promote в `training_sweep` для мульти-турнирного режима
-  - [ ] R13.4 — Зафиксировать operational-контракт DVC по средам (prod/dev/CI)
+  - [x] R13.4 — Зафиксировать operational-контракт DVC по средам (prod/dev/CI)
   - [ ] R13.5 — Ввести инкрементальную декомпозицию по турнирам + политику конкуренции
   - [ ] R13.6 — Разделить read-only API и операционные endpoint-ы на уровне контракта
   - [ ] R13.7 — Добавить smoke/integration acceptance для оркестрационного контура
