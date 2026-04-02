@@ -28,12 +28,14 @@ Prediction Materialization Pipeline.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import hydra
 import numpy as np
 import pandas as pd
-from omegaconf import DictConfig
+import yaml
+from omegaconf import DictConfig, OmegaConf
 
 from sports_forecast.predict import (
     find_model_file,
@@ -48,6 +50,90 @@ from sports_forecast.utils.log_config import configure_logging, get_logger
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class PromotedModelContract:
+    """Явный контракт promoted-модели для materialize.
+
+    Attributes:
+        model_dir: Директория артефакта promoted-модели.
+        algorithm: Имя алгоритма, выбранного на этапе promote.
+        featureset: Имя набора фичей, выбранного на этапе promote.
+    """
+
+    model_dir: Path
+    algorithm: str
+    featureset: str
+
+
+def _load_promoted_contract(cfg: DictConfig, project_root: Path) -> PromotedModelContract | None:
+    """Загрузить контракт promoted-модели из deploy.yaml.
+
+    Args:
+        cfg: Полный Hydra-конфиг.
+        project_root: Корневая директория проекта.
+
+    Returns:
+        Контракт promoted-модели или None, если контракт отсутствует/некорректен.
+    """
+    tournament_name = str(cfg.tournament.name)
+    market_spec_name = str(cfg.market_spec.name)
+    models_dir = Path(str(cfg.paths.models_dir))
+    promoted_dir = project_root / models_dir / tournament_name / market_spec_name / "best"
+    deploy_path = promoted_dir / "deploy.yaml"
+
+    if not deploy_path.exists():
+        logger.error("Promoted contract не найден: %s", deploy_path)
+        return None
+
+    try:
+        raw = yaml.safe_load(deploy_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        logger.exception("Не удалось прочитать promoted contract: %s", deploy_path)
+        return None
+
+    model_meta = raw.get("model", {})
+    algorithm_name = model_meta.get("algorithm")
+    featureset_name = model_meta.get("featureset")
+    if not algorithm_name or not featureset_name:
+        logger.error(
+            "Promoted contract некорректен: отсутствуют model.algorithm/featureset в %s",
+            deploy_path,
+        )
+        return None
+
+    return PromotedModelContract(
+        model_dir=promoted_dir,
+        algorithm=str(algorithm_name),
+        featureset=str(featureset_name),
+    )
+
+
+def _load_algorithm_config(
+    project_root: Path, algorithm_name: str, fallback: DictConfig
+) -> DictConfig:
+    """Загрузить конфиг алгоритма по имени из conf/algorithm.
+
+    Args:
+        project_root: Корневая директория проекта.
+        algorithm_name: Имя алгоритма.
+        fallback: Fallback-конфиг, если файл не найден.
+
+    Returns:
+        Конфиг алгоритма для загрузки модели.
+    """
+    algorithm_cfg_path = project_root / "conf" / "algorithm" / f"{algorithm_name}.yaml"
+    if not algorithm_cfg_path.exists():
+        logger.warning("Конфиг алгоритма %s не найден, использую cfg.algorithm", algorithm_cfg_path)
+        return fallback
+
+    loaded = OmegaConf.load(algorithm_cfg_path)
+    if isinstance(loaded, DictConfig):
+        return loaded
+
+    logger.warning("Некорректный конфиг алгоритма %s, использую cfg.algorithm", algorithm_cfg_path)
+    return fallback
 
 
 def _aggregate_long_predictions(
@@ -144,6 +230,18 @@ def materialize_predictions(cfg: DictConfig, version: str = "prod") -> bool:
     algorithm_name = str(cfg.algorithm.name)
     featureset_name = str(cfg.features.name)
     data_format = str(cfg.market_spec.data_format)
+    model_dir = get_model_dir(cfg, PROJECT_ROOT)
+    algorithm_cfg = cfg.algorithm
+
+    if version == "prod":
+        promoted = _load_promoted_contract(cfg, PROJECT_ROOT)
+        if promoted is None:
+            logger.error("Materialize(prod) требует валидный promoted contract")
+            return False
+        model_dir = promoted.model_dir
+        algorithm_name = promoted.algorithm
+        featureset_name = promoted.featureset
+        algorithm_cfg = _load_algorithm_config(PROJECT_ROOT, algorithm_name, cfg.algorithm)
 
     model_version = f"{algorithm_name}_{featureset_name}_{version}"
 
@@ -158,14 +256,13 @@ def materialize_predictions(cfg: DictConfig, version: str = "prod") -> bool:
 
     try:
         # 1. Загружаем модель
-        model_dir = get_model_dir(cfg, PROJECT_ROOT)
         model_file = find_model_file(model_dir, version=version)
 
         if model_file is None:
             logger.error("Модель не найдена в %s (version=%s)", model_dir, version)
             return False
 
-        model = load_model_from_path(cfg.algorithm, model_file)
+        model = load_model_from_path(algorithm_cfg, model_file)
 
         # 2. Загружаем feature list
         feature_names = load_feature_names(model_dir)

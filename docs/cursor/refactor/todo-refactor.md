@@ -47,12 +47,13 @@
 - [x] **R12.6** — Promote compare в MLflow (`{tournament}__winner__player`); см. `done_task/R12.6.md`
 - [x] **R12.7** — Materialize logreg/advanced + миграция SQLite `model_tag`; см. `done_task/R12.7.md`
 - [x] **R13.1** — Добавлен validate-этап в `data_refresh` DAG (`ingest → clean → features → validate`) и зафиксирован fail-fast контракт; см. `done_task/R13.1.md`
+- [x] **R13.2** — Materialize переведён на promoted-контракт (`deploy.yaml`/метаданные) вместо DAG `algorithm/features`; см. `done_task/R13.2.md`
 
 ### В работе / Backlog 🟡
 
 - [ ] **R13** — Выравнивание реализации с Service & Orchestration Architecture
   - [x] R13.1 — Добавить validate-этап в `data_refresh` DAG и fail-fast контракт
-  - [ ] R13.2 — Перевести materialize на явный promoted-контракт (`deploy.yaml`/метаданные)
+  - [x] R13.2 — Перевести materialize на явный promoted-контракт (`deploy.yaml`/метаданные)
   - [ ] R13.3 — Исправить promote в `training_sweep` для мульти-турнирного режима
   - [ ] R13.4 — Зафиксировать operational-контракт DVC по средам (prod/dev/CI)
   - [ ] R13.5 — Ввести инкрементальную декомпозицию по турнирам + политику конкуренции
