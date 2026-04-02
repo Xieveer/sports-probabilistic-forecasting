@@ -54,7 +54,7 @@
 - [ ] **R13** — Выравнивание реализации с Service & Orchestration Architecture
   - [x] R13.1 — Добавить validate-этап в `data_refresh` DAG и fail-fast контракт
   - [x] R13.2 — Перевести materialize на явный promoted-контракт (`deploy.yaml`/метаданные)
-  - [ ] R13.3 — Исправить promote в `training_sweep` для мульти-турнирного режима
+  - [x] R13.3 — Исправить promote в `training_sweep` для мульти-турнирного режима
   - [ ] R13.4 — Зафиксировать operational-контракт DVC по средам (prod/dev/CI)
   - [ ] R13.5 — Ввести инкрементальную декомпозицию по турнирам + политику конкуренции
   - [ ] R13.6 — Разделить read-only API и операционные endpoint-ы на уровне контракта

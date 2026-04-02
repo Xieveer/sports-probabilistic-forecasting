@@ -19,6 +19,9 @@ from airflow.models import Variable
 from airflow.operators.bash import BashOperator
 
 from airflow import DAG
+from sports_forecast.deploy.promote_command import (
+    build_promote_per_tournament_command,
+)
 
 
 # ── Конфигурация ─────────────────────────────────────────────────
@@ -77,12 +80,14 @@ with DAG(
     # Для каждого турнира запускаем promoter
     promote = BashOperator(
         task_id="promote_best",
-        bash_command=(
-            f"cd {PROJECT_DIR} && {UV_RUN} python -m sports_forecast.deploy.promoter "
-            '--experiment "{{ params.tournaments }}__{{ params.market_spec }}" '
-            f"--metric {PROMOTE_METRIC} "
-            f"--direction {PROMOTE_DIRECTION} "
-            "--top-n 5"
+        bash_command=build_promote_per_tournament_command(
+            project_dir=PROJECT_DIR,
+            uv_run=UV_RUN,
+            tournaments_expr="{{ params.tournaments }}",
+            market_spec_expr="{{ params.market_spec }}",
+            metric=PROMOTE_METRIC,
+            direction=PROMOTE_DIRECTION,
+            top_n=5,
         ),
     )
 
