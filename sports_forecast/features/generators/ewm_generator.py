@@ -324,7 +324,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
         for player in players:
             feature_name = f"{player}_ewm_warmup"
 
-            df[feature_name] = df.groupby(player, dropna=False)[metric].transform(
+            df[feature_name] = df.groupby(player, dropna=False, observed=False)[metric].transform(
                 lambda x: x.shift(shift).expanding().count().div(threshold).clip(upper=1.0)
             )
             features_created += 1
@@ -377,7 +377,7 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
         Returns:
             Series с EWM значениями.
         """
-        return df.groupby(group_keys, dropna=False)[metric].transform(
+        return df.groupby(group_keys, dropna=False, observed=False)[metric].transform(
             lambda x: x.shift(shift)
             .ewm(span=span, min_periods=min_periods, adjust=adjust, ignore_na=True)
             .mean()

@@ -80,3 +80,4 @@
 Детальное описание каждой задачи находится в:
 - **Backlog:** `docs/cursor/refactor/backlog/R*.md` — незавершенные задачи
 - **Done:** `docs/cursor/refactor/done_task/R*.md` — завершенные задачи
+- **Техдолг и идеи после ревью:** `docs/cursor/refactor/backlog/reviewer-tech-debt.md` — накопительный журнал (ограничения, компромиссы, возможные улучшения по итогам успешного ревью; не путать с Rework). Процесс: цикл Worker → Reviewer в `.cursor/skills/worker-reviewer-loop/SKILL.md` и роль Reviewer в `.cursor/agents/reviewer.md`.

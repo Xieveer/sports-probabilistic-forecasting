@@ -159,7 +159,7 @@ class CountFeatureGenerator(BaseFeatureGenerator):
         Returns:
             Series с количеством встреч
         """
-        return df.groupby(group_keys, dropna=False).cumcount() + 1 - shift
+        return df.groupby(group_keys, dropna=False, observed=False).cumcount() + 1 - shift
 
     def get_feature_names(self) -> list[str]:
         """

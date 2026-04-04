@@ -28,6 +28,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -41,6 +42,16 @@ from sports_forecast.utils.log_config import get_logger
 #: Корень проекта: sports_forecast/data/clean.py -> sports_forecast -> project_root
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 logger = get_logger(__name__)
+
+
+def _get_tournament_filter() -> set[str] | None:
+    """Получить фильтр турниров из ``SF_TOURNAMENT_FILTER``."""
+    raw_filter = os.getenv("SF_TOURNAMENT_FILTER", "").strip()
+    if not raw_filter:
+        return None
+
+    values = {item.strip() for item in raw_filter.split(",") if item.strip()}
+    return values or None
 
 
 def _derive_status(
@@ -585,6 +596,14 @@ def run() -> None:
     interim_root.mkdir(parents=True, exist_ok=True)
 
     tournaments = sorted(p for p in raw_root.iterdir() if p.is_dir())
+    tournament_filter = _get_tournament_filter()
+    if tournament_filter is not None:
+        tournaments = [item for item in tournaments if item.name in tournament_filter]
+        logger.info(
+            "Применен SF_TOURNAMENT_FILTER=%s; к обработке: %d",
+            ",".join(sorted(tournament_filter)),
+            len(tournaments),
+        )
     if not tournaments:
         logger.warning("В %s нет ни одного турнира, ничего обрабатывать", raw_root)
         return

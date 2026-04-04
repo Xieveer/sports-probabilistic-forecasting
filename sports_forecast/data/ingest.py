@@ -43,6 +43,7 @@ Example:
 from __future__ import annotations
 
 import ast
+import os
 import re
 from pathlib import Path
 
@@ -62,6 +63,16 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 #: Логгер модуля для отслеживания процесса загрузки
 logger = get_logger(__name__)
+
+
+def _get_tournament_filter() -> set[str] | None:
+    """Получить фильтр турниров из ``SF_TOURNAMENT_FILTER``."""
+    raw_filter = os.getenv("SF_TOURNAMENT_FILTER", "").strip()
+    if not raw_filter:
+        return None
+
+    values = {item.strip() for item in raw_filter.split(",") if item.strip()}
+    return values or None
 
 
 def _apply_split_condition(series: pd.Series, condition: str) -> pd.Series:
@@ -615,6 +626,14 @@ def run() -> None:
         raise FileNotFoundError(f"Каталог с источниками не найден: {data_source_dir}")
 
     tournaments = sorted(p for p in data_source_dir.iterdir() if p.is_dir())
+    tournament_filter = _get_tournament_filter()
+    if tournament_filter is not None:
+        tournaments = [item for item in tournaments if item.name in tournament_filter]
+        logger.info(
+            "Применен SF_TOURNAMENT_FILTER=%s; к обработке: %d",
+            ",".join(sorted(tournament_filter)),
+            len(tournaments),
+        )
     if not tournaments:
         logger.warning("В %s не найдено ни одного турнира", data_source_dir)
         return

@@ -42,7 +42,11 @@
 - `monitoring/` — Prometheus + Grafana конфиги
 - `models/` — обученные модели (по турнирам)
 - `tests/` — unit-тесты (358+)
-- `docs/` — документация (Sphinx + cursor/context)
+- `docs/` — документация (Sphinx + cursor/context), включая сводный архитектурный документ `docs/cursor/context/service_orchestration_architecture.md`
+
+### Рефакторинг и ревью (`docs/cursor/refactor/`)
+- **Бэклог и приоритеты:** `backlog/*.md`, сводка `todo-refactor.md`, выполненные задачи в `done_task/`.
+- **Журнал техдолга после ревью:** `backlog/reviewer-tech-debt.md` — накопительный список ограничений, компромиссов и возможных улучшений, зафиксированных Reviewer после успешной приёмки (не путать с Rework). Порядок работы: скилл `.cursor/skills/worker-reviewer-loop/SKILL.md`, роль `.cursor/agents/reviewer.md`.
 
 ---
 

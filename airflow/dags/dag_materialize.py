@@ -30,6 +30,8 @@ TOURNAMENTS = Variable.get(
 )
 MARKET = Variable.get("SF_MATERIALIZE_MARKET", default_var="winner")
 MARKET_SPEC = Variable.get("SF_MATERIALIZE_SPEC", default_var="winner")
+MATERIALIZE_POOL = Variable.get("SF_MATERIALIZE_POOL", default_var="sf_refresh_pool")
+MAX_ACTIVE_RUNS = int(Variable.get("SF_MATERIALIZE_MAX_ACTIVE_RUNS", default_var="1"))
 
 # ── DAG ──────────────────────────────────────────────────────────
 default_args = {
@@ -48,7 +50,7 @@ with DAG(
     catchup=False,
     tags=["inference", "predictions", "v2"],
     default_args=default_args,
-    max_active_runs=1,
+    max_active_runs=MAX_ACTIVE_RUNS,
     doc_md=__doc__,
 ) as dag:
     tournament_list = [t.strip() for t in TOURNAMENTS.split(",")]
@@ -64,6 +66,8 @@ with DAG(
                 f"market_spec={MARKET_SPEC}"
             ),
             execution_timeout=timedelta(minutes=15),
+            pool=MATERIALIZE_POOL,
+            pool_slots=1,
         )
 
         if prev_task is not None:

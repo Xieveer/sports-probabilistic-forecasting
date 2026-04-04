@@ -258,6 +258,7 @@ def validate_processed(
 
     # Дополнительные проверки фичей
     warnings: list[str] = []
+    high_null_detail: str | None = None
     f_cols = [c for c in df.columns if c.startswith("f_")]
 
     if not f_cols:
@@ -271,17 +272,21 @@ def validate_processed(
                 f"{const_features[:5]}{'...' if len(const_features) > 5 else ''}"
             )
 
-        # Проверяем фичи с высоким % null
+        # Проверяем фичи с высоким % null (часто h2h / редкие контексты — ожидаемо)
         high_null = [c for c in f_cols if df[c].isnull().mean() > 0.5]
         if high_null:
-            warnings.append(
+            high_null_detail = (
                 f"Фичи с >50% null ({len(high_null)}): "
                 f"{high_null[:5]}{'...' if len(high_null) > 5 else ''}"
             )
+            warnings.append(high_null_detail)
 
     result.warnings = warnings
     for w in warnings:
-        logger.warning("  ⚠ %s", w)
+        if w is high_null_detail:
+            logger.debug("  %s", w)
+        else:
+            logger.warning("  ⚠ %s", w)
 
     return result
 
