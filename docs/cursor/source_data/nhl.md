@@ -1,0 +1,45 @@
+Требования к сбору датасета (с сезона 2000 года):
+- nhl_id
+- season
+- is pre season/season/play off
+- datetime
+- location
+- home_team
+- away_team
+- match_end (REG / OT / SO)
+- home_score_ft (основное время + овертайм или буллиты (победа по буллитам просто 1 очко добавит))
+- away_score_ft
+- home_score_mt
+- away_score_mt (только основное время без ОТ и буллитов, сумма 3 периодов)
+- home_sog_ft (броски в створ)
+- away_sog_ft
+- home_sog_mt
+- away_sog_mt
+- home_bs_ft (блокированные броски)
+- away_bs_ft
+- home_bs_mt
+- away_bs_mt
+- home_hits_ft (хиты)
+- away_hits_ft
+- home_hits_mt
+- away_hits_mt
+- home_pim_ft (минуты удаления)
+- away_pim_ft
+- home_pim_mt
+- away_pim_mt
+- home_2pim_ft (в счет идут только минорные удаления по 2 минуты и 2+2 нарушения)
+- away_2pim_ft
+- home_2pim_mt
+- away_2pim_mt
+- home_fow_ft (выигранные всбрасывания)
+- away_fow_ft
+- home_fow_mt
+- away_fow_mt
+- home_roster (можно словарь состава команды на игру + список травмированных)
+- away_roster (можно словарь состава команды на игру + список травмированных)
+- home_conference_standing (текущее место в конференции до игры)
+- home_P (текущее кол-во очков в сезоне до игры)
+- home_GP (сыграно матчей в регулярке)
+- away_conference_standing
+- away_P
+- home_GP

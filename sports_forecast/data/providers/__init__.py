@@ -12,6 +12,7 @@ from sports_forecast.data.providers.base import (
 )
 from sports_forecast.data.providers.file_provider import FileSourceProvider
 from sports_forecast.data.providers.http_provider import HttpApiSourceProvider
+from sports_forecast.data.providers.nhl.provider import NhlWebApiSourceProvider
 from sports_forecast.data.providers.registry import (
     ProviderRegistry,
     UnknownProviderTypeError,
@@ -22,6 +23,7 @@ from sports_forecast.data.providers.registry import (
 __all__ = [
     "FileSourceProvider",
     "HttpApiSourceProvider",
+    "NhlWebApiSourceProvider",
     "ProviderRegistry",
     "SourceDataNotFoundError",
     "SourceFetchError",

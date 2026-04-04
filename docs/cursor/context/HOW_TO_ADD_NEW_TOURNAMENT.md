@@ -183,6 +183,8 @@ provider:
   retries: 3
 ```
 
+NHL Web API (`NhlWebApiSourceProvider`, пакет `sports_forecast/data/providers/nhl/`): многократные запросы к `api-web.nhle.com`, сбор `source.csv` по полям из `docs/cursor/source_data/nhl.md`. См. готовый пример `conf/source/nhl.yaml` (`provider.type: nhl_web_api`). Коэффициенты БК в этом API отсутствуют — отдельный источник при необходимости.
+
 Контракт всех адаптеров — абстрактный класс `SourceProvider` в `sports_forecast/data/providers/base.py` (метод `fetch(source_name) -> Path`).
 
 ### Как создать свой SourceProvider

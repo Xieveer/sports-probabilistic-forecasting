@@ -25,6 +25,7 @@
 | R14    | 🔴 High     | Medium    | ✅     | 14-й ✅ (source-адаптеры, SourceProvider pattern) |
 | R15    | 🟡 Medium   | Low       | 🟡     | 15-й (операционное руководство) |
 | R16    | 🟡 Medium   | Medium    | 🟡     | 16-й (MLflow сравнительная визуализация) |
+| R17    | 🔴 High     | High      | ✅     | 17-й ✅ (NHL Web API провайдер данных) |
 
 ---
 
@@ -64,6 +65,16 @@
   - [x] R14.5 — `HttpApiSourceProvider` (proof-of-concept)
   - [x] R14.6 — Обновить HOW_TO_ADD_NEW_TOURNAMENT.md (шаг 2а + кастомный провайдер)
   - [x] R14.7 — Unit-тесты для провайдеров (9 тестов)
+- [x] **R17** — NHL Web API: провайдер `nhl_web_api`, конфиги ice_hockey/source/tournament, тесты; см. `done_task/R17.md`
+  - [x] R17.1 — `NhlApiClient`
+  - [x] R17.2 — Schedule scanner
+  - [x] R17.3 — Boxscore / PBP
+  - [x] R17.4 — Standings по дате
+  - [x] R17.5 — Roster (травмы — заглушка)
+  - [x] R17.6 — `NhlDataAssembler` + checkpoint
+  - [x] R17.7 — `NhlWebApiSourceProvider` + registry
+  - [x] R17.8 — Конфигурация + комментарий в `dvc.yaml`
+  - [x] R17.9 — Unit-тесты
 
 ### В работе / Backlog 🟡
 

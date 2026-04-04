@@ -1,0 +1,37 @@
+# Source: NHL — загрузка через публичный NHL Web API (api-web.nhle.com)
+#
+# Документация эндпоинтов: docs/cursor/source_data/nhl_web_api.md
+# Целевые колонки датасета: docs/cursor/source_data/nhl.md
+#
+# Перед первым полным прогоном создайте каталог data/source/nhl/ (или положите .gitkeep).
+# Долгие прогоны: задайте checkpoint_file и при обрыве перезапустите ingest.
+
+name: nhl
+
+provider:
+  type: nhl_web_api
+  base_url: https://api-web.nhle.com/v1
+  user_agent: SportsProbabilisticForecasting/1.0
+  min_delay_sec: 0.55
+  timeout_sec: 45
+  retries: 3
+  backoff_factor: 0.6
+  # Интервал календаря для schedule/{date} (недельные запросы внутри)
+  date_from: "1999-09-01"
+  date_to: null
+  season_id_min: 19992000
+  season_id_max: null
+  # Ограничение для отладки (null = без лимита)
+  max_games: null
+  include_play_by_play: true
+  finished_only: true
+  roster_enabled: true
+  checkpoint_file: null
+
+sport: ice_hockey
+
+split_strategy:
+  enabled: false
+
+odds:
+  enabled: false

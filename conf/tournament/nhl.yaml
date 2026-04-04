@@ -1,0 +1,46 @@
+# Tournament: NHL (ice hockey)
+
+defaults:
+  - /sport@_here_: ice_hockey
+
+name: nhl
+region: north_america
+description: "National Hockey League (источник: nhl_web_api)"
+
+data:
+  processed_dir: data/processed/nhl
+  formats:
+    long: train_long.parquet
+    wide: train_wide.parquet
+  inference:
+    long: inference_long.parquet
+    wide: inference_wide.parquet
+
+data_clean:
+  derived_columns:
+    tour_num:
+      source: datetime
+      transform: hour_to_time_of_day
+    weekday:
+      source: datetime
+      transform: dayofweek
+  select_columns:
+    - id
+    - datetime
+    - status
+    - home_points
+    - away_points
+    - home_team
+    - away_team
+    - tour_num
+    - weekday
+
+stats:
+  avg_home_points: 3.0
+  avg_away_points: 2.8
+  avg_total: 5.8
+  typical_range: [1, 12]
+
+time_range:
+  start: "1999-10-01"
+  end: null

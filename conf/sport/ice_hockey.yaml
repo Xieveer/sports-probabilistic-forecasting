@@ -1,0 +1,82 @@
+# Sport: Ice hockey (NHL и совместимые датасеты)
+#
+# Целевые рынки и очистка рассчитаны на счёт голов (регулярное/OT/SO) как home_points/away_points.
+
+sport: ice_hockey
+
+# Без team / h2h_team (нет pl_cteam/opp_cteam в типовом NHL source); при добавлении консолидированных
+# имён команд расширьте список и column_mapping.
+rolling_context_names:
+  - global
+  - match_state
+  - match_num
+  - weekday
+  - tour_num
+  - tour_side
+  - form
+  - h2h_global
+  - h2h_match_state
+  - h2h_match_num
+  - h2h_side
+  - h2h_form
+
+form_params:
+  fg_trigger_minutes: 360
+  dp_trigger_minutes: 45
+
+allowed_market_specs:
+  winner:
+    specs: [winner, winner_home]
+  total:
+    lines: [3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5]
+    specs: [total_over, total_under]
+
+target_sources:
+  player_win:
+    format: long
+    player_column: pl_points
+    opponent_column: opp_points
+    comparison: greater
+
+  home_win:
+    format: wide
+    home_column: home_points
+    away_column: away_points
+    comparison: greater
+
+  total_sum:
+    format: wide
+    home_column: home_points
+    away_column: away_points
+    comparison: total_over
+
+  total_sum_under:
+    format: wide
+    home_column: home_points
+    away_column: away_points
+    comparison: total_under
+
+data_clean:
+  column_mapping:
+    home_score_ft: home_points
+    away_score_ft: away_points
+    home_team: home_team
+    away_team: away_team
+
+  required_columns: [id, datetime]
+
+  derived_columns: {}
+
+  drop_na_columns: [id, datetime]
+
+  score_columns: [home_points, away_points]
+
+  dtype_mapping:
+    numeric:
+      home_points: float
+      away_points: float
+    string: [id, status]
+    datetime:
+      datetime:
+        format: null
+        errors: coerce

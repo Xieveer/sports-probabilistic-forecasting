@@ -7,6 +7,7 @@ from omegaconf import DictConfig, OmegaConf
 from sports_forecast.data.providers.base import SourceProvider, SourceProviderError
 from sports_forecast.data.providers.file_provider import FileSourceProvider
 from sports_forecast.data.providers.http_provider import HttpApiSourceProvider
+from sports_forecast.data.providers.nhl.provider import NhlWebApiSourceProvider
 
 
 class UnknownProviderTypeError(SourceProviderError, ValueError):
@@ -35,6 +36,11 @@ class ProviderRegistry:
             provider_section = source_cfg.get("provider") or OmegaConf.create({})
             return HttpApiSourceProvider(
                 provider_cfg=provider_section,
+                paths_cfg=paths_cfg,
+            )
+        if type_id == "nhl_web_api":
+            return NhlWebApiSourceProvider(
+                source_cfg=source_cfg,
                 paths_cfg=paths_cfg,
             )
         raise UnknownProviderTypeError(f"Неизвестный provider.type: {type_id!r}")
