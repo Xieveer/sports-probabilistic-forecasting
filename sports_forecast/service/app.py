@@ -34,15 +34,38 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="Sports Probabilistic Forecasting API",
     description=(
-        "Read-only API для выдачи предвычисленных вероятностных предсказаний спортивных событий."
+        "Публичный read-only слой (`/predict`, `/health`) — выдача предвычисленных "
+        "предсказаний из БД; к нему относится целевой SLA. "
+        "Префикс `/internal/predict` — операционные endpoint-ы (кеш, stale); "
+        "отдельный контракт, без публичного SLA."
     ),
     version="2.0.0",
     lifespan=lifespan,
+    openapi_tags=[
+        {
+            "name": "health",
+            "description": "Проверка доступности сервиса и БД.",
+        },
+        {
+            "name": "predictions",
+            "description": (
+                "Публичные read-only методы витрины предсказаний (целевой SLA по latency и доступности)."
+            ),
+        },
+        {
+            "name": "operations",
+            "description": (
+                "Внутренние операции: LRU-кеш, сброс кеша, список stale для планировщика. "
+                "Не смешивать с показателями публичного API."
+            ),
+        },
+    ],
 )
 
 # Register routers
 app.include_router(health.router)
-app.include_router(predictions.router)
+app.include_router(predictions.public_router)
+app.include_router(predictions.operations_router)
 
 # Prometheus /metrics endpoint
 metrics_app = make_asgi_app()

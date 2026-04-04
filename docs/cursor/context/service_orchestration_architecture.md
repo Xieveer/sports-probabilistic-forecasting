@@ -39,13 +39,25 @@ ML-сервис прогнозирования с низкой latency API и в
 **Свойства:**
 
 - API не выполняет feature generation и обучение в runtime.
-- Критичны стабильность, latency и управляемая деградация (stale status/кеш).
+- Критичны стабильность, latency и управляемая деградация для **публичного** контура.
+
+#### Публичный слой vs операционные endpoint-ы
+
+Чтобы не размывать SLA публичного HTTP-слоя, в OpenAPI и коде разделены:
+
+| Префикс / тег | Назначение | SLA |
+|---|---|---|
+| `/predict/*`, `/health` | Выдача предсказаний из витрины; health check | Целевой публичный SLA (latency, доступность) |
+| `/internal/predict/*` | LRU-кеш и его сброс, статистика кеша, список stale для batch-планировщика | Операционный контракт: доступны внутренним клиентам; отдельные SLO или без жёсткого публичного SLA |
+| `/metrics` | Prometheus | Технический контур мониторинга |
+
+Поле `status` в ответе предсказания отражает свежесть данных в витрине; это не то же самое, что операционный список `GET /internal/predict/stale` для триггера пересчёта.
 
 ---
 
 ## Компоненты платформы
 
-- **FastAPI** - read-only API поверх витрины предсказаний.
+- **FastAPI** — публичный read-only API (`/predict`) и операционные пути (`/internal/predict`) поверх витрины предсказаний.
 - **Airflow** - оркестрация data refresh, materialize, monitoring и offline training DAG.
 - **MLflow** - tracking/registry и управление жизненным циклом моделей.
 - **DVC** - воспроизводимость и версионирование наборов данных в инженерном контуре.
@@ -80,12 +92,18 @@ ML-сервис прогнозирования с низкой latency API и в
 
 Базовый набор DAG:
 
-1. **`data_refresh`**: `source → ingest → clean → features`
+1. **`data_refresh`**: по измененным турнирам выполняет обязательную цепочку `source → ingest → clean → features → materialize` (fail-fast внутри турнира)
 2. **`training_sweep`**: офлайн-обучение и сравнение запусков в MLflow
 3. **`prediction_materialize`**: batch inference и запись в БД
 4. **`monitoring`**: freshness, drift, качество и операционные метрики
 
 Все задачи запускают CLI/модули, бизнес-логика остается в коде доменных модулей, а не в DAG.
+
+### Политика конкуренции (операционный контракт)
+
+- `data_refresh` ограничен `max_active_runs=1` и использует отдельный `pool` (`SF_REFRESH_POOL`) для тяжелых задач.
+- Внутри `data_refresh` используется lock через `flock` (`SF_REFRESH_LOCK_FILE`, `SF_REFRESH_LOCK_WAIT_SECONDS`) для защиты от гонок при параллельных триггерах/ручных запусках.
+- `prediction_materialize` использует выделенный pool (`SF_MATERIALIZE_POOL`), который по умолчанию совпадает с refresh-pool, чтобы не допускать неконтролируемого параллелизма между refresh/materialize.
 
 ---
 

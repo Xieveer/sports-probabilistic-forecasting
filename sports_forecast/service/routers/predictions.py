@@ -1,12 +1,12 @@
 """
 Prediction API endpoints.
 
-Все endpoints — **read-only**: предсказания предвычисляются
-batch pipeline и сохраняются в БД.
+**Публичный контракт** (``public_router``, префикс ``/predict``): только чтение
+из витрины предсказаний; к этим путям относится целевой SLA latency/доступности.
 
-Дополнительно предоставляет:
-- In-memory LRU кеш для горячих предсказаний
-- ``/predict/stale`` — список устаревших предсказаний для пересчёта
+**Операционный контракт** (``operations_router``, префикс ``/internal/predict``):
+кеш, сброс кеша, stale-лист для планировщика batch — не часть публичного SLA;
+предназначены для внутренних клиентов (оркестрация, администрирование).
 """
 
 from __future__ import annotations
@@ -29,7 +29,11 @@ from sports_forecast.service.schemas import (
 )
 
 
-router = APIRouter(prefix="/predict", tags=["predictions"])
+public_router = APIRouter(prefix="/predict", tags=["predictions"])
+operations_router = APIRouter(
+    prefix="/internal/predict",
+    tags=["operations"],
+)
 
 
 def _to_response(pred: Prediction) -> PredictionResponse:
@@ -54,7 +58,7 @@ def _to_response(pred: Prediction) -> PredictionResponse:
     )
 
 
-@router.get(
+@public_router.get(
     "/{match_id}",
     response_model=PredictionResponse,
     summary="Получить предсказание для матча",
@@ -97,7 +101,7 @@ def get_prediction(
     return _to_response(pred)
 
 
-@router.get(
+@public_router.get(
     "/match/{match_id}/all",
     response_model=PredictionListResponse,
     summary="Все предсказания для матча (все рынки)",
@@ -127,7 +131,7 @@ def get_all_predictions_for_match(match_id: str) -> PredictionListResponse:
     )
 
 
-@router.get(
+@public_router.get(
     "/upcoming/{tournament}",
     response_model=PredictionListResponse,
     summary="Предсказания для предстоящих матчей турнира",
@@ -212,10 +216,10 @@ def _cached_prediction(match_id: str, market: str, market_spec: str | None) -> d
     }
 
 
-@router.get(
+@operations_router.get(
     "/cached/{match_id}",
     response_model=PredictionResponse,
-    summary="Предсказание с LRU кешированием",
+    summary="[Операции] Предсказание с LRU кешированием",
     responses={404: {"description": "Предсказание не найдено"}},
 )
 def get_prediction_cached(
@@ -226,7 +230,9 @@ def get_prediction_cached(
     """Получить предсказание с in-memory LRU кешем.
 
     Кеш инвалидируется каждые 5 минут.
-    Для сброса кеша используйте ``POST /predict/cache/clear``.
+    Для сброса кеша используйте ``POST /internal/predict/cache/clear``.
+
+    Операционный endpoint: не входит в публичный SLA.
 
     Args:
         match_id: ID матча.
@@ -278,14 +284,15 @@ def get_prediction_cached(
     )
 
 
-@router.post(
+@operations_router.post(
     "/cache/clear",
-    summary="Очистить кеш предсказаний",
+    summary="[Операции] Очистить кеш предсказаний",
 )
 def clear_cache() -> dict[str, str]:
     """Очистить in-memory LRU кеш предсказаний.
 
     Используйте после batch materialization для обновления кеша.
+    Операционный endpoint: не входит в публичный SLA.
 
     Returns:
         Сообщение об успехе.
@@ -296,12 +303,14 @@ def clear_cache() -> dict[str, str]:
     return {"status": "ok", "message": "Кеш очищен"}
 
 
-@router.get(
+@operations_router.get(
     "/cache/stats",
-    summary="Статистика кеша",
+    summary="[Операции] Статистика кеша",
 )
 def cache_stats() -> dict[str, object]:
     """Получить статистику LRU кеша.
+
+    Операционный endpoint: не входит в публичный SLA.
 
     Returns:
         Информация о кеше (hits, misses, size).
@@ -322,10 +331,10 @@ def cache_stats() -> dict[str, object]:
 # ============================================================================
 
 
-@router.get(
+@operations_router.get(
     "/stale",
     response_model=list[StaleInfo],
-    summary="Список устаревших предсказаний",
+    summary="[Операции] Список устаревших предсказаний",
 )
 def get_stale_predictions(
     max_age_hours: int = Query(6, description="Максимальный возраст в часах"),
@@ -334,7 +343,7 @@ def get_stale_predictions(
     """Получить список предсказаний, которые устарели и требуют пересчёта.
 
     Используется batch scheduler для определения, какие предсказания
-    нужно обновить.
+    нужно обновить. Операционный endpoint: не входит в публичный SLA.
 
     Args:
         max_age_hours: Предсказания старше этого порога считаются stale.
