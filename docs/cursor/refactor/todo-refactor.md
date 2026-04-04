@@ -22,7 +22,7 @@
 | R13    | 🔴 High     | Medium    | ✅     | 13-й ✅ (архитектурное выравнивание, все R13.1–R13.7) |
 | R5     | 🟡 Medium   | High      | 🟡     | 9-й (объёмный)       |
 | R4     | 🟡 Medium   | High      | 🟡     | 10-й (зависит от R5) |
-| R14    | 🔴 High     | Medium    | 🟡     | 14-й (source-адаптеры, подключение провайдеров) |
+| R14    | 🔴 High     | Medium    | ✅     | 14-й ✅ (source-адаптеры, SourceProvider pattern) |
 | R15    | 🟡 Medium   | Low       | 🟡     | 15-й (операционное руководство) |
 | R16    | 🟡 Medium   | Medium    | 🟡     | 16-й (MLflow сравнительная визуализация) |
 
@@ -56,6 +56,14 @@
 - [x] **R13.6** — Разделён публичный (`/predict`, тег `predictions`) и операционный (`/internal/predict`, тег `operations`) слои FastAPI: контракт в коде и документации; см. `done_task/R13.6.md`
 - [x] **R13.7** — Добавлены 7 smoke/integration acceptance тестов для оркестрационного контура (Makefile CLI chain, Hydra --help, DAG source contracts); см. `done_task/R13.7.md`
 - [x] **R13** — Полное выравнивание реализации с Service & Orchestration Architecture (все R13.1–R13.7); см. `done_task/R13.md`
+- [x] **R14** — Source-адаптеры: паттерн `SourceProvider` (R14.1–R14.7); см. `done_task/R14.md`
+  - [x] R14.1 — ABC `SourceProvider` (контракт провайдера)
+  - [x] R14.2 — `FileSourceProvider` (извлечь текущую CSV-логику)
+  - [x] R14.3 — `ProviderRegistry` + фабрика `get_provider()`
+  - [x] R14.4 — Адаптировать `ingest.py` под провайдерный интерфейс
+  - [x] R14.5 — `HttpApiSourceProvider` (proof-of-concept)
+  - [x] R14.6 — Обновить HOW_TO_ADD_NEW_TOURNAMENT.md (шаг 2а + кастомный провайдер)
+  - [x] R14.7 — Unit-тесты для провайдеров (9 тестов)
 
 ### В работе / Backlog 🟡
 
@@ -76,14 +84,6 @@
   - [ ] R5.6 — Измерить покрытие, довести до 90%+
   - [ ] R5.7 — Рассмотреть интеграционные / e2e тесты
 
-- [ ] **R14** — Source-адаптеры: подключение внешних поставщиков данных
-  - [ ] R14.1 — ABC `SourceProvider` (контракт провайдера)
-  - [ ] R14.2 — `FileSourceProvider` (извлечь текущую CSV-логику)
-  - [ ] R14.3 — `ProviderRegistry` + фабрика `get_provider()`
-  - [ ] R14.4 — Адаптировать `ingest.py` под провайдерный интерфейс
-  - [ ] R14.5 — Заглушка `HttpApiSourceProvider` (proof-of-concept)
-  - [ ] R14.6 — Обновить HOW_TO_ADD_NEW_TOURNAMENT.md (секция провайдеров)
-  - [ ] R14.7 — Unit-тесты для провайдеров (≥5 тестов)
 
 - [ ] **R15** — Операционное руководство: запуск, обучение, деплой
   - [ ] R15.1 — Написать `docs/source/operations.rst` (полный гайд)

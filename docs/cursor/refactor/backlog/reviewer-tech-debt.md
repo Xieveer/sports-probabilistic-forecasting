@@ -27,3 +27,18 @@
 ## Записи
 
 <!-- Новые блоки `### YYYY-MM-DD` добавляйте в конец этого раздела (хронология от старых к новым сверху вниз). -->
+
+### 2026-04-04 — R14 Source-адаптеры / SourceProvider
+
+- **Задача:** `backlog/R14.md` → `done_task/R14.md`
+- **Ограничения и компромиссы:**
+  - `ProviderRegistry.create()` содержит жёстко прописанный if/elif вместо self-registration через декоратор — добавление провайдера требует правки реестра вручную (задокументировано в инструкции).
+  - `HttpApiSourceProvider` — PoC: нет поддержки аутентификации, пагинации, потоковой загрузки, rate-limiting. Сохраняет весь ответ в память (`response.content`).
+  - `FileSourceProvider` не принимает альтернативное имя файла (хардкод `source.csv`). Если провайдер нужен для Parquet, потребует расширения.
+  - `ingest.process_tournament` загружает `paths_cfg` при `None`, что добавляет лишний Hydra I/O при batch-прогоне если уже передан.
+- **Возможные улучшения / техдолг:**
+  - Заменить if/elif в `ProviderRegistry.create()` на `register`-декоратор или явный `_registry` dict с авторегистрацией.
+  - Добавить streaming download в `HttpApiSourceProvider` (`stream=True`, write chunk by chunk).
+  - Поддержка аутентификации (Bearer token, Basic) через секреты (env vars / Vault).
+  - Расширить `FileSourceProvider`: принимать имя файла (не только `source.csv`) и тип (CSV/Parquet).
+  - Интеграционный тест `process_tournament` с мок-провайдером (на уровне ingest, не только unit).
