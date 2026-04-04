@@ -19,7 +19,7 @@
 | R10    | 🟡 Medium   | Medium    | ✅     | 8-й ✅                    |
 | R11    | 🟢 Low      | Trivial   | ✅     | 11-й ✅               |
 | R12    | 🟡 Medium   | Medium    | ✅     | 12-й ✅ (winner full cycle) |
-| R13    | 🔴 High     | Medium    | 🟡     | 13-й (архитектурное выравнивание) |
+| R13    | 🔴 High     | Medium    | ✅     | 13-й ✅ (архитектурное выравнивание, все R13.1–R13.7) |
 | R5     | 🟡 Medium   | High      | 🟡     | 9-й (объёмный)       |
 | R4     | 🟡 Medium   | High      | 🟡     | 10-й (зависит от R5) |
 
@@ -51,17 +51,10 @@
 - [x] **R13.4** — Зафиксирован operational-контракт DVC по средам (`prod/dev/CI`) в архитектурной документации; см. `done_task/R13.4.md`
 - [x] **R13.5** — Декомпозирован refresh-контур по турнирам (`source → ingest → clean → features → materialize`) с политикой конкуренции (`pool/lock/max_active_runs`) и контрактом source-stage; см. `done_task/R13.5.md`
 - [x] **R13.6** — Разделён публичный (`/predict`, тег `predictions`) и операционный (`/internal/predict`, тег `operations`) слои FastAPI: контракт в коде и документации; см. `done_task/R13.6.md`
+- [x] **R13.7** — Добавлены 7 smoke/integration acceptance тестов для оркестрационного контура (Makefile CLI chain, Hydra --help, DAG source contracts); см. `done_task/R13.7.md`
+- [x] **R13** — Полное выравнивание реализации с Service & Orchestration Architecture (все R13.1–R13.7); см. `done_task/R13.md`
 
 ### В работе / Backlog 🟡
-
-- [ ] **R13** — Выравнивание реализации с Service & Orchestration Architecture
-  - [x] R13.1 — Добавить validate-этап в `data_refresh` DAG и fail-fast контракт
-  - [x] R13.2 — Перевести materialize на явный promoted-контракт (`deploy.yaml`/метаданные)
-  - [x] R13.3 — Исправить promote в `training_sweep` для мульти-турнирного режима
-  - [x] R13.4 — Зафиксировать operational-контракт DVC по средам (prod/dev/CI)
-  - [x] R13.5 — Ввести инкрементальную декомпозицию по турнирам + политику конкуренции
-  - [x] R13.6 — Разделить read-only API и операционные endpoint-ы на уровне контракта
-  - [ ] R13.7 — Добавить smoke/integration acceptance для оркестрационного контура
 
 - [ ] **R4** — Реализовать рабочий monitoring DAG
   - [ ] R4.1 — Изучить модули мониторинга
