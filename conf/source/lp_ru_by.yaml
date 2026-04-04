@@ -6,6 +6,10 @@
 # Примечание: "а9" написан кириллицей в исходных данных, поэтому используем default.
 
 name: lp_ru_by
+
+provider:
+  type: file
+
 sport: table_tennis
 region: russia_belarus
 description: "Liga Pro: Table Tennis (Russia + Belarus combined source)"

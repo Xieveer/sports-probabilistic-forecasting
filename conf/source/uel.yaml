@@ -2,6 +2,11 @@
 # Конфигурация для обработки исходного файла data/source/uel/source.csv
 
 name: uel
+
+# Откуда брать сырые данные перед ingest (по умолчанию — локальный CSV)
+provider:
+  type: file
+
 sport: cyberhockey
 region: multi  # Kazakhstan + Czech
 description: "UEL - Ultimate Esports League (Cyberhockey)"

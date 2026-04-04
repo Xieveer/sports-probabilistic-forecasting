@@ -9,7 +9,7 @@
 Добавление турнира состоит из следующих шагов:
 
 1. Определить спорт (существующий или новый)
-2. Создать source конфиг
+2. Создать source конфиг (при необходимости — выбрать `provider`, см. шаг 2а)
 3. Положить исходные данные
 4. Создать tournament конфиг
 5. Запустить DVC pipeline
@@ -124,6 +124,9 @@ sport: basketball
 region: usa
 description: "NBA Basketball"
 
+provider:
+  type: file
+
 # Если source содержит один турнир
 split_strategy:
   enabled: false
@@ -158,6 +161,37 @@ split_strategy:
       output_tournament: uel_cz
       description: "Czech Republic"
 ```
+
+### Шаг 2а. Выбрать провайдер данных
+
+Ingest читает один CSV/Parquet на турнир. Источник файла задаётся секцией `provider` в `conf/source/<source_name>.yaml`. Если секции нет, используется **`type: file`** (как раньше: `data/source/<name>/source.csv`).
+
+Локальный файл (по умолчанию):
+
+```yaml
+provider:
+  type: file
+```
+
+Скачивание по HTTP (proof-of-concept `HttpApiSourceProvider` в `sports_forecast/data/providers/http_provider.py`): перед ingest выполняется `GET`, ответ записывается в `data/source/<source_name>/source.csv`, дальше pipeline не менается.
+
+```yaml
+provider:
+  type: http_api
+  url: "https://example.com/path/to/export.csv"
+  timeout_sec: 30
+  retries: 3
+```
+
+Контракт всех адаптеров — абстрактный класс `SourceProvider` в `sports_forecast/data/providers/base.py` (метод `fetch(source_name) -> Path`).
+
+### Как создать свой SourceProvider
+
+1. Добавьте класс, наследуйте `SourceProvider`, реализуйте `fetch` (и при необходимости переопределите `is_available`).
+2. Введите понятные исключения-подклассы `SourceProviderError`, чтобы ingest мог логировать сбой единообразно.
+3. Зарегистрируйте тип в `ProviderRegistry.create` в `sports_forecast/data/providers/registry.py` (новое значение `provider.type`).
+4. Опишите поля конфига в комментариях к классу и в этом документе.
+5. Добавьте unit-тесты с моками внешних систем.
 
 ---
 

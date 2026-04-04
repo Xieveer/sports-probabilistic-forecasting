@@ -2,6 +2,10 @@
 # Конфигурация для обработки исходного файла data/source/lp_eu/source.csv
 
 name: lp_eu
+
+provider:
+  type: file
+
 sport: table_tennis
 region: europe
 description: "Liga Pro Europe - Table Tennis"

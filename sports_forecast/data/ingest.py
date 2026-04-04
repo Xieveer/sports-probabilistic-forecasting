@@ -55,6 +55,11 @@ from sports_forecast.config.loaders import (
     load_paths_config,
     load_source_config,
 )
+from sports_forecast.data.providers import (
+    SourceDataNotFoundError,
+    SourceProviderError,
+    get_provider,
+)
 from sports_forecast.utils.log_config import get_logger
 
 
@@ -416,7 +421,11 @@ def save_odds_if_available(
         logger.error("Турнир %s: ошибка сохранения odds.parquet - %s", tournament_name, e)
 
 
-def process_tournament(source_dir: Path, raw_root: Path) -> None:
+def process_tournament(
+    source_dir: Path,
+    raw_root: Path,
+    paths_cfg: DictConfig | None = None,
+) -> None:
     """Обработать один турнир: CSV → Parquet (ингест данных).
 
     Читает CSV файл с данными матчей турнира и конвертирует его
@@ -424,9 +433,10 @@ def process_tournament(source_dir: Path, raw_root: Path) -> None:
 
     Args:
         source_dir: Путь к директории турнира в data/source.
-            Ожидается структура: source_dir/source.csv
+            Ожидается структура: source_dir/source.csv (или доставка через провайдер).
         raw_root: Корневая директория для сохранения Parquet файлов.
             Обычно это data/raw
+        paths_cfg: Конфиг путей Hydra; при ``None`` загружается через ``load_paths_config``.
 
     Returns:
         None
@@ -452,19 +462,40 @@ def process_tournament(source_dir: Path, raw_root: Path) -> None:
         * Добавить поддержку сжатия Parquet файлов
         * Добавить автоопределение разделителя CSV
     """
+    if paths_cfg is None:
+        paths_cfg = load_paths_config()
+
     tournament_name = source_dir.name
-    source_csv = source_dir / "source.csv"
     output_parquet = raw_root / tournament_name / "matches.parquet"
+
+    source_config = None
+    try:
+        source_config = load_source_config(tournament_name)
+        logger.debug("Источник %s: конфиг загружен", tournament_name)
+    except FileNotFoundError:
+        logger.debug(
+            "Конфиг источника %s не найден, обрабатываю без специальной логики",
+            tournament_name,
+        )
+
+    provider = get_provider(source_config, paths_cfg)
+    try:
+        source_csv = provider.fetch(tournament_name)
+    except SourceDataNotFoundError:
+        logger.warning(
+            "Пропускаю турнир %s: исходные данные недоступны (file provider / отсутствует файл)",
+            tournament_name,
+        )
+        return
+    except SourceProviderError as e:
+        logger.error("Пропускаю турнир %s: ошибка провайдера данных — %s", tournament_name, e)
+        return
 
     logger.info("=" * 60)
     logger.info("НАЧАЛО ОБРАБОТКИ ТУРНИРА: %s", tournament_name)
-    logger.info("Ищу файл: %s", source_csv)
+    logger.info("Источник данных: %s", source_csv)
     logger.info("Файл существует: %s", source_csv.exists())
     logger.info("=" * 60)
-
-    if not source_csv.exists():
-        logger.warning("Пропускаю турнир %s: файл %s отсутствует", tournament_name, source_csv)
-        return
 
     logger.info("Турнир %s: читаю %s", tournament_name, source_csv)
 
@@ -490,18 +521,6 @@ def process_tournament(source_dir: Path, raw_root: Path) -> None:
             len(df),
             len(df.columns),
         )
-
-        # БИЗНЕС-ЛОГИКА: Загружаем конфиг источника (если есть)
-        source_config = None
-        try:
-            source_config = load_source_config(tournament_name)
-            logger.debug("Источник %s: конфиг загружен", tournament_name)
-        except FileNotFoundError:
-            # Конфиг источника не найден - это нормально для простых турниров
-            logger.debug(
-                "Конфиг источника %s не найден, обрабатываю без специальной логики",
-                tournament_name,
-            )
 
         # Разделение на подтурниры (если задано в конфиге)
         if (
@@ -641,7 +660,7 @@ def run() -> None:
     logger.info("Найдено турниров: %d", len(tournaments))
 
     for tournament_dir in tournaments:
-        process_tournament(tournament_dir, data_raw_dir)
+        process_tournament(tournament_dir, data_raw_dir, paths_cfg)
 
 
 if __name__ == "__main__":

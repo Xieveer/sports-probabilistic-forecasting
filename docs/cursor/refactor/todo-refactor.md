@@ -22,6 +22,9 @@
 | R13    | 🔴 High     | Medium    | ✅     | 13-й ✅ (архитектурное выравнивание, все R13.1–R13.7) |
 | R5     | 🟡 Medium   | High      | 🟡     | 9-й (объёмный)       |
 | R4     | 🟡 Medium   | High      | 🟡     | 10-й (зависит от R5) |
+| R14    | 🔴 High     | Medium    | 🟡     | 14-й (source-адаптеры, подключение провайдеров) |
+| R15    | 🟡 Medium   | Low       | 🟡     | 15-й (операционное руководство) |
+| R16    | 🟡 Medium   | Medium    | 🟡     | 16-й (MLflow сравнительная визуализация) |
 
 ---
 
@@ -72,6 +75,30 @@
   - [ ] R5.5 — Тесты для FastAPI endpoints
   - [ ] R5.6 — Измерить покрытие, довести до 90%+
   - [ ] R5.7 — Рассмотреть интеграционные / e2e тесты
+
+- [ ] **R14** — Source-адаптеры: подключение внешних поставщиков данных
+  - [ ] R14.1 — ABC `SourceProvider` (контракт провайдера)
+  - [ ] R14.2 — `FileSourceProvider` (извлечь текущую CSV-логику)
+  - [ ] R14.3 — `ProviderRegistry` + фабрика `get_provider()`
+  - [ ] R14.4 — Адаптировать `ingest.py` под провайдерный интерфейс
+  - [ ] R14.5 — Заглушка `HttpApiSourceProvider` (proof-of-concept)
+  - [ ] R14.6 — Обновить HOW_TO_ADD_NEW_TOURNAMENT.md (секция провайдеров)
+  - [ ] R14.7 — Unit-тесты для провайдеров (≥5 тестов)
+
+- [ ] **R15** — Операционное руководство: запуск, обучение, деплой
+  - [ ] R15.1 — Написать `docs/source/operations.rst` (полный гайд)
+  - [ ] R15.2 — Добавить в toctree `index.rst`
+  - [ ] R15.3 — Ревизия `quickstart.rst` на консистентность
+  - [ ] R15.4 — Smoke-check сборки docs
+
+- [ ] **R16** — MLflow: сравнительная визуализация метрик по запускам
+  - [ ] R16.1 — Добавить теги `sweep_id` и `run_index` в trainer
+  - [ ] R16.2 — Стандартизировать именование экспериментов (контракт)
+  - [ ] R16.3 — Скрипт `scripts/mlflow_compare.py` (CLI + chart)
+  - [ ] R16.4 — Makefile-цель `make compare`
+  - [ ] R16.5 — Расширить скрипт: multi-metric subplots, best-run highlight
+  - [ ] R16.6 — *(Опционально)* Grafana dashboard JSON
+  - [ ] R16.7 — Документировать workflow сравнения
 
 ---
 
