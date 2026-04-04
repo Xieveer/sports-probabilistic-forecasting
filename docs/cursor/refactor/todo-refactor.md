@@ -50,6 +50,7 @@
 - [x] **R13.2** — Materialize переведён на promoted-контракт (`deploy.yaml`/метаданные) вместо DAG `algorithm/features`; см. `done_task/R13.2.md`
 - [x] **R13.4** — Зафиксирован operational-контракт DVC по средам (`prod/dev/CI`) в архитектурной документации; см. `done_task/R13.4.md`
 - [x] **R13.5** — Декомпозирован refresh-контур по турнирам (`source → ingest → clean → features → materialize`) с политикой конкуренции (`pool/lock/max_active_runs`) и контрактом source-stage; см. `done_task/R13.5.md`
+- [x] **R13.6** — Разделён публичный (`/predict`, тег `predictions`) и операционный (`/internal/predict`, тег `operations`) слои FastAPI: контракт в коде и документации; см. `done_task/R13.6.md`
 
 ### В работе / Backlog 🟡
 
@@ -59,7 +60,7 @@
   - [x] R13.3 — Исправить promote в `training_sweep` для мульти-турнирного режима
   - [x] R13.4 — Зафиксировать operational-контракт DVC по средам (prod/dev/CI)
   - [x] R13.5 — Ввести инкрементальную декомпозицию по турнирам + политику конкуренции
-  - [ ] R13.6 — Разделить read-only API и операционные endpoint-ы на уровне контракта
+  - [x] R13.6 — Разделить read-only API и операционные endpoint-ы на уровне контракта
   - [ ] R13.7 — Добавить smoke/integration acceptance для оркестрационного контура
 
 - [ ] **R4** — Реализовать рабочий monitoring DAG
