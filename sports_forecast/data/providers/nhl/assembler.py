@@ -155,6 +155,38 @@ def _row_is_finished_in_csv(row: dict[str, Any]) -> bool:
     return str(v).strip() in ("1", "True", "true")
 
 
+def _snapshot_csv_rows(
+    stubs: list[ScheduleGameStub],
+    rows_from_current_pass: list[dict[str, Any]],
+    prev_by_id: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Собрать полный набор строк для ``source.csv`` при частичном прогоне.
+
+    Промежуточная запись должна соединять уже пересчитанный префикс (``rows_from_current_pass``)
+    с **хвостом** из прошлого файла (``prev_by_id``). Иначе ``to_csv`` из первых N строк
+    **уничтожает** все матчи, ещё не обработанные в текущем запуске.
+
+    Порядок строк — как в ``stubs`` (сортировка расписания).
+
+    Args:
+        stubs: Все матчи интервала в порядке обхода.
+        rows_from_current_pass: Строки, собранные в текущем запуске (по одной на обработанный stub).
+        prev_by_id: Индекс прошлого CSV по ``id``.
+
+    Returns:
+        Список записей на всю длину расписания (или короче, если в ``prev`` не было хвоста).
+    """
+    by_id_cur = {str(r["id"]): r for r in rows_from_current_pass}
+    out: list[dict[str, Any]] = []
+    for stub in stubs:
+        sid = str(stub.game_id)
+        if sid in by_id_cur:
+            out.append(by_id_cur[sid])
+        elif sid in prev_by_id:
+            out.append(prev_by_id[sid])
+    return out
+
+
 def _load_previous_source_rows(csv_path: Path) -> dict[str, dict[str, Any]]:
     """Индекс строк прошлого ``source.csv`` по ``id`` (для checkpoint и смены upcoming→OFF)."""
     if not csv_path.exists():
@@ -263,8 +295,8 @@ class NhlDataAssembler:
 
         Args:
             checkpoint_base: Каталог ``data/source/<name>`` для checkpoint матчей и прогресса расписания.
-            output_csv_path: Если задан, периодически перезаписывается ``csv_flush_every`` строками;
-                финальная таблица записывается в конце (частичные данные при обрыве на обогащении).
+            output_csv_path: Если задан, периодически перезаписывается (полный снимок: префикс
+                текущего прогона + хвост из предыдущего файла); финал — то же, чтобы не терять строки при обрыве.
 
         Returns:
             Таблица в колонках, согласованных с ``docs/cursor/source_data/nhl.md`` и downstream clean.
@@ -456,9 +488,11 @@ class NhlDataAssembler:
 
             flush_n = self._cfg.csv_flush_every
             if output_csv_path is not None and flush_n > 0 and len(rows) % flush_n == 0:
-                pd.DataFrame(rows).to_csv(output_csv_path, index=False)
+                snap = _snapshot_csv_rows(stubs, rows, prev_by_id)
+                pd.DataFrame(snap).to_csv(output_csv_path, index=False)
                 logger.info(
-                    "NHL assemble: промежуточная запись CSV (%d строк) → %s",
+                    "NHL assemble: промежуточная запись CSV (%d строк, обработано в проходе %d) → %s",
+                    len(snap),
                     len(rows),
                     output_csv_path,
                 )
@@ -475,13 +509,18 @@ class NhlDataAssembler:
                     stub.game_date,
                 )
 
-        df_out = pd.DataFrame(rows)
-        if not rows:
+        snapshot = _snapshot_csv_rows(stubs, rows, prev_by_id)
+        df_out = pd.DataFrame(snapshot)
+        if not snapshot:
             logger.warning("NHL assemble: нет строк (проверьте интервал дат и фильтры)")
         else:
-            logger.info("NHL assemble: готово, строк в таблице: %d", len(rows))
+            logger.info(
+                "NHL assemble: готово, строк в таблице: %d (в текущем проходе обработано записей: %d)",
+                len(snapshot),
+                len(rows),
+            )
 
-        if output_csv_path is not None:
+        if output_csv_path is not None and snapshot:
             df_out.to_csv(output_csv_path, index=False)
 
         return df_out

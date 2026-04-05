@@ -21,9 +21,9 @@ provider:
   timeout_attempts: 5
   timeout_retry_backoff_sec: 1.0
   # Интервал календаря для schedule/{date} (недельные запросы внутри)
-  date_from: "2025-09-01"
+  date_from: "2010-09-01"
   date_to: null
-  season_id_min: 20252026
+  season_id_min: 20102011
   season_id_max: null
   # Ограничение для отладки (null = без лимита)
   max_games: null

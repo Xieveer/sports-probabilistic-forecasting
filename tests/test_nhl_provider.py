@@ -14,6 +14,7 @@ from sports_forecast.data.providers.nhl.assembler import (
     _build_upcoming_row,
     _load_previous_source_rows,
     _row_is_finished_in_csv,
+    _snapshot_csv_rows,
 )
 from sports_forecast.data.providers.nhl.boxscore import aggregate_play_by_play, build_team_stats
 from sports_forecast.data.providers.nhl.schedule import (
@@ -271,6 +272,34 @@ def test_build_upcoming_row_match_is_end_zero() -> None:
     assert row["match_is_end"] == "0"
     assert row["home_score_ft"] == ""
     assert row["id"] == "9"
+
+
+def test_snapshot_csv_rows_keeps_tail_from_previous_csv() -> None:
+    """Промежуточная запись не должна обрезать файл до длины текущего префикса."""
+    stubs = [
+        ScheduleGameStub(
+            game_id=i,
+            season=20252026,
+            game_type=2,
+            game_date=f"2020-01-{i:02d}",
+            start_time_utc=f"2020-01-{i:02d}T18:00:00Z",
+            venue_default="",
+            home_abbrev="H",
+            away_abbrev="A",
+            game_state="OFF",
+            match_end=None,
+            home_score=None,
+            away_score=None,
+        )
+        for i in (1, 2, 3)
+    ]
+    current = [{"id": "1", "match_is_end": "1", "home_team": "X"}]
+    prev = {"2": {"id": "2", "match_is_end": "1"}, "3": {"id": "3", "match_is_end": "1"}}
+    snap = _snapshot_csv_rows(stubs, current, prev)
+    assert len(snap) == 3
+    assert snap[0]["home_team"] == "X"
+    assert snap[1]["id"] == "2"
+    assert snap[2]["id"] == "3"
 
 
 def test_load_previous_source_rows(tmp_path: Path) -> None:
