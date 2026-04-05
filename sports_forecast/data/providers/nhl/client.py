@@ -27,12 +27,20 @@ _STATUS_FORCELIST = (429, 500, 502, 503, 504)
 
 
 class NhlApiClient:
-    """Клиент с ограничением частоты запросов и ретраями."""
+    """HTTP-клиент к ``api-web.nhle.com`` с User-Agent, паузой между запросами и ретраями.
+
+    Параметры сессии задаются веткой ``provider`` в ``conf/source/nhl.yaml``
+    (``base_url``, ``timeout_sec``, ``min_delay_sec``, ``retries``, …).
+    """
 
     def __init__(
         self,
         provider_cfg: DictConfig | dict[str, Any],
     ) -> None:
+        """
+        Args:
+            provider_cfg: Секция ``provider`` из source-конфига или эквивалентный dict.
+        """
         cfg = OmegaConf.to_container(provider_cfg, resolve=True)
         if not isinstance(cfg, dict):
             raise SourceFetchError("nhl_web_api: неверная секция provider")
@@ -64,6 +72,7 @@ class NhlApiClient:
         self._last_request_mono: float | None = None
 
     def _sleep_rate_limit(self) -> None:
+        """Выдержать минимальный интервал между запросами (``min_delay_sec``)."""
         if self._last_request_mono is None:
             return
         elapsed = time.monotonic() - self._last_request_mono
@@ -71,16 +80,20 @@ class NhlApiClient:
             time.sleep(self._min_delay - elapsed)
 
     def get_json(self, path: str) -> dict[str, Any]:
-        """GET относительный путь (например ``schedule/2026-03-30``) → JSON dict.
+        """Выполнить GET к NHL Web API и распарсить JSON-объект.
 
         Args:
-            path: Путь без ведущего слэша (к нему добавляется base_url).
+            path: Относительный путь без ведущего слэша, например ``schedule/2026-03-30``
+                или ``gamecenter/2025021173/boxscore`` (к ``base_url`` из конфига).
 
         Returns:
-            Распарсенный JSON-объект верхнего уровня.
+            Словарь верхнего уровня ответа API.
 
         Raises:
-            SourceFetchError: Сеть, не-JSON, HTTP ошибка после ретраев.
+            SourceFetchError: Ошибка HTTP после ретраев, сеть, ответ не JSON или не объект.
+
+        Note:
+            Успешный запрос логируется на уровне DEBUG с полем ``path``.
         """
         path = path.lstrip("/")
         url = f"{self._base_url}/{path}"
@@ -100,4 +113,5 @@ class NhlApiClient:
             raise SourceFetchError(f"NHL API не JSON {url}: {e}") from e
         if not isinstance(data, dict):
             raise SourceFetchError(f"NHL API ожидался object, получено {type(data)}")
+        logger.debug("NHL API GET ok: %s", path)
         return data

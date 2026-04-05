@@ -1,4 +1,4 @@
-"""Таблица: snapshot на дату ``standings/YYYY-MM-DD``."""
+"""Загрузка таблицы турнира NHL на календарную дату (``standings/YYYY-MM-DD``)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from sports_forecast.data.providers.nhl.client import NhlApiClient
 
 @dataclass(frozen=True)
 class StandingRow:
-    """Строка standings для одной команды."""
+    """Место команды в конференции и накопительные очки/GP на дату снимка."""
 
     conference_abbrev: str
     conference_rank: int
@@ -29,7 +29,14 @@ def _abbr(row: dict[str, Any]) -> str | None:
 
 
 def parse_standings_payload(payload: dict[str, Any]) -> dict[str, StandingRow]:
-    """Преобразовать ответ API в индекс по аббревиатуре команды."""
+    """Разобрать JSON ответа ``standings`` в словарь по аббревиатуре команды.
+
+    Args:
+        payload: Тело ответа API с ключом ``standings`` (список строк).
+
+    Returns:
+        ``abbr -> StandingRow``; ключ — аббревиатура команды как в ответе API.
+    """
     out: dict[str, StandingRow] = {}
     for row in payload.get("standings") or []:
         if not isinstance(row, dict):
@@ -60,6 +67,14 @@ def parse_standings_payload(payload: dict[str, Any]) -> dict[str, StandingRow]:
 
 
 def fetch_standings_for_date(client: NhlApiClient, ymd: str) -> dict[str, StandingRow]:
-    """Загрузить ``standings/{YYYY-MM-DD}``."""
+    """Запросить ``standings/{ymd}`` и вернуть индекс команд.
+
+    Args:
+        client: Клиент NHL API.
+        ymd: Дата снимка ``YYYY-MM-DD`` (как в поле ``gameDate`` матча).
+
+    Returns:
+        Результат :func:`parse_standings_payload` для тела ответа.
+    """
     payload = client.get_json(f"standings/{ymd}")
     return parse_standings_payload(payload)

@@ -1,4 +1,4 @@
-""":class:`NhlWebApiSourceProvider` — сбор ``source.csv`` через NHL Web API."""
+"""Провайдер источника :class:`NhlWebApiSourceProvider` для ingest."""
 
 from __future__ import annotations
 
@@ -17,7 +17,11 @@ logger = get_logger(__name__)
 
 
 class NhlWebApiSourceProvider(SourceProvider):
-    """Формирует ``data/source/<name>/source.csv`` из api-web.nhle.com."""
+    """Скачивание матчей NHL по Web API и запись ``source.csv`` для ``ingest``.
+
+    Путь: ``{project_root}/{source_dir}/{source_name}/source.csv``.
+    Детальные параметры — в ``conf/source/<name>.yaml``, секция ``provider``.
+    """
 
     def __init__(
         self,
@@ -25,6 +29,12 @@ class NhlWebApiSourceProvider(SourceProvider):
         paths_cfg: DictConfig,
         project_root: Path | None = None,
     ) -> None:
+        """
+        Args:
+            source_cfg: Полный source-конфиг Hydra (нужна ветка ``provider`` с ``type: nhl_web_api``).
+            paths_cfg: Конфиг путей с полем ``paths.source_dir``.
+            project_root: Корень репозитория; по умолчанию как в :mod:`sports_forecast.config.loaders`.
+        """
         prov = source_cfg.get("provider") if source_cfg is not None else None
         if prov is None:
             raise SourceFetchError("nhl_web_api: нет секции provider")
@@ -35,10 +45,27 @@ class NhlWebApiSourceProvider(SourceProvider):
         self._asm_cfg = load_assembler_config(prov)
 
     def fetch(self, source_name: str) -> Path:
+        """Выполнить загрузку из API и вернуть путь к готовому CSV.
+
+        Args:
+            source_name: Имя каталога под ``data/source`` (как у турнира при ingest).
+
+        Returns:
+            Путь к ``source.csv``.
+
+        Raises:
+            SourceFetchError: Ошибка записи файла или конфигурации на этапе инициализации.
+        """
         target_dir = self._project_root / self._source_dir / source_name
         target_dir.mkdir(parents=True, exist_ok=True)
         out_path = target_dir / "source.csv"
 
+        logger.info(
+            "NhlWebApiSourceProvider: старт загрузки source_name=%s, интервал %s … %s",
+            source_name,
+            self._asm_cfg.date_from.isoformat(),
+            self._asm_cfg.date_to.isoformat(),
+        )
         assembler = NhlDataAssembler(self._client, self._asm_cfg)
         df = assembler.build_dataframe(checkpoint_base=target_dir)
 
@@ -55,6 +82,7 @@ class NhlWebApiSourceProvider(SourceProvider):
         return out_path
 
     def is_available(self) -> bool:
+        """Доступен, если в конфиге явно указан ``provider.type == nhl_web_api``."""
         merged = OmegaConf.to_container(self._source_cfg, resolve=True)
         if not isinstance(merged, dict):
             return False

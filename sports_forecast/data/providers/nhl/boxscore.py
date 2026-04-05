@@ -1,4 +1,4 @@
-"""Boxscore и play-by-play: агрегаты команд FT/MT."""
+"""Загрузка карточки матча и play-by-play; агрегаты по командам (полный матч и три периода регламента)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,11 @@ from sports_forecast.data.providers.nhl.client import NhlApiClient
 
 @dataclass
 class TeamGameStats:
-    """Счёт и событийная статистика (дом/гость заполняются вызывающим кодом)."""
+    """Числовые метрики одной стороны после агрегации boxscore/PBP.
+
+    Поля ``*_mt`` относятся к периодам 1–3 регулярного времени; ``score_ft`` и
+    официальные ``sog_ft`` задаются из boxscore в :func:`build_team_stats`.
+    """
 
     score_ft: int | None
     score_mt: int | None
@@ -66,7 +70,14 @@ def _sum_skater_int(rows: list[dict[str, Any]], field: str) -> int:
 
 
 def aggregate_player_box_stats(box: dict[str, Any]) -> tuple[int, int, int, int]:
-    """Суммы blockedShots и hits по скейтерам (без вратарей) для дом/гость."""
+    """Суммировать блоки и хиты скейтеров из ``playerByGameStats`` (fallback без PBP).
+
+    Args:
+        box: Тело ответа ``gamecenter/.../boxscore``.
+
+    Returns:
+        Кортеж ``(home_bs, away_bs, home_hits, away_hits)``.
+    """
     pstats = box.get("playerByGameStats") or {}
     at = pstats.get("awayTeam") or {}
     ht = pstats.get("homeTeam") or {}
@@ -81,7 +92,7 @@ def aggregate_player_box_stats(box: dict[str, Any]) -> tuple[int, int, int, int]
 
 
 def _team_skater_pim_totals(box: dict[str, Any]) -> tuple[int, int]:
-    """Суммарные PIM по ростеру матча (скейтеры + вратари), дом / гость."""
+    """Официальные PIM по сумме игроков карточки (дом / гость)."""
     pstats = box.get("playerByGameStats") or {}
     at = pstats.get("awayTeam") or {}
     ht = pstats.get("homeTeam") or {}
@@ -97,7 +108,14 @@ def _team_skater_pim_totals(box: dict[str, Any]) -> tuple[int, int]:
 def extract_scores_and_sog(
     box: dict[str, Any],
 ) -> tuple[int | None, int | None, int | None, int | None]:
-    """Финальные голы и броски в створ из boxscore."""
+    """Извлечь финальные голы и броски в створ команд из boxscore.
+
+    Args:
+        box: Ответ ``.../boxscore``.
+
+    Returns:
+        ``(home_score, away_score, home_sog, away_sog)``.
+    """
     ht = box.get("homeTeam") or {}
     at = box.get("awayTeam") or {}
 
@@ -123,7 +141,18 @@ def aggregate_play_by_play(
     home_id: int,
     away_id: int,
 ) -> tuple[TeamGameStats, TeamGameStats]:
-    """Агрегировать события PBP в статистику для домашней и гостевой команды."""
+    """Агрегировать события play-by-play в счётчиках по сторонам.
+
+    Args:
+        pbp: Ответ ``.../play-by-play`` с массивом ``plays``.
+        home_id: Числовой ``homeTeam.id`` из того же матча.
+        away_id: Числовой ``awayTeam.id``.
+
+    Returns:
+        Пара ``(home_agg, away_agg)``. Поля PIM здесь отражают события штрафов;
+        в :func:`build_team_stats` итоговые ``pim_ft`` перезаписываются суммой
+        по карточке матча (протокол).
+    """
     z_h = TeamGameStats(
         score_ft=None,
         score_mt=0,
@@ -231,7 +260,19 @@ def load_boxscore_and_pbp(
     game_id: int,
     with_pbp: bool,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    """Загрузить boxscore и опционально play-by-play."""
+    """Загрузить boxscore и при необходимости play-by-play для ``game_id``.
+
+    Args:
+        client: Клиент NHL API.
+        game_id: Идентификатор матча NHL.
+        with_pbp: Выполнить второй запрос ``play-by-play``.
+
+    Returns:
+        ``(boxscore_dict, pbp_dict | None)``.
+
+    Raises:
+        sports_forecast.data.providers.base.SourceFetchError: Прокидывается из клиента при ошибке HTTP/сети.
+    """
     box = client.get_json(f"gamecenter/{game_id}/boxscore")
     pbp: dict[str, Any] | None = None
     if with_pbp:
@@ -243,7 +284,15 @@ def build_team_stats(
     box: dict[str, Any],
     pbp: dict[str, Any] | None,
 ) -> tuple[TeamGameStats, TeamGameStats, int, int]:
-    """Собрать статистику дом/гость. Возвращает также home_id, away_id."""
+    """Объединить boxscore и опционально PBP в итоговые метрики обеих команд.
+
+    Args:
+        box: Ответ ``gamecenter/{id}/boxscore``.
+        pbp: Ответ play-by-play или ``None`` (часть MT-метрик и событийных BS/hits берётся из fallback).
+
+    Returns:
+        ``(home_stats, away_stats, home_team_id, away_team_id)``.
+    """
     ht = box.get("homeTeam") or {}
     at = box.get("awayTeam") or {}
     home_id = int(ht["id"])

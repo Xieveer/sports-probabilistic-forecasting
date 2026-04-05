@@ -1,4 +1,4 @@
-"""Оркестрация: расписание → детали матчей → строки CSV."""
+"""Сборка таблицы матчей NHL для ``source.csv``: расписание, boxscore, standings, ростеры."""
 
 from __future__ import annotations
 
@@ -27,6 +27,8 @@ _GAME_TYPE_LABEL = {1: "preseason", 2: "regular", 3: "playoffs"}
 
 @dataclass
 class AssemblerConfig:
+    """Параметры длительной загрузки, совпадающие с полями ``provider`` в ``conf/source/nhl.yaml``."""
+
     date_from: date
     date_to: date
     season_id_min: int | None
@@ -36,6 +38,7 @@ class AssemblerConfig:
     finished_only: bool
     roster_enabled: bool
     checkpoint_file: str | None
+    progress_log_every: int
 
 
 def _parse_ymd(s: str) -> date:
@@ -52,7 +55,17 @@ def _cfg_date(cfg: dict[str, Any], key: str, default: date) -> date:
 
 
 def load_assembler_config(provider_cfg: DictConfig) -> AssemblerConfig:
-    """Разобрать секцию provider в :class:`AssemblerConfig`."""
+    """Построить :class:`AssemblerConfig` из ветки ``provider`` source-конфига.
+
+    Args:
+        provider_cfg: Объект OmegaConf с полями провайдера (даты, лимиты, флаги).
+
+    Returns:
+        Нормализованная конфигурация сборщика.
+
+    Raises:
+        SourceFetchError: Некорректная структура или ``date_to < date_from``.
+    """
     c = OmegaConf.to_container(provider_cfg, resolve=True)
     if not isinstance(c, dict):
         raise SourceFetchError("nhl_web_api: provider должен быть объектом")
@@ -67,6 +80,12 @@ def load_assembler_config(provider_cfg: DictConfig) -> AssemblerConfig:
     max_g = c.get("max_games")
 
     ck = c.get("checkpoint_file")
+    raw_every = c.get("progress_log_every", 25)
+    try:
+        progress_every = max(0, int(raw_every))
+    except (TypeError, ValueError):
+        progress_every = 25
+
     return AssemblerConfig(
         date_from=d0,
         date_to=d1,
@@ -77,6 +96,7 @@ def load_assembler_config(provider_cfg: DictConfig) -> AssemblerConfig:
         finished_only=bool(c.get("finished_only", True)),
         roster_enabled=bool(c.get("roster_enabled", True)),
         checkpoint_file=str(ck).strip() if ck else None,
+        progress_log_every=progress_every,
     )
 
 
@@ -115,14 +135,30 @@ def _standings_triplet(idx: dict[str, StandingRow], abbr: str) -> tuple[str, str
 
 
 class NhlDataAssembler:
-    """Сборка датафрейма для ``source.csv``."""
+    """Оркестрация HTTP-запросов и сборка одного DataFrame для записи в CSV."""
 
     def __init__(self, client: NhlApiClient, cfg: AssemblerConfig) -> None:
+        """
+        Args:
+            client: Уже настроенный :class:`~sports_forecast.data.providers.nhl.client.NhlApiClient`.
+            cfg: Параметры интервала и поведения сборки.
+        """
         self._client = client
         self._cfg = cfg
 
     def build_dataframe(self, checkpoint_base: Path | None = None) -> pd.DataFrame:
-        """Собрать все строки матчей."""
+        """Собрать строки матчей: расписание → boxscore/PBP → standings → при необходимости roster.
+
+        Args:
+            checkpoint_base: Каталог ``data/source/<name>`` для файла checkpoint (если задан в конфиге).
+
+        Returns:
+            Таблица в колонках, согласованных с ``docs/cursor/source_data/nhl.md`` и downstream clean.
+
+        Note:
+            Прогресс пишется в лог: этап расписания (в :func:`collect_games_for_range`),
+            затем каждые ``progress_log_every`` обогащённых матчей (0 — без промежуточных INFO).
+        """
         games = collect_games_for_range(
             self._client,
             self._cfg.date_from,
@@ -140,18 +176,30 @@ class NhlDataAssembler:
             ck_path = checkpoint_base / self._cfg.checkpoint_file
             done = _read_checkpoint(ck_path)
 
+        pending = [s for s in stubs if s.game_id not in done]
+        skipped_checkpoint = sum(1 for s in stubs if s.game_id in done)
+        if self._cfg.max_games is not None:
+            pending = pending[: self._cfg.max_games]
+
+        logger.info(
+            "NHL assemble: к обогащению %d матчей (в расписании: %d, пропущено по checkpoint: %d, "
+            "include_play_by_play=%s, roster_enabled=%s, max_games=%s)",
+            len(pending),
+            len(stubs),
+            skipped_checkpoint,
+            self._cfg.include_play_by_play,
+            self._cfg.roster_enabled,
+            self._cfg.max_games if self._cfg.max_games is not None else "—",
+        )
+
         rows: list[dict[str, Any]] = []
-        count = 0
         standings_cache: dict[str, dict[str, StandingRow]] = {}
         roster_cache: dict[tuple[str, int], str] = {}
 
-        for stub in stubs:
-            if stub.game_id in done:
-                continue
-            if self._cfg.max_games is not None and count >= self._cfg.max_games:
-                break
-
+        total_work = len(pending)
+        for idx, stub in enumerate(pending, start=1):
             if stub.game_date not in standings_cache:
+                logger.debug("NHL assemble: загрузка standings на дату %s", stub.game_date)
                 standings_cache[stub.game_date] = fetch_standings_for_date(
                     self._client, stub.game_date
                 )
@@ -252,10 +300,23 @@ class NhlDataAssembler:
                 "match_is_end": "1",
             }
             rows.append(row)
-            count += 1
             if ck_path is not None:
                 _append_checkpoint(ck_path, stub.game_id)
 
+            every = self._cfg.progress_log_every
+            if every > 0 and (idx % every == 0 or idx == total_work):
+                logger.info(
+                    "NHL assemble: обработано %d/%d, game_id=%s %s @ %s (%s)",
+                    idx,
+                    total_work,
+                    stub.game_id,
+                    stub.away_abbrev,
+                    stub.home_abbrev,
+                    stub.game_date,
+                )
+
         if not rows:
-            logger.warning("NHL assembler: нет строк (проверьте интервал дат и фильтры)")
+            logger.warning("NHL assemble: нет строк (проверьте интервал дат и фильтры)")
+        else:
+            logger.info("NHL assemble: готово, строк в таблице: %d", len(rows))
         return pd.DataFrame(rows)

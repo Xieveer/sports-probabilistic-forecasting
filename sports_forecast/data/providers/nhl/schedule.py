@@ -1,4 +1,4 @@
-"""Расписание: обход дат, извлечение матчей из ответа schedule/{date}."""
+"""Итерация по календарю и загрузка расписания NHL (эндпоинт ``schedule/{YYYY-MM-DD}``)."""
 
 from __future__ import annotations
 
@@ -8,11 +8,15 @@ from datetime import date, timedelta
 from typing import Any
 
 from sports_forecast.data.providers.nhl.client import NhlApiClient
+from sports_forecast.utils.log_config import get_logger
+
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
 class ScheduleGameStub:
-    """Минимальные поля матча из блока schedule."""
+    """Сводка матча, извлечённая из JSON расписания (до запросов boxscore)."""
 
     game_id: int
     season: int
@@ -89,7 +93,15 @@ def _parse_game(
 
 
 def iter_week_starts(d0: date, d1: date) -> Iterator[date]:
-    """Итерация с шагом 7 дней от d0 до d1 включительно."""
+    """Даты-якоря с шагом 7 дней от ``d0`` до ``d1`` включительно.
+
+    Args:
+        d0: Первая дата недельного окна API.
+        d1: Последняя дата (включительно).
+
+    Yields:
+        Календарные даты для вызова :func:`fetch_schedule_day`.
+    """
     cur = d0
     while cur <= d1:
         yield cur
@@ -97,7 +109,15 @@ def iter_week_starts(d0: date, d1: date) -> Iterator[date]:
 
 
 def fetch_schedule_day(client: NhlApiClient, day: date) -> list[ScheduleGameStub]:
-    """Загрузить ``schedule/YYYY-MM-DD``, вернуть список матчей."""
+    """Запросить ``schedule/{day}`` и распарсить все матчи из ``gameWeek``.
+
+    Args:
+        client: Клиент NHL API.
+        day: Дата якоря в формате календаря Python.
+
+    Returns:
+        Список :class:`ScheduleGameStub` (без дедупликации между якорями).
+    """
     path = f"schedule/{day.isoformat()}"
     payload = client.get_json(path)
     out: list[ScheduleGameStub] = []
@@ -133,10 +153,27 @@ def collect_games_for_range(
 
     Returns:
         Словарь ``game_id -> stub``.
+
+    Note:
+        На уровне INFO логируется старт, каждый недельный якорь и итоговое число
+        уникальных матчей после фильтров.
     """
     by_id: dict[int, ScheduleGameStub] = {}
-    for anchor in iter_week_starts(date_from, date_to):
-        for stub in fetch_schedule_day(client, anchor):
+    anchors = list(iter_week_starts(date_from, date_to))
+    logger.info(
+        "NHL schedule: сбор с %s по %s, недельных якорей: %d, finished_only=%s, "
+        "season_id in [%s, %s]",
+        date_from.isoformat(),
+        date_to.isoformat(),
+        len(anchors),
+        finished_only,
+        season_min if season_min is not None else "—",
+        season_max if season_max is not None else "—",
+    )
+    for anchor in anchors:
+        batch = fetch_schedule_day(client, anchor)
+        before = len(by_id)
+        for stub in batch:
             if season_min is not None and stub.season < season_min:
                 continue
             if season_max is not None and stub.season > season_max:
@@ -144,4 +181,14 @@ def collect_games_for_range(
             if finished_only and stub.game_state != "OFF":
                 continue
             by_id[stub.game_id] = stub
+        added = len(by_id) - before
+        logger.info(
+            "NHL schedule: якорь %s, матчей в ответе: %d, новых после фильтров: %d, "
+            "всего уникальных: %d",
+            anchor.isoformat(),
+            len(batch),
+            added,
+            len(by_id),
+        )
+    logger.info("NHL schedule: готово, уникальных матчей: %d", len(by_id))
     return by_id

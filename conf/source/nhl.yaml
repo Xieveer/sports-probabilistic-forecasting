@@ -17,9 +17,9 @@ provider:
   retries: 3
   backoff_factor: 0.6
   # Интервал календаря для schedule/{date} (недельные запросы внутри)
-  date_from: "1999-09-01"
+  date_from: "2000-09-01"
   date_to: null
-  season_id_min: 19992000
+  season_id_min: 20002001
   season_id_max: null
   # Ограничение для отладки (null = без лимита)
   max_games: null
@@ -27,6 +27,8 @@ provider:
   finished_only: true
   roster_enabled: true
   checkpoint_file: null
+  # Каждые N обогащённых матчей — строка INFO в лог (0 = только этапы расписания и финал)
+  progress_log_every: 25
 
 sport: ice_hockey
 

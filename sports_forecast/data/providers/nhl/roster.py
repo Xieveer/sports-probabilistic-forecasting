@@ -1,4 +1,4 @@
-"""Составы команд по ``roster/{TEAM}/{SEASON_ID}``."""
+"""Составы команд: эндпоинт ``roster/{TEAM}/{SEASON_ID}``, упаковка в строку для CSV."""
 
 from __future__ import annotations
 
@@ -28,13 +28,32 @@ def _compact_player(p: dict[str, Any]) -> dict[str, Any]:
 
 
 def fetch_roster_payload(client: NhlApiClient, team_abbr: str, season_id: int) -> dict[str, Any]:
-    """Сырой JSON состава."""
+    """Получить сырой JSON состава команды на сезон.
+
+    Args:
+        client: Клиент NHL API.
+        team_abbr: Трёхбуквенный код команды (например ``PIT``).
+        season_id: Восьмизначный идентификатор сезона (например ``20252026``).
+
+    Returns:
+        Объект API с группами ``forwards``, ``defensemen``, ``goalies``.
+    """
     path = f"roster/{team_abbr}/{season_id}"
     return client.get_json(path)
 
 
 def roster_to_json_cell(client: NhlApiClient, team_abbr: str, season_id: int) -> str:
-    """Один столбец CSV: JSON со списком игроков (без внешних вложенностей)."""
+    """Сериализовать состав в одну строку для ячейки CSV.
+
+    Args:
+        client: Клиент NHL API.
+        team_abbr: Код команды.
+        season_id: Идентификатор сезона.
+
+    Returns:
+        JSON-строка с полями ``team``, ``season``, ``players``, ``injured`` (травмы
+        пока всегда пустой список — отдельного фида в Web API нет).
+    """
     payload = fetch_roster_payload(client, team_abbr, season_id)
     players: list[dict[str, Any]] = []
     for group in ("forwards", "defensemen", "goalies"):
