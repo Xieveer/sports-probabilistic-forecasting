@@ -10,6 +10,7 @@ from sports_forecast.config.loaders import PROJECT_ROOT as CONFIG_PROJECT_ROOT
 from sports_forecast.data.providers.base import SourceFetchError, SourceProvider
 from sports_forecast.data.providers.nhl.assembler import NhlDataAssembler, load_assembler_config
 from sports_forecast.data.providers.nhl.client import NhlApiClient
+from sports_forecast.data.providers.nhl.schedule import clear_schedule_progress
 from sports_forecast.utils.log_config import get_logger
 
 
@@ -67,12 +68,20 @@ class NhlWebApiSourceProvider(SourceProvider):
             self._asm_cfg.date_to.isoformat(),
         )
         assembler = NhlDataAssembler(self._client, self._asm_cfg)
-        df = assembler.build_dataframe(checkpoint_base=target_dir)
-
         try:
-            df.to_csv(out_path, index=False)
+            df = assembler.build_dataframe(
+                checkpoint_base=target_dir,
+                output_csv_path=out_path,
+            )
         except OSError as e:
             raise SourceFetchError(f"Не удалось записать {out_path}: {e}") from e
+
+        if self._asm_cfg.schedule_progress_file:
+            sp = target_dir / self._asm_cfg.schedule_progress_file
+            clear_schedule_progress(sp)
+            logger.info(
+                "NhlWebApiSourceProvider: удалён снимок расписания %s (успешное завершение)", sp
+            )
 
         logger.info(
             "NhlWebApiSourceProvider: %d строк → %s",

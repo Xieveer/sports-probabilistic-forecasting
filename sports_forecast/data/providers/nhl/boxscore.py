@@ -42,6 +42,13 @@ def _period_is_regulation_first_three(pd: dict[str, Any] | None) -> bool:
     return pd.get("periodType") == "REG" and 1 <= num <= 3
 
 
+def _period_is_shootout(pd: dict[str, Any] | None) -> bool:
+    """Период буллита: броски и голы здесь не входят в официальные team SOG boxscore."""
+    if not pd:
+        return False
+    return str(pd.get("periodType", "")).upper() == "SO"
+
+
 def _skater_lists(side: dict[str, Any]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for key in ("forwards", "defense"):
@@ -149,9 +156,13 @@ def aggregate_play_by_play(
         away_id: Числовой ``awayTeam.id``.
 
     Returns:
-        Пара ``(home_agg, away_agg)``. Поля PIM здесь отражают события штрафов;
-        в :func:`build_team_stats` итоговые ``pim_ft`` перезаписываются суммой
-        по карточке матча (протокол).
+        Пара ``(home_agg, away_agg)``.         Поля PIM здесь отражают события штрафов;
+        в :func:`build_team_stats` итоговые ``pim_ft`` и ``bs_ft`` перезаписываются
+        из boxscore (протокол / сумма скейтеров).
+
+        Для SOG: учитываются ``shot-on-goal`` и отдельные ``goal`` (в ленте NHL гол
+        часто **не** дублируется событием броска). Буллит (``periodType`` ``SO``)
+        не включаются в ``sog_ft``, чтобы совпадать с официальным team SOG.
     """
     z_h = TeamGameStats(
         score_ft=None,
@@ -200,8 +211,10 @@ def aggregate_play_by_play(
         if not isinstance(ev, dict):
             continue
         desc = ev.get("typeDescKey")
-        pd = ev.get("periodDescriptor")
-        reg3 = _period_is_regulation_first_three(pd if isinstance(pd, dict) else None)
+        pd_raw = ev.get("periodDescriptor")
+        pd_dict = pd_raw if isinstance(pd_raw, dict) else None
+        reg3 = _period_is_regulation_first_three(pd_dict)
+        is_so = _period_is_shootout(pd_dict)
         in_game = True  # все периоды матча включая OT/SO
 
         details = ev.get("details")
@@ -222,7 +235,7 @@ def aggregate_play_by_play(
         else:
             continue
 
-        if desc == "shot-on-goal" and in_game:
+        if desc == "shot-on-goal" and in_game and not is_so:
             th.sog_ft += 1
             if reg3:
                 th.sog_mt += 1
@@ -241,6 +254,11 @@ def aggregate_play_by_play(
         elif desc == "goal" and in_game:
             if reg3:
                 th.score_mt += 1
+            # Гол без отдельного shot-on-goal в фиде; буллит не входит в team SOG.
+            if not is_so:
+                th.sog_ft += 1
+                if reg3:
+                    th.sog_mt += 1
         elif desc == "penalty" and in_game:
             dur_raw = det.get("duration")
             try:
@@ -366,5 +384,9 @@ def build_team_stats(
 
     # Официальные полные PIM матча — сумма по карточке матча (как в протоколе)
     zh.pim_ft, za.pim_ft = home_sk_pim, away_sk_pim
+
+    # Блоки с карточки (сумма скейтеров) совпадают с официальными team BS; PBP часто расходится.
+    if pbp is not None:
+        zh.bs_ft, za.bs_ft = home_sk_bs, away_sk_bs
 
     return zh, za, home_id, away_id

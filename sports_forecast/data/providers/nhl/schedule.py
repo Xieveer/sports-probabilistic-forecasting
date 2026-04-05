@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any
 
 from sports_forecast.data.providers.nhl.client import NhlApiClient
@@ -12,6 +14,8 @@ from sports_forecast.utils.log_config import get_logger
 
 
 logger = get_logger(__name__)
+
+_SCHEDULE_PROGRESS_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -30,6 +34,164 @@ class ScheduleGameStub:
     match_end: str | None
     home_score: int | None
     away_score: int | None
+
+
+def stub_to_dict(stub: ScheduleGameStub) -> dict[str, Any]:
+    """Сериализация стаба матча для JSON-файла прогресса расписания."""
+    return {
+        "game_id": stub.game_id,
+        "season": stub.season,
+        "game_type": stub.game_type,
+        "game_date": stub.game_date,
+        "start_time_utc": stub.start_time_utc,
+        "venue_default": stub.venue_default,
+        "home_abbrev": stub.home_abbrev,
+        "away_abbrev": stub.away_abbrev,
+        "game_state": stub.game_state,
+        "match_end": stub.match_end,
+        "home_score": stub.home_score,
+        "away_score": stub.away_score,
+    }
+
+
+def stub_from_dict(d: dict[str, Any]) -> ScheduleGameStub:
+    """Восстановить стаб из словаря :func:`stub_to_dict`."""
+    return ScheduleGameStub(
+        game_id=int(d["game_id"]),
+        season=int(d["season"]),
+        game_type=int(d["game_type"]),
+        game_date=str(d["game_date"]),
+        start_time_utc=str(d["start_time_utc"]),
+        venue_default=str(d.get("venue_default") or ""),
+        home_abbrev=str(d["home_abbrev"]),
+        away_abbrev=str(d["away_abbrev"]),
+        game_state=str(d.get("game_state") or ""),
+        match_end=str(d["match_end"]) if d.get("match_end") is not None else None,
+        home_score=int(d["home_score"]) if d.get("home_score") is not None else None,
+        away_score=int(d["away_score"]) if d.get("away_score") is not None else None,
+    )
+
+
+def _align_resume_to_week_grid(date_from: date, resume: date, date_to: date) -> date:
+    """Первый якорь в сетке ``date_from + 7k``, для которого дата >= ``resume`` (не выше ``date_to``)."""
+    cur = date_from
+    while cur < resume:
+        nxt = cur + timedelta(days=7)
+        if nxt > date_to:
+            return cur
+        cur = nxt
+    return min(cur, date_to)
+
+
+def save_schedule_progress(
+    path: Path,
+    *,
+    by_id: dict[int, ScheduleGameStub],
+    next_anchor: date,
+    date_from: date,
+    date_to: date,
+    season_min: int | None,
+    season_max: int | None,
+    finished_only: bool,
+    schedule_complete: bool = False,
+) -> None:
+    """Атомарно сохранить состояние сбора расписания (для возобновления после обрыва).
+
+    Если ``schedule_complete=True``, при следующем запуске HTTP-запросы расписания
+    не выполняются — используется сохранённый индекс матчей (пока файл не удалён).
+    """
+    games_out: dict[str, dict[str, Any]] = {str(gid): stub_to_dict(st) for gid, st in by_id.items()}
+    payload = {
+        "version": _SCHEDULE_PROGRESS_VERSION,
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
+        "season_min": season_min,
+        "season_max": season_max,
+        "finished_only": finished_only,
+        "next_anchor": next_anchor.isoformat(),
+        "schedule_complete": schedule_complete,
+        "games": games_out,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = json.dumps(payload, ensure_ascii=False, indent=2)
+    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path.write_text(data, encoding="utf-8")
+    tmp_path.replace(path)
+
+
+def load_schedule_progress(
+    path: Path,
+    *,
+    date_from: date,
+    date_to: date,
+    season_min: int | None,
+    season_max: int | None,
+    finished_only: bool,
+) -> tuple[dict[int, ScheduleGameStub], date | None, bool] | None:
+    """Загрузить прогресс.
+
+    Returns:
+        ``(by_id, resume_anchor, schedule_complete)`` или ``None`` если файла нет / конфликт.
+        При ``schedule_complete=True`` второй элемент безразличен (сеть расписания не нужна).
+    """
+    if not path.exists():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning("NHL schedule: повреждён прогресс %s (%s), начинаю заново", path, e)
+        return None
+    if raw.get("version") != _SCHEDULE_PROGRESS_VERSION:
+        logger.warning("NHL schedule: неверная версия прогресса %s, начинаю заново", path)
+        return None
+    if (
+        raw.get("date_from") != date_from.isoformat()
+        or raw.get("date_to") != date_to.isoformat()
+        or raw.get("finished_only") != finished_only
+        or raw.get("season_min") != season_min
+        or raw.get("season_max") != season_max
+    ):
+        logger.warning(
+            "NHL schedule: параметры конфига изменились, файл прогресса %s игнорирую",
+            path,
+        )
+        return None
+    by_id: dict[int, ScheduleGameStub] = {}
+    games = raw.get("games") or {}
+    if isinstance(games, dict):
+        for gid_str, st in games.items():
+            try:
+                gid = int(gid_str)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(st, dict):
+                try:
+                    by_id[gid] = stub_from_dict(st)
+                except (KeyError, TypeError, ValueError):
+                    continue
+
+    schedule_complete = bool(raw.get("schedule_complete"))
+    if schedule_complete:
+        logger.info(
+            "NHL schedule: использую сохранённый полный снимок расписания (%d матчей), без HTTP",
+            len(by_id),
+        )
+        return by_id, None, True
+
+    try:
+        next_anchor = date.fromisoformat(str(raw["next_anchor"]))
+    except (KeyError, ValueError):
+        return None
+    resume = _align_resume_to_week_grid(date_from, next_anchor, date_to)
+    return by_id, resume, False
+
+
+def clear_schedule_progress(path: Path) -> None:
+    """Удалить файл прогресса после успешного завершения сбора расписания."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as e:
+        logger.debug("NHL schedule: не удалось удалить прогресс %s: %s", path, e)
 
 
 def _local_default(node: Any) -> str | None:
@@ -140,6 +302,7 @@ def collect_games_for_range(
     season_min: int | None,
     season_max: int | None,
     finished_only: bool = True,
+    progress_path: Path | None = None,
 ) -> dict[int, ScheduleGameStub]:
     """Собрать уникальные матчи за интервал дат (недельные запросы).
 
@@ -150,15 +313,42 @@ def collect_games_for_range(
         season_min: Нижняя граница поля season (8-значный SEASON_ID); None — без фильтра.
         season_max: Верхняя граница season; None — без фильтра.
         finished_only: Если True — только ``gameState == OFF``.
+        progress_path: Если задан, после каждого успешного якоря пишется JSON с индексом
+            матчей и ``next_anchor``; при следующем запуске с теми же параметрами сбор
+            продолжается с этого якоря (обрыв на этапе расписания не теряет уже собранное).
 
     Returns:
         Словарь ``game_id -> stub``.
 
     Note:
         На уровне INFO логируется старт, каждый недельный якорь и итоговое число
-        уникальных матчей после фильтров.
+        уникальных матчей после фильтров. После полного прохода в ``progress_path``
+        сохраняется снимок с ``schedule_complete=True`` (его удаляет оркестратор
+        после успешной записи ``source.csv``).
     """
     by_id: dict[int, ScheduleGameStub] = {}
+    resume_from: date | None = None
+    if progress_path is not None:
+        loaded = load_schedule_progress(
+            progress_path,
+            date_from=date_from,
+            date_to=date_to,
+            season_min=season_min,
+            season_max=season_max,
+            finished_only=finished_only,
+        )
+        if loaded is not None:
+            by_id, resume_from, completed = loaded
+            if completed:
+                return by_id
+            if resume_from is not None:
+                logger.info(
+                    "NHL schedule: возобновление с якоря >= %s, уже в индексе матчей: %d (файл %s)",
+                    resume_from.isoformat(),
+                    len(by_id),
+                    progress_path,
+                )
+
     anchors = list(iter_week_starts(date_from, date_to))
     logger.info(
         "NHL schedule: сбор с %s по %s, недельных якорей: %d, finished_only=%s, "
@@ -171,6 +361,8 @@ def collect_games_for_range(
         season_max if season_max is not None else "—",
     )
     for anchor in anchors:
+        if resume_from is not None and anchor < resume_from:
+            continue
         batch = fetch_schedule_day(client, anchor)
         before = len(by_id)
         for stub in batch:
@@ -190,5 +382,38 @@ def collect_games_for_range(
             added,
             len(by_id),
         )
+        if progress_path is not None:
+            next_anchor = anchor + timedelta(days=7)
+            save_schedule_progress(
+                progress_path,
+                by_id=by_id,
+                next_anchor=next_anchor,
+                date_from=date_from,
+                date_to=date_to,
+                season_min=season_min,
+                season_max=season_max,
+                finished_only=finished_only,
+                schedule_complete=False,
+            )
+            logger.debug("NHL schedule: сохранён прогресс, next_anchor=%s", next_anchor.isoformat())
+
+    if progress_path is not None:
+        save_schedule_progress(
+            progress_path,
+            by_id=by_id,
+            next_anchor=date_to + timedelta(days=7),
+            date_from=date_from,
+            date_to=date_to,
+            season_min=season_min,
+            season_max=season_max,
+            finished_only=finished_only,
+            schedule_complete=True,
+        )
+        logger.info(
+            "NHL schedule: этап расписания завершён, снимок сохранён (%s), уникальных матчей: %d",
+            progress_path,
+            len(by_id),
+        )
+
     logger.info("NHL schedule: готово, уникальных матчей: %d", len(by_id))
     return by_id

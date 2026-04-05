@@ -42,4 +42,5 @@
 - home_GP (сыграно матчей в регулярке)
 - away_conference_standing
 - away_P
-- home_GP
+- away_GP
+- match_is_end (1 — матч завершён, 0 — предстоящий / не в ``OFF`` в API; как в других источниках для ``clean.status``)

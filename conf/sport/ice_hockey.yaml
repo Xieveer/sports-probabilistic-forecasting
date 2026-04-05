@@ -56,6 +56,8 @@ target_sources:
     away_column: away_points
     comparison: total_under
 
+# status после column_mapping: из match_is_end + score_columns (см. clean.infer_match_status_from_scores).
+# upcoming: match_is_end != 1 и пустые счета; live с частичным счётом фильтруется на clean.
 data_clean:
   column_mapping:
     home_score_ft: home_points

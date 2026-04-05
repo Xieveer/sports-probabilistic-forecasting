@@ -14,23 +14,28 @@ provider:
   user_agent: SportsProbabilisticForecasting/1.0
   min_delay_sec: 0.55
   # Полный таймаут одного GET (connect + read); исторические /schedule могут быть медленными.
-  timeout_sec: 90
+  timeout_sec: 900
   retries: 3
   backoff_factor: 0.6
   # Повторы именно при ConnectTimeout / ReadTimeout (не путать с retries выше — те для HTTP 5xx).
   timeout_attempts: 5
   timeout_retry_backoff_sec: 1.0
   # Интервал календаря для schedule/{date} (недельные запросы внутри)
-  date_from: "2000-09-01"
+  date_from: "2025-09-01"
   date_to: null
-  season_id_min: 20002001
+  season_id_min: 20252026
   season_id_max: null
   # Ограничение для отладки (null = без лимита)
   max_games: null
   include_play_by_play: true
-  finished_only: true
+  # false: в source.csv попадают и предстоящие матчи (match_is_end=0); только OFF обогащаются boxscore.
+  finished_only: false
   roster_enabled: true
   checkpoint_file: .nhl_checkpoint.txt
+  # JSON: индекс расписания и якорь недели; при обрыве на schedule — продолжение без повторной выдачи якорей
+  schedule_progress_file: .nhl_schedule_progress.json
+  # Каждые N успешно обогащённых строк — перезапись source.csv (0 = только финальная запись)
+  csv_flush_every: 50
   # Каждые N обогащённых матчей — строка INFO в лог (0 = только этапы расписания и финал)
   progress_log_every: 25
 

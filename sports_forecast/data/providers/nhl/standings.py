@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import Any
 
 from sports_forecast.data.providers.nhl.client import NhlApiClient
@@ -69,12 +70,38 @@ def parse_standings_payload(payload: dict[str, Any]) -> dict[str, StandingRow]:
 def fetch_standings_for_date(client: NhlApiClient, ymd: str) -> dict[str, StandingRow]:
     """Запросить ``standings/{ymd}`` и вернуть индекс команд.
 
+    Снимок за день ``ymd`` соответствует итогам после игр этого календарного дня
+    (в смысле NHL для данного эндпоинта). Для полей «до матча» по полю расписания
+    ``gameDate`` используйте :func:`standings_snapshot_ymd_before_game_date`.
+
     Args:
         client: Клиент NHL API.
-        ymd: Дата снимка ``YYYY-MM-DD`` (как в поле ``gameDate`` матча).
+        ymd: Дата снимка ``YYYY-MM-DD``.
 
     Returns:
         Результат :func:`parse_standings_payload` для тела ответа.
     """
     payload = client.get_json(f"standings/{ymd}")
     return parse_standings_payload(payload)
+
+
+def standings_snapshot_ymd_before_game_date(game_date_ymd: str) -> str:
+    """Дата ``YYYY-MM-DD`` для ``standings/…``, дающая срез до игр за ``gameDate``.
+
+    У матча в расписании поле ``gameDate`` — календарный день игры (локальный день NHL).
+    Запрос ``standings/{gameDate}`` уже включает результаты матчей за этот день, поэтому
+    для *home_GP* / *home_P* / места в конференции **до** данного матча берём снимок
+    на **предыдущий** день: ``gameDate - 1``.
+
+    Не учитывает порядок внутри одного ``gameDate``: при нескольких матчах за день
+    поздний матч всё равно получит таблицу без учёта более ранних игр того же дня ---
+    для этого у Web API нет точного среза по ``startTimeUTC`` без отдельной модели.
+
+    Args:
+        game_date_ymd: Значение ``gameDate`` из stub расписания, ``YYYY-MM-DD``.
+
+    Returns:
+        Дата для вызова :func:`fetch_standings_for_date`.
+    """
+    d = date.fromisoformat(game_date_ymd.strip())
+    return (d - timedelta(days=1)).isoformat()
