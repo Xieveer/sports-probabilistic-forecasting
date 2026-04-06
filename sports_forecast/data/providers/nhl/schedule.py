@@ -119,6 +119,13 @@ def save_schedule_progress(
     tmp_path.replace(path)
 
 
+def _saved_date_to_from_progress(raw: dict[str, Any]) -> date | None:
+    try:
+        return date.fromisoformat(str(raw.get("date_to", "")))
+    except (TypeError, ValueError):
+        return None
+
+
 def load_schedule_progress(
     path: Path,
     *,
@@ -133,6 +140,12 @@ def load_schedule_progress(
     Returns:
         ``(by_id, resume_anchor, schedule_complete)`` или ``None`` если файла нет / конфликт.
         При ``schedule_complete=True`` второй элемент безразличен (сеть расписания не нужна).
+
+    Note:
+        ``date_to`` в файле — снимок на момент сохранения. Если в конфиге указан более поздний
+        конец интервала (типично ``date_to: null`` → «сегодня»), прогресс **принимается**:
+        дальнейший сбор продолжится по сетке якорей до нового ``date_to``. Если конец интервала
+        **раньше**, чем в файле (сужение диапазона), файл отбрасывается.
     """
     if not path.exists():
         return None
@@ -146,13 +159,25 @@ def load_schedule_progress(
         return None
     if (
         raw.get("date_from") != date_from.isoformat()
-        or raw.get("date_to") != date_to.isoformat()
         or raw.get("finished_only") != finished_only
         or raw.get("season_min") != season_min
         or raw.get("season_max") != season_max
     ):
         logger.warning(
             "NHL schedule: параметры конфига изменились, файл прогресса %s игнорирую",
+            path,
+        )
+        return None
+
+    saved_end = _saved_date_to_from_progress(raw)
+    if saved_end is None:
+        logger.warning("NHL schedule: в прогрессе %s нет корректного date_to, начинаю заново", path)
+        return None
+    if date_to < saved_end:
+        logger.warning(
+            "NHL schedule: date_to в конфиге %s раньше сохранённого %s — прогресс %s игнорирую",
+            date_to.isoformat(),
+            saved_end.isoformat(),
             path,
         )
         return None
@@ -170,8 +195,18 @@ def load_schedule_progress(
                 except (KeyError, TypeError, ValueError):
                     continue
 
+    if date_to > saved_end:
+        logger.info(
+            "NHL schedule: конец интервала расширен %s → %s (%d матчей в прогрессе); продолжаю сбор",
+            saved_end.isoformat(),
+            date_to.isoformat(),
+            len(by_id),
+        )
+
     schedule_complete = bool(raw.get("schedule_complete"))
-    if schedule_complete:
+    extending_after_complete = schedule_complete and date_to > saved_end
+
+    if schedule_complete and not extending_after_complete:
         logger.info(
             "NHL schedule: использую сохранённый полный снимок расписания (%d матчей), без HTTP",
             len(by_id),
@@ -181,8 +216,18 @@ def load_schedule_progress(
     try:
         next_anchor = date.fromisoformat(str(raw["next_anchor"]))
     except (KeyError, ValueError):
+        if extending_after_complete:
+            logger.warning(
+                "NHL schedule: в прогрессе %s нет next_anchor для дозагрузки после расширения date_to",
+                path,
+            )
         return None
     resume = _align_resume_to_week_grid(date_from, next_anchor, date_to)
+    if extending_after_complete:
+        logger.info(
+            "NHL schedule: дозагрузка новых якорей расписания после расширения date_to, resume с %s",
+            resume.isoformat(),
+        )
     return by_id, resume, False
 
 

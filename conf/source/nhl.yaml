@@ -14,7 +14,7 @@ provider:
   user_agent: SportsProbabilisticForecasting/1.0
   min_delay_sec: 0.55
   # Полный таймаут одного GET (connect + read); исторические /schedule могут быть медленными.
-  timeout_sec: 900
+  timeout_sec: 90
   retries: 3
   backoff_factor: 0.6
   # Повторы именно при ConnectTimeout / ReadTimeout (не путать с retries выше — те для HTTP 5xx).
@@ -22,6 +22,7 @@ provider:
   timeout_retry_backoff_sec: 1.0
   # Интервал календаря для schedule/{date} (недельные запросы внутри)
   date_from: "2010-09-01"
+  # null = конец «сегодня»; число дней растёт при перезапуске — см. load_schedule_progress (расширение date_to).
   date_to: null
   season_id_min: 20102011
   season_id_max: null

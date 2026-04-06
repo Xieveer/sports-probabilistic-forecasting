@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -92,6 +92,135 @@ def test_schedule_progress_save_load_roundtrip(tmp_path: Path) -> None:
     assert not complete
     assert resume == date(2000, 10, 27)
     assert by_id[99].game_id == 99
+
+
+def test_schedule_progress_load_accepts_extended_date_to(tmp_path: Path) -> None:
+    """date_to: null → «сегодня»; новый день не должен сбрасывать прогресс (расширение конца)."""
+    p = tmp_path / "prog.json"
+    d0, d1, d2 = date(2000, 9, 1), date(2000, 11, 1), date(2000, 12, 15)
+    stub = ScheduleGameStub(
+        game_id=99,
+        season=20002001,
+        game_type=2,
+        game_date="2000-10-01",
+        start_time_utc="2000-10-01T23:00:00Z",
+        venue_default="",
+        home_abbrev="NYR",
+        away_abbrev="BOS",
+        game_state="OFF",
+        match_end=None,
+        home_score=None,
+        away_score=None,
+    )
+    save_schedule_progress(
+        p,
+        by_id={99: stub},
+        next_anchor=date(2000, 10, 27),
+        date_from=d0,
+        date_to=d1,
+        season_min=20002001,
+        season_max=None,
+        finished_only=True,
+        schedule_complete=False,
+    )
+    loaded = load_schedule_progress(
+        p,
+        date_from=d0,
+        date_to=d2,
+        season_min=20002001,
+        season_max=None,
+        finished_only=True,
+    )
+    assert loaded is not None
+    by_id, resume, complete = loaded
+    assert not complete
+    assert by_id[99].game_id == 99
+    assert resume == date(2000, 10, 27)
+
+
+def test_schedule_progress_complete_plus_extended_date_to_resumes_http(tmp_path: Path) -> None:
+    """Полный снимок + более поздний date_to → дозагрузка якорей, не ранний return."""
+    p = tmp_path / "prog.json"
+    d0, d1, d2 = date(2000, 9, 1), date(2000, 11, 1), date(2000, 11, 20)
+    stub = ScheduleGameStub(
+        game_id=5,
+        season=20002001,
+        game_type=2,
+        game_date="2000-10-01",
+        start_time_utc="2000-10-01T23:00:00Z",
+        venue_default="",
+        home_abbrev="NYR",
+        away_abbrev="BOS",
+        game_state="OFF",
+        match_end=None,
+        home_score=None,
+        away_score=None,
+    )
+    save_schedule_progress(
+        p,
+        by_id={5: stub},
+        next_anchor=d1 + timedelta(days=7),
+        date_from=d0,
+        date_to=d1,
+        season_min=20002001,
+        season_max=None,
+        finished_only=True,
+        schedule_complete=True,
+    )
+    loaded = load_schedule_progress(
+        p,
+        date_from=d0,
+        date_to=d2,
+        season_min=20002001,
+        season_max=None,
+        finished_only=True,
+    )
+    assert loaded is not None
+    by_id, resume, complete = loaded
+    assert complete is False
+    assert resume is not None
+    assert by_id[5].game_id == 5
+
+
+def test_schedule_progress_rejects_narrowed_date_to(tmp_path: Path) -> None:
+    p = tmp_path / "prog.json"
+    d0, late, early = date(2000, 9, 1), date(2000, 12, 1), date(2000, 10, 1)
+    stub = ScheduleGameStub(
+        game_id=1,
+        season=20002001,
+        game_type=2,
+        game_date="2000-10-01",
+        start_time_utc="2000-10-01T23:00:00Z",
+        venue_default="",
+        home_abbrev="NYR",
+        away_abbrev="BOS",
+        game_state="OFF",
+        match_end=None,
+        home_score=None,
+        away_score=None,
+    )
+    save_schedule_progress(
+        p,
+        by_id={1: stub},
+        next_anchor=date(2000, 10, 27),
+        date_from=d0,
+        date_to=late,
+        season_min=20002001,
+        season_max=None,
+        finished_only=False,
+        schedule_complete=False,
+    )
+    assert (
+        load_schedule_progress(
+            p,
+            date_from=d0,
+            date_to=early,
+            season_min=20002001,
+            season_max=None,
+            finished_only=False,
+        )
+        is None
+    )
 
 
 def test_parse_game_without_game_date_uses_fallback() -> None:
