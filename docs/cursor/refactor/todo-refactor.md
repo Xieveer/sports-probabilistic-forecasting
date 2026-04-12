@@ -26,6 +26,7 @@
 | R15    | 🟡 Medium   | Low       | 🟡     | 15-й (операционное руководство) |
 | R16    | 🟡 Medium   | Medium    | 🟡     | 16-й (MLflow сравнительная визуализация) |
 | R17    | 🔴 High     | High      | ✅     | 17-й ✅ (NHL Web API провайдер данных) |
+| R18    | 🔴 High     | Medium    | ✅     | 18-й ✅ (lp_eu_a18: Optuna reg + feature selection) |
 
 ---
 
@@ -75,6 +76,12 @@
   - [x] R17.7 — `NhlWebApiSourceProvider` + registry
   - [x] R17.8 — Конфигурация + комментарий в `dvc.yaml`
   - [x] R17.9 — Unit-тесты
+- [x] **R18** — lp_eu_a18: Optuna (регуляризация), feature selection, `apply_selected_to_fit`; см. `done_task/R18.md`
+  - [x] R18.1 — Конфиги `catboost_reg` / `lgbm_reg`
+  - [x] R18.2 — MLflow flavor для `*_reg`
+  - [x] R18.3 — Прогон train + Optuna (операционно)
+  - [x] R18.4 — Прогон feature selection (операционно)
+  - [x] R18.5 — Prod на подмножестве: `apply_selected_to_fit`
 
 ### В работе / Backlog 🟡
 
@@ -109,7 +116,7 @@
   - [ ] R16.4 — Makefile-цель `make compare`
   - [ ] R16.5 — Расширить скрипт: multi-metric subplots, best-run highlight
   - [ ] R16.6 — *(Опционально)* Grafana dashboard JSON
-  - [ ] R16.7 — Документировать workflow сравнения
+   - [ ] R16.7 — Документировать workflow сравнения
 
 ---
 

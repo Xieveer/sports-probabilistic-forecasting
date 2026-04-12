@@ -6,7 +6,7 @@
 enabled: true
 
 # Порог ECE для применения калибровки
-threshold_ece: 0.10  # Калибруем только если ECE > 0.10
+threshold_ece: 0.10  # Пробуем калибровку, если ECE на val (до маппинга) > этого порога
 
 # Метод калибровки
 method: isotonic  # isotonic/sigmoid (Platt scaling)

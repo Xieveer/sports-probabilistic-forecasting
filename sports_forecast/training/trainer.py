@@ -364,6 +364,110 @@ class SingleExperimentRunner:
                 cfg,
             )
 
+            # Снимок метрик модели на полном наборе фичей (до переобучения на подмножестве)
+            test_metrics_full = dict(test_ml_metrics)
+            business_metrics_full = dict(business_metrics) if business_metrics else {}
+            shadow_metrics_full = dict(shadow_metrics)
+            calibration_metrics_full = dict(calibration_metrics) if calibration_metrics else {}
+            feature_importance_full = (
+                feature_importance.copy()
+                if feature_importance is not None and not feature_importance.empty
+                else feature_importance
+            )
+
+            metrics_fs_fit: dict[str, Any] | None = None
+            fs_cfg = cfg.get("feature_selection", {})
+            if (
+                feature_selection_result is not None
+                and feature_selection_result.n_selected > 0
+                and fs_cfg.get("apply_selected_to_fit", False)
+            ):
+                selected_cols = [
+                    c
+                    for c in feature_selection_result.selected_features
+                    if c in train_features.columns
+                ]
+                if not selected_cols:
+                    logger.warning(
+                        "apply_selected_to_fit=true, но ни одна отобранная колонка "
+                        "не найдена в train_features — пропуск переобучения"
+                    )
+                else:
+                    dropped = len(feature_selection_result.selected_features) - len(selected_cols)
+                    if dropped:
+                        logger.warning(
+                            "apply_selected_to_fit: %d имён из отбора отсутствуют в данных",
+                            dropped,
+                        )
+                    logger.info(
+                        f"{'=' * 60}\n"
+                        f"ПЕРЕОБУЧЕНИЕ НА ОТОБРАННЫХ ФИЧАХ ({len(selected_cols)} колонок)\n"
+                        f"{'=' * 60}",
+                    )
+                    inner_train_features = inner_train_features[selected_cols]
+                    if cal_features is not None:
+                        cal_features = cal_features[selected_cols]
+                    test_features = test_features[selected_cols]
+                    train_features = train_features[selected_cols]
+                    feature_names = selected_cols
+
+                    shadow_model = self._create_model(cfg.algorithm, optimized_params)
+                    logger.info("TSCV (Shadow после отбора фичей)...")
+                    shadow_metrics = self._train_with_tscv(
+                        shadow_model,
+                        inner_train_features,
+                        inner_train_target,
+                        cfg,
+                    )
+                    logger.info("Дообучаем Shadow на inner_train (отобранные фичи)...")
+                    shadow_model = self._create_model(cfg.algorithm, optimized_params)
+                    shadow_model.fit(inner_train_features, inner_train_target)
+
+                    calibration_metrics = {}
+                    if calibration_enabled and cal_features is not None and cal_target is not None:
+                        shadow_model, calibration_metrics = self._calibrate_model(
+                            shadow_model,
+                            cal_features,
+                            cal_target,
+                            test_features,
+                            test_target,
+                            cfg,
+                        )
+
+                    test_ml_metrics = self._evaluate_on_test(
+                        shadow_model,
+                        test_features,
+                        test_target,
+                    )
+                    business_metrics = self._compute_business_metrics(
+                        shadow_model,
+                        test_features,
+                        test_target,
+                        test_df,
+                        cfg,
+                    )
+                    feature_importance = self._get_feature_importance(shadow_model)
+
+                    metrics_fs_fit = {
+                        "test": dict(test_ml_metrics),
+                        "business": dict(business_metrics) if business_metrics else {},
+                        "shadow": dict(shadow_metrics),
+                        "calibration": dict(calibration_metrics) if calibration_metrics else {},
+                        "feature_importance": feature_importance,
+                    }
+                    # Возвращаем «полный набор» метрик для основных MLflow-ключей
+                    test_ml_metrics = test_metrics_full
+                    business_metrics = business_metrics_full
+                    shadow_metrics = shadow_metrics_full
+                    calibration_metrics = calibration_metrics_full
+
+                    logger.info(
+                        "Сравнение holdout logloss: полный набор=%.4f, "
+                        "после отбора и переобучения=%.4f",
+                        test_metrics_full.get("logloss", float("nan")),
+                        metrics_fs_fit["test"].get("logloss", float("nan")),
+                    )
+
             # 13. Сохраняем Shadow модель
             shadow_path = self._get_model_path(cfg, version="shadow")
             shadow_model.save(shadow_path, version="shadow")
@@ -386,8 +490,9 @@ class SingleExperimentRunner:
             # 15.1. MLflow: логируем артефакты модели и регистрируем в Model Registry
             self._register_model_in_mlflow(prod_path, cfg)
 
-            # 16. Анализ стабильности
-            stability_metrics = self._analyze_training_stability(shadow_metrics)
+            # 16. Анализ стабильности (по shadow после отбора, если был переобучен prod на subset)
+            stability_shadow = metrics_fs_fit["shadow"] if metrics_fs_fit else shadow_metrics
+            stability_metrics = self._analyze_training_stability(stability_shadow)
 
             # 17. MLflow логирование
             self._log_metrics_to_mlflow(
@@ -397,10 +502,13 @@ class SingleExperimentRunner:
                 business_metrics=business_metrics,
                 stability_metrics=stability_metrics,
                 optuna_metrics=optuna_metrics,
-                feature_importance=feature_importance,
+                feature_importance=feature_importance_full
+                if metrics_fs_fit
+                else feature_importance,
                 feature_selection_result=feature_selection_result,
                 cfg=cfg,
                 feature_names=feature_names,
+                metrics_fs_fit=metrics_fs_fit,
             )
 
             logger.info("Обучение завершено успешно")
@@ -757,10 +865,18 @@ class SingleExperimentRunner:
                 ece_after,
                 method,
             )
+        elif ece_before <= threshold_ece:
+            logger.info(
+                "\u2713 Калибровка не требуется: ECE %.4f ≤ порога %.4f",
+                ece_before,
+                threshold_ece,
+            )
         else:
             logger.info(
-                "✓ Калибровка не требуется: ECE %.4f <= %.4f",
+                "\u2713 Калибровка не применена: на val ECE не улучшился "
+                "(до %.4f, после %.4f; порог для попытки %.4f)",
                 ece_before,
+                ece_after,
                 threshold_ece,
             )
 
@@ -1201,7 +1317,7 @@ class SingleExperimentRunner:
             ``mlflow.models.model.ModelInfo`` или None если flavor не поддерживается.
         """
         try:
-            if algorithm == "catboost":
+            if algorithm in ("catboost", "catboost_reg"):
                 import catboost
 
                 model_files = list(model_path.glob("*_prod.cbm"))
@@ -1210,7 +1326,7 @@ class SingleExperimentRunner:
                     cb_model.load_model(str(model_files[0]))
                     return mlflow.catboost.log_model(cb_model, artifact_path="model")
 
-            elif algorithm == "lgbm":
+            elif algorithm in ("lgbm", "lgbm_reg"):
                 import lightgbm as lgb
 
                 model_files = list(model_path.glob("*_prod.txt"))
@@ -1248,6 +1364,7 @@ class SingleExperimentRunner:
         feature_selection_result: Any,
         cfg: DictConfig,
         feature_names: list[str],
+        metrics_fs_fit: dict[str, Any] | None = None,
     ) -> None:
         """Залогировать все метрики в MLflow.
 
@@ -1262,6 +1379,8 @@ class SingleExperimentRunner:
             feature_selection_result: Результат отбора фичей.
             cfg: Конфигурация.
             feature_names: Список фичей.
+            metrics_fs_fit: Если задан (после ``apply_selected_to_fit``), дополнительно
+                логируются те же семейства метрик с префиксом ``*_fs_fit_*`` для сравнения.
         """
         # ── Параметры ────────────────────────────────────────────────
         mlflow.log_param("algorithm", cfg.algorithm.name)
@@ -1291,6 +1410,28 @@ class SingleExperimentRunner:
             mlflow.log_metric(f"test_{metric_name}", value)
         mlflow.set_tag("test_validated", "true")
 
+        if metrics_fs_fit:
+            mlflow.set_tag("fs_fit_applied", "true")
+            tfs = metrics_fs_fit["test"]
+            for metric_name, value in tfs.items():
+                mlflow.log_metric(f"test_fs_fit_{metric_name}", value)
+            sms = metrics_fs_fit["shadow"]
+            mlflow.log_metric("shadow_fs_fit_logloss", sms["logloss"])
+            mlflow.log_metric("shadow_fs_fit_logloss_std", sms["std_logloss"])
+            mlflow.log_metric("shadow_fs_fit_auc", sms["auc"])
+            mlflow.log_metric("shadow_fs_fit_auc_std", sms["std_auc"])
+            mlflow.log_metric("shadow_fs_fit_accuracy", sms["accuracy"])
+            mlflow.log_metric("shadow_fs_fit_brier", sms["brier"])
+            mlflow.log_metric("shadow_fs_fit_ece", sms["ece"])
+            mlflow.log_metric("shadow_fs_fit_ece_std", sms["std_ece"])
+            fold_details_sf = sms.get("fold_details", {})
+            if fold_details_sf:
+                for key, value in fold_details_sf.items():
+                    if key.startswith("fold_") and isinstance(value, (int, float)):
+                        mlflow.log_metric(f"tscv_fs_fit_{key}", float(value))
+        else:
+            mlflow.set_tag("fs_fit_applied", "false")
+
         # ── Калибровка ───────────────────────────────────────────────
         if calibration_metrics:
             mlflow.log_metric("cal_ece_before", calibration_metrics["ece_before"])
@@ -1300,11 +1441,23 @@ class SingleExperimentRunner:
             mlflow.set_tag("calibration_method", calibration_metrics["method"])
             mlflow.log_param("calibration_threshold", calibration_metrics["threshold"])
 
+        if metrics_fs_fit and metrics_fs_fit.get("calibration"):
+            cm2 = metrics_fs_fit["calibration"]
+            if cm2 and "ece_before" in cm2:
+                mlflow.log_metric("cal_fs_fit_ece_before", cm2["ece_before"])
+                if cm2.get("ece_after") is not None:
+                    mlflow.log_metric("cal_fs_fit_ece_after", cm2["ece_after"])
+
         # ── Бизнес-метрики (BettingSimulator) ────────────────────────
         if business_metrics:
             self._log_business_metrics_to_mlflow(business_metrics)
         else:
             mlflow.set_tag("has_business_metrics", "false")
+
+        if metrics_fs_fit and metrics_fs_fit.get("business"):
+            bfs = metrics_fs_fit["business"]
+            if bfs:
+                self._log_business_metrics_to_mlflow(bfs, name_prefix="fs_fit_")
 
         # ── Стабильность ─────────────────────────────────────────────
         mlflow.log_metric("stability_cv_logloss", stability_metrics["cv_logloss"])
@@ -1342,6 +1495,14 @@ class SingleExperimentRunner:
                     float(row["importance"]),
                 )
                 mlflow.set_tag(f"fi_top{idx + 1}_name", feat_name)
+
+        if metrics_fs_fit and metrics_fs_fit.get("feature_importance") is not None:
+            fi2 = metrics_fs_fit["feature_importance"]
+            if not fi2.empty:
+                mlflow.log_text(
+                    fi2.to_csv(index=False),
+                    "feature_importance_fs_fit.csv",
+                )
 
         # ── Feature Selection ────────────────────────────────────────
         if feature_selection_result is not None:
@@ -1416,65 +1577,78 @@ class SingleExperimentRunner:
     # BUSINESS METRICS MLflow LOGGING
     # ─────────────────────────────────────────────────────────────────────
 
-    def _log_business_metrics_to_mlflow(self, bm: dict[str, Any]) -> None:
+    def _log_business_metrics_to_mlflow(
+        self,
+        bm: dict[str, Any],
+        *,
+        name_prefix: str = "",
+    ) -> None:
         """Залогировать все бизнес-метрики и артефакты в MLflow.
 
         Args:
             bm: Словарь бизнес-метрик из ``_compute_business_metrics``.
+            name_prefix: Префикс имён метрик/артефактов (например ``fs_fit_`` для сравнения
+                с прогоном на полном наборе фичей при ``apply_selected_to_fit``).
         """
         import json
 
-        mlflow.set_tag("has_business_metrics", "true")
-        mlflow.set_tag("odds_column", bm["odds_column"])
-        mlflow.log_param("betting_valid_odds", bm["valid_odds_count"])
+        p = name_prefix
+        if not p:
+            mlflow.set_tag("has_business_metrics", "true")
+            mlflow.set_tag("odds_column", bm["odds_column"])
+            mlflow.log_param("betting_valid_odds", bm["valid_odds_count"])
 
         # ── Volume ───────────────────────────────────────────────────
-        mlflow.log_metric("betting_n_bets", bm["n_bets"])
-        mlflow.log_metric("betting_turnover_units", bm["turnover_units"])
-        mlflow.log_metric("betting_coverage", bm["coverage"])
-        mlflow.log_metric("betting_n_total_events", bm["n_total_events"])
+        mlflow.log_metric(f"{p}betting_n_bets", bm["n_bets"])
+        mlflow.log_metric(f"{p}betting_turnover_units", bm["turnover_units"])
+        mlflow.log_metric(f"{p}betting_coverage", bm["coverage"])
+        mlflow.log_metric(f"{p}betting_n_total_events", bm["n_total_events"])
 
         # ── Profit ───────────────────────────────────────────────────
-        mlflow.log_metric("betting_profit_units", bm["profit_units"])
-        mlflow.log_metric("betting_roi", bm["roi"])
-        mlflow.log_metric("betting_avg_profit_per_bet", bm["avg_profit_per_bet"])
+        mlflow.log_metric(f"{p}betting_profit_units", bm["profit_units"])
+        mlflow.log_metric(f"{p}betting_roi", bm["roi"])
+        mlflow.log_metric(f"{p}betting_avg_profit_per_bet", bm["avg_profit_per_bet"])
 
         # ── Edge / EV ────────────────────────────────────────────────
-        mlflow.log_metric("betting_avg_edge", bm["avg_edge"])
-        mlflow.log_metric("betting_avg_ev", bm["avg_ev"])
-        mlflow.log_metric("betting_ev_sum_units", bm["ev_sum_units"])
-        mlflow.log_metric("betting_ev_realization", bm["ev_realization"])
+        mlflow.log_metric(f"{p}betting_avg_edge", bm["avg_edge"])
+        mlflow.log_metric(f"{p}betting_avg_ev", bm["avg_ev"])
+        mlflow.log_metric(f"{p}betting_ev_sum_units", bm["ev_sum_units"])
+        mlflow.log_metric(f"{p}betting_ev_realization", bm["ev_realization"])
 
         # ── Win / Loss ───────────────────────────────────────────────
-        mlflow.log_metric("betting_hit_rate", bm["hit_rate"])
-        mlflow.log_metric("betting_num_wins", bm["num_wins"])
+        mlflow.log_metric(f"{p}betting_hit_rate", bm["hit_rate"])
+        mlflow.log_metric(f"{p}betting_num_wins", bm["num_wins"])
 
         # ── Risk ─────────────────────────────────────────────────────
-        mlflow.log_metric("betting_max_drawdown_units", bm["max_drawdown_units"])
-        mlflow.log_metric("betting_max_drawdown_pct", bm["max_drawdown_pct"])
-        mlflow.log_metric("betting_std_return_per_bet", bm["std_return_per_bet"])
-        mlflow.log_metric("betting_sharpe_like", bm["sharpe_like"])
-        mlflow.log_metric("betting_profit_factor", bm["profit_factor"])
+        mlflow.log_metric(f"{p}betting_max_drawdown_units", bm["max_drawdown_units"])
+        mlflow.log_metric(f"{p}betting_max_drawdown_pct", bm["max_drawdown_pct"])
+        mlflow.log_metric(f"{p}betting_std_return_per_bet", bm["std_return_per_bet"])
+        mlflow.log_metric(f"{p}betting_sharpe_like", bm["sharpe_like"])
+        mlflow.log_metric(f"{p}betting_profit_factor", bm["profit_factor"])
 
         # ── Averages ─────────────────────────────────────────────────
-        mlflow.log_metric("betting_avg_odds", bm["avg_odds"])
+        mlflow.log_metric(f"{p}betting_avg_odds", bm["avg_odds"])
 
         # ── Calibration on selected ──────────────────────────────────
         for key in ("cal_selected_brier", "cal_selected_logloss", "cal_selected_ece"):
             if key in bm:
-                mlflow.log_metric(key, bm[key])
+                mlflow.log_metric(f"{p}{key}", bm[key])
 
         # ── Odds-bin metrics ─────────────────────────────────────────
         odds_bins: dict[str, dict[str, float]] = bm.get("odds_bin_metrics", {})
         for bin_label, bin_data in odds_bins.items():
             for metric_name, value in bin_data.items():
-                mlflow.log_metric(f"betting_{metric_name}_odds_{bin_label}", value)
+                mlflow.log_metric(
+                    f"{p}betting_{metric_name}_odds_{bin_label}",
+                    value,
+                )
 
         # ── Threshold sweep (artifact) ───────────────────────────────
         sweep_df: pd.DataFrame | None = bm.get("sweep_df")
         if sweep_df is not None and not sweep_df.empty:
             sweep_csv = sweep_df.to_csv(index=False)
-            mlflow.log_text(sweep_csv, "threshold_sweep.csv")
+            sweep_name = f"{p}threshold_sweep.csv" if p else "threshold_sweep.csv"
+            mlflow.log_text(sweep_csv, sweep_name)
 
             # Логируем ключевые пороги как отдельные метрики
             key_thresholds = [0.0, 0.03, 0.05, 0.07, 0.10, 0.15, 0.20]
@@ -1482,22 +1656,27 @@ class SingleExperimentRunner:
                 thr = row["threshold"]
                 if thr in key_thresholds:
                     suffix = str(thr).replace(".", "_")
-                    mlflow.log_metric(f"sweep_n_bets_thr_{suffix}", row["n_bets"])
-                    mlflow.log_metric(f"sweep_roi_thr_{suffix}", row["roi"])
-                    mlflow.log_metric(f"sweep_profit_thr_{suffix}", row["profit_units"])
+                    mlflow.log_metric(f"{p}sweep_n_bets_thr_{suffix}", row["n_bets"])
+                    mlflow.log_metric(f"{p}sweep_roi_thr_{suffix}", row["roi"])
+                    mlflow.log_metric(f"{p}sweep_profit_thr_{suffix}", row["profit_units"])
                     if abs(row["ev_realization"]) < 1e6:  # Защита от inf
-                        mlflow.log_metric(f"sweep_ev_real_thr_{suffix}", row["ev_realization"])
+                        mlflow.log_metric(
+                            f"{p}sweep_ev_real_thr_{suffix}",
+                            row["ev_realization"],
+                        )
 
         # ── Equity curve (artifact) ──────────────────────────────────
         equity_curve: list[float] = bm.get("equity_curve", [])
         if equity_curve:
             equity_df = pd.DataFrame({"step": range(len(equity_curve)), "bankroll": equity_curve})
-            mlflow.log_text(equity_df.to_csv(index=False), "equity_curve.csv")
+            eq_name = f"{p}equity_curve.csv" if p else "equity_curve.csv"
+            mlflow.log_text(equity_df.to_csv(index=False), eq_name)
 
         # ── Calibration table (reliability diagram data) ─────────────
         cal_table: list[dict[str, float]] = bm.get("cal_table", [])
         if cal_table:
+            cal_name = f"{p}calibration_table.json" if p else "calibration_table.json"
             mlflow.log_text(
                 json.dumps(cal_table, indent=2, default=str),
-                "calibration_table.json",
+                cal_name,
             )

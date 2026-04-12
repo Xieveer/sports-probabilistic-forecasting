@@ -67,6 +67,9 @@ multirun/
 # MLflow
 /mlruns/
 
+# Optuna (локальные SQLite studies)
+/optuna/
+
 # CatBoost
 catboost_info/
 mlflow_ui.log
@@ -81,6 +84,7 @@ mlruns.backup.*
 # Documentation
 /docs/_build/
 /docs/_autosummary/
+/docs/docx/
 
 # OS
 .DS_Store

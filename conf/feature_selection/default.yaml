@@ -48,3 +48,8 @@ log_to_mlflow: true
 
 # Сохранять ли отобранные фичи в файл
 save_selected_features: true
+
+# После отбора: переобучить shadow/prod только на отобранных колонках и залогировать
+# метрики с префиксом test_fs_fit_* / shadow_fs_fit_* / betting_fs_fit_* для сравнения
+# с прогоном на полном наборе фичей (базовые test_* / shadow_* / betting_* остаются от полной модели).
+apply_selected_to_fit: false
