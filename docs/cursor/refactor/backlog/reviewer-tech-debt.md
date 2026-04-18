@@ -82,3 +82,24 @@
   - Опциональный Optuna-pass только на колонках после `apply_selected_to_fit`.
   - Сабсэмпл строк для permutation importance или лимит фичей в конфиге.
   - Единый CLI-скрипт «экспорт лучших params из MLflow → hydra overrides».
+
+---
+
+### 2026-04-18 — R19: NHL production + Odds API + Telegram-бот
+
+- **Задача:** `backlog/R19.md` → `done_task/R19.md`
+- **Ограничения и компромиссы:**
+  - R19.11 (training sweep) и R19.12 (materialize + API verify) — операционные прогоны, не реализованы в коде; инфраструктура полностью готова (`make train`, `make materialize`).
+  - Stretch-цели R19.17–R19.20 (travel-фичи, motivation/clinch, injury report, оценка vs Pinnacle) отложены как отдельные задачи.
+  - `AllowedUsersMiddleware` регистрируется отдельно на `dp.message` и `dp.callback_query`; другие типы событий (inline query, poll и т.д.) не проверяются по whitelist (пропускаются) — нет хендлеров для них, поэтому не блокирующий пробел.
+  - `NhlRosterFeatureGenerator`: парсинг JSON-поля roster — если поле отсутствует или пустое, генератор gracefully возвращает NaN по всем roster-фичам.
+  - Для EWM-зависимых генераторов (standings form) инкрементальный refresh всё равно пересчитывает весь history от первого матча в `interim` (stateful EWM — отдельный эпик).
+  - pandas `df.at[i, col]` возвращает широкий union-тип; использованы `# type: ignore[arg-type/assignment/misc]` в standings/schedule генераторах — компромисс между строгостью типов и читаемостью кода.
+- **Возможные улучшения / техдолг:**
+  - Реализовать R19.11–R19.12: прогнать NHL baseline training sweep, promote, materialize, верифицировать API.
+  - Webhook-режим бота вместо polling (R19.16 stretch); polling достаточен для MVP.
+  - Stateful EWM для form-генераторов (избегать пересчёта всей истории при инкрементальном refresh).
+  - `AllowedUsersMiddleware` расширить на `InlineQuery` / `Poll` если добавятся соответствующие хендлеры.
+  - Автоматическое определение `BOT_TOURNAMENTS` из реестра promoted-моделей вместо env-var / хардкода по умолчанию.
+  - Интеграционный тест для бота (mock FastAPI + aiogram test client).
+  - R19.17–R19.20: travel-фичи (справочник арен), motivation/clinch context, injury report, оценка модели vs Pinnacle closing на holdout.

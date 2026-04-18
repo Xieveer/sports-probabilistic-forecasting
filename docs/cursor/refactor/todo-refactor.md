@@ -27,7 +27,7 @@
 | R16    | 🟡 Medium   | Medium    | 🟡     | 16-й (MLflow сравнительная визуализация) |
 | R17    | 🔴 High     | High      | ✅     | 17-й ✅ (NHL Web API провайдер данных) |
 | R18    | 🔴 High     | Medium    | ✅     | 18-й ✅ (lp_eu_a18: Optuna reg + feature selection) |
-| R19    | 🔴 High     | High      | 🟡     | 19-й (NHL production + Odds API + Telegram-бот)     |
+| R19    | 🔴 High     | High      | ✅     | 19-й ✅ (NHL production + Odds API + Telegram-бот; R19.11-R19.12 — операционно; stretch R19.17-R19.20 отложены) |
 
 ---
 
@@ -83,6 +83,27 @@
   - [x] R18.3 — Прогон train + Optuna (операционно)
   - [x] R18.4 — Прогон feature selection (операционно)
   - [x] R18.5 — Prod на подмножестве: `apply_selected_to_fit`
+- [x] **R19** — NHL production + Odds API + Telegram-бот; см. `done_task/R19.md`
+  - [x] R19.1 — Инкрементальный режим NhlDataAssembler
+  - [x] R19.2 — Source-refresh NHL в Airflow DAG
+  - [x] R19.3 — Расширены clean-колонки NHL + Pandera-схема
+  - [x] R19.4 — NHL в DVC features multirun
+  - [x] R19.5 — OddsApiClient (quota, retry, кэш)
+  - [x] R19.6 — Odds backfill (идемпотентно, 2–3 сезона)
+  - [x] R19.7 — Odds enrichment → source.csv (не в фичи)
+  - [x] R19.8 — NhlScheduleFeatureGenerator (schedule density, fatigue)
+  - [x] R19.9 — NhlStandingsFeatureGenerator (standings, form)
+  - [x] R19.10 — NhlRosterFeatureGenerator (MVP)
+  - [ ] R19.11 — *(операционно)* NHL baseline training sweep + promote
+  - [ ] R19.12 — *(операционно)* NHL materialize + API verification
+  - [x] R19.13 — Bot scaffolding (aiogram 3, auth middleware, /start /help)
+  - [x] R19.14 — Бот: /predict, /upcoming (inline keyboard)
+  - [x] R19.15 — Бот: /status, /refresh, /models (admin guard)
+  - [x] R19.16 — Бот: systemd unit, make bot-dev/bot-up
+  - [ ] R19.17 — *(stretch)* Travel-фичи
+  - [ ] R19.18 — *(stretch)* Motivation/playoff context
+  - [ ] R19.19 — *(stretch)* Оценка vs Pinnacle на holdout
+  - [ ] R19.20 — *(stretch)* Injury report
 
 ### В работе / Backlog 🟡
 
@@ -109,28 +130,6 @@
   - [ ] R15.2 — Добавить в toctree `index.rst`
   - [ ] R15.3 — Ревизия `quickstart.rst` на консистентность
   - [ ] R15.4 — Smoke-check сборки docs
-
-- [ ] **R19** — NHL — полный production-цикл + Odds API + Telegram-бот
-  - [ ] **R19.1** — Инкрементальный режим NhlDataAssembler
-  - [ ] **R19.2** — Source-refresh команда NHL для Airflow DAG
-  - [ ] **R19.3** — Расширить clean-колонки NHL (SOG, hits, PIM, standings, …)
-  - [ ] **R19.4** — Включить NHL в DVC features multirun, end-to-end smoke
-  - [ ] **R19.5** — The Odds API: HTTP-клиент, quota tracking, кэширование
-  - [ ] **R19.6** — Odds backfill: идемпотентная стратегия, Pinnacle lines
-  - [ ] **R19.7** — Odds enrichment: merge в source.csv, колонки в clean
-  - [ ] **R19.8** — Schedule density & rest/fatigue features
-  - [ ] **R19.9** — Standings/ratings features
-  - [ ] **R19.10** — Roster features (MVP)
-  - [ ] **R19.11** — NHL baseline training sweep + promote
-  - [ ] **R19.12** — NHL materialize + API verification
-  - [ ] **R19.13** — Telegram-бот: scaffolding aiogram 3, auth, /start /help
-  - [ ] **R19.14** — Бот: /predict, /upcoming (prediction commands)
-  - [ ] **R19.15** — Бот: /status, /refresh, /models (admin commands)
-  - [ ] **R19.16** — Бот: deployment (systemd / docker-compose)
-  - [ ] **R19.17** — *(stretch)* Travel-фичи
-  - [ ] **R19.18** — *(stretch)* Motivation/playoff context
-  - [ ] **R19.19** — *(stretch)* Оценка модели vs Pinnacle на holdout (не odds-фичи)
-  - [ ] **R19.20** — *(stretch)* Injury report из внешнего источника
 
 - [ ] **R16** — MLflow: сравнительная визуализация метрик по запускам
   - [ ] R16.1 — Добавить теги `sweep_id` и `run_index` в trainer
