@@ -183,7 +183,7 @@ provider:
   retries: 3
 ```
 
-NHL Web API (`NhlWebApiSourceProvider`, пакет `sports_forecast/data/providers/nhl/`): многократные запросы к `api-web.nhle.com`, сбор `source.csv` по полям из `docs/cursor/source_data/nhl.md`. См. `conf/source/nhl.yaml` (`provider.type: nhl_web_api`): при `finished_only: false` в файл попадают и предстоящие матчи (`match_is_end=0`), завершённые обогащаются boxscore/PBP (`match_is_end=1`). Коэффициенты БК в этом API отсутствуют — отдельный источник при необходимости.
+NHL Web API (`NhlWebApiSourceProvider`, пакет `sports_forecast/data/providers/nhl/`): многократные запросы к `api-web.nhle.com`, сбор `source.csv` по полям из `docs/cursor/source_data/nhl.md`. См. `conf/source/nhl.yaml` (`provider.type: nhl_web_api`): при `finished_only: false` в файл попадают и предстоящие матчи (`match_is_end=0`), завершённые обогащаются boxscore/PBP (`match_is_end=1`). Коэффициенты БК в этом API отсутствуют — для линий букмекеров используется отдельный источник (The Odds API); политика: сбор кэфов для валидации/бенчмарка, **не** как признаки для обучения — см. `docs/cursor/source_data/the_odds_api.md`.
 
 Контракт всех адаптеров — абстрактный класс `SourceProvider` в `sports_forecast/data/providers/base.py` (метод `fetch(source_name) -> Path`).
 

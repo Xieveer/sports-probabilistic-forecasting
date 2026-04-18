@@ -16,7 +16,7 @@
 - `features/` — наборы фичей (basic, advanced) + generators
 - `feature_selection/` — стратегии отбора фичей
 - `hyper/` — оптимизация (none, optuna, grid_small)
-- `bookmaker/` — мапинги к букмекерским данным
+- `bookmaker/` — мапинги к букмекерским данным (`fonbet`, `the_odds_api` для The Odds API)
 - `betting.yaml`, `calibration.yaml`, `split.yaml`, `metrics.yaml`, `mlflow/`
 
 ### Код (`sports_forecast/`)

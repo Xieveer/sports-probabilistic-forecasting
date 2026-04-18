@@ -27,6 +27,7 @@
 | R16    | 🟡 Medium   | Medium    | 🟡     | 16-й (MLflow сравнительная визуализация) |
 | R17    | 🔴 High     | High      | ✅     | 17-й ✅ (NHL Web API провайдер данных) |
 | R18    | 🔴 High     | Medium    | ✅     | 18-й ✅ (lp_eu_a18: Optuna reg + feature selection) |
+| R19    | 🔴 High     | High      | 🟡     | 19-й (NHL production + Odds API + Telegram-бот)     |
 
 ---
 
@@ -108,6 +109,28 @@
   - [ ] R15.2 — Добавить в toctree `index.rst`
   - [ ] R15.3 — Ревизия `quickstart.rst` на консистентность
   - [ ] R15.4 — Smoke-check сборки docs
+
+- [ ] **R19** — NHL — полный production-цикл + Odds API + Telegram-бот
+  - [ ] **R19.1** — Инкрементальный режим NhlDataAssembler
+  - [ ] **R19.2** — Source-refresh команда NHL для Airflow DAG
+  - [ ] **R19.3** — Расширить clean-колонки NHL (SOG, hits, PIM, standings, …)
+  - [ ] **R19.4** — Включить NHL в DVC features multirun, end-to-end smoke
+  - [ ] **R19.5** — The Odds API: HTTP-клиент, quota tracking, кэширование
+  - [ ] **R19.6** — Odds backfill: идемпотентная стратегия, Pinnacle lines
+  - [ ] **R19.7** — Odds enrichment: merge в source.csv, колонки в clean
+  - [ ] **R19.8** — Schedule density & rest/fatigue features
+  - [ ] **R19.9** — Standings/ratings features
+  - [ ] **R19.10** — Roster features (MVP)
+  - [ ] **R19.11** — NHL baseline training sweep + promote
+  - [ ] **R19.12** — NHL materialize + API verification
+  - [ ] **R19.13** — Telegram-бот: scaffolding aiogram 3, auth, /start /help
+  - [ ] **R19.14** — Бот: /predict, /upcoming (prediction commands)
+  - [ ] **R19.15** — Бот: /status, /refresh, /models (admin commands)
+  - [ ] **R19.16** — Бот: deployment (systemd / docker-compose)
+  - [ ] **R19.17** — *(stretch)* Travel-фичи
+  - [ ] **R19.18** — *(stretch)* Motivation/playoff context
+  - [ ] **R19.19** — *(stretch)* Оценка модели vs Pinnacle на holdout (не odds-фичи)
+  - [ ] **R19.20** — *(stretch)* Injury report из внешнего источника
 
 - [ ] **R16** — MLflow: сравнительная визуализация метрик по запускам
   - [ ] R16.1 — Добавить теги `sweep_id` и `run_index` в trainer

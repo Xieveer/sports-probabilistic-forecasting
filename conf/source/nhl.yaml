@@ -47,3 +47,5 @@ split_strategy:
 
 odds:
   enabled: false
+  # При обогащении кэфами: внешний провайдер The Odds API — conf/bookmaker/the_odds_api.yaml
+  # bookmaker: the_odds_api

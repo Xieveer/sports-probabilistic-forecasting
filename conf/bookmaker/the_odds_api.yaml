@@ -1,0 +1,56 @@
+# Bookmaker provider: The Odds API (REST)
+# Документация: https://the-odds-api.com/liveapi/guides/v4/#overview
+# Политика проекта (NHL, валидация без фич): docs/cursor/source_data/the_odds_api.md
+#
+# ВАЖНО: формат отличается от fonbet — здесь нет odds_raw dict из CSV-фида.
+# Конфиг используется клиентом обогащения (R19) и merge в source, не как
+# defaults в conf/config.yaml (там по-прежнему fonbet для лиг с фонбетом).
+
+name: the_odds_api
+description: "The Odds API — REST-источник линий букмекеров (Pinnacle и др.)"
+
+# Ключ доступа только из окружения: ODDS_API_KEY (не хранить в репозитории).
+
+api:
+  base_url: https://api.the-odds-api.com
+  api_prefix: /v4
+  # Рекомендуемые рынки для NHL moneyline / totals (уточнить под подписку)
+  markets_h2h:
+    - h2h
+  markets_totals:
+    - totals
+
+# Ключ спорта в пути API: GET /v4/sports/{sport}/odds/
+# Список ключей: раздел Sports в документации The Odds API.
+sport_keys:
+  nhl: icehockey_nhl
+
+# Ключ букмекера в JSON ответа: bookmakers[].key
+bookmakers:
+  primary: pinnacle
+
+# Имена колонок в source.csv после merge (согласовано с эпиком R19).
+# Значения берутся из снимков opening vs closing по документации API / снапшотам.
+output_columns:
+  moneyline:
+    home_open: pinnacle_home_open
+    away_open: pinnacle_away_open
+    draw_open: pinnacle_draw_open
+    home_close: pinnacle_home_close
+    away_close: pinnacle_away_close
+    draw_close: pinnacle_draw_close
+  total:
+    open: pinnacle_total_open
+    close: pinnacle_total_close
+
+# Подсказки для клиента (реализация R19)
+rate_limit:
+  # Соблюдать заголовки x-requests-remaining / x-requests-used; кэш ответов на диск.
+  min_interval_sec: 0.5
+
+# ---------------------------------------------------------------------------
+# Совместимость с ingest/betting (fonbet)
+# ---------------------------------------------------------------------------
+# Поля base_mapping / market_keys / side_keys для этого провайдера не заданы:
+# парсинг идёт из JSON API, а не из python_dict odds_raw.
+# Для симулятора на merged-колонках — отдельный путь данных (не fonbet dict).

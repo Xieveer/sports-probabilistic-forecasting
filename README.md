@@ -134,7 +134,7 @@ SportsProbabilisticForecasting/
 │   │   └── generators/                # Генераторы (rolling, form, time)
 │   ├── feature_selection/             # Feature selection (default, aggressive)
 │   ├── hyper/                         # Оптимизация (none, optuna, grid_small)
-│   ├── bookmaker/                     # Букмекеры (fonbet)
+│   ├── bookmaker/                     # Букмекеры (fonbet, the_odds_api)
 │   ├── betting.yaml                   # Betting simulator
 │   ├── calibration.yaml               # Калибровка
 │   ├── split.yaml                     # Train/test split
