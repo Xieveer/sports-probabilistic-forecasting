@@ -72,6 +72,15 @@ def process_tournament_new(
     df = pd.read_parquet(input_path)
     logger.info("Загружено: %s (%d строк, %d колонок)", input_path, len(df), len(df.columns))
 
+    # Политика The Odds API: линии в interim для офлайн-анализа, но не во входе FeaturePipeline
+    odds_drop = [c for c in df.columns if str(c).startswith("pinnacle_")]
+    if odds_drop:
+        df = df.drop(columns=odds_drop)
+        logger.info(
+            "Исключены %d колонок pinnacle_* из генерации фичей (политика odds → не в модель)",
+            len(odds_drop),
+        )
+
     # 2. Создание Feature Pipeline
     logger.info("\nИнициализация Feature Pipeline...")
     features_dict = materialize_features_config(features_cfg, tournament_cfg=tournament_cfg)

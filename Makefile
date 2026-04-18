@@ -10,7 +10,7 @@ DOCS_BUILD := docs/build
 
 .PHONY: help init install lint format fix test test-unit test-cov test-watch test-file pre-commit train train-sweep promote clean dvc-repro
 .PHONY: docs docs-serve docs-clean docs-open docs-coverage docs-linkcheck tree
-.PHONY: api api-dev materialize docker-up docker-down docker-build docker-logs db-init
+.PHONY: api api-dev bot-dev bot-up materialize docker-up docker-down docker-build docker-logs db-init
 .PHONY: airflow-init airflow-up airflow-down airflow-logs
 .PHONY: monitoring-up monitoring-down
 
@@ -52,6 +52,8 @@ help:
 	@echo ""
 	@echo "Сервис:"
 	@echo "  make api-dev       - запустить FastAPI локально (dev, SQLite)"
+	@echo "  make bot-dev       - Telegram-бот (нужны BOT_TOKEN, BOT_ALLOWED_USER_IDS)"
+	@echo "  make bot-up        - бот в docker compose (с сервисом api)"
 	@echo "  make materialize   - материализовать предсказания в DB"
 	@echo "  make db-init       - инициализировать таблицы DB (SQLite)"
 	@echo ""
@@ -196,14 +198,14 @@ tree:
 features-basic:
 	@echo "⚡ Генерация фичей (basic)..."
 	uv run python -m sports_forecast.features.features_build --multirun \
-		tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by \
+		tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by,nhl \
 		features=basic
 
 # Генерация фичей advanced (полный набор, для research)
 features-advanced:
 	@echo "🔬 Генерация фичей (advanced)..."
 	uv run python -m sports_forecast.features.features_build --multirun \
-		tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by \
+		tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by,nhl \
 		features=advanced
 
 # ---------- Основной пайплайн обучения ----------
@@ -230,6 +232,15 @@ train-sweep:
 train-sweep-full:
 	uv run python -m sports_forecast.train --multirun \
 		tournament=$(or $(TOURNAMENT),uel_kz_1) \
+		market=winner \
+		market_spec=winner \
+		algorithm=catboost,lgbm,logreg \
+		features=basic,advanced
+
+# NHL baseline (R19): эксперимент MLflow = nhl__winner__player
+nhl-train-baseline:
+	uv run python -m sports_forecast.train --multirun \
+		tournament=nhl \
 		market=winner \
 		market_spec=winner \
 		algorithm=catboost,lgbm,logreg \
@@ -310,6 +321,14 @@ api-dev:
 	@echo "🚀 Запуск FastAPI (dev mode)..."
 	uv run uvicorn sports_forecast.service.app:app \
 		--host 127.0.0.1 --port 8000 --reload
+
+# Telegram-бот (локально; задайте BOT_TOKEN и BOT_ALLOWED_USER_IDS)
+bot-dev:
+	uv run python -m sports_forecast.bot
+
+# Бот + API через compose (нужен BOT_TOKEN; профиль bot)
+bot-up:
+	docker compose --profile bot up -d api telegram-bot
 
 # Инициализация БД (создание таблиц)
 db-init:

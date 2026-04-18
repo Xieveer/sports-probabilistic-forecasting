@@ -29,14 +29,16 @@ UV_RUN = Variable.get("SF_UV_RUN", default_var="uv run")
 
 TOURNAMENTS = Variable.get(
     "SF_REFRESH_TOURNAMENTS",
-    default_var="uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by",
+    default_var="uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by,nhl",
 )
 FEATURES_CONFIG = Variable.get("SF_FEATURES_CONFIG", default_var="basic")
 MARKET = Variable.get("SF_MATERIALIZE_MARKET", default_var="winner")
 MARKET_SPEC = Variable.get("SF_MATERIALIZE_SPEC", default_var="winner")
 SOURCE_REFRESH_CMD = Variable.get(
     "SF_SOURCE_REFRESH_CMD",
-    default_var='test -f "data/source/{tournament}/source.csv"',
+    default_var=(
+        f"{UV_RUN} python -m sports_forecast.orchestration.source_refresh --tournament {{tournament}}"
+    ),
 )
 REFRESH_POOL = Variable.get("SF_REFRESH_POOL", default_var="sf_refresh_pool")
 LOCK_FILE = Variable.get(
@@ -87,7 +89,8 @@ with DAG(
             lock_file=LOCK_FILE,
             lock_wait_seconds=LOCK_WAIT_SECONDS,
         ),
-        execution_timeout=timedelta(hours=2),
+        # NHL Web API refresh может существенно превышать лимит CSV-турниров
+        execution_timeout=timedelta(hours=6),
         pool=REFRESH_POOL,
         pool_slots=1,
     )

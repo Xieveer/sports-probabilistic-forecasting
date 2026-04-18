@@ -537,6 +537,18 @@ def process_tournament(
                 tournament_name,
             )
 
+        # Колонки The Odds API (merge в source) — только для офлайн-валидации, не для фичей
+        odds_api_cols = [c for c in df.columns if str(c).startswith("pinnacle_")]
+        added_odds = [c for c in odds_api_cols if c not in select_cols]
+        if added_odds:
+            select_cols = list(select_cols) + added_odds
+            logger.info(
+                "Турнир %s: автоматически добавлены pinnacle_* колонки (%d): %s",
+                tournament_name,
+                len(added_odds),
+                added_odds[:12],
+            )
+
         # Фильтруем только существующие колонки (tour_num/weekday/hour уже созданы выше)
         existing_cols = [c for c in select_cols if c in df.columns]
         if not existing_cols:

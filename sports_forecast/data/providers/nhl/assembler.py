@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, cast
 
@@ -45,6 +45,8 @@ class AssemblerConfig:
     progress_log_every: int
     schedule_progress_file: str | None
     csv_flush_every: int
+    incremental: bool
+    incremental_buffer_days: int
 
 
 def _parse_ymd(s: str) -> date:
@@ -99,6 +101,12 @@ def load_assembler_config(provider_cfg: DictConfig) -> AssemblerConfig:
     except (TypeError, ValueError):
         csv_flush = 50
 
+    raw_buf = c.get("incremental_buffer_days", 3)
+    try:
+        buf_days = max(0, int(raw_buf))
+    except (TypeError, ValueError):
+        buf_days = 3
+
     return AssemblerConfig(
         date_from=d0,
         date_to=d1,
@@ -112,6 +120,99 @@ def load_assembler_config(provider_cfg: DictConfig) -> AssemblerConfig:
         progress_log_every=progress_every,
         schedule_progress_file=str(sp).strip() if sp else None,
         csv_flush_every=csv_flush,
+        incremental=bool(c.get("incremental", False)),
+        incremental_buffer_days=buf_days,
+    )
+
+
+def last_finished_match_date_from_source_csv(csv_path: Path) -> date | None:
+    """Найти календарную дату последнего завершённого матча в ``source.csv``.
+
+    Используется для инкрементального refresh: перекрытие на несколько дней назад
+    позволяет подтянуть исправления boxscore в недавнем окне.
+
+    Args:
+        csv_path: Путь к существующему ``source.csv``.
+
+    Returns:
+        Дата (UTC-календарь) последнего матча с ``match_is_end`` = завершён, либо ``None``.
+    """
+    if not csv_path.is_file():
+        return None
+    try:
+        df = pd.read_csv(
+            csv_path,
+            usecols=["datetime", "match_is_end"],
+            dtype=str,
+            low_memory=False,
+        )
+    except ValueError:
+        df = pd.read_csv(csv_path, dtype=str, low_memory=False)
+    if df.empty or "datetime" not in df.columns:
+        return None
+    if "match_is_end" in df.columns:
+        fin = df["match_is_end"].astype(str).str.strip().isin(["1", "True", "true"])
+        sub = df.loc[fin, "datetime"]
+    else:
+        sub = df["datetime"]
+    if sub.empty:
+        return None
+    parsed = pd.to_datetime(sub, errors="coerce", utc=True)
+    parsed = parsed.dropna()
+    if parsed.empty:
+        return None
+    last = parsed.max()
+    return last.date()
+
+
+def resolve_incremental_date_from(
+    base_cfg: AssemblerConfig,
+    source_csv_path: Path,
+) -> AssemblerConfig:
+    """Сузить ``date_from`` для инкрементального режима по хвосту ``source.csv``.
+
+    Args:
+        base_cfg: Конфигурация из YAML (полный прогон при ``incremental=False``).
+        source_csv_path: Путь к ``source.csv`` турнира.
+
+    Returns:
+        Новая конфигурация с подправленным ``date_from`` или копия ``base_cfg``.
+    """
+    if not base_cfg.incremental:
+        return base_cfg
+    last_d = last_finished_match_date_from_source_csv(source_csv_path)
+    if last_d is None:
+        logger.info(
+            "NHL incremental: нет завершённых матчей в %s — полный интервал с %s",
+            source_csv_path,
+            base_cfg.date_from,
+        )
+        return base_cfg
+    buffered = last_d - timedelta(days=base_cfg.incremental_buffer_days)
+    new_from = max(buffered, base_cfg.date_from)
+    if new_from != base_cfg.date_from:
+        logger.info(
+            "NHL incremental: date_from %s → %s (последний finished %s, буфер %d дн.)",
+            base_cfg.date_from.isoformat(),
+            new_from.isoformat(),
+            last_d.isoformat(),
+            base_cfg.incremental_buffer_days,
+        )
+    return AssemblerConfig(
+        date_from=new_from,
+        date_to=base_cfg.date_to,
+        season_id_min=base_cfg.season_id_min,
+        season_id_max=base_cfg.season_id_max,
+        max_games=base_cfg.max_games,
+        include_play_by_play=base_cfg.include_play_by_play,
+        finished_only=base_cfg.finished_only,
+        roster_enabled=base_cfg.roster_enabled,
+        checkpoint_file=base_cfg.checkpoint_file,
+        progress_log_every=base_cfg.progress_log_every,
+        schedule_progress_file=base_cfg.schedule_progress_file,
+        csv_flush_every=base_cfg.csv_flush_every,
+        incremental=base_cfg.incremental,
+        incremental_buffer_days=base_cfg.incremental_buffer_days,
     )
 
 

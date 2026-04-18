@@ -1,0 +1,9 @@
+# NHL: составы из JSON-ячеек (пре-генератор)
+nhl_roster:
+  type: nhl_roster
+  enabled: true
+  datetime_column: datetime
+  required_columns:
+    - datetime
+    - home_roster
+    - away_roster

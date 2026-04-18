@@ -1,0 +1,33 @@
+# Telegram-бот (aiogram 3). Секреты только из окружения: BOT_TOKEN
+#
+# Запуск: python -m sports_forecast.bot
+# make bot-dev  |  make bot-up (docker compose)
+
+defaults:
+  - paths
+  - _self_
+
+name: telegram_bot
+description: "Операционный бот: прогнозы и админ-команды"
+
+bot:
+  polling_timeout_sec: 30
+  # Базовый URL FastAPI (тот же хост, что видит пользователь сервиса)
+  api_base_url: "http://127.0.0.1:8000"
+  # Whitelist: список Telegram user_id (int). Пустой список = доступ запрещён всем.
+  allowed_user_ids: []
+  admin_user_ids: []
+  # Опционально: триггер DAG refresh (если заданы — POST к Airflow REST)
+  airflow_base_url: ""
+  airflow_username: ""
+  airflow_password: ""
+  airflow_dag_id: "data_refresh"
+
+logging:
+  level: INFO
+
+hydra:
+  run:
+    dir: .
+  job:
+    chdir: false

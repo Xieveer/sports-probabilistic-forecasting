@@ -13,6 +13,9 @@
 defaults:
   - _common
   - generators/time@generators: default
+  - generators/schedule@generators: nhl
+  - generators/standings@generators: nhl
+  - generators/roster@generators: nhl
   - generators/form@generators: default
   - generators/rolling@generators: minimal
 

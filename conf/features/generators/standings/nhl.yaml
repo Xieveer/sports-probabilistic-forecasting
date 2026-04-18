@@ -1,0 +1,18 @@
+# NHL: таблица + форма последних матчей (пре-генератор)
+nhl_standings:
+  type: nhl_standings
+  enabled: true
+  datetime_column: datetime
+  form_window: 5
+  required_columns:
+    - home_team
+    - away_team
+    - datetime
+    - home_conference_standing
+    - away_conference_standing
+    - home_P
+    - away_P
+    - home_GP
+    - away_GP
+    - home_points
+    - away_points

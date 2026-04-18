@@ -1,0 +1,10 @@
+# NHL: плотность расписания (пре-генератор, wide → context в long)
+nhl_schedule:
+  type: nhl_schedule
+  enabled: true
+  datetime_column: datetime
+  required_columns:
+    - home_team
+    - away_team
+    - datetime
+    - home_sog_ft

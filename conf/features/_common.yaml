@@ -10,6 +10,15 @@ exclude_cols:
   - tournament
   - status
   - odds_raw
+  # The Odds API (NHL merge) — не входят в обучение; см. docs/cursor/source_data/the_odds_api.md
+  - pinnacle_home_open
+  - pinnacle_away_open
+  - pinnacle_draw_open
+  - pinnacle_home_close
+  - pinnacle_away_close
+  - pinnacle_draw_close
+  - pinnacle_total_open
+  - pinnacle_total_close
 
 # Колонки с результатами матчей (для защиты от утечек)
 result_cols:

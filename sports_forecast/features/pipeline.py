@@ -25,6 +25,9 @@ from sports_forecast.features.column_utils import get_feature_columns
 from sports_forecast.features.generators.count_generator import CountFeatureGenerator
 from sports_forecast.features.generators.ewm_generator import EWMFeatureGenerator
 from sports_forecast.features.generators.form_generator import FormFeatureGenerator
+from sports_forecast.features.generators.roster_generator import NhlRosterFeatureGenerator
+from sports_forecast.features.generators.schedule_generator import NhlScheduleFeatureGenerator
+from sports_forecast.features.generators.standings_generator import NhlStandingsFeatureGenerator
 from sports_forecast.features.generators.time_generator import TimeFeatureGenerator
 from sports_forecast.features.long_format import (
     create_player_metrics,
@@ -64,10 +67,18 @@ class FeaturePipeline:
         "ewm": EWMFeatureGenerator,
         "count": CountFeatureGenerator,
         "time": TimeFeatureGenerator,
+        "nhl_schedule": NhlScheduleFeatureGenerator,
+        "nhl_standings": NhlStandingsFeatureGenerator,
+        "nhl_roster": NhlRosterFeatureGenerator,
     }
 
     # Типы, которые запускаются на WIDE данных ДО wide→long
-    PRE_GENERATOR_TYPES = {"time"}
+    PRE_GENERATOR_TYPES = {
+        "time",
+        "nhl_schedule",
+        "nhl_standings",
+        "nhl_roster",
+    }
 
     def __init__(self, config: dict[str, Any] | DictConfig):
         """

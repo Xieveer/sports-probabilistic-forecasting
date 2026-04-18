@@ -43,6 +43,14 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 CMD ["uv", "run", "uvicorn", "sports_forecast.service.app:app", \
      "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
 
+# ── Telegram bot (aiogram) ────────────────────────────────────
+FROM base AS telegram-bot
+
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+    CMD pgrep -f "sports_forecast.bot" || exit 1
+
+CMD ["uv", "run", "python", "-m", "sports_forecast.bot"]
+
 # ── Worker stage (batch prediction / training) ─────────────────
 FROM base AS worker
 

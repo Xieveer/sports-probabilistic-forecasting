@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 
+# Source stage по умолчанию в Airflow: ``python -m sports_forecast.orchestration.source_refresh``
+# (см. ``dag_data_refresh.SF_SOURCE_REFRESH_CMD``) — единая точка для file и NHL Web API.
+
+
 def _render_source_stage_command(source_cmd: str) -> str:
     """Render source stage shell snippet for a tournament.
 

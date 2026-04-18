@@ -22,6 +22,10 @@ provider:
   timeout_retry_backoff_sec: 1.0
   # Интервал календаря для schedule/{date} (недельные запросы внутри)
   date_from: "2010-09-01"
+  # Инкрементальный refresh: при существующем source.csv date_from сдвигается к последнему
+  # завершённому матчу минус incremental_buffer_days (перекрытие для правок boxscore).
+  incremental: true
+  incremental_buffer_days: 3
   # null = конец «сегодня»; число дней растёт при перезапуске — см. load_schedule_progress (расширение date_to).
   date_to: null
   season_id_min: 20102011
@@ -46,6 +50,6 @@ split_strategy:
   enabled: false
 
 odds:
-  enabled: false
-  # При обогащении кэфами: внешний провайдер The Odds API — conf/bookmaker/the_odds_api.yaml
-  # bookmaker: the_odds_api
+  enabled: true
+  # Линии не идут в feature pipeline; merge офлайн: enrichment.merge_odds_into_source_csv
+  bookmaker: the_odds_api

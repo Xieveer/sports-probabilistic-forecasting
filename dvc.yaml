@@ -53,7 +53,7 @@ stages:
   features:
     cmd: >-
       uv run python -m sports_forecast.features.features_build --multirun
-      tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by
+      tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by,nhl
       features=${features.config}
     params:
       - features.config

@@ -18,12 +18,14 @@ def _name_cell(node: Any) -> str:
 
 
 def _compact_player(p: dict[str, Any]) -> dict[str, Any]:
+    bd = p.get("birthDate") or p.get("birthDateLocalized") or p.get("birthdate")
     return {
         "playerId": p.get("playerId") or p.get("id"),
         "firstName": _name_cell(p.get("firstName")),
         "lastName": _name_cell(p.get("lastName")),
         "positionCode": p.get("positionCode") or p.get("position"),
         "sweaterNumber": p.get("sweaterNumber"),
+        "birthDate": str(bd).strip() if bd else "",
     }
 
 

@@ -49,6 +49,24 @@ services:
       - ./models:/app/models:ro
       - ./conf:/app/conf:ro
 
+  telegram-bot:
+    profiles: ["bot"]
+    build:
+      context: .
+      target: telegram-bot
+    restart: unless-stopped
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN:?set_BOT_TOKEN}
+      BOT_ALLOWED_USER_IDS: ${BOT_ALLOWED_USER_IDS:-}
+      BOT_ADMIN_USER_IDS: ${BOT_ADMIN_USER_IDS:-}
+      BOT_API_BASE_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_started
+    volumes:
+      - ./conf:/app/conf:ro
+      - ./models:/app/models:ro
+
   # ── MLflow tracking server ───────────────────────────────────
   mlflow:
     image: ghcr.io/mlflow/mlflow:v2.19.0

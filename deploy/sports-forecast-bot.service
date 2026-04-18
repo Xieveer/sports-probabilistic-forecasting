@@ -1,0 +1,14 @@
+[Unit]
+Description=Sports Probabilistic Forecasting Telegram bot
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/sports-forecast
+EnvironmentFile=-/etc/sports-forecast/bot.env
+ExecStart=/usr/bin/uv run python -m sports_forecast.bot
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

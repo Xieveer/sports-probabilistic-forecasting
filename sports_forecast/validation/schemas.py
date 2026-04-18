@@ -92,6 +92,67 @@ InterimSchema = DataFrameSchema(
             ],
             description="Очки гостевой команды/игрока",
         ),
+        # --- NHL / ice_hockey (опционально; strict=False всё равно разрешает прочие колонки) ---
+        "season": Column(
+            dtype="object",
+            nullable=True,
+            required=False,
+            description="Сезон NHL (строка из source)",
+        ),
+        "game_type": Column(
+            dtype="object",
+            nullable=True,
+            required=False,
+            description="Тип игры: regular / playoffs / preseason",
+        ),
+        "home_sog_ft": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            description="Броски в створ (дома), полный матч",
+        ),
+        "away_sog_ft": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            description="Броски в створ (гости), полный матч",
+        ),
+        "home_P": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            description="Очки в таблице (дома)",
+        ),
+        "away_P": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            description="Очки в таблице (гости)",
+        ),
+        "home_GP": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            description="Сыграно игр (дома)",
+        ),
+        "away_GP": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            description="Сыграно игр (гости)",
+        ),
+        "home_conference_standing": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            description="Место в конференции (дома)",
+        ),
+        "away_conference_standing": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            description="Место в конференции (гости)",
+        ),
     },
     # Разрешаем дополнительные столбцы (player names, tour_num, odds_raw, etc.)
     strict=False,

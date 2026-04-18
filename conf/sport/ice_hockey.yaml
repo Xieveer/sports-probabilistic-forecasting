@@ -62,8 +62,6 @@ data_clean:
   column_mapping:
     home_score_ft: home_points
     away_score_ft: away_points
-    home_team: home_team
-    away_team: away_team
 
   required_columns: [id, datetime]
 
@@ -77,7 +75,46 @@ data_clean:
     numeric:
       home_points: float
       away_points: float
-    string: [id, status]
+      home_sog_ft: float
+      away_sog_ft: float
+      home_sog_mt: float
+      away_sog_mt: float
+      home_bs_ft: float
+      away_bs_ft: float
+      home_bs_mt: float
+      away_bs_mt: float
+      home_hits_ft: float
+      away_hits_ft: float
+      home_hits_mt: float
+      away_hits_mt: float
+      home_pim_ft: float
+      away_pim_ft: float
+      home_pim_mt: float
+      away_pim_mt: float
+      home_2pim_ft: float
+      away_2pim_ft: float
+      home_2pim_mt: float
+      away_2pim_mt: float
+      home_fow_ft: float
+      away_fow_ft: float
+      home_fow_mt: float
+      away_fow_mt: float
+      home_P: float
+      away_P: float
+      home_GP: float
+      away_GP: float
+      home_conference_standing: float
+      away_conference_standing: float
+    string:
+      - id
+      - status
+      - season
+      - game_type
+      - match_end
+      - home_team
+      - away_team
+      - home_roster
+      - away_roster
     datetime:
       datetime:
         format: null

@@ -8,7 +8,11 @@ from omegaconf import DictConfig, OmegaConf
 
 from sports_forecast.config.loaders import PROJECT_ROOT as CONFIG_PROJECT_ROOT
 from sports_forecast.data.providers.base import SourceFetchError, SourceProvider
-from sports_forecast.data.providers.nhl.assembler import NhlDataAssembler, load_assembler_config
+from sports_forecast.data.providers.nhl.assembler import (
+    NhlDataAssembler,
+    load_assembler_config,
+    resolve_incremental_date_from,
+)
 from sports_forecast.data.providers.nhl.client import NhlApiClient
 from sports_forecast.data.providers.nhl.schedule import clear_schedule_progress
 from sports_forecast.utils.log_config import get_logger
@@ -61,13 +65,15 @@ class NhlWebApiSourceProvider(SourceProvider):
         target_dir.mkdir(parents=True, exist_ok=True)
         out_path = target_dir / "source.csv"
 
+        asm_cfg = resolve_incremental_date_from(self._asm_cfg, out_path)
         logger.info(
-            "NhlWebApiSourceProvider: старт загрузки source_name=%s, интервал %s … %s",
+            "NhlWebApiSourceProvider: старт загрузки source_name=%s, интервал %s … %s (incremental=%s)",
             source_name,
-            self._asm_cfg.date_from.isoformat(),
-            self._asm_cfg.date_to.isoformat(),
+            asm_cfg.date_from.isoformat(),
+            asm_cfg.date_to.isoformat(),
+            asm_cfg.incremental,
         )
-        assembler = NhlDataAssembler(self._client, self._asm_cfg)
+        assembler = NhlDataAssembler(self._client, asm_cfg)
         try:
             df = assembler.build_dataframe(
                 checkpoint_base=target_dir,
