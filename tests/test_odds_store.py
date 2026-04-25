@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pandas as pd
 
 from sports_forecast.data.providers.odds import store
 from sports_forecast.data.providers.odds.store import (
     load_odds_store,
+    max_game_date_in_store,
     save_odds_store,
     upsert_odds_store,
     upsert_odds_store_file,
@@ -67,6 +70,17 @@ def test_upsert_dedup_equal_fetched_last_row_wins() -> None:
     out = upsert_odds_store(pd.DataFrame([old]), pd.DataFrame([new_row]))
     assert len(out) == 1
     assert float(out["pinnacle_home_close"].iloc[0]) == 2.0
+
+
+def test_max_game_date_in_store() -> None:
+    df = pd.DataFrame(
+        [
+            _sample_row(game_date="2024-01-05"),
+            _sample_row(game_date="2024-02-10"),
+        ]
+    )
+    assert max_game_date_in_store(df) == date(2024, 2, 10)
+    assert max_game_date_in_store(pd.DataFrame()) is None
 
 
 def test_load_missing_file_empty_schema(tmp_path) -> None:

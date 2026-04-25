@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Final
 
@@ -75,6 +75,23 @@ def load_odds_store(store_path: Path) -> pd.DataFrame:
     if not df.empty and list(df.columns) != list(ODDS_STORE_COLUMNS):
         logger.debug("Выравнивание колонок loaded odds store по схеме R20.1")
     return _align_to_store_schema(df)
+
+
+def max_game_date_in_store(store_df: pd.DataFrame) -> date | None:
+    """Максимальная календарная дата в колонке ``game_date`` (строки ISO или timestamp).
+
+    Пустой фрейм/без колонки/только NaT — ``None``.
+    """
+    if store_df is None or store_df.empty or "game_date" not in store_df.columns:
+        return None
+    parsed = pd.to_datetime(store_df["game_date"], errors="coerce", utc=True)
+    if parsed.isna().all():
+        return None
+    m = parsed.max()
+    if pd.isna(m):
+        return None
+    ts = pd.Timestamp(m)
+    return ts.date()
 
 
 def _write_parquet_atomic(df: pd.DataFrame, path: Path) -> None:
