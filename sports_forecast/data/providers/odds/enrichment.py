@@ -1,8 +1,8 @@
 """Слияние линий The Odds API (мультибукмекер) в таблицу матчей NHL ``source.csv``.
 
 Поля согласуются с ``conf/bookmaker/the_odds_api.yaml`` (``bookmaker_profiles``, legacy
-``output_columns``) и :data:`sports_forecast.data.providers.odds.store.ODDS_STORE_COLUMNS_V2`.
-Политика: эти поля **не** используются в :mod:`sports_forecast.features`.
+``output_columns``) и :data:`sports_forecast.data.providers.odds.store.ODDS_STORE_COLUMNS` (V3,
+close-only). Политика: эти поля **не** используются в :mod:`sports_forecast.features`.
 """
 
 from __future__ import annotations
@@ -67,7 +67,10 @@ class BookmakerExtractionProfile:
 
 
 def _v2_row_keys_for_profile(p: BookmakerExtractionProfile) -> list[str]:
-    """Список V2-имён колонок (OddsStore) для одного профиля."""
+    """Список V2-имён колонок (OddsStore) для одного профиля — open и close.
+
+    Сохранено для тестов и сценариев ``extract_bookmaker_row_from_event(..., open|single)``.
+    """
     pre = p.column_prefix
     w, t = p.winner_semantics, p.total_semantics
     keys: list[str] = []
@@ -78,6 +81,20 @@ def _v2_row_keys_for_profile(p: BookmakerExtractionProfile) -> list[str]:
         keys.append(f"{pre}_{t}_line_{end}")
         keys.append(f"{pre}_{t}_over_{end}")
         keys.append(f"{pre}_{t}_under_{end}")
+    return keys
+
+
+def _v3_row_keys_for_profile(p: BookmakerExtractionProfile) -> list[str]:
+    """Список V3 store (close-only) для одного профиля; draw — только при ``has_draw``."""
+    pre = p.column_prefix
+    w, t = p.winner_semantics, p.total_semantics
+    keys: list[str] = []
+    for side in ("home", "away", "draw"):
+        if side == "draw" and not p.has_draw:
+            continue
+        keys.append(f"{pre}_{w}_{side}_close")
+    for suffix in ("line", "over", "under"):
+        keys.append(f"{pre}_{t}_{suffix}_close")
     return keys
 
 
@@ -238,21 +255,29 @@ def extract_bookmaker_row_from_event(
     ev: dict[str, Any],
     profile: BookmakerExtractionProfile,
     *,
-    snapshot_role: str = "single",
+    snapshot_role: str = "close",
     team_registry: TeamNameRegistry | None = None,
 ) -> dict[str, Any | None]:
-    """Извлечь коэффициенты одного букмекера по V2-контракту имён (см. :data:`ODDS_STORE_COLUMNS_V2`).
+    """Извлечь коэффициенты одного букмекера; целевой store — V3 (close-only).
+
+    По умолчанию (``snapshot_role="close"``) возвращаются только V3-имена, без ничьей
+    Pinnacle при ``has_draw=False``. Для обратной совместимости тестов R21.1–R21.8
+    ``open``/``single`` по-прежнему заполняют полный набор V2-колонок (open+close).
 
     Args:
         ev: Одно событие JSON The Odds API.
         profile: Семантика и префикс колонок.
-        snapshot_role: ``open`` | ``close`` | ``single`` — какие колонки ``*_open``/``*_close`` заполнять.
+        snapshot_role: ``close`` (V3, по умолчанию) | ``open`` | ``single`` (V2-совместимость).
         team_registry: Алиасы команд → каноника.
 
     Returns:
-        Словарь только с колонками этого букмекера; при отсутствии bookmaker в событии — все ``None``.
+        Словарь с колонками этого букмекера; при отсутствии bookmaker в событии — все ``None``.
     """
-    out: dict[str, Any | None] = dict.fromkeys(_v2_row_keys_for_profile(profile), None)
+    if snapshot_role in ("open", "single"):
+        key_list = _v2_row_keys_for_profile(profile)
+    else:
+        key_list = _v3_row_keys_for_profile(profile)
+    out: dict[str, Any | None] = dict.fromkeys(key_list, None)
     home_name = str(ev.get("home_team") or "")
     away_name = str(ev.get("away_team") or "")
     bm = _find_bookmaker(ev, profile.api_key)
@@ -283,22 +308,23 @@ def extract_bookmaker_row_from_event(
         out[_t("line", "open")] = t_line
         out[_t("over", "open")] = over_p
         out[_t("under", "open")] = under_p
-    elif snapshot_role == "close":
+        return out
+    if snapshot_role == "close":
         out[_w("home", "close")] = hh
         out[_w("away", "close")] = aa
-        out[_w("draw", "close")] = dd
+        if profile.has_draw:
+            out[_w("draw", "close")] = dd
         out[_t("line", "close")] = t_line
         out[_t("over", "close")] = over_p
         out[_t("under", "close")] = under_p
-    else:
-        for part in ("open", "close"):
-            out[_w("home", part)] = hh
-            out[_w("away", part)] = aa
-            out[_w("draw", part)] = dd
-            out[_t("line", part)] = t_line
-            out[_t("over", part)] = over_p
-            out[_t("under", part)] = under_p
-
+        return out
+    for part in ("open", "close"):
+        out[_w("home", part)] = hh
+        out[_w("away", part)] = aa
+        out[_w("draw", part)] = dd
+        out[_t("line", part)] = t_line
+        out[_t("over", part)] = over_p
+        out[_t("under", part)] = under_p
     return out
 
 
@@ -394,6 +420,7 @@ def _events_to_odds_frame_v2(
     profiles: Sequence[BookmakerExtractionProfile],
     team_registry: TeamNameRegistry | None = None,
 ) -> pd.DataFrame:
+    """Собрать кадр мультибукмекера: только V3 close-колонки (см. R21.10)."""
     close_idx: dict[str, dict[str, Any]] = {}
     for ev in events_close or []:
         if not isinstance(ev, dict):
@@ -420,6 +447,7 @@ def _events_to_odds_frame_v2(
         hk = _team_key(home, team_registry)
         ak = _team_key(away, team_registry)
         c_utc = _parse_commence_time_utc(ev)
+        ev_for_odds = close_idx.get(f"{hk}|{ak}", ev) if events_close else ev
         row: dict[str, Any] = {
             "game_date": game_date,
             "home_team_norm": hk,
@@ -427,33 +455,13 @@ def _events_to_odds_frame_v2(
             "commence_time_utc": c_utc,
         }
         for p in profiles:
-            if events_close:
-                ovals = extract_bookmaker_row_from_event(
-                    ev,
-                    p,
-                    snapshot_role="open",
-                    team_registry=team_registry,
-                )
-                row.update(ovals)
-                ev_c = close_idx.get(f"{hk}|{ak}")
-                if ev_c is not None:
-                    cvals = extract_bookmaker_row_from_event(
-                        ev_c,
-                        p,
-                        snapshot_role="close",
-                        team_registry=team_registry,
-                    )
-                    for k, v in cvals.items():
-                        if v is not None:
-                            row[k] = v
-            else:
-                single = extract_bookmaker_row_from_event(
-                    ev,
-                    p,
-                    snapshot_role="single",
-                    team_registry=team_registry,
-                )
-                row.update(single)
+            cvals = extract_bookmaker_row_from_event(
+                ev_for_odds,
+                p,
+                snapshot_role="close",
+                team_registry=team_registry,
+            )
+            row.update(cvals)
         rows.append(row)
 
     return pd.DataFrame(rows)
@@ -546,12 +554,13 @@ def events_to_odds_frame(
     """Построить DataFrame: ключ ``game_date`` + нормализованные команды + optional ``commence_time_utc``.
 
     Если в ``book_cfg`` (или в ``bookmaker_profiles``) заданы профили, извлекаются **все**
-    букмекеры из **одного** снимка события, строка на event — V2-имена колонок. Иначе
+    букмекеры, строка на event — V3 close-only. При переданных ``events_close`` коэффициенты
+    берутся с close-снимка (по паре команд), иначе с ``events_open``. Иначе (legacy)
     сценарий R19/R20: один букмекер, имена из ``output_columns``.
 
     Args:
-        events_open: Снимок «open» (или единственный).
-        events_close: Снимок «close``; ``None`` — single snapshot.
+        events_open: Список событий (основа строки: дата, команды, ``commence``).
+        events_close: Опционально — второй снимок; при отдаче **приоритет** close для линий.
         bookmaker_key: Ключ в JSON (e.g. ``pinnacle``) для legacy-режима.
         output_columns: Ветка ``output_columns`` из YAML, только legacy-режим.
         team_registry: Алиасы команд.
@@ -560,7 +569,7 @@ def events_to_odds_frame(
 
     Returns:
         DataFrame: ``game_date``, ``home_team_norm``, ``away_team_norm``, ``commence_time_utc``,
-        далее V2-поля **или** legacy ``pinnacle_*`` и т.д.
+        далее V3 close-поля **или** legacy ``pinnacle_*`` и т.д.
     """
     profs = _resolve_extraction_profiles(book_cfg, bookmaker_profiles)
     if profs:
@@ -580,32 +589,42 @@ def write_unmatched_odds_teams_report(
     odds_df: pd.DataFrame,
     source_match_keys: set[tuple[str, str, str]],
     report_path: Path,
+    *,
+    key_date_col: str = "game_date",
 ) -> int:
     """Записать CSV со строками odds, не нашедшими пару в source (по дате и командам).
 
     Args:
-        odds_df: Таблица с ``game_date``, ``home_team_norm``, ``away_team_norm``.
+        odds_df: Таблица с ``{key_date_col}`` (как в merge-ветке) и колонками хозяев/гостей
+            (по умолчанию ``home_team_norm`` / ``away_team_norm``). Если присутствуют
+            ``_odds_hk`` / ``_odds_ak`` (каноника после :func:`_team_key`), они
+            предпочитаются — так отчёт сопоставим с ``source`` при сырых именах из Odds API.
         source_match_keys: Множество ``(game_date, home, away)`` из source.
         report_path: Файл назначения; родительские каталоги создаются.
+        key_date_col: Имя колонки с датой, совпадающей с ``_game_date`` source (см. merge).
+            По умолчанию ``game_date``; для R21+ может быть ``_odds_key_date``.
 
     Returns:
         Число записанных (уникальных) несоответствующих строк.
     """
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    cols = ["game_date", "home_team_norm", "away_team_norm"]
+    cols = [key_date_col, "home_team_norm", "away_team_norm"]
+    h_key = "_odds_hk" if "_odds_hk" in odds_df.columns else "home_team_norm"
+    a_key = "_odds_ak" if "_odds_ak" in odds_df.columns else "away_team_norm"
     if (
         odds_df.empty
-        or "game_date" not in odds_df.columns
-        or not {"home_team_norm", "away_team_norm"}.issubset(odds_df.columns)
+        or key_date_col not in odds_df.columns
+        or h_key not in odds_df.columns
+        or a_key not in odds_df.columns
     ):
         pd.DataFrame(columns=cols).to_csv(report_path, index=False)
         return 0
     seen: set[tuple[str, str, str]] = set()
     missing: list[tuple[str, str, str]] = []
     for _, r in odds_df.iterrows():
-        gd = str(r.get("game_date", "") or "")
-        h = str(r.get("home_team_norm", "") or "")
-        a = str(r.get("away_team_norm", "") or "")
+        gd = str(r.get(key_date_col, "") or "")
+        h = str(r.get(h_key, "") or "")
+        a = str(r.get(a_key, "") or "")
         t = (gd, h, a)
         if t in seen:
             continue
@@ -613,6 +632,10 @@ def write_unmatched_odds_teams_report(
         if t not in source_match_keys:
             missing.append(t)
     out = pd.DataFrame(missing, columns=cols) if missing else pd.DataFrame(columns=cols)
+    if key_date_col != "game_date" and not out.empty:
+        out = out.rename(columns={key_date_col: "game_date"})
+    elif key_date_col != "game_date" and out.empty:
+        out = pd.DataFrame(columns=["game_date", "home_team_norm", "away_team_norm"])
     out.to_csv(report_path, index=False)
     n = len(missing)
     if n:
@@ -644,7 +667,7 @@ def merge_odds_into_source_dataframe(
 ) -> pd.DataFrame:
     """LEFT-merge коэффициентов в копию source-таблицы по дате игры и командам.
 
-    Поддерживает :data:`sports_forecast.data.providers.odds.store.ODDS_STORE_COLUMNS_V2` и
+    Поддерживает :data:`sports_forecast.data.providers.odds.store.ODDS_STORE_COLUMNS` (V3) и
     legacy V1-имена в ``odds_df``. Перед merge колонки source с теми же именами, что и
     несущиеся из ``odds_df`` (кроме ключей), удаляются — иначе pandas добавил бы суффикс
     ``_odds``; так не дублируются тайминги и остальные поля.
@@ -676,10 +699,39 @@ def merge_odds_into_source_dataframe(
         if k not in o.columns:
             logger.error("odds_df без колонки %s", k)
             return source_df.copy()
+    # Канонические ключи команд (как в source): реестр сопоставляет сырой Odds API норм (TAMPABAYLIGHTNING) с аббр. (TBL).
+    o["_odds_hk"] = o["home_team_norm"].map(lambda x: _team_key(str(x), team_registry))
+    o["_odds_ak"] = o["away_team_norm"].map(lambda x: _team_key(str(x), team_registry))
+
+    def _odds_key_date(r: Any) -> str:
+        """Дата ключа merge: UTC calendar date of commence_time, иначе game_date.
+
+        ``game_date`` в ответе API часто — календарный день **локально**; для сопоставления
+        с ``source`` (``datetime`` в UTC) надёжнее взять дату из ``commence_time_utc``,
+        если она известна.
+        """
+        ct = r.get("commence_time_utc") if hasattr(r, "get") else None
+        if isinstance(ct, str) and ct.strip():
+            ts = pd.to_datetime(ct, errors="coerce", utc=True)
+            if not pd.isna(ts):
+                return str(ts.date())
+        return str(r.get("game_date", "") or "")
+
+    o["_odds_key_date"] = o.apply(_odds_key_date, axis=1)  # type: ignore[assignment]
 
     # Все поля кроме ключей слияния: при пересечении с `source` удаляем слева, чтобы merge
     # не создавал «*_odds» и не дублировал V1/V2-поля (в т.ч. timing, fetched_at).
-    odds_value_cols = [c for c in o.columns if c not in _ODDS_JOIN_KEYS]
+    odds_value_cols = [
+        c
+        for c in o.columns
+        if c not in _ODDS_JOIN_KEYS
+        and c
+        not in (
+            "_odds_key_date",
+            "_odds_hk",
+            "_odds_ak",
+        )
+    ]
     drop_from_left = [c for c in odds_value_cols if c in df.columns]
     if drop_from_left:
         df = df.drop(columns=drop_from_left, errors="ignore")
@@ -705,11 +757,16 @@ def merge_odds_into_source_dataframe(
         o,
         how="left",
         left_on=["_game_date", "_hn", "_an"],
-        right_on=["game_date", "home_team_norm", "away_team_norm"],
+        right_on=["_odds_key_date", "_odds_hk", "_odds_ak"],
         suffixes=("", "_odds"),
     )
     if report_path is not None:
-        write_unmatched_odds_teams_report(o, source_match_keys, report_path)
+        write_unmatched_odds_teams_report(
+            o,
+            source_match_keys,
+            report_path,
+            key_date_col="_odds_key_date",
+        )
     drop_cols = [
         c
         for c in (
@@ -719,6 +776,9 @@ def merge_odds_into_source_dataframe(
             "home_team_norm",
             "away_team_norm",
             "game_date",
+            "_odds_key_date",
+            "_odds_hk",
+            "_odds_ak",
         )
         if c in merged.columns
     ]

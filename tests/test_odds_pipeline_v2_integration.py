@@ -109,9 +109,7 @@ def test_end_to_end_mock_backfill_store_v2_merge_source_csv(
         team_registry=None,
     )
     out = out.copy()
-    out["open_snapshot_utc"] = "2024-12-09T00:00:00Z"
     out["close_snapshot_utc"] = "2024-12-09T23:00:00Z"
-    out["open_minutes_before"] = 1440.0
     out["close_minutes_before"] = 60.0
     if "fetched_at" in out.columns:
         out["fetched_at"] = "2024-12-10T12:00:00+00:00"
@@ -121,7 +119,8 @@ def test_end_to_end_mock_backfill_store_v2_merge_source_csv(
     loaded = load_odds_store(sp)
     assert "pinnacle_winner_withOT_home_close" in loaded.columns
     assert "onexbet_winner_draw_close" in loaded.columns
-    assert float(loaded["pinnacle_total_withOT_line_open"].iloc[0]) == pytest.approx(5.5)
+    assert "pinnacle_total_withOT_line_open" not in loaded.columns
+    assert float(loaded["pinnacle_total_withOT_line_close"].iloc[0]) == pytest.approx(5.5)
 
     src_path = tmp_path / "source.csv"
     src_path.write_text(
@@ -132,8 +131,9 @@ def test_end_to_end_mock_backfill_store_v2_merge_source_csv(
     merge_odds_into_source_csv(str(src_path), loaded, out_csv_path=str(src_path))
     merged = pd.read_csv(src_path, low_memory=False)
     assert merged.shape[0] == 1
-    assert "pinnacle_winner_withOT_home_open" in merged.columns
-    assert "onexbet_total_line_open" in merged.columns
-    assert float(merged["pinnacle_total_withOT_over_open"].iloc[0]) == pytest.approx(1.95)
-    assert float(merged["onexbet_winner_draw_open"].iloc[0]) == pytest.approx(4.0)
+    assert "pinnacle_winner_withOT_home_close" in merged.columns
+    assert "onexbet_total_line_close" in merged.columns
+    assert "pinnacle_winner_withOT_home_open" not in merged.columns
+    assert float(merged["pinnacle_total_withOT_over_close"].iloc[0]) == pytest.approx(1.95)
+    assert float(merged["onexbet_winner_draw_close"].iloc[0]) == pytest.approx(4.0)
     assert str(merged["commence_time_utc"].iloc[0]) == "2024-12-10T00:00:00Z"

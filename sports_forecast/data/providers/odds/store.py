@@ -4,13 +4,15 @@
 Операции ``upsert`` идемпотентны: дедупликация по дате и нормализованным командам,
 приоритет — более свежий ``fetched_at``.
 
-**Схема V2 (R21):** в именах колонок зафиксирован контракт семантики рынков:
+**Схема V3 (R21.10+):** целевой **close-only** store (17 колонок) — нет open-снимка и
+колонок ``*_open``, нет ничьи Pinnacle h2h (2-way with OT), есть ничья 1xBet. Семантика
+в префиксах/суффиксах имён: ``winner``/``total`` = regulation, ``*withOT`` = полный матч.
 
-- ``winner`` / ``total`` — только основное время (regulation), напр. ``onexbet_winner_*``, ``onexbet_total_*``;
-- ``winner_withOT`` / ``total_withOT`` — полный матч (ОТ/буллиты), напр. ``pinnacle_winner_withOT_*``, ``pinnacle_total_withOT_*``.
+Старые файлы R20 (V1) и R21.1–R21.8 (V2) при ``load_odds_store`` / ``upsert`` в памяти
+поднимаются в V3: V1 → V2 → V3 (см. :func:`migrate_v1_to_v3`).
 
-Файлы в формате R20 (V1) при ``load_odds_store`` / при ``upsert`` входных кадров без
-``commence_time_utc`` автоматически приводятся к V2 через :func:`migrate_v1_to_v2`.
+**Схема V1/V2** остаётся в ``ODDS_STORE_COLUMNS_V1`` / ``ODDS_STORE_COLUMNS_V2`` для
+миграции и тестов.
 """
 
 from __future__ import annotations
@@ -87,8 +89,36 @@ ODDS_STORE_COLUMNS_V2: Final[tuple[str, ...]] = (
     "fetched_at",
 )
 
-# Публичное имя схемы store — актуальная V2.
-ODDS_STORE_COLUMNS: Final[tuple[str, ...]] = ODDS_STORE_COLUMNS_V2
+# R21.10+ V3: только close, без open, без draw Pinnacle (NHL 2-way h2h).
+ODDS_STORE_COLUMNS_V3: Final[tuple[str, ...]] = (
+    "game_date",
+    "home_team_norm",
+    "away_team_norm",
+    "commence_time_utc",
+    "close_snapshot_utc",
+    "close_minutes_before",
+    "pinnacle_winner_withOT_home_close",
+    "pinnacle_winner_withOT_away_close",
+    "pinnacle_total_withOT_line_close",
+    "pinnacle_total_withOT_over_close",
+    "pinnacle_total_withOT_under_close",
+    "onexbet_winner_home_close",
+    "onexbet_winner_away_close",
+    "onexbet_winner_draw_close",
+    "onexbet_total_line_close",
+    "onexbet_total_over_close",
+    "onexbet_total_under_close",
+    "fetched_at",
+)
+
+#: Публичный кортеж имён колонок текущего Parquet odds-store (R21.10 **V3**, 17 колонок,
+#: close-only, без open и без ничьей Pinnacle).
+ODDS_STORE_COLUMNS: Final[tuple[str, ...]] = ODDS_STORE_COLUMNS_V3
+
+# Колонки, которые были в V2, но не входят в V3 (для auto-detect).
+_V2_ONLY_COLUMNS: Final[frozenset[str]] = frozenset(ODDS_STORE_COLUMNS_V2) - frozenset(
+    ODDS_STORE_COLUMNS_V3
+)
 
 _V1_TO_V2_RENAME: Final[dict[str, str]] = {
     "pinnacle_home_open": "pinnacle_winner_withOT_home_open",
@@ -121,6 +151,50 @@ def migrate_v1_to_v2(df: pd.DataFrame) -> pd.DataFrame:
     return renamed.reindex(columns=list(ODDS_STORE_COLUMNS_V2))
 
 
+def migrate_v2_to_v3(df: pd.DataFrame) -> pd.DataFrame:
+    """Усечь кадр V2 до схемы V3: только колонки :data:`ODDS_STORE_COLUMNS_V3` (порядок фиксирован).
+
+    Open-снимки, ``pinnacle_winner_withOT_draw_*`` и прочие поля, отсутствующие в V3,
+    отбрасываются; close-значения сохраняются.
+
+    Args:
+        df: входной кадр (в т.ч. пустой).
+
+    Returns:
+        DataFrame с колонками V3; отсутствующие поля — NA.
+    """
+    if df is None:
+        return pd.DataFrame(columns=list(ODDS_STORE_COLUMNS_V3))
+    return df.reindex(columns=list(ODDS_STORE_COLUMNS_V3))
+
+
+def migrate_v1_to_v3(df: pd.DataFrame) -> pd.DataFrame:
+    """Цепочка V1→V2→V3: переименование R20 и отброс open/draw Pinnacle как в V3.
+
+    Args:
+        df: кадр V1 или частичный; ``None`` трактуется как пустой V1.
+
+    Returns:
+        Кадр по схеме :data:`ODDS_STORE_COLUMNS`.
+    """
+    return migrate_v2_to_v3(migrate_v1_to_v2(df))
+
+
+def _is_store_v3_frame(df: pd.DataFrame) -> bool:
+    """True, если кадр уже в терминах V3 (нет колонок, характерных только для V2).
+
+    Пустой кадр без колонок — False (нужно выравнивание по целевой схеме).
+    """
+    if df is None:
+        return False
+    if df.empty and len(df.columns) == 0:
+        return False
+    cols = frozenset(df.columns)
+    if cols & _V2_ONLY_COLUMNS:
+        return False
+    return frozenset(ODDS_STORE_COLUMNS_V3).issubset(cols)
+
+
 def _is_store_v2_frame(df: pd.DataFrame) -> bool:
     """True, если кадр уже в терминах V2 (есть обязательная колонка-сентинел)."""
     return "commence_time_utc" in df.columns
@@ -131,23 +205,25 @@ def _frame_has_v1_odds_columns(df: pd.DataFrame) -> bool:
     return "pinnacle_home_open" in df.columns
 
 
-def _coerce_input_to_v2(df: pd.DataFrame) -> pd.DataFrame:
-    """Привести произвольный вход (V1 backfill, V2, пустой) к кадру перед выравниванием.
+def _coerce_input_to_v3(df: pd.DataFrame) -> pd.DataFrame:
+    """Привести произвольный вход (V1, V2, V3, пустой) к кадру перед выравниванием V3.
 
-    Кадр с колонками V1 и одновременно ``commence_time_utc`` (из enrichment) всё равно
-    мигрирует по :func:`migrate_v1_to_v2`, иначе ``commence_time_utc`` ошибочно блокировал бы
-    переименование.
+    Кадр с колонками V1 и одновременно ``commence_time_utc`` (из enrichment) сначала
+    проходит :func:`migrate_v1_to_v2`, затем V2→V3, подставляя ``commence_time_utc`` из
+    исходного кадра при необходимости.
     """
     if df.empty and len(df.columns) == 0:
-        return pd.DataFrame(columns=list(ODDS_STORE_COLUMNS_V2))
+        return pd.DataFrame(columns=list(ODDS_STORE_COLUMNS_V3))
     if _frame_has_v1_odds_columns(df):
-        out = migrate_v1_to_v2(df)
+        out2 = migrate_v1_to_v2(df)
         if "commence_time_utc" in df.columns:
-            out["commence_time_utc"] = df["commence_time_utc"]
-        return out
+            out2["commence_time_utc"] = df["commence_time_utc"]
+        return migrate_v2_to_v3(out2)
+    if _is_store_v3_frame(df):
+        return df.reindex(columns=list(ODDS_STORE_COLUMNS_V3))
     if _is_store_v2_frame(df):
-        return df
-    return migrate_v1_to_v2(df)
+        return migrate_v2_to_v3(df)
+    return migrate_v1_to_v3(df)
 
 
 def _now_utc_iso() -> str:
@@ -156,15 +232,15 @@ def _now_utc_iso() -> str:
 
 
 def _align_to_store_schema(df: pd.DataFrame) -> pd.DataFrame:
-    """Оставить только колонки схемы V2 store, в фиксированном порядке; лишние отбрасываются.
+    """Оставить только колонки схемы V3 store, в фиксированном порядке; лишние отбрасываются.
 
-    Вход V1 (без ``commence_time_utc``) сначала мигрирует в V2 in-memory.
+    Вход V1 / V2 сначала приводится к V3 in-memory.
     """
-    v2 = _coerce_input_to_v2(df)
-    extra = [c for c in v2.columns if c not in ODDS_STORE_COLUMNS_V2]
+    v3 = _coerce_input_to_v3(df)
+    extra = [c for c in v3.columns if c not in ODDS_STORE_COLUMNS_V3]
     if extra:
         logger.debug("Отброшены неизвестные колонки odds store: %s", extra)
-    return v2.reindex(columns=list(ODDS_STORE_COLUMNS_V2))
+    return v3.reindex(columns=list(ODDS_STORE_COLUMNS_V3))
 
 
 def _coerce_fetched_for_sort(s: pd.Series) -> pd.Series:
@@ -173,25 +249,26 @@ def _coerce_fetched_for_sort(s: pd.Series) -> pd.Series:
 
 
 def load_odds_store(store_path: Path) -> pd.DataFrame:
-    """Загрузить Parquet-таблицу odds. Если файла нет — пустой DataFrame со схемой V2.
+    """Загрузить Parquet-таблицу odds. Если файла нет — пустой DataFrame со схемой V3.
 
-    Файл без колонки ``commence_time_utc`` считается V1 и мигрируется в V2 в памяти.
+    Файл V1 (без ``commence_time_utc``) или V2 (open+close) прозрачно приводится к V3
+    (цепочка V1→V2→V3 либо V2→V3).
 
     Args:
         store_path: путь к ``*.parquet`` (например ``.../pinnacle_odds.parquet``).
 
     Returns:
-        DataFrame с колонками :data:`ODDS_STORE_COLUMNS` (V2, возможны NaN).
+        DataFrame с колонками :data:`ODDS_STORE_COLUMNS` (V3, возможны NaN).
     """
     if not store_path.exists():
-        return pd.DataFrame(columns=list(ODDS_STORE_COLUMNS_V2))
+        return pd.DataFrame(columns=list(ODDS_STORE_COLUMNS_V3))
     df = pd.read_parquet(store_path)
     if df.empty:
-        return pd.DataFrame(columns=list(ODDS_STORE_COLUMNS_V2))
-    if not _is_store_v2_frame(df):
-        logger.debug("Миграция odds store V1→V2 при загрузке: %s", store_path)
-    elif list(df.columns) != list(ODDS_STORE_COLUMNS_V2):
-        logger.debug("Выравнивание колонок loaded odds store по схеме V2")
+        return pd.DataFrame(columns=list(ODDS_STORE_COLUMNS_V3))
+    if _frame_has_v1_odds_columns(df) and not _is_store_v2_frame(df):
+        logger.debug("Миграция odds store V1→V3 при загрузке: %s", store_path)
+    elif not _is_store_v3_frame(df):
+        logger.debug("Миграция/выравнивание loaded odds store → V3: %s", store_path)
     return _align_to_store_schema(df)
 
 
@@ -232,8 +309,8 @@ def save_odds_store(df: pd.DataFrame, store_path: Path) -> None:
     """Сохранить таблицу odds в Parquet (атомарная запись, не ломает существующий файл при сбое).
 
     Args:
-        df: данные; лишние колонки отбрасываются, отсутствующие в схеме V2 — NaN.
-            Кадр V1 без ``commence_time_utc`` мигрирует в V2 перед записью.
+        df: данные; лишние колонки отбрасываются, отсутствующие в схеме V3 — NaN.
+            Кадр V1 / V2 мигрирует в V3 перед записью.
         store_path: целевой путь.
     """
     _write_parquet_atomic(df, store_path)
@@ -249,10 +326,10 @@ def upsert_odds_store(existing_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.Dat
     Args:
         existing_df: текущий снимок (может быть пустым).
         new_df: новые строки; при отсутствии ``fetched_at`` подставляется текущий UTC ISO.
-            Кадр в формате V1 (как из backfill R20) автоматически приводится к V2.
+            Кадр V1 (R20) или V2 автоматически приводится к V3.
 
     Returns:
-        Итоговый DataFrame по схеме V2 store, без дубликатов по ключам.
+        Итоговый DataFrame по схеме V3 store, без дубликатов по ключам.
     """
     existing = _align_to_store_schema(existing_df)
     new = _align_to_store_schema(new_df.copy())
@@ -265,7 +342,7 @@ def upsert_odds_store(existing_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.Dat
             new.loc[fmask, "fetched_at"] = _now_utc_iso()
 
     if new.empty and existing.empty:
-        return pd.DataFrame(columns=list(ODDS_STORE_COLUMNS_V2))
+        return pd.DataFrame(columns=list(ODDS_STORE_COLUMNS_V3))
     if new.empty:
         return existing
     if existing.empty:

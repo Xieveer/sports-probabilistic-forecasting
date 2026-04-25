@@ -23,7 +23,11 @@ import pandas as pd
 from pandera import Check, Column, DataFrameSchema
 from pandera.errors import SchemaError, SchemaErrors
 
-from sports_forecast.data.providers.odds.store import ODDS_STORE_COLUMNS_V1, ODDS_STORE_COLUMNS_V2
+from sports_forecast.data.providers.odds.store import (
+    ODDS_STORE_COLUMNS_V1,
+    ODDS_STORE_COLUMNS_V2,
+    ODDS_STORE_COLUMNS_V3,
+)
 
 
 # Метаданные store (не odds-числа)
@@ -36,6 +40,19 @@ _ODDS_STORE_NON_DECIMAL_V2: Final[frozenset[str]] = frozenset(
         "open_snapshot_utc",
         "close_snapshot_utc",
         "open_minutes_before",
+        "close_minutes_before",
+        "fetched_at",
+    }
+)
+
+# R21.10+ V3: close-only, без open
+_ODDS_STORE_NON_DECIMAL_V3: Final[frozenset[str]] = frozenset(
+    {
+        "game_date",
+        "home_team_norm",
+        "away_team_norm",
+        "commence_time_utc",
+        "close_snapshot_utc",
         "close_minutes_before",
         "fetched_at",
     }
@@ -54,11 +71,20 @@ _ODDS_V2_DECIMAL_COLS: Final[tuple[str, ...]] = tuple(
 _ODDS_V2_TOTAL_LINE_COLS: Final[tuple[str, ...]] = tuple(
     c for c in ODDS_STORE_COLUMNS_V2 if "_line_" in c
 )
+
+# R21 V3: только close-десятичные (без line / без метаданных)
+_ODDS_V3_DECIMAL_COLS: Final[tuple[str, ...]] = tuple(
+    c for c in ODDS_STORE_COLUMNS_V3 if c not in _ODDS_STORE_NON_DECIMAL_V3 and "_line_" not in c
+)
+_ODDS_V3_TOTAL_LINE_COLS: Final[tuple[str, ...]] = tuple(
+    c for c in ODDS_STORE_COLUMNS_V3 if "_line_" in c
+)
+
 _ODDS_MINUTES_BEFORE_COLS: Final[tuple[str, ...]] = ("open_minutes_before", "close_minutes_before")
 
-# Union V1 + V2 decimal (уникальные имена) — одна проверка диапазона
+# Union V1 + V2 + V3 decimal (уникальные имена) — одна проверка диапазона
 _ODDS_DECIMAL_COLS: Final[tuple[str, ...]] = tuple(
-    dict.fromkeys([*_PINNACLE_ODDS_FLOAT_COLS, *_ODDS_V2_DECIMAL_COLS])
+    dict.fromkeys([*_PINNACLE_ODDS_FLOAT_COLS, *_ODDS_V2_DECIMAL_COLS, *_ODDS_V3_DECIMAL_COLS])
 )
 
 
@@ -145,13 +171,13 @@ def validate_odds_float_columns(
     *,
     context: str = "odds",
 ) -> None:
-    """Pandera-валидация odds-чисел для R20 (V1) и R21 (V2): букмекеры Pinnacle/1xBet.
+    """Pandera-валидация odds-чисел для R20 (V1) и R21 (V2/V3): букмекеры Pinnacle/1xBet.
 
     Проверяет **только присутствующие** в ``df`` колонки:
 
     * decimal: ``pinnacle_home_open`` (V1) и/или V2 ``*_winner_*`` / ``*_over_*`` / ``*_under_*`` —
       диапазон [1.01, 100.0], nullable;
-    * ``*_total_*_line_*`` (V2): [0.5, 20.0], nullable;
+    * ``*_total_*_line_*`` (V2) и V3 ``*_line_close``: [0.5, 20.0], nullable;
     * ``open_minutes_before``, ``close_minutes_before`` — >= 0, nullable.
 
     Пустой ``df`` пропускается. Нет известных колонок — пропуск.
@@ -166,7 +192,10 @@ def validate_odds_float_columns(
     if df is None or df.empty:
         return
     have_dec = [c for c in _ODDS_DECIMAL_COLS if c in df.columns]
-    have_line = [c for c in _ODDS_V2_TOTAL_LINE_COLS if c in df.columns]
+    have_line = [
+        c for c in (*_ODDS_V2_TOTAL_LINE_COLS, *_ODDS_V3_TOTAL_LINE_COLS) if c in df.columns
+    ]
+    have_line = list(dict.fromkeys(have_line))
     have_min = [c for c in _ODDS_MINUTES_BEFORE_COLS if c in df.columns]
     if not have_dec and not have_line and not have_min:
         return

@@ -15,9 +15,9 @@ from omegaconf import DictConfig, OmegaConf
 from sports_forecast.config.loaders import load_bookmaker_config, load_source_config
 from sports_forecast.data.providers.odds.enrichment import (
     BookmakerExtractionProfile,
-    _v2_row_keys_for_profile,
+    _v3_row_keys_for_profile,
 )
-from sports_forecast.data.providers.odds.store import ODDS_STORE_COLUMNS_V2
+from sports_forecast.data.providers.odds.store import ODDS_STORE_COLUMNS_V3
 
 
 _WINNER_SEMANTICS: Final[frozenset[str]] = frozenset({"winner", "winner_withOT"})
@@ -76,19 +76,19 @@ class TestTheOddsApiBookmakerProfiles:
         assert one.get("total_semantics") == "total"
         assert one.get("has_draw") is True
 
-    def test_profile_expected_columns_subset_of_store_v2(
+    def test_profile_expected_columns_subset_of_store_v3(
         self, the_odds_book_root: DictConfig
     ) -> None:
-        """R21.2 tech-debt: префиксы/семантика профилей согласованы с ``ODDS_STORE_COLUMNS_V2``."""
+        """Префиксы/семантика профилей (close) согласованы с ``ODDS_STORE_COLUMNS_V3``."""
         raw = _as_plain(OmegaConf.select(the_odds_book_root, "bookmaker_profiles"))
         assert isinstance(raw, dict)
-        v2 = set(ODDS_STORE_COLUMNS_V2)
+        v3 = set(ODDS_STORE_COLUMNS_V3)
         for name, node in raw.items():
             if not isinstance(node, dict):
                 continue
             p = BookmakerExtractionProfile.from_mapping(str(name), node)
-            for c in _v2_row_keys_for_profile(p):
-                assert c in v2, f"профиль {name}: {c!r} отсутствует в OddsStore V2"
+            for c in _v3_row_keys_for_profile(p):
+                assert c in v3, f"профиль {name}: {c!r} отсутствует в OddsStore V3"
 
 
 class TestTheOddsApiSnapshotDiscovery:

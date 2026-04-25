@@ -15,23 +15,21 @@ from sports_forecast.data.providers.odds.enrichment import (
     extract_pinnacle_row_from_event,
     merge_odds_into_source_dataframe,
 )
-from sports_forecast.data.providers.odds.store import ODDS_STORE_COLUMNS_V2
+from sports_forecast.data.providers.odds.store import ODDS_STORE_COLUMNS
 from sports_forecast.data.providers.odds.team_name_registry import TeamNameRegistry
 
 
-def _minimal_v2_odds_row(
+def _minimal_v3_odds_row(
     game_date: str = "2024-01-15",
     home: str = "AAA",
     away: str = "BBB",
 ) -> dict[str, object | None]:
-    row: dict[str, object | None] = dict.fromkeys(ODDS_STORE_COLUMNS_V2, None)
+    row: dict[str, object | None] = dict.fromkeys(ODDS_STORE_COLUMNS, None)
     row["game_date"] = game_date
     row["home_team_norm"] = home
     row["away_team_norm"] = away
     row["commence_time_utc"] = "2024-01-15T20:00:00Z"
-    row["open_snapshot_utc"] = "2024-01-14T12:00:00Z"
     row["close_snapshot_utc"] = "2024-01-15T19:00:00Z"
-    row["open_minutes_before"] = 1440.0
     row["close_minutes_before"] = 60.0
     row["pinnacle_winner_withOT_home_close"] = 1.95
     row["pinnacle_winner_withOT_away_close"] = 2.05
@@ -42,7 +40,7 @@ def _minimal_v2_odds_row(
     return row
 
 
-def test_merge_v2_store_columns_into_source() -> None:
+def test_merge_v3_store_columns_into_source() -> None:
     src = pd.DataFrame(
         {
             "datetime": ["2024-01-15T20:00:00Z"],
@@ -51,7 +49,7 @@ def test_merge_v2_store_columns_into_source() -> None:
             "id": ["1"],
         }
     )
-    odds = pd.DataFrame([_minimal_v2_odds_row()])
+    odds = pd.DataFrame([_minimal_v3_odds_row()])
     out = merge_odds_into_source_dataframe(src, odds)
     assert float(out["pinnacle_winner_withOT_home_close"].iloc[0]) == pytest.approx(1.95)
     assert out["commence_time_utc"].iloc[0] == "2024-01-15T20:00:00Z"
@@ -61,7 +59,7 @@ def test_merge_v2_store_columns_into_source() -> None:
     assert "home_team_norm_odds" not in out.columns
 
 
-def test_merge_v2_replaces_overlapping_source_values_no_suffix_columns() -> None:
+def test_merge_v3_replaces_overlapping_source_values_no_suffix_columns() -> None:
     """Поле source с тем же именем, что и в odds, заменяется без дубликатов «*_odds»."""
     src = pd.DataFrame(
         {
@@ -72,7 +70,7 @@ def test_merge_v2_replaces_overlapping_source_values_no_suffix_columns() -> None
             "pinnacle_winner_withOT_home_close": [0.0],
         }
     )
-    odds = pd.DataFrame([_minimal_v2_odds_row()])
+    odds = pd.DataFrame([_minimal_v3_odds_row()])
     out = merge_odds_into_source_dataframe(src, odds)
     assert out["commence_time_utc"].iloc[0] == "2024-01-15T20:00:00Z"
     assert float(out["pinnacle_winner_withOT_home_close"].iloc[0]) == pytest.approx(1.95)
@@ -144,6 +142,32 @@ def test_merge_odds_with_registry_alias() -> None:
     )
     out = merge_odds_into_source_dataframe(src, odds, team_registry=reg)
     assert float(out["pinnacle_home_close"].iloc[0]) == 2.05
+
+
+def test_merge_odds_registry_odds_api_long_names_to_abbr() -> None:
+    """Odds в «длинных» норм-ключах (как store); source — 3-буквенные аббр. (как NHL API)."""
+    reg = TeamNameRegistry.from_source_sections(
+        nhl_api={},
+        odds_api={"SOMETEAMHOME": "HM", "SOMETEAMAWAY": "AW"},
+    )
+    src = pd.DataFrame(
+        {
+            "datetime": ["2024-01-15T20:00:00Z"],
+            "home_team": ["HM"],
+            "away_team": ["AW"],
+        }
+    )
+    odds = pd.DataFrame(
+        {
+            "game_date": ["2024-01-15"],
+            "home_team_norm": ["SOMETEAMHOME"],
+            "away_team_norm": ["SOMETEAMAWAY"],
+            "commence_time_utc": ["2024-01-15T20:00:00Z"],
+            "pinnacle_home_close": [2.2],
+        }
+    )
+    out = merge_odds_into_source_dataframe(src, odds, team_registry=reg)
+    assert float(out["pinnacle_home_close"].iloc[0]) == 2.2
 
 
 def test_merge_odds_fallback_without_registry() -> None:
@@ -318,7 +342,7 @@ def _pinnacle_onexbet_single_event() -> list[dict]:
     ]
 
 
-def test_events_to_odds_frame_multi_bookmaker_pinnacle_onexbet() -> None:
+def test_events_to_odds_frame_multi_bookmaker_pinnacle_onexbet_close_only() -> None:
     profs: dict = {
         "pinnacle": {
             "key": "pinnacle",
@@ -340,19 +364,20 @@ def test_events_to_odds_frame_multi_bookmaker_pinnacle_onexbet() -> None:
     r = df.iloc[0]
     assert r["commence_time_utc"] is not None
     assert "2024-12-10" in r["commence_time_utc"] or "12-10" in (r["commence_time_utc"] or "")
-    # Pinnacle full-game semantics
-    assert r["pinnacle_winner_withOT_home_open"] == pytest.approx(1.7)
-    assert r["pinnacle_winner_withOT_away_open"] == pytest.approx(2.1)
-    assert r["pinnacle_total_withOT_line_open"] == pytest.approx(5.5)
-    assert r["pinnacle_total_withOT_over_open"] == pytest.approx(1.95)
-    assert r["pinnacle_total_withOT_under_open"] == pytest.approx(1.87)
+    # Pinnacle full-game (close)
+    assert r["pinnacle_winner_withOT_home_close"] == pytest.approx(1.7)
+    assert r["pinnacle_winner_withOT_away_close"] == pytest.approx(2.1)
+    assert "pinnacle_winner_withOT_draw_close" not in df.columns
+    assert r["pinnacle_total_withOT_line_close"] == pytest.approx(5.5)
+    assert r["pinnacle_total_withOT_over_close"] == pytest.approx(1.95)
+    assert r["pinnacle_total_withOT_under_close"] == pytest.approx(1.87)
     # 1xBet regulation
-    assert r["onexbet_winner_home_open"] == pytest.approx(1.5)
-    assert r["onexbet_winner_draw_open"] == pytest.approx(4.0)
-    assert r["onexbet_winner_away_open"] == pytest.approx(2.0)
-    assert r["onexbet_total_line_open"] == pytest.approx(4.0)
-    assert r["onexbet_total_over_open"] == pytest.approx(1.8)
-    assert r["onexbet_total_under_open"] == pytest.approx(1.9)
+    assert r["onexbet_winner_home_close"] == pytest.approx(1.5)
+    assert r["onexbet_winner_draw_close"] == pytest.approx(4.0)
+    assert r["onexbet_winner_away_close"] == pytest.approx(2.0)
+    assert r["onexbet_total_line_close"] == pytest.approx(4.0)
+    assert r["onexbet_total_over_close"] == pytest.approx(1.8)
+    assert r["onexbet_total_under_close"] == pytest.approx(1.9)
 
 
 def test_v2_semantics_names_distinct_winner_and_total() -> None:
@@ -416,8 +441,8 @@ def test_totals_line_uses_market_level_point() -> None:
     assert u == pytest.approx(1.85)
 
 
-def test_pinnacle_v2_has_draw_false_draw_columns_nan_for_2way_h2h() -> None:
-    """2-way h2h без Draw: draw-колонки Pinnacle V2 пустые (R21.3/tech-debt)."""
+def test_pinnacle_v3_no_draw_column_for_2way_h2h() -> None:
+    """2-way h2h: колонок ничьи Pinnacle в V3 store нет (R21.10)."""
     profs: dict = {
         "pinnacle": {
             "key": "pinnacle",
@@ -432,9 +457,8 @@ def test_pinnacle_v2_has_draw_false_draw_columns_nan_for_2way_h2h() -> None:
     df = events_to_odds_frame(
         ev_pin, None, "pinnacle", {}, bookmaker_profiles=profs, team_registry=None
     )
-    r = df.iloc[0]
-    assert pd.isna(r["pinnacle_winner_withOT_draw_open"])
-    assert pd.isna(r["pinnacle_winner_withOT_draw_close"])
+    assert "pinnacle_winner_withOT_draw_close" not in df.columns
+    assert "pinnacle_winner_withOT_draw_open" not in df.columns
 
 
 def test_events_to_odds_frame_legacy_no_profiles_same_pinnacle_values() -> None:

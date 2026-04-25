@@ -24,7 +24,7 @@ from sports_forecast.data.providers.odds.refresh import (
     run_odds_refresh,
     save_refresh_state,
 )
-from sports_forecast.data.providers.odds.store import ODDS_STORE_COLUMNS, ODDS_STORE_COLUMNS_V2
+from sports_forecast.data.providers.odds.store import ODDS_STORE_COLUMNS, ODDS_STORE_COLUMNS_V3
 from sports_forecast.validation.schemas import (
     validate_odds_float_columns,
     validate_pinnacle_odds_float_columns,
@@ -223,10 +223,10 @@ def test_validate_pinnacle_odds_rejects_out_of_range() -> None:
         validate_odds_float_columns(bad, context="unit2")
 
 
-def test_validate_odds_v2_rejects_invalid_line() -> None:
-    bad = pd.DataFrame([{"pinnacle_total_withOT_line_open": 0.4}])
-    with pytest.raises(RuntimeError, match="refresh_v2_line"):
-        validate_odds_float_columns(bad, context="refresh_v2_line")
+def test_validate_odds_rejects_invalid_total_line_close() -> None:
+    bad = pd.DataFrame([{"pinnacle_total_withOT_line_close": 0.4}])
+    with pytest.raises(RuntimeError, match="refresh_v3_line"):
+        validate_odds_float_columns(bad, context="refresh_v3_line")
 
 
 def test_run_odds_refresh_store_metrics_v2_in_log(
@@ -425,7 +425,7 @@ def test_merge_odds_mixed_v1_v2_in_source_dropped_in_favor_of_odds() -> None:
             "pinnacle_winner_withOT_home_close": [9.0],
         }
     )
-    row = dict.fromkeys(ODDS_STORE_COLUMNS_V2, None)
+    row = dict.fromkeys(ODDS_STORE_COLUMNS_V3, None)
     row.update(
         {
             "game_date": "2024-01-15",
