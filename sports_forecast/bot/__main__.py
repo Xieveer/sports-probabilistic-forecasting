@@ -6,9 +6,11 @@ import asyncio
 import os
 
 import hydra
+from dotenv import load_dotenv
 from omegaconf import DictConfig, OmegaConf
 
 from sports_forecast.bot.dispatcher import build_dispatcher
+from sports_forecast.config.loaders import PROJECT_ROOT
 from sports_forecast.utils.log_config import configure_logging, get_logger
 
 
@@ -35,6 +37,7 @@ async def _async_main(cfg: DictConfig, token: str) -> None:
 @hydra.main(version_base="1.3", config_path="../../conf", config_name="bot")
 def main(cfg: DictConfig) -> None:
     """Запуск long-polling (MVP)."""
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
     configure_logging(cfg.get("logging", {}).get("level", "INFO"))
     token = os.getenv("BOT_TOKEN", "").strip()
     if not token:

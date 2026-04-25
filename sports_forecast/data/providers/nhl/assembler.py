@@ -288,6 +288,49 @@ def _snapshot_csv_rows(
     return out
 
 
+def _sort_rows_chronologically(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Упорядочить строки по ``datetime``, затем по ``id`` (устойчиво к пропускам даты)."""
+    if len(rows) <= 1:
+        return rows
+    df = pd.DataFrame(rows)
+    if "datetime" in df.columns:
+        ts = pd.to_datetime(df["datetime"], errors="coerce", utc=True)
+        df = df.assign(_ts=ts)
+        sort_cols: list[str] = ["_ts"]
+        if "id" in df.columns:
+            sort_cols.append("id")
+        df = df.sort_values(by=sort_cols, na_position="last")
+        df = df.drop(columns=["_ts"])
+    elif "id" in df.columns:
+        df = df.sort_values(by="id")
+    return cast(list[dict[str, Any]], df.to_dict(orient="records"))
+
+
+def _merge_full_source_snapshot(
+    stubs: list[ScheduleGameStub],
+    rows_from_current_pass: list[dict[str, Any]],
+    prev_by_id: dict[str, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Собрать полный ``source.csv``: история вне окна + пересчитанное окно расписания.
+
+    Строки с ``id``, попавшими в текущее расписание (``stubs``), заменяются на результат
+    текущего прогона (см. :func:`_snapshot_csv_rows`). Остальные ``id`` из прошлого файла
+    сохраняются без изменений. Итог сортируется по времени матча.
+
+    Returns:
+        ``(combined_rows, n_retained_outside_window, n_rows_in_window)``.
+    """
+    window = _snapshot_csv_rows(stubs, rows_from_current_pass, prev_by_id)
+    stub_ids = {str(s.game_id) for s in stubs}
+    retained = [row for sid, row in prev_by_id.items() if sid not in stub_ids]
+    n_ret, n_win = len(retained), len(window)
+    if not retained:
+        return window, 0, n_win
+    if not window:
+        return _sort_rows_chronologically(retained), n_ret, 0
+    return _sort_rows_chronologically(retained + window), n_ret, n_win
+
+
 def _load_previous_source_rows(csv_path: Path) -> dict[str, dict[str, Any]]:
     """Индекс строк прошлого ``source.csv`` по ``id`` (для checkpoint и смены upcoming→OFF)."""
     if not csv_path.exists():
@@ -392,12 +435,17 @@ class NhlDataAssembler:
 
         Чекпоинт и HTTP-обогащение выполняются только для завершённых (``OFF``) матчей; уже
         собранные строки подтягиваются из предыдущего ``output_csv_path`` по ``id``, чтобы
-        полная таблица не обнулялась между прогонами.
+        не терять прогресс внутри одного окна расписания.
+
+        При записи в ``output_csv_path`` результат **объединяется** с матчами **вне** текущего
+        интервала расписания: старые строки (не из этого прогона ``stubs``) сохраняются,
+        строки по датам окна заменяются/дополняются данными текущего запуска (инкремент без
+        затирания всей истории).
 
         Args:
             checkpoint_base: Каталог ``data/source/<name>`` для checkpoint матчей и прогресса расписания.
-            output_csv_path: Если задан, периодически перезаписывается (полный снимок: префикс
-                текущего прогона + хвост из предыдущего файла); финал — то же, чтобы не терять строки при обрыве.
+            output_csv_path: Если задан, периодически перезаписывается полным снимком (история
+                вне окна + окно); финал — то же.
 
         Returns:
             Таблица в колонках, согласованных с ``docs/cursor/source_data/nhl.md`` и downstream clean.
@@ -589,11 +637,14 @@ class NhlDataAssembler:
 
             flush_n = self._cfg.csv_flush_every
             if output_csv_path is not None and flush_n > 0 and len(rows) % flush_n == 0:
-                snap = _snapshot_csv_rows(stubs, rows, prev_by_id)
-                pd.DataFrame(snap).to_csv(output_csv_path, index=False)
+                merged, n_ret, n_win = _merge_full_source_snapshot(stubs, rows, prev_by_id)
+                pd.DataFrame(merged).to_csv(output_csv_path, index=False)
                 logger.info(
-                    "NHL assemble: промежуточная запись CSV (%d строк, обработано в проходе %d) → %s",
-                    len(snap),
+                    "NHL assemble: промежуточная запись CSV (%d всего: вне окна %d, окно %d; "
+                    "обработано в проходе %d) → %s",
+                    len(merged),
+                    n_ret,
+                    n_win,
                     len(rows),
                     output_csv_path,
                 )
@@ -610,18 +661,21 @@ class NhlDataAssembler:
                     stub.game_date,
                 )
 
-        snapshot = _snapshot_csv_rows(stubs, rows, prev_by_id)
-        df_out = pd.DataFrame(snapshot)
-        if not snapshot:
+        merged, n_ret, n_win = _merge_full_source_snapshot(stubs, rows, prev_by_id)
+        df_out = pd.DataFrame(merged)
+        if not merged:
             logger.warning("NHL assemble: нет строк (проверьте интервал дат и фильтры)")
         else:
             logger.info(
-                "NHL assemble: готово, строк в таблице: %d (в текущем проходе обработано записей: %d)",
-                len(snapshot),
+                "NHL assemble: готово, всего строк: %d (вне окна расписания: %d, в окне: %d; "
+                "обработано записей в проходе: %d)",
+                len(merged),
+                n_ret,
+                n_win,
                 len(rows),
             )
 
-        if output_csv_path is not None and snapshot:
+        if output_csv_path is not None and len(merged) > 0:
             df_out.to_csv(output_csv_path, index=False)
 
         return df_out

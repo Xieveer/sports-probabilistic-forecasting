@@ -1,0 +1,24 @@
+# Реестр нормализации команд NHL для merge The Odds API ↔ source (NHL Web API).
+# Ключи и значения: произвольные строки; при загрузке приводятся к одному формату
+# (см. team_name_registry.normalize_team_key).
+#
+# nhl_api — варианты имён, как в ответах NHL Web API (полные названия, города, опечатки).
+# odds_api — варианты, как в The Odds API (другие сокращения, бренды букмекеров).
+# canonical в значении: «целевой» ключ, по которому должны сходиться оба источника
+# (часто короткое обозначение, совпадающее с _norm_ от эталонного имени в source).
+#
+# Пустые секции оставлены намеренно: пополняйте по мере появления unmatched в
+# data/source/nhl/odds/unmatched_teams.csv
+#
+# Примеры (раскомментируйте и правьте под фактические несовпадения):
+# nhl_api:
+#   "Montréal Canadiens": "MTL"
+#   "Montreal Canadiens": "MTL"
+# odds_api:
+#   "Habs": "MTL"
+#
+version: 1
+
+nhl_api: {}
+
+odds_api: {}

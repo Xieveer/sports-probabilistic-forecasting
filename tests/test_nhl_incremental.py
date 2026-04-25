@@ -7,9 +7,11 @@ from pathlib import Path
 
 from sports_forecast.data.providers.nhl.assembler import (
     AssemblerConfig,
+    _merge_full_source_snapshot,
     last_finished_match_date_from_source_csv,
     resolve_incremental_date_from,
 )
+from sports_forecast.data.providers.nhl.schedule import ScheduleGameStub
 
 
 def test_last_finished_match_date_from_csv(tmp_path: Path) -> None:
@@ -46,3 +48,38 @@ def test_resolve_incremental_adjusts_date_from(tmp_path: Path) -> None:
     )
     adj = resolve_incremental_date_from(base, p)
     assert adj.date_from == date(2024, 3, 12)
+
+
+def test_merge_full_source_snapshot_keeps_history_outside_window() -> None:
+    """Инкремент: строки вне окна расписания остаются; окно заменяется."""
+    prev = {
+        "1": {"id": "1", "datetime": "2020-01-01T20:00:00Z", "match_is_end": "1"},
+        "2": {"id": "2", "datetime": "2024-01-01T20:00:00Z", "match_is_end": "1"},
+    }
+    stub = ScheduleGameStub(
+        game_id=2,
+        season=2024,
+        game_type=2,
+        game_date="2024-01-01",
+        start_time_utc="2024-01-01T20:00:00Z",
+        venue_default="X",
+        home_abbrev="A",
+        away_abbrev="B",
+        game_state="OFF",
+        match_end="REG",
+        home_score=3,
+        away_score=2,
+    )
+    new_row = {
+        "id": "2",
+        "datetime": "2024-01-01T20:00:00Z",
+        "match_is_end": "1",
+        "home_score_ft": "3",
+    }
+    merged, n_ret, n_win = _merge_full_source_snapshot([stub], [new_row], prev)
+    assert n_ret == 1
+    assert n_win == 1
+    assert len(merged) == 2
+    by_id = {str(r["id"]): r for r in merged}
+    assert by_id["1"]["id"] == "1"
+    assert by_id["2"]["home_score_ft"] == "3"

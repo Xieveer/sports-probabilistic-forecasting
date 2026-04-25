@@ -20,9 +20,10 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from dotenv import load_dotenv
 from omegaconf import OmegaConf
 
-from sports_forecast.config.loaders import load_bookmaker_config
+from sports_forecast.config.loaders import PROJECT_ROOT, load_bookmaker_config
 from sports_forecast.data.providers.odds.client import OddsApiClient
 from sports_forecast.data.providers.odds.enrichment import events_to_odds_frame, unwrap_odds_payload
 from sports_forecast.utils.log_config import get_logger
@@ -153,6 +154,7 @@ def run_backfill(
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
     parser = argparse.ArgumentParser(description="Backfill The Odds API → parquet")
     parser.add_argument("--sport-key", default="icehockey_nhl", help="Ключ спорта API")
     parser.add_argument("--from", dest="date_from", required=True, help="YYYY-MM-DD")
