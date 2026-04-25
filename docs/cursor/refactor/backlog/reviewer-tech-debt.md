@@ -192,3 +192,16 @@
   - Убрать `_DEFAULT_SPORT_KEY` / `_DEFAULT_BOOKMAKER_KEY` из модуля; если `sport_key` не задан в конфиге — выбрасывать `ValueError` с понятным сообщением (конфиг всегда должен быть явным для реального турнира).
   - Добавить тест сценария `source_cfg=None` (когда `load_source_config` бросает `FileNotFoundError`): сейчас покрыт логикой кода, но явного теста нет.
   - При выполнении R20.5: синхронизировать и дополнить nhl.yaml-секцию (добавить `store_path`), а не дублировать правки.
+
+### 2026-04-25 — R21.1: OddsStore V2 schema + V1→V2 migration
+
+- **Задача:** `backlog/R21.md` (sub-task R21.1, файл остаётся в backlog до завершения R21.2–R21.9)
+- **Ограничения и компромиссы:**
+  - `validate_pinnacle_odds_float_columns` в `refresh.py` (R20) проверяет V1-имена колонок (`pinnacle_home_open`, …). После V2-миграции ни одна из них не попадёт в V2-store → валидация тихо пропускается (`have=[]`). Данные фактически не валидируются до выполнения R21.7.
+  - `_log_source_odds_metrics` в `refresh.py` использует V1-имя `pinnacle_home_close` для метрики coverage. После merge V2-store в source.csv эта колонка отсутствует → лог выводит «нет колонки», метрика не считается до выполнения R21.6.
+  - `migrate_v1_to_v2` имеет тип параметра `pd.DataFrame`, но внутри защищён от `None` — небольшая несогласованность type hint (безвредна).
+  - Фактическое число колонок V2 — 33 (≈36 по задаче, использовалась «~»). Расхождение декларативное, функциональный контракт полный.
+- **Возможные улучшения / техдолг:**
+  - R21.7: обобщить `_PINNACLE_ODDS_FLOAT_COLS` → `_ODDS_FLOAT_COLS_V2` с покрытием всех decimal-полей обоих букмекеров + `total_line` range check.
+  - R21.6: обновить `_log_source_odds_metrics` на V2-имена (`pinnacle_winner_withOT_home_close`, per-bookmaker coverage).
+  - Добавить тип `pd.DataFrame | None` в сигнатуру `migrate_v1_to_v2` при ближайшем рефакторинге.

@@ -29,6 +29,7 @@
 | R18    | 🔴 High     | Medium    | ✅     | 18-й ✅ (lp_eu_a18: Optuna reg + feature selection) |
 | R19    | 🔴 High     | High      | ✅     | 19-й ✅ (NHL production + Odds API + Telegram-бот; R19.11-R19.12 — операционно; stretch R19.17-R19.20 отложены) |
 | R20    | 🔴 High     | High      | 🟡     | 20-й (Pinnacle odds: backfill 3 сезонов + инкрементальный автоапдейт) |
+| R21    | 🔴 High     | High      | 🟡     | 21-й (Multi-bookmaker odds: Pinnacle OT + 1xBet regulation, total line, dynamic snapshots) |
 
 ---
 
@@ -142,6 +143,17 @@
   - [x] R20.7 — Тесты: unit + integration для odds pipeline ✅ 2026-04-25
   - [ ] R20.8 — *(операционный)* Исторический backfill 3 сезонов NHL
   - [x] R20.9 — TeamNameRegistry: единый реестр нормализации названий команд NHL/Odds API ✅ 2026-04-25
+
+- [ ] **R21** — Multi-bookmaker odds: Pinnacle (OT) + 1xBet (regulation), total line, dynamic snapshots
+  - [x] R21.1 — Data model V2: расширенная схема OddsStore (33 cols) + миграция V1→V2 ✅ 2026-04-25
+  - [ ] R21.2 — Конфигурация: multi-bookmaker profiles + snapshot discovery params
+  - [ ] R21.3 — Enrichment: total line (point) + multi-bookmaker extraction
+  - [ ] R21.4 — Snapshot discovery: динамический алгоритм open/close (probe schedule)
+  - [ ] R21.5 — Backfill: multi-bookmaker + dynamic snapshots integration
+  - [ ] R21.6 — Merge/refresh: обновление пайплайна source.csv для V2
+  - [ ] R21.7 — Валидация + Pandera V2 (multi-bookmaker, total_line, timing)
+  - [ ] R21.8 — Тесты: unit + integration для V2 odds pipeline
+  - [ ] R21.9 — *(операционный)* Миграция store + re-backfill 3 сезонов
 
 - [ ] **R16** — MLflow: сравнительная визуализация метрик по запускам
   - [ ] R16.1 — Добавить теги `sweep_id` и `run_index` в trainer
