@@ -279,3 +279,53 @@ def test_log_source_coverage_warning(
         store_rows=1,
     )
     assert any("min_odds_coverage" in r.message for r in caplog.records)
+
+
+def test_log_source_coverage_warning_v2_primary(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Порог coverage применяется к V2 primary, если V1 колонок нет."""
+    import logging
+
+    from sports_forecast.data.providers.odds import refresh as refresh_mod
+
+    caplog.set_level(logging.WARNING)
+    src = tmp_path / "source_v2.csv"
+    src.write_text(
+        "id,datetime,home_team,away_team,pinnacle_winner_withOT_home_close,onexbet_winner_home_close\n"
+        "a,2025-01-01T00:00:00+00:00,x,y,,\n"
+        "b,2025-01-02T00:00:00+00:00,x,y,,\n"
+        "c,2025-01-03T00:00:00+00:00,x,y,1.95,2.0\n",
+        encoding="utf-8",
+    )
+    refresh_mod._log_source_odds_metrics(
+        src,
+        min_odds_coverage_pct=50.0,
+        store_rows=1,
+    )
+    assert any("min_odds_coverage" in r.message for r in caplog.records)
+
+
+def test_log_source_odds_metrics_v2_pinnacle_onexbet(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    from sports_forecast.data.providers.odds import refresh as refresh_mod
+
+    caplog.set_level(logging.INFO)
+    src = tmp_path / "m.csv"
+    src.write_text(
+        "id,datetime,home_team,away_team,"
+        "pinnacle_winner_withOT_home_close,onexbet_winner_home_close\n"
+        "a,2025-01-01T00:00:00+00:00,x,y,1.9,1.8\n"
+        "b,2025-01-02T00:00:00+00:00,x,y,,\n",
+        encoding="utf-8",
+    )
+    refresh_mod._log_source_odds_metrics(src, min_odds_coverage_pct=0.0, store_rows=2)
+    messages = " ".join(r.message for r in caplog.records)
+    assert "pinnacle_coverage_pct" in messages
+    assert "onexbet_coverage_pct" in messages
+    assert "primary_col=" in messages

@@ -52,6 +52,11 @@ _DEFAULT_STORE_REL: Final[str] = "odds/pinnacle_odds.parquet"
 _DEFAULT_STATE_REL: Final[str] = "odds/refresh_state.json"
 _DEFAULT_UNMATCHED_REL: Final[str] = "odds/unmatched_teams.csv"
 
+# Покрытие в source после merge: Pinnacle/1xBet (R21 V2) и legacy V1.
+_PINNACLE_V1_COVERAGE_COL: Final[str] = "pinnacle_home_close"
+_PINNACLE_V2_COVERAGE_COL: Final[str] = "pinnacle_winner_withOT_home_close"
+_ONEXBET_V2_COVERAGE_COL: Final[str] = "onexbet_winner_home_close"
+
 
 @dataclass
 class RefreshState:
@@ -145,9 +150,12 @@ def _log_source_odds_metrics(
     min_odds_coverage_pct: float,
     store_rows: int,
 ) -> None:
-    """Лог: coverage (``pinnacle_home_close``), match rate, предупреждение ниже порога.
+    """Лог: primary coverage, per-bookmaker V2, предупреждение ниже порога.
 
-    *Match rate* трактуем как долю строк source с непустым ``pinnacle_home_close`` после merge.
+    Primary-колонка: ``pinnacle_home_close`` (V1), иначе ``pinnacle_winner_withOT_home_close``
+    (V2). *Match rate* = доля строк source с непустым primary после merge. Дополнительно
+    логируются ``pinnacle_coverage_pct`` / ``onexbet_coverage_pct``, если соответствующие
+    колонки присутствуют.
     """
     if not source_csv.is_file():
         return
@@ -156,27 +164,58 @@ def _log_source_odds_metrics(
     except OSError as e:
         logger.warning("odds metrics: не прочитан source.csv — %s", e)
         return
-    col = "pinnacle_home_close"
     n = len(src)
     if n == 0:
         return
-    if col not in src.columns:
-        logger.info("odds metrics: нет колонки %s — coverage не посчитан", col)
+    if _PINNACLE_V1_COVERAGE_COL in src.columns:
+        col = _PINNACLE_V1_COVERAGE_COL
+    elif _PINNACLE_V2_COVERAGE_COL in src.columns:
+        col = _PINNACLE_V2_COVERAGE_COL
+    elif _ONEXBET_V2_COVERAGE_COL in src.columns:
+        col = _ONEXBET_V2_COVERAGE_COL
+    else:
+        logger.info(
+            "odds metrics: нет колонок %s / %s / %s — primary coverage не посчитан",
+            _PINNACLE_V1_COVERAGE_COL,
+            _PINNACLE_V2_COVERAGE_COL,
+            _ONEXBET_V2_COVERAGE_COL,
+        )
         return
     with_close = int(src[col].notna().sum())
     coverage = 100.0 * float(with_close) / float(n)
-    # Доля source, сопоставленных с store (оценка «matched» post-merge)
     match_rate_pct = coverage
     logger.info(
         "odds metrics: source_rows=%d %s_nonnull=%d match_rate_vs_source_pct=%.2f "
-        "odds_coverage_pct=%.2f (store_rows=%d)",
+        "odds_coverage_pct=%.2f (store_rows=%d) primary_col=%s",
         n,
         col,
         with_close,
         match_rate_pct,
         coverage,
         store_rows,
+        col,
     )
+    if _PINNACLE_V2_COVERAGE_COL in src.columns:
+        p_cov = 100.0 * float(src[_PINNACLE_V2_COVERAGE_COL].notna().sum()) / float(n)
+        logger.info(
+            "odds metrics: pinnacle_coverage_pct=%.2f (%s)",
+            p_cov,
+            _PINNACLE_V2_COVERAGE_COL,
+        )
+    elif _PINNACLE_V1_COVERAGE_COL in src.columns:
+        p_cov = 100.0 * float(src[_PINNACLE_V1_COVERAGE_COL].notna().sum()) / float(n)
+        logger.info(
+            "odds metrics: pinnacle_coverage_pct=%.2f (legacy %s)",
+            p_cov,
+            _PINNACLE_V1_COVERAGE_COL,
+        )
+    if _ONEXBET_V2_COVERAGE_COL in src.columns:
+        ox = 100.0 * float(src[_ONEXBET_V2_COVERAGE_COL].notna().sum()) / float(n)
+        logger.info(
+            "odds metrics: onexbet_coverage_pct=%.2f (%s)",
+            ox,
+            _ONEXBET_V2_COVERAGE_COL,
+        )
     if coverage < min_odds_coverage_pct:
         logger.warning(
             "odds coverage %.2f%% < min_odds_coverage_pct=%.2f — проверьте merge/registry/API",

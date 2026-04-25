@@ -15,7 +15,89 @@ from sports_forecast.data.providers.odds.enrichment import (
     extract_pinnacle_row_from_event,
     merge_odds_into_source_dataframe,
 )
+from sports_forecast.data.providers.odds.store import ODDS_STORE_COLUMNS_V2
 from sports_forecast.data.providers.odds.team_name_registry import TeamNameRegistry
+
+
+def _minimal_v2_odds_row(
+    game_date: str = "2024-01-15",
+    home: str = "AAA",
+    away: str = "BBB",
+) -> dict[str, object | None]:
+    row: dict[str, object | None] = dict.fromkeys(ODDS_STORE_COLUMNS_V2, None)
+    row["game_date"] = game_date
+    row["home_team_norm"] = home
+    row["away_team_norm"] = away
+    row["commence_time_utc"] = "2024-01-15T20:00:00Z"
+    row["open_snapshot_utc"] = "2024-01-14T12:00:00Z"
+    row["close_snapshot_utc"] = "2024-01-15T19:00:00Z"
+    row["open_minutes_before"] = 1440.0
+    row["close_minutes_before"] = 60.0
+    row["pinnacle_winner_withOT_home_close"] = 1.95
+    row["pinnacle_winner_withOT_away_close"] = 2.05
+    row["pinnacle_total_withOT_line_close"] = 5.5
+    row["onexbet_winner_home_close"] = 1.88
+    row["onexbet_total_line_close"] = 4.0
+    row["fetched_at"] = "2024-01-16T00:00:00+00:00"
+    return row
+
+
+def test_merge_v2_store_columns_into_source() -> None:
+    src = pd.DataFrame(
+        {
+            "datetime": ["2024-01-15T20:00:00Z"],
+            "home_team": ["AAA"],
+            "away_team": ["BBB"],
+            "id": ["1"],
+        }
+    )
+    odds = pd.DataFrame([_minimal_v2_odds_row()])
+    out = merge_odds_into_source_dataframe(src, odds)
+    assert float(out["pinnacle_winner_withOT_home_close"].iloc[0]) == pytest.approx(1.95)
+    assert out["commence_time_utc"].iloc[0] == "2024-01-15T20:00:00Z"
+    assert float(out["onexbet_winner_home_close"].iloc[0]) == pytest.approx(1.88)
+    assert float(out["pinnacle_total_withOT_line_close"].iloc[0]) == pytest.approx(5.5)
+    assert "commence_time_utc_odds" not in out.columns
+    assert "home_team_norm_odds" not in out.columns
+
+
+def test_merge_v2_replaces_overlapping_source_values_no_suffix_columns() -> None:
+    """Поле source с тем же именем, что и в odds, заменяется без дубликатов «*_odds»."""
+    src = pd.DataFrame(
+        {
+            "datetime": ["2024-01-15T20:00:00Z"],
+            "home_team": ["AAA"],
+            "away_team": ["BBB"],
+            "commence_time_utc": ["OLD"],
+            "pinnacle_winner_withOT_home_close": [0.0],
+        }
+    )
+    odds = pd.DataFrame([_minimal_v2_odds_row()])
+    out = merge_odds_into_source_dataframe(src, odds)
+    assert out["commence_time_utc"].iloc[0] == "2024-01-15T20:00:00Z"
+    assert float(out["pinnacle_winner_withOT_home_close"].iloc[0]) == pytest.approx(1.95)
+    assert list(out.columns).count("commence_time_utc") == 1
+
+
+def test_merge_odds_v1_dataframe_still_works() -> None:
+    """Старые имена V1 в odds_df: merge и ключевые поля остаются валидными."""
+    src = pd.DataFrame(
+        {
+            "datetime": ["2024-01-15T20:00:00Z"],
+            "home_team": ["AAA"],
+            "away_team": ["BBB"],
+        }
+    )
+    odds = pd.DataFrame(
+        {
+            "game_date": ["2024-01-15"],
+            "home_team_norm": ["AAA"],
+            "away_team_norm": ["BBB"],
+            "pinnacle_home_close": [1.9],
+        }
+    )
+    out = merge_odds_into_source_dataframe(src, odds)
+    assert float(out["pinnacle_home_close"].iloc[0]) == 1.9
 
 
 def test_merge_odds_by_date_and_teams() -> None:

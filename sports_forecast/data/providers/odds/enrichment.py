@@ -27,6 +27,13 @@ from sports_forecast.utils.log_config import get_logger
 
 logger = get_logger(__name__)
 
+# Ключи соответствия store/enrichment → source (остальные поля `odds_df` — значения для left-merge).
+_ODDS_JOIN_KEYS: Final[tuple[str, str, str]] = (
+    "game_date",
+    "home_team_norm",
+    "away_team_norm",
+)
+
 # Семантика в именах колонок R21: ``winner``/``total`` = regulation; ``*withOT`` = полный матч.
 _WINNER_WITH_OT: Final[str] = "winner_withOT"
 _TOTAL_WITH_OT: Final[str] = "total_withOT"
@@ -637,6 +644,11 @@ def merge_odds_into_source_dataframe(
 ) -> pd.DataFrame:
     """LEFT-merge коэффициентов в копию source-таблицы по дате игры и командам.
 
+    Поддерживает :data:`sports_forecast.data.providers.odds.store.ODDS_STORE_COLUMNS_V2` и
+    legacy V1-имена в ``odds_df``. Перед merge колонки source с теми же именами, что и
+    несущиеся из ``odds_df`` (кроме ключей), удаляются — иначе pandas добавил бы суффикс
+    ``_odds``; так не дублируются тайминги и остальные поля.
+
     Args:
         team_registry: Слой алиас → каноника перед fallback-нормализацией; ``None`` — как раньше.
         unmatched_teams_path: Явный путь к отчёту несоответствий odds↔source; ``None`` — не писать.
@@ -660,6 +672,17 @@ def merge_odds_into_source_dataframe(
     if "game_date" not in o.columns:
         logger.error("odds_df без колонки game_date")
         return source_df.copy()
+    for k in ("home_team_norm", "away_team_norm"):
+        if k not in o.columns:
+            logger.error("odds_df без колонки %s", k)
+            return source_df.copy()
+
+    # Все поля кроме ключей слияния: при пересечении с `source` удаляем слева, чтобы merge
+    # не создавал «*_odds» и не дублировал V1/V2-поля (в т.ч. timing, fetched_at).
+    odds_value_cols = [c for c in o.columns if c not in _ODDS_JOIN_KEYS]
+    drop_from_left = [c for c in odds_value_cols if c in df.columns]
+    if drop_from_left:
+        df = df.drop(columns=drop_from_left, errors="ignore")
 
     source_match_keys = set(
         zip(
