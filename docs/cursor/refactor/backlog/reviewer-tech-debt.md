@@ -231,3 +231,16 @@
   - R21.7: обобщить `_PINNACLE_ODDS_FLOAT_COLS` → `_ODDS_FLOAT_COLS_V2` с покрытием всех decimal-полей обоих букмекеров + `total_line` range check.
   - R21.6: обновить `_log_source_odds_metrics` на V2-имена (`pinnacle_winner_withOT_home_close`, per-bookmaker coverage).
   - Добавить тип `pd.DataFrame | None` в сигнатуру `migrate_v1_to_v2` при ближайшем рефакторинге.
+
+### 2026-04-25 — R21.4 Snapshot discovery
+
+- **Задача:** `backlog/R21.md` (подзадача R21.4) → `done_task/R21.4.md`
+- **Ограничения и компромиссы:**
+  - Seed-запрос (`legacy_open_time_utc`) делается всегда, даже если `ref_dt` будет найден и open-probe даст другой ISO. При probe-попадании seed payload отбрасывается и не возвращается как `p_open` — минорный overhead (1 extra API call / cached miss). В R21.5 можно реиспользовать seed как `p_open` если он совпадает с выбранным open.
+  - `used_legacy_timestamps=True` устанавливается как при полном legacy-fallback (нет `ref_dt`), так и при частичном (close динамический, open из legacy). R21.5 при интеграции должен учесть эту семантику (флаг означает «open из legacy», не «оба из legacy»).
+  - `_legacy_isos`: если `legacy_open_time_utc` передать как `"12:00:00Z"` (без `T`, но с `Z`) — вернётся строка без даты. Патологичный ввод, в практике не встречается (всегда `"HH:MM:SS"`), но стоит добавить guard при дальнейшем рефакторинге.
+  - Тест-моки не реализуют полную сигнатуру `HistoricalOddsClient` Protocol (опущены `markets`, `odds_format`) → `# type: ignore[arg-type]`. При желании можно унифицировать через `**kwargs` в Protocol-сигнатуре или общий базовый mock-класс в conftest.
+- **Возможные улучшения / техдолг:**
+  - R21.5: реиспользовать seed payload как `p_open` если выбранный open-ISO совпадает с seed-ISO.
+  - Добавить тест на патологичный ввод `_legacy_isos` (`"12:00:00Z"` без даты).
+  - Вынести тест-моки клиента в `conftest.py` как reusable fixture (`FakeOddsClient`) — облегчит R21.8 тесты.

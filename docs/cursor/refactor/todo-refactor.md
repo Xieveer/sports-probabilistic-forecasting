@@ -148,7 +148,7 @@
   - [x] R21.1 — Data model V2: расширенная схема OddsStore (33 cols) + миграция V1→V2 ✅ 2026-04-25
   - [x] R21.2 — Конфигурация: multi-bookmaker profiles + snapshot discovery params ✅ 2026-04-25
   - [x] R21.3 — Enrichment: total line (point) + multi-bookmaker extraction ✅ 2026-04-25
-  - [ ] R21.4 — Snapshot discovery: динамический алгоритм open/close (probe schedule)
+  - [x] R21.4 — Snapshot discovery: динамический алгоритм open/close (probe schedule) ✅ 2026-04-25
   - [ ] R21.5 — Backfill: multi-bookmaker + dynamic snapshots integration
   - [ ] R21.6 — Merge/refresh: обновление пайплайна source.csv для V2
   - [ ] R21.7 — Валидация + Pandera V2 (multi-bookmaker, total_line, timing)
