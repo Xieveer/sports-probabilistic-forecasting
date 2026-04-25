@@ -163,3 +163,17 @@
   - Добавить `if _hit_quota: logger.warning(...)` в ветке range-mode `run_backfill`, чтобы оператор явно видел факт частичной загрузки.
   - Добавить тест для `--store` без явного пути (default path через `default_odds_store_path`), чтобы покрыть ветку `args.store == ""` в `main`.
   - Заменить `assert` на `if date_from is None or date_to is None: raise AssertionError(...)` или добавить `# noqa: S101` с комментарием о том, что это second-guard после ValueError.
+
+### 2026-04-25 — R20.4 Интеграция odds refresh в source_refresh pipeline
+
+- **Задача:** `backlog/R20.md` (подзадача R20.4 → отмечена `[x]` внутри R20.md)
+- **Ограничения и компромиссы:**
+  - `ValueError` / `OSError` из `run_odds_refresh` не перехватываются в `main()` — при ошибке odds CLI завершается с трейсбеком вместо чистого `logger.error` + `return 1`. Поведение документировано в docstring как intentional fail-fast, но для операторов Airflow менее удобно, чем структурированный exit-код с логом.
+  - `_DEFAULT_SPORT_KEY = "icehockey_nhl"` зашит как fallback в `source_refresh.py` — для любого нового турнира без явного `odds.sport_key` в конфиге этот дефолт будет семантически неверным.
+  - `OmegaConf.select(odds, "enabled")` в `_odds_post_fetch_enabled` — избыточно; `odds.get("enabled")` на `DictConfig` возвращает то же значение. Работает корректно, но усложняет чтение.
+  - Секция `odds` в `conf/source/nhl.yaml` получила `sport_key`, `incremental_buffer_days`, `max_days_per_refresh`, `auto_merge` — это частично перекрывает планируемый объём R20.5 (nhl.yaml часть). При выполнении R20.5 нужно проверить, что `conf/bookmaker/the_odds_api.yaml` ещё не обновлён, и избежать дублирования изменений.
+- **Возможные улучшения / техдолг:**
+  - Добавить в `main()` явный `except (ValueError, OSError) as e: logger.error("odds refresh failed: %s", e); return 1` для чистого CLI-поведения.
+  - Убрать `_DEFAULT_SPORT_KEY` / `_DEFAULT_BOOKMAKER_KEY` из модуля; если `sport_key` не задан в конфиге — выбрасывать `ValueError` с понятным сообщением (конфиг всегда должен быть явным для реального турнира).
+  - Добавить тест сценария `source_cfg=None` (когда `load_source_config` бросает `FileNotFoundError`): сейчас покрыт логикой кода, но явного теста нет.
+  - При выполнении R20.5: синхронизировать и дополнить nhl.yaml-секцию (добавить `store_path`), а не дублировать правки.
