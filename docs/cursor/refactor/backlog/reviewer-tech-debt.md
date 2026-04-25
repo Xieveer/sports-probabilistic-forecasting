@@ -245,6 +245,17 @@
   - Добавить тест на патологичный ввод `_legacy_isos` (`"12:00:00Z"` без даты).
   - Вынести тест-моки клиента в `conftest.py` как reusable fixture (`FakeOddsClient`) — облегчит R21.8 тесты.
 
+### 2026-04-25 — R21.6 Merge/refresh pipeline V2: no-suffix merge, per-bookmaker coverage
+
+- **Задача:** `backlog/R21.md` (подзадача R21.6; R21 не перенесён в done_task до закрытия всех подзадач)
+- **Ограничения и компромиссы:**
+  - `_ODDS_JOIN_KEYS` в `enrichment.py` дублирует `ODDS_DEDUP_KEYS` из `store.py` (одинаковые тройки). Не импортирован напрямую, чтобы избежать циклической зависимости между enrichment и store. При рефакторинге: вынести в отдельный `constants.py` модуль.
+  - `_log_source_odds_metrics` читает `source.csv` с диска при каждом refresh. На больших файлах — лишний I/O. Можно принимать DataFrame как опциональный аргумент или передавать кэш из вызывающего кода (отложить до R21.9 или при появлении проблем производительности).
+  - Primary coverage-колонка выбирается по приоритету V1 > V2-Pinnacle > onexbet: если source содержит и V1, и V2 одновременно (переходный период до R21.9), priority отдаётся V1. Это может скрыть ухудшение V2 coverage. Пересмотреть после R21.9 (full migration).
+- **Возможные улучшения / техдолг:**
+  - После R21.9 (миграция store V1→V2): удалить V1-fallback в `_log_source_odds_metrics` и упростить приоритет до V2 Pinnacle → onexbet.
+  - Добавить тест для сценария «source содержит и V1, и V2 колонки одновременно» — убедиться, что `drop_from_left` корректно заменяет обе группы без суффиксов.
+
 ### 2026-04-25 — R21.5 Backfill: dynamic snapshot discovery integration
 
 - **Задача:** `backlog/R21.md` (подзадача R21.5) → `done_task/R21.5.md`
