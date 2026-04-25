@@ -244,3 +244,16 @@
   - R21.5: реиспользовать seed payload как `p_open` если выбранный open-ISO совпадает с seed-ISO.
   - Добавить тест на патологичный ввод `_legacy_isos` (`"12:00:00Z"` без даты).
   - Вынести тест-моки клиента в `conftest.py` как reusable fixture (`FakeOddsClient`) — облегчит R21.8 тесты.
+
+### 2026-04-25 — R21.5 Backfill: dynamic snapshot discovery integration
+
+- **Задача:** `backlog/R21.md` (подзадача R21.5) → `done_task/R21.5.md`
+- **Ограничения и компромиссы:**
+  - В legacy-режиме `open_minutes_before = 0` и `close_minutes_before = 0` — семантически неточно (0 означает «ровно в момент игры», тогда как legacy-timestamp произвольный). Правильнее было бы хранить `None` / sentinel, но это потребует nullable int в V2-схеме (R21.1). Принято как временный компромисс до R21.7 (Pandera V2 валидация).
+  - `validate_pinnacle_odds_float_columns` вызывается в `_upsert_if_non_empty` — устаревшее V1-имя, не охватывает V2-колонки (1xBet, total_line). Не вызывает ошибок (V2-колонки просто не проверяются), устраняется в R21.7.
+  - Флаг `used_legacy_timestamps=True` в `SnapshotPlan` устанавливается при обоих вариантах legacy: полном (оба ISO фиксированы) и частичном (только open из legacy). Семантика зафиксирована в tech-debt R21.4; R21.5 следует той же конвенции.
+- **Возможные улучшения / техдолг:**
+  - CLI `--bookmakers pinnacle,onexbet`: override списка букмекеров из командной строки (пропущен в R21.5; функционально покрывается YAML `bookmaker_profiles`). Добавить в R21.8 или отдельной подзадачей.
+  - `quota_budget_per_run` default: при dynamic discovery 3–5 probe-запросов/день вместо 2 — дефолт следует пересмотреть (R21.9 или операционная настройка).
+  - Нет теста для `use_open_close=False` + `legacy_timestamps=False` (dynamic single-snapshot ветка). Добавить в R21.8.
+  - `_snapshot_discovery_params` не тестируется изолированно для edge-cases (пустой список offsets, нечисловые значения). Добавить юнит-тест в R21.8.
