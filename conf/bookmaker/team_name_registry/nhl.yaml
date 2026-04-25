@@ -1,24 +1,87 @@
-# Реестр нормализации команд NHL для merge The Odds API ↔ source (NHL Web API).
-# Ключи и значения: произвольные строки; при загрузке приводятся к одному формату
-# (см. team_name_registry.normalize_team_key).
+# Team name registry: NHL Web API (source) ↔ The Odds API (R21.13)
 #
-# nhl_api — варианты имён, как в ответах NHL Web API (полные названия, города, опечатки).
-# odds_api — варианты, как в The Odds API (другие сокращения, бренды букмекеров).
-# canonical в значении: «целевой» ключ, по которому должны сходиться оба источника
-# (часто короткое обозначение, совпадающее с _norm_ от эталонного имени в source).
+# Формат
+#   nhl_api:   трёхбуквенный код из source/NHL API → канонический аббр. (обычно тождество).
+#   odds_api:  нормализованное имя/ключ из ответа The Odds API → тот же канонический аббр.
+#              Ключ — то, что даёт normalize_team_key(...) для строки home_team/away_team
+#              из JSON букмекера (без пробелов, верхний регистр в этом файле).
 #
-# Пустые секции оставлены намеренно: пополняйте по мере появления unmatched в
-# data/source/nhl/odds/unmatched_teams.csv
+# Workflow пополнения
+#   1. После backfill/merge откройте data/source/nhl/odds/unmatched_teams.csv (если есть).
+#   2. Для каждой пары (odds_key ↔ ожидаемый abbr) добавьте строку odds_api: KEY: ABBR.
+#   3. Переезды/ребрендинг (например Utah): несколько вариантов API-имени → одна команда —
+#      отдельная строка odds_api на каждый вариант (см. UTAH* → UTA ниже).
+#   4. Прогоните тесты/merge локально; закоммитьте только осмысленные правки реестра.
 #
-# Примеры (раскомментируйте и правьте под фактические несовпадения):
-# nhl_api:
-#   "Montréal Canadiens": "MTL"
-#   "Montreal Canadiens": "MTL"
-# odds_api:
-#   "Habs": "MTL"
-#
+# Шаблон-источник: data/source/nhl/odds/registry_mapping_template.csv
+
 version: 1
-
-nhl_api: {}
-
-odds_api: {}
+nhl_api:
+  ANA: ANA
+  ARI: ARI
+  BOS: BOS
+  BUF: BUF
+  CAR: CAR
+  CBJ: CBJ
+  CGY: CGY
+  CHI: CHI
+  COL: COL
+  DAL: DAL
+  DET: DET
+  EDM: EDM
+  FLA: FLA
+  LAK: LAK
+  MIN: MIN
+  MTL: MTL
+  NJD: NJD
+  NSH: NSH
+  NYI: NYI
+  NYR: NYR
+  OTT: OTT
+  PHI: PHI
+  PIT: PIT
+  SEA: SEA
+  SJS: SJS
+  STL: STL
+  TBL: TBL
+  TOR: TOR
+  UTA: UTA
+  VAN: VAN
+  VGK: VGK
+  WPG: WPG
+  WSH: WSH
+odds_api:
+  ANAHEIMDUCKS: ANA
+  ARIZONACOYOTES: ARI
+  BOSTONBRUINS: BOS
+  BUFFALOSABRES: BUF
+  CALGARYFLAMES: CGY
+  CAROLINAHURRICANES: CAR
+  CHICAGOBLACKHAWKS: CHI
+  COLORADOAVALANCHE: COL
+  COLUMBUSBLUEJACKETS: CBJ
+  DALLASSTARS: DAL
+  DETROITREDWINGS: DET
+  EDMONTONOILERS: EDM
+  FLORIDAPANTHERS: FLA
+  LOSANGELESKINGS: LAK
+  MINNESOTAWILD: MIN
+  MONTREALCANADIENS: MTL
+  NASHVILLEPREDATORS: NSH
+  NEWJERSEYDEVILS: NJD
+  NEWYORKISLANDERS: NYI
+  NEWYORKRANGERS: NYR
+  OTTAWASENATORS: OTT
+  PHILADELPHIAFLYERS: PHI
+  PITTSBURGHPENGUINS: PIT
+  SANJOSESHARKS: SJS
+  SEATTLEKRAKEN: SEA
+  STLOUISBLUES: STL
+  TAMPABAYLIGHTNING: TBL
+  TORONTOMAPLELEAFS: TOR
+  UTAHHOCKEYCLUB: UTA
+  UTAHMAMMOTH: UTA
+  VANCOUVERCANUCKS: VAN
+  VEGASGOLDENKNIGHTS: VGK
+  WASHINGTONCAPITALS: WSH
+  WINNIPEGJETS: WPG

@@ -20,6 +20,15 @@ from sports_forecast.utils.log_config import get_logger
 logger = get_logger(__name__)
 
 
+def _safe_fetch_exception_detail(exc: BaseException) -> str:
+    """Краткое описание ошибки HTTP/API для логов без URL/query (в т.ч. без apiKey)."""
+    resp = getattr(exc, "response", None)
+    code = getattr(resp, "status_code", None)
+    if code is not None:
+        return f"{type(exc).__name__} status={code}"
+    return type(exc).__name__
+
+
 @dataclass(frozen=True, slots=True)
 class SnapshotPlan:
     """Набор ISO-моментов снимков и смещений от опорного ``commence_time`` (R21 V2, legacy)."""
@@ -209,7 +218,10 @@ def discover_close_snapshot_for_day(
             use_cache=use_cache,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("close snapshot: seed fetch failed (%s), legacy close only", exc)
+        logger.warning(
+            "close snapshot: seed fetch failed (%s), legacy close only",
+            _safe_fetch_exception_detail(exc),
+        )
         p_seed = {}
     ref_dt = earliest_commence_on_day_from_payload(p_seed, day)
     if ref_dt is None:
@@ -288,7 +300,10 @@ def discover_snapshots_for_day(
             use_cache=use_cache,
         )
     except Exception as exc:  # noqa: BLE001 — устойчивость к сети/кэшу; fallback
-        logger.warning("Snapshot discovery: seed fetch failed (%s), using legacy", exc)
+        logger.warning(
+            "Snapshot discovery: seed fetch failed (%s), using legacy",
+            _safe_fetch_exception_detail(exc),
+        )
         p_seed = {}
 
     ref_dt = earliest_commence_on_day_from_payload(p_seed, day)

@@ -144,7 +144,7 @@ def test_load_save_roundtrip_v3_from_v2_input(tmp_path) -> None:
     assert str(loaded["game_date"].iloc[0]) in ("2024-01-10", "2024-01-10 00:00:00")
 
 
-def test_save_accepts_v1_input_writes_v2(tmp_path) -> None:
+def test_save_accepts_v1_input_writes_v3(tmp_path) -> None:
     path = tmp_path / "out.parquet"
     save_odds_store(pd.DataFrame([_sample_row_v1()]), path)
     loaded = pd.read_parquet(path)

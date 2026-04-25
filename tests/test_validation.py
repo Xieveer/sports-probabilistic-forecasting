@@ -153,6 +153,31 @@ class TestValidateOddsFloatColumnsV2:
             validate_odds_float_columns(bad, context="v1bad")
 
 
+class TestValidateOddsFloatColumnsV3:
+    """R21.14: close-only store V3 — decimal + *_line_close + close_minutes_before."""
+
+    def test_v3_positive_sample(self) -> None:
+        df = pd.DataFrame(
+            [
+                {
+                    "pinnacle_winner_withOT_home_close": 1.91,
+                    "pinnacle_winner_withOT_away_close": 2.05,
+                    "pinnacle_total_withOT_line_close": 5.5,
+                    "pinnacle_total_withOT_over_close": 1.95,
+                    "pinnacle_total_withOT_under_close": 1.95,
+                    "onexbet_winner_home_close": 1.88,
+                    "onexbet_winner_away_close": 2.2,
+                    "onexbet_winner_draw_close": 4.0,
+                    "onexbet_total_line_close": 5.0,
+                    "onexbet_total_over_close": 1.9,
+                    "onexbet_total_under_close": 1.92,
+                    "close_minutes_before": 15.0,
+                }
+            ]
+        )
+        validate_odds_float_columns(df, context="test_v3_ok")
+
+
 # ============================================================================
 # Tests — Raw Schema
 # ============================================================================

@@ -161,8 +161,8 @@ def _build_odds_store_checks_schema(
         col_map,
         strict=False,
         coerce=True,
-        name="OddsStoreNumericV2",
-        description="Odds store: decimal, total_line, minutes_before (nullable).",
+        name="OddsStoreNumericV1V2V3",
+        description="Odds store: decimal odds, total_line, minutes_before (V1/V2/V3 union, nullable).",
     )
 
 

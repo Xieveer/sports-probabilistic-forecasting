@@ -29,7 +29,7 @@ sport_keys:
 bookmakers:
   primary: pinnacle
 
-# Профили букмекеров (R21): семантика имён для V2 store / enrichment.
+# Профили букмекеров (R21): семантика имён для OddsStore V3 / enrichment.
 # Контракт: winner / total = regulation; winner_withOT / total_withOT = полный матч (вкл. ОТ/буллиты).
 bookmaker_profiles:
   pinnacle:
@@ -49,9 +49,10 @@ snapshot_discovery:
   close_t_minus_minutes: 15
 
 # Имена колонок в source.csv после merge — legacy (R19/R20), один Pinnacle без суффиксов семантики.
-# R21 V2: колонки OddsStore и merge формируются по bookmaker_profiles (префикс + winner_semantics/total_semantics);
-# канонический список: sports_forecast.data.providers.odds.store.ODDS_STORE_COLUMNS_V2.
-# Значения по-прежнему из снимков opening vs closing (или динамических снимков после R21.5).
+# R21 V3: колонки OddsStore и merge — close-only по bookmaker_profiles; канонический список:
+# sports_forecast.data.providers.odds.store.ODDS_STORE_COLUMNS_V3 (alias ODDS_STORE_COLUMNS).
+# Секция output_columns ниже — legacy R19/R20 (один Pinnacle, старые имена); при merge с
+# bookmaker_profiles используются семантические имена V3.
 output_columns:
   moneyline:
     home_open: pinnacle_home_open
