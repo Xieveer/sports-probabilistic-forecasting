@@ -156,8 +156,8 @@
   - [x] **R21.10** — Schema V3: close-only (17 cols), убрать draw_withOT, has_draw filtering ✅ 2026-04-26
   - [x] **R21.11** — Snapshot discovery: close-only at T-15min (замена open+close probe) ✅ 2026-04-26
   - [x] **R21.12** — Подробное логирование API-вызовов (day X/N, events, quota) ✅ 2026-04-25
-  - [ ] **R21.13** — Team-name registry: ручное заполнение для 32 команд NHL
-  - [ ] **R21.14** — Тесты + конфиг: обновление под V3 schema
+  - [~] **R21.13** — Team-name registry: ручное заполнение для 32 команд NHL *(header+реестр готов; DoD после V3 re-backfill)*
+  - [x] **R21.14** — Тесты + конфиг: обновление под V3 schema ✅ 2026-04-25
   - [ ] R21.9 — *(операционный)* Re-backfill 3 сезонов NHL с V3 (зависит от R21.10–R21.14)
 
 - [ ] **R16** — MLflow: сравнительная визуализация метрик по запускам

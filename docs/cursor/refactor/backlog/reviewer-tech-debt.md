@@ -312,9 +312,21 @@
 
 - **Задача:** `backlog/R21.md` (подзадача R21.12) → `done_task/R21.12.md`
 - **Ограничения и компромиссы:**
-  - `snapshot_discovery.py` по-прежнему логирует полный URL с `apiKey` в WARNING-сообщениях при `seed fetch failed` (код: `f"... for url: {url}"`). Это **pre-existing** поведение, выходящее за рамки R21.12. В реальных запуска (terminal log) apiKey виден в этих строках. Исправление — за пределами R21.12, предложено ниже.
+  - ~~`snapshot_discovery.py` по-прежнему логирует полный URL с `apiKey` в WARNING-сообщениях при `seed fetch failed`.~~ **Исправлено в R21.14** (2026-04-25): `_safe_fetch_exception_detail()` — WARNING выводит только тип исключения + HTTP status; URL в логи не попадает.
   - Cache-hit логирует `x-requests-remaining` из `last_quota()`, а не из реального заголовка HTTP (заголовок недоступен при кеш-хите). Логически корректно, но значение может устареть, если кеш-хиты идут до первого реального HTTP-запроса.
   - `_log_backfill_close_payload` логирует INFO на каждый день вне зависимости от того, пуст ли ответ (0 events). При массовом backfill это создаёт шум «events_found=0» для дней без матчей. Функционально безвредно.
 - **Возможные улучшения / техдолг:**
-  - `snapshot_discovery.py`: заменить `f"... for url: {url}"` на `f"... for path: {path}"` (strip query). Аналогично подходу `_log_network_response` в client.py. Рекомендуется как часть R21.14 или отдельного hotfix.
+  - ~~`snapshot_discovery.py`: заменить URL на path в WARNING.~~ **Закрыто R21.14** (2026-04-25).
   - В `_log_backfill_close_payload`: добавить guard `if not evs: return` для подавления INFO при 0 events (или понизить до DEBUG).
+
+### 2026-04-25 — R21.14 Тесты + конфиг V3, apiKey fix
+
+- **Задача:** `backlog/R21.md` (подзадача R21.14) → `done_task/R21.14.md`
+- **Ограничения и компромиссы:**
+  - `_ODDS_MINUTES_BEFORE_COLS` в Pandera по-прежнему содержит `"open_minutes_before"` для backward-compat V1/V2 store. В V3 store колонка отсутствует, Pandera её пропускает (`strict=False`). Убрать безопасно только после R21.9 (full V3 backfill), когда V1/V2 parquet больше не загружаются.
+  - `_events_to_odds_frame_v2` в `enrichment.py` — имя функции содержит `_v2`, хотя обрабатывает V3-поток (close-only). До R21.9 функциональных последствий нет.
+  - `test_v3_positive_sample` покрывает только positive path. Negative path (невалидные V3-данные) покрыт существующими V1/V2 тестами в `TestValidateOddsFloatColumnsV2`.
+- **Возможные улучшения / техдолг:**
+  - После R21.9: убрать `"open_minutes_before"` из `_ODDS_MINUTES_BEFORE_COLS` (Pandera cleanup).
+  - После R21.9: переименовать `_events_to_odds_frame_v2` → `_events_to_odds_frame_v3` в `enrichment.py`.
+  - Добавить negative test V3 в `TestValidateOddsFloatColumnsV3` (decimal < 1.0, line < 0).
