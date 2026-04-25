@@ -235,3 +235,21 @@ def test_discover_uses_open_fallback_when_probes_empty_but_ref_from_seed() -> No
 
 def test_unwrap_from_enrichment() -> None:
     assert unwrap_odds_payload({"data": [{"a": 1}]}) == [{"a": 1}]
+
+
+def test_snapshot_discovery_params_empty_offsets_falls_back_to_default() -> None:
+    """Пустой ``open_probe_offsets_hours`` в YAML → дефолтный tuple (R21.8 / tech-debt R21.5)."""
+    from sports_forecast.data.providers.odds.backfill import _snapshot_discovery_params
+
+    off, margin = _snapshot_discovery_params(
+        {"snapshot_discovery": {"open_probe_offsets_hours": [], "close_margin_hours": 2.5}}
+    )
+    assert off == (168.0, 72.0, 24.0)
+    assert margin == 2.5
+
+
+def test_snapshot_discovery_params_non_numeric_close_margin_falls_back() -> None:
+    from sports_forecast.data.providers.odds.backfill import _snapshot_discovery_params
+
+    _off, margin = _snapshot_discovery_params({"snapshot_discovery": {"close_margin_hours": "bad"}})
+    assert margin == 1.0

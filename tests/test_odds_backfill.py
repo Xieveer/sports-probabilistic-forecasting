@@ -12,6 +12,7 @@ from omegaconf import OmegaConf
 
 from sports_forecast.data.providers.odds import backfill as backfill_mod
 from sports_forecast.data.providers.odds.backfill import (
+    _snapshot_discovery_params,
     backfill_day_frames,
     default_odds_store_path,
     last_n_season_windows,
@@ -484,6 +485,64 @@ def test_backfill_day_frames_discover_adds_timing_and_uses_config(
     assert discover_calls[0]["open_probe_offsets_hours"] == (48.0, 24.0)
     assert discover_calls[0]["close_margin_hours"] == 1.5
     assert "bookmaker_profiles" in last_book_cfg
+
+
+def test_backfill_day_frames_single_snapshot_dynamic_no_legacy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``use_open_close=False``, ``legacy_timestamps=False``: один снимок + discover (R21.5 tech-debt)."""
+    plan = SnapshotPlan(
+        open_iso="2024-01-20T10:00:00Z",
+        close_iso="2024-01-20T10:00:00Z",
+        open_minutes_before=200,
+        close_minutes_before=0,
+        reference_commence_time_utc="2024-01-20T20:00:00Z",
+        used_legacy_timestamps=False,
+    )
+
+    def _discover(  # noqa: ANN001
+        _client, _sport_key, _day, **kwargs: object
+    ) -> tuple[SnapshotPlan, dict[str, list[object]], dict[str, list[object]]]:
+        return (plan, {"data": [{"k": 1}]}, {"data": []})
+
+    monkeypatch.setattr(
+        "sports_forecast.data.providers.odds.backfill.discover_snapshots_for_day",
+        _discover,
+    )
+
+    def _eto(_ev_o, _ev_c, *_, **__):  # noqa: ANN001
+        return _sample_odds_one_row()
+
+    monkeypatch.setattr(
+        "sports_forecast.data.providers.odds.backfill.events_to_odds_frame",
+        _eto,
+    )
+    book = _minimal_bookmaker_node(seasons_nhl=[])
+    book["snapshot_discovery"] = {"open_probe_offsets_hours": [12.0], "close_margin_hours": 1.0}
+    df = backfill_day_frames(
+        object(),  # type: ignore[arg-type]
+        "icehockey_nhl",
+        date(2024, 1, 20),
+        book,
+        use_open_close=False,
+        legacy_timestamps=False,
+    )
+    assert len(df) == 1
+    assert df["open_snapshot_utc"].iloc[0] == plan.open_iso
+    assert int(df["open_minutes_before"].iloc[0]) == 200
+
+
+def test_snapshot_discovery_params_from_book() -> None:
+    off, m = _snapshot_discovery_params(
+        {
+            "snapshot_discovery": {
+                "open_probe_offsets_hours": [99.0, 1.0],
+                "close_margin_hours": 3.25,
+            }
+        }
+    )
+    assert off == (99.0, 1.0)
+    assert m == 3.25
 
 
 def test_backfill_day_frames_legacy_no_discover_fixed_isos(

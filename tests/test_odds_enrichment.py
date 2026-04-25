@@ -396,6 +396,47 @@ def test_extract_pinnacle_row_legacy_output_columns_unchanged() -> None:
     assert row["pinnacle_total_close"] == pytest.approx(1.95)
 
 
+def test_totals_line_uses_market_level_point() -> None:
+    """``point`` на рынке ``totals`` (не только в outcomes) задаёт line."""
+    bm = {
+        "markets": [
+            {
+                "key": "totals",
+                "point": 6.0,
+                "outcomes": [
+                    {"name": "Over", "price": 1.9},
+                    {"name": "Under", "price": 1.85},
+                ],
+            }
+        ]
+    }
+    line, o, u = _totals_line_and_prices(bm)
+    assert line == pytest.approx(6.0)
+    assert o == pytest.approx(1.9)
+    assert u == pytest.approx(1.85)
+
+
+def test_pinnacle_v2_has_draw_false_draw_columns_nan_for_2way_h2h() -> None:
+    """2-way h2h без Draw: draw-колонки Pinnacle V2 пустые (R21.3/tech-debt)."""
+    profs: dict = {
+        "pinnacle": {
+            "key": "pinnacle",
+            "winner_semantics": "winner_withOT",
+            "total_semantics": "total_withOT",
+            "has_draw": False,
+        },
+    }
+    ev = _pinnacle_onexbet_single_event()
+    # только Pinnacle (2-way)
+    ev_pin = [{**ev[0], "bookmakers": [ev[0]["bookmakers"][0]]}]
+    df = events_to_odds_frame(
+        ev_pin, None, "pinnacle", {}, bookmaker_profiles=profs, team_registry=None
+    )
+    r = df.iloc[0]
+    assert pd.isna(r["pinnacle_winner_withOT_draw_open"])
+    assert pd.isna(r["pinnacle_winner_withOT_draw_close"])
+
+
 def test_events_to_odds_frame_legacy_no_profiles_same_pinnacle_values() -> None:
     out_cols: dict = {
         "moneyline": {

@@ -241,3 +241,51 @@ def test_upsert_new_partial_nan_fetched_at() -> None:
     out = upsert_odds_store(pd.DataFrame(), new)
     assert len(out) == 1
     assert float(out["pinnacle_winner_withOT_home_close"].iloc[0]) == 9.0
+
+
+def test_migrate_v1_drops_extra_columns() -> None:
+    """V1-кадр с лишними полями: после миграции только схема V2 (edge case)."""
+    r = {**_sample_row_v1(), "unused_legacy": 123}
+    v2 = migrate_v1_to_v2(pd.DataFrame([r]))
+    assert "unused_legacy" not in v2.columns
+    assert list(v2.columns) == list(ODDS_STORE_COLUMNS_V2)
+
+
+def test_migrate_v1_none_frame_yields_empty_v2() -> None:
+    v2 = migrate_v1_to_v2(None)  # type: ignore[arg-type]
+    assert v2.empty
+    assert list(v2.columns) == list(ODDS_STORE_COLUMNS_V2)
+
+
+def test_roundtrip_v2_preserves_timings_and_totals(tmp_path) -> None:
+    """Parquet save/load: тайминги, line, over/under open/close для Pinnacle + onexbet."""
+    row: dict = dict.fromkeys(ODDS_STORE_COLUMNS_V2, None)
+    row.update(
+        {
+            "game_date": "2024-03-01",
+            "home_team_norm": "H",
+            "away_team_norm": "A",
+            "commence_time_utc": "2024-03-01T18:00:00Z",
+            "open_snapshot_utc": "2024-02-28T12:00:00Z",
+            "close_snapshot_utc": "2024-03-01T17:00:00Z",
+            "open_minutes_before": 3000.0,
+            "close_minutes_before": 60.0,
+            "pinnacle_total_withOT_line_open": 5.5,
+            "pinnacle_total_withOT_over_open": 1.9,
+            "pinnacle_total_withOT_under_open": 1.85,
+            "pinnacle_total_withOT_line_close": 5.0,
+            "pinnacle_total_withOT_over_close": 1.88,
+            "pinnacle_total_withOT_under_close": 1.92,
+            "onexbet_total_line_open": 4.0,
+            "onexbet_total_over_open": 1.8,
+            "onexbet_total_under_open": 1.9,
+            "fetched_at": "2024-03-01T00:00:00+00:00",
+        }
+    )
+    path = tmp_path / "o.parquet"
+    save_odds_store(pd.DataFrame([row]), path)
+    got = load_odds_store(path)
+    assert str(got["open_snapshot_utc"].iloc[0]) == "2024-02-28T12:00:00Z"
+    assert float(got["pinnacle_total_withOT_line_open"].iloc[0]) == 5.5
+    assert float(got["onexbet_total_under_open"].iloc[0]) == 1.9
+    assert float(got["open_minutes_before"].iloc[0]) == 3000.0

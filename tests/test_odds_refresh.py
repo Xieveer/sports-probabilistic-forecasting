@@ -24,7 +24,7 @@ from sports_forecast.data.providers.odds.refresh import (
     run_odds_refresh,
     save_refresh_state,
 )
-from sports_forecast.data.providers.odds.store import ODDS_STORE_COLUMNS
+from sports_forecast.data.providers.odds.store import ODDS_STORE_COLUMNS, ODDS_STORE_COLUMNS_V2
 from sports_forecast.validation.schemas import (
     validate_odds_float_columns,
     validate_pinnacle_odds_float_columns,
@@ -364,6 +364,83 @@ def test_log_source_coverage_warning_v2_primary(
         store_rows=1,
     )
     assert any("min_odds_coverage" in r.message for r in caplog.records)
+
+
+def test_log_source_metrics_when_no_pinnacle_or_onexbet_columns(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """R20.3 tech-debt: ветка «нет primary-колонок» — информативный log без исключения."""
+    import logging
+
+    from sports_forecast.data.providers.odds import refresh as refresh_mod
+
+    caplog.set_level(logging.INFO)
+    src = tmp_path / "o.csv"
+    src.write_text(
+        "id,datetime,home_team,away_team\na,2025-01-01T00:00:00+00:00,x,y\n",
+        encoding="utf-8",
+    )
+    refresh_mod._log_source_odds_metrics(
+        src,
+        min_odds_coverage_pct=50.0,
+        store_rows=0,
+    )
+    text = " ".join(r.message for r in caplog.records)
+    assert "нет колонок" in text or "primary coverage не посчитан" in text
+
+
+def test_log_source_metrics_prefers_v1_column_when_mixed(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """R21.6: при одновременном V1 и V2 в source primary = legacy ``pinnacle_home_close``."""
+    import logging
+
+    from sports_forecast.data.providers.odds import refresh as refresh_mod
+
+    caplog.set_level(logging.INFO)
+    src = tmp_path / "mix.csv"
+    src.write_text(
+        "id,datetime,home_team,away_team,pinnacle_home_close,pinnacle_winner_withOT_home_close\n"
+        "a,2025-01-01T00:00:00+00:00,x,y,1.9,1.95\n",
+        encoding="utf-8",
+    )
+    refresh_mod._log_source_odds_metrics(src, min_odds_coverage_pct=0.0, store_rows=1)
+    text = " ".join(r.message for r in caplog.records)
+    assert "pinnacle_home_close" in text
+    assert "primary_col=pinnacle_home_close" in text
+
+
+def test_merge_odds_mixed_v1_v2_in_source_dropped_in_favor_of_odds() -> None:
+    """Переходный source с V1+V2: V2-поле из odds перезаписывает; V1 остаётся, если в odds нет V1-имён."""
+    from sports_forecast.data.providers.odds.enrichment import merge_odds_into_source_dataframe
+
+    src = pd.DataFrame(
+        {
+            "datetime": ["2024-01-15T20:00:00+00:00"],
+            "home_team": ["AAA"],
+            "away_team": ["BBB"],
+            "pinnacle_home_close": [1.0],
+            "pinnacle_winner_withOT_home_close": [9.0],
+        }
+    )
+    row = dict.fromkeys(ODDS_STORE_COLUMNS_V2, None)
+    row.update(
+        {
+            "game_date": "2024-01-15",
+            "home_team_norm": "AAA",
+            "away_team_norm": "BBB",
+            "pinnacle_winner_withOT_home_close": 1.95,
+        }
+    )
+    odds = pd.DataFrame([row])
+    out = merge_odds_into_source_dataframe(src, odds)
+    assert float(out["pinnacle_winner_withOT_home_close"].iloc[0]) == pytest.approx(1.95)
+    # legacy V1 в odds не передаётся — колонка из исходного source сохраняется
+    assert float(out["pinnacle_home_close"].iloc[0]) == pytest.approx(1.0)
+    assert "pinnacle_home_close_odds" not in out.columns
+    assert "pinnacle_winner_withOT_home_close_odds" not in out.columns
 
 
 def test_log_source_odds_metrics_v2_pinnacle_onexbet(
