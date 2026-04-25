@@ -126,10 +126,25 @@ def _is_store_v2_frame(df: pd.DataFrame) -> bool:
     return "commence_time_utc" in df.columns
 
 
+def _frame_has_v1_odds_columns(df: pd.DataFrame) -> bool:
+    """Содержит ли кадр колонки схемы R20 (``pinnacle_home_open`` и т.д.)."""
+    return "pinnacle_home_open" in df.columns
+
+
 def _coerce_input_to_v2(df: pd.DataFrame) -> pd.DataFrame:
-    """Привести произвольный вход (V1 backfill, V2, пустой) к кадру перед выравниванием."""
+    """Привести произвольный вход (V1 backfill, V2, пустой) к кадру перед выравниванием.
+
+    Кадр с колонками V1 и одновременно ``commence_time_utc`` (из enrichment) всё равно
+    мигрирует по :func:`migrate_v1_to_v2`, иначе ``commence_time_utc`` ошибочно блокировал бы
+    переименование.
+    """
     if df.empty and len(df.columns) == 0:
         return pd.DataFrame(columns=list(ODDS_STORE_COLUMNS_V2))
+    if _frame_has_v1_odds_columns(df):
+        out = migrate_v1_to_v2(df)
+        if "commence_time_utc" in df.columns:
+            out["commence_time_utc"] = df["commence_time_utc"]
+        return out
     if _is_store_v2_frame(df):
         return df
     return migrate_v1_to_v2(df)

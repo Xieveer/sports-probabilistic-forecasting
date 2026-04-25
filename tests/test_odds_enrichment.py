@@ -8,7 +8,11 @@ import pandas as pd
 import pytest
 
 from sports_forecast.data.providers.odds.enrichment import (
+    BookmakerExtractionProfile,
+    _totals_line_and_prices,
     events_to_odds_frame,
+    extract_bookmaker_row_from_event,
+    extract_pinnacle_row_from_event,
     merge_odds_into_source_dataframe,
 )
 from sports_forecast.data.providers.odds.team_name_registry import TeamNameRegistry
@@ -160,3 +164,174 @@ def test_events_to_odds_frame_uses_registry_for_keys() -> None:
     df = events_to_odds_frame(ev, None, "pinnacle", out_cols, team_registry=reg)
     assert df.iloc[0]["home_team_norm"] == "OL"
     assert df.iloc[0]["away_team_norm"] == "AWAY"
+
+
+def test_totals_line_and_prices_extracts_point_and_over_under() -> None:
+    bm = {
+        "markets": [
+            {
+                "key": "totals",
+                "outcomes": [
+                    {"name": "Over", "price": 1.95, "point": 5.5},
+                    {"name": "Under", "price": 1.86, "point": 5.5},
+                ],
+            }
+        ]
+    }
+    line, o, u = _totals_line_and_prices(bm)
+    assert line == pytest.approx(5.5)
+    assert o == pytest.approx(1.95)
+    assert u == pytest.approx(1.86)
+
+
+def _pinnacle_onexbet_single_event() -> list[dict]:
+    """Один event с Pinnacle (2-way ML + total) и 1xBet (1X2 + total)."""
+    return [
+        {
+            "home_team": "Team Alpha",
+            "away_team": "Team Beta",
+            "commence_time": "2024-12-10T00:00:00Z",
+            "bookmakers": [
+                {
+                    "key": "pinnacle",
+                    "markets": [
+                        {
+                            "key": "h2h",
+                            "outcomes": [
+                                {"name": "Team Alpha", "price": 1.7},
+                                {"name": "Team Beta", "price": 2.1},
+                            ],
+                        },
+                        {
+                            "key": "totals",
+                            "outcomes": [
+                                {"name": "Over", "price": 1.95, "point": 5.5},
+                                {"name": "Under", "price": 1.87, "point": 5.5},
+                            ],
+                        },
+                    ],
+                },
+                {
+                    "key": "onexbet",
+                    "markets": [
+                        {
+                            "key": "h2h",
+                            "outcomes": [
+                                {"name": "Team Alpha", "price": 1.5},
+                                {"name": "Draw", "price": 4.0},
+                                {"name": "Team Beta", "price": 2.0},
+                            ],
+                        },
+                        {
+                            "key": "totals",
+                            "outcomes": [
+                                {"name": "Over", "price": 1.8, "point": 4.0},
+                                {"name": "Under", "price": 1.9, "point": 4.0},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        }
+    ]
+
+
+def test_events_to_odds_frame_multi_bookmaker_pinnacle_onexbet() -> None:
+    profs: dict = {
+        "pinnacle": {
+            "key": "pinnacle",
+            "winner_semantics": "winner_withOT",
+            "total_semantics": "total_withOT",
+            "has_draw": False,
+        },
+        "onexbet": {
+            "key": "onexbet",
+            "winner_semantics": "winner",
+            "total_semantics": "total",
+            "has_draw": True,
+        },
+    }
+    ev = _pinnacle_onexbet_single_event()
+    df = events_to_odds_frame(
+        ev, None, "pinnacle", {}, bookmaker_profiles=profs, team_registry=None
+    )
+    r = df.iloc[0]
+    assert r["commence_time_utc"] is not None
+    assert "2024-12-10" in r["commence_time_utc"] or "12-10" in (r["commence_time_utc"] or "")
+    # Pinnacle full-game semantics
+    assert r["pinnacle_winner_withOT_home_open"] == pytest.approx(1.7)
+    assert r["pinnacle_winner_withOT_away_open"] == pytest.approx(2.1)
+    assert r["pinnacle_total_withOT_line_open"] == pytest.approx(5.5)
+    assert r["pinnacle_total_withOT_over_open"] == pytest.approx(1.95)
+    assert r["pinnacle_total_withOT_under_open"] == pytest.approx(1.87)
+    # 1xBet regulation
+    assert r["onexbet_winner_home_open"] == pytest.approx(1.5)
+    assert r["onexbet_winner_draw_open"] == pytest.approx(4.0)
+    assert r["onexbet_winner_away_open"] == pytest.approx(2.0)
+    assert r["onexbet_total_line_open"] == pytest.approx(4.0)
+    assert r["onexbet_total_over_open"] == pytest.approx(1.8)
+    assert r["onexbet_total_under_open"] == pytest.approx(1.9)
+
+
+def test_v2_semantics_names_distinct_winner_and_total() -> None:
+    p_pin = BookmakerExtractionProfile.from_mapping(
+        "pinnacle",
+        {"key": "pinnacle", "winner_semantics": "winner_withOT", "total_semantics": "total_withOT"},
+    )
+    p_1x = BookmakerExtractionProfile.from_mapping(
+        "onexbet", {"key": "onexbet", "winner_semantics": "winner", "total_semantics": "total"}
+    )
+    ev = _pinnacle_onexbet_single_event()[0]
+    r1 = extract_bookmaker_row_from_event(ev, p_pin, snapshot_role="open")
+    r2 = extract_bookmaker_row_from_event(ev, p_1x, snapshot_role="open")
+    assert "pinnacle_winner_withOT_home_open" in r1
+    assert "pinnacle_total_withOT_line_open" in r1
+    assert "onexbet_winner_home_open" in r2
+    assert "onexbet_total_line_open" in r2
+    assert "pinnacle_winner_home_open" not in r1
+    assert "onexbet_winner_withOT_home_open" not in r2
+
+
+def test_extract_pinnacle_row_legacy_output_columns_unchanged() -> None:
+    out_cols: dict = {
+        "moneyline": {
+            "home_open": "pinnacle_home_open",
+            "away_open": "pinnacle_away_open",
+            "draw_open": "pinnacle_draw_open",
+            "home_close": "pinnacle_home_close",
+            "away_close": "pinnacle_away_close",
+            "draw_close": "pinnacle_draw_close",
+        },
+        "total": {"open": "pinnacle_total_open", "close": "pinnacle_total_close"},
+    }
+    ev = _pinnacle_onexbet_single_event()[0]
+    # только pinnacle в event — берём первого букмекера
+    ev_only_pin = {**ev, "bookmakers": [ev["bookmakers"][0]]}
+    row = extract_pinnacle_row_from_event(ev_only_pin, "pinnacle", out_cols, snapshot_role="single")
+    assert row["pinnacle_home_open"] == pytest.approx(1.7)
+    assert row["pinnacle_away_open"] == pytest.approx(2.1)
+    assert row["pinnacle_total_open"] == pytest.approx(1.95)
+    assert row["pinnacle_total_close"] == pytest.approx(1.95)
+
+
+def test_events_to_odds_frame_legacy_no_profiles_same_pinnacle_values() -> None:
+    out_cols: dict = {
+        "moneyline": {
+            "home_open": "pinnacle_home_open",
+            "away_open": "pinnacle_away_open",
+            "draw_open": "pinnacle_draw_open",
+            "home_close": "pinnacle_home_close",
+            "away_close": "pinnacle_away_close",
+            "draw_close": "pinnacle_draw_close",
+        },
+        "total": {"open": "pinnacle_total_open", "close": "pinnacle_total_close"},
+    }
+    ev = _pinnacle_onexbet_single_event()
+    # без bookmaker_profiles: один primary (pinnacle), старые имена
+    df = events_to_odds_frame(
+        ev, None, "pinnacle", out_cols, bookmaker_profiles=None, book_cfg=None
+    )
+    r = df.iloc[0]
+    assert r["pinnacle_home_open"] == pytest.approx(1.7)
+    assert "commence_time_utc" in df.columns
+    assert "pinnacle_winner_withOT_home_open" not in df.columns

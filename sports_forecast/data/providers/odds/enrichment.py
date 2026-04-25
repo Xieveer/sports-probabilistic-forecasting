@@ -1,14 +1,18 @@
-"""Слияние линий The Odds API (Pinnacle) в таблицу матчей NHL ``source.csv``.
+"""Слияние линий The Odds API (мультибукмекер) в таблицу матчей NHL ``source.csv``.
 
-Колонки согласуются с ``conf/bookmaker/the_odds_api.yaml`` → ``output_columns``.
+Поля согласуются с ``conf/bookmaker/the_odds_api.yaml`` (``bookmaker_profiles``, legacy
+``output_columns``) и :data:`sports_forecast.data.providers.odds.store.ODDS_STORE_COLUMNS_V2`.
 Политика: эти поля **не** используются в :mod:`sports_forecast.features`.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from collections.abc import Mapping, Sequence
+from contextlib import suppress
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf
@@ -23,12 +27,90 @@ from sports_forecast.utils.log_config import get_logger
 
 logger = get_logger(__name__)
 
+# Семантика в именах колонок R21: ``winner``/``total`` = regulation; ``*withOT`` = полный матч.
+_WINNER_WITH_OT: Final[str] = "winner_withOT"
+_TOTAL_WITH_OT: Final[str] = "total_withOT"
 
-def _team_key(name: str, team_registry: TeamNameRegistry | None) -> str:
-    """Ключ сопоставления: реестр (если есть) иначе :func:`normalize_team_key`."""
-    if team_registry is not None and not team_registry.is_empty:
-        return team_registry.resolve(name)
-    return normalize_team_key(name)
+
+@dataclass(frozen=True, slots=True)
+class BookmakerExtractionProfile:
+    """Профиль букмекера для извлечения: ключ API, префикс колонок, семантика рынков.
+
+    ``winner`` / ``total`` — регулярка; ``winner_withOT`` / ``total_withOT`` — полный матч.
+    """
+
+    api_key: str
+    column_prefix: str
+    winner_semantics: str
+    total_semantics: str
+    has_draw: bool
+
+    @classmethod
+    def from_mapping(cls, section_name: str, node: Mapping[str, Any]) -> BookmakerExtractionProfile:
+        """Собрать из узла ``bookmaker_profiles.<name>`` YAML или тестового dict."""
+        key = str(node.get("key", section_name) or section_name)
+        prefix = str(node.get("column_prefix", key) or key)
+        return cls(
+            api_key=key,
+            column_prefix=prefix,
+            winner_semantics=str(node.get("winner_semantics", _WINNER_WITH_OT)),
+            total_semantics=str(node.get("total_semantics", _TOTAL_WITH_OT)),
+            has_draw=bool(node.get("has_draw", True)),
+        )
+
+
+def _v2_row_keys_for_profile(p: BookmakerExtractionProfile) -> list[str]:
+    """Список V2-имён колонок (OddsStore) для одного профиля."""
+    pre = p.column_prefix
+    w, t = p.winner_semantics, p.total_semantics
+    keys: list[str] = []
+    for side in ("home", "away", "draw"):
+        for end in ("open", "close"):
+            keys.append(f"{pre}_{w}_{side}_{end}")
+    for end in ("open", "close"):
+        keys.append(f"{pre}_{t}_line_{end}")
+        keys.append(f"{pre}_{t}_over_{end}")
+        keys.append(f"{pre}_{t}_under_{end}")
+    return keys
+
+
+def _empty_row_v2(p: BookmakerExtractionProfile) -> dict[str, None]:
+    return dict.fromkeys(_v2_row_keys_for_profile(p), None)
+
+
+def _coerce_profile_mapping(raw: Any) -> list[BookmakerExtractionProfile]:
+    """Превратить ``bookmaker_profiles`` (dict / DictConfig) в упорядоченный список."""
+    if raw is None:
+        return []
+    d: Any = raw
+    if not isinstance(d, dict):
+        try:
+            d = OmegaConf.to_container(d, resolve=True)  # type: ignore[assignment]
+        except (TypeError, ValueError):
+            return []
+    if not isinstance(d, dict) or not d:
+        return []
+    out: list[BookmakerExtractionProfile] = []
+    for section_name, node in d.items():
+        if not isinstance(node, Mapping):
+            continue
+        m = node if isinstance(node, dict) else dict(node)
+        out.append(BookmakerExtractionProfile.from_mapping(str(section_name), m))
+    return out
+
+
+def _resolve_extraction_profiles(
+    book_cfg: Any,
+    bookmaker_profiles_explicit: Any,
+) -> list[BookmakerExtractionProfile]:
+    """Сначала ``bookmaker_profiles`` (явно), иначе из ``book_cfg``."""
+    p = _coerce_profile_mapping(bookmaker_profiles_explicit)
+    if p:
+        return p
+    if book_cfg is None:
+        return []
+    sub = OmegaConf.select(book_cfg, "bookmaker_profiles")
+    return _coerce_profile_mapping(sub)
 
 
 def unwrap_odds_payload(payload: Any) -> list[dict[str, Any]]:
@@ -47,6 +129,13 @@ def _find_bookmaker(ev: dict[str, Any], key: str) -> dict[str, Any] | None:
         if isinstance(bm, dict) and str(bm.get("key", "")).lower() == key.lower():
             return bm
     return None
+
+
+def _team_key(name: str, team_registry: TeamNameRegistry | None) -> str:
+    """Ключ сопоставления: реестр (если есть) иначе :func:`normalize_team_key`."""
+    if team_registry is not None and not team_registry.is_empty:
+        return team_registry.resolve(name)
+    return normalize_team_key(name)
 
 
 def _h2h_prices(
@@ -85,16 +174,25 @@ def _h2h_prices(
     return home_p, away_p, draw_p
 
 
-def _totals_over_under(bm: dict[str, Any]) -> tuple[float | None, float | None]:
-    """Коэффициенты over и under для первого рынка totals."""
+def _totals_line_and_prices(bm: dict[str, Any]) -> tuple[float | None, float | None, float | None]:
+    """База тотала (``point``) и цены over/under для первого рынка ``totals``."""
     for mkt in bm.get("markets") or []:
         if not isinstance(mkt, dict) or str(mkt.get("key")) != "totals":
             continue
+        line: float | None = None
         over_p: float | None = None
         under_p: float | None = None
+        mkt_point = mkt.get("point")
+        if mkt_point is not None:
+            with suppress(TypeError, ValueError):
+                line = float(mkt_point)
         for out in mkt.get("outcomes") or []:
             if not isinstance(out, dict):
                 continue
+            pt = out.get("point")
+            if line is None and pt is not None:
+                with suppress(TypeError, ValueError):
+                    line = float(pt)
             nm = str(out.get("name", "")).lower()
             price = out.get("price")
             try:
@@ -105,11 +203,99 @@ def _totals_over_under(bm: dict[str, Any]) -> tuple[float | None, float | None]:
                 over_p = p
             elif "under" in nm:
                 under_p = p
-        return over_p, under_p
-    return None, None
+        return (line, over_p, under_p)
+    return (None, None, None)
 
 
-def extract_pinnacle_row_from_event(
+def _totals_over_under(bm: dict[str, Any]) -> tuple[float | None, float | None]:
+    """Коэффициенты over и under для первого рынка totals (совместимость R20)."""
+    _line, o, u = _totals_line_and_prices(bm)
+    return o, u
+
+
+def _parse_commence_time_utc(ev: dict[str, Any]) -> str | None:
+    """ISO-8601 старт матча (UTC) из ``commence_time``/``commenceTime``."""
+    raw = ev.get("commence_time") or ev.get("commenceTime")
+    if not raw or not isinstance(raw, str):
+        return None
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    except ValueError:
+        return None
+
+
+def extract_bookmaker_row_from_event(
+    ev: dict[str, Any],
+    profile: BookmakerExtractionProfile,
+    *,
+    snapshot_role: str = "single",
+    team_registry: TeamNameRegistry | None = None,
+) -> dict[str, Any | None]:
+    """Извлечь коэффициенты одного букмекера по V2-контракту имён (см. :data:`ODDS_STORE_COLUMNS_V2`).
+
+    Args:
+        ev: Одно событие JSON The Odds API.
+        profile: Семантика и префикс колонок.
+        snapshot_role: ``open`` | ``close`` | ``single`` — какие колонки ``*_open``/``*_close`` заполнять.
+        team_registry: Алиасы команд → каноника.
+
+    Returns:
+        Словарь только с колонками этого букмекера; при отсутствии bookmaker в событии — все ``None``.
+    """
+    out: dict[str, Any | None] = dict.fromkeys(_v2_row_keys_for_profile(profile), None)
+    home_name = str(ev.get("home_team") or "")
+    away_name = str(ev.get("away_team") or "")
+    bm = _find_bookmaker(ev, profile.api_key)
+    if bm is None:
+        return out
+
+    hh, aa, dd = _h2h_prices(
+        bm,
+        home_name,
+        away_name,
+        team_registry=team_registry,
+    )
+    t_line, over_p, under_p = _totals_line_and_prices(bm)
+    pfx = profile.column_prefix
+    w_s = profile.winner_semantics
+    t_s = profile.total_semantics
+
+    def _w(side: str, part: str) -> str:
+        return f"{pfx}_{w_s}_{side}_{part}"
+
+    def _t(suffix: str, part: str) -> str:
+        return f"{pfx}_{t_s}_{suffix}_{part}"
+
+    if snapshot_role == "open":
+        out[_w("home", "open")] = hh
+        out[_w("away", "open")] = aa
+        out[_w("draw", "open")] = dd
+        out[_t("line", "open")] = t_line
+        out[_t("over", "open")] = over_p
+        out[_t("under", "open")] = under_p
+    elif snapshot_role == "close":
+        out[_w("home", "close")] = hh
+        out[_w("away", "close")] = aa
+        out[_w("draw", "close")] = dd
+        out[_t("line", "close")] = t_line
+        out[_t("over", "close")] = over_p
+        out[_t("under", "close")] = under_p
+    else:
+        for part in ("open", "close"):
+            out[_w("home", part)] = hh
+            out[_w("away", part)] = aa
+            out[_w("draw", part)] = dd
+            out[_t("line", part)] = t_line
+            out[_t("over", part)] = over_p
+            out[_t("under", part)] = under_p
+
+    return out
+
+
+def _extract_row_legacy_pinnacle(
     ev: dict[str, Any],
     bookmaker_key: str,
     output_columns: dict[str, Any],
@@ -117,13 +303,7 @@ def extract_pinnacle_row_from_event(
     snapshot_role: str = "single",
     team_registry: TeamNameRegistry | None = None,
 ) -> dict[str, Any | None]:
-    """Извлечь коэффициенты Pinnacle для одного события.
-
-    Args:
-        snapshot_role: ``open`` — только открытие; ``close`` — только закрытие;
-            ``single`` — один снимок, заполняем и open и close одинаково.
-        team_registry: Необязательный реестр алиасов → канонического ключа merge.
-    """
+    """R19/R20: одна сетка имён из ``output_columns`` (YAML), over-only в total-колонках."""
     ml = (output_columns or {}).get("moneyline") or {}
     tot = (output_columns or {}).get("total") or {}
     out: dict[str, Any | None] = {}
@@ -143,8 +323,9 @@ def extract_pinnacle_row_from_event(
         away_name,
         team_registry=team_registry,
     )
-    ov, un = _totals_over_under(bm)
-    total_line = ov if ov is not None else un
+    _line, over_p, under_p = _totals_line_and_prices(bm)
+    # Legacy: в pinnacle_total_{open,close} хранилась цена over (R20)
+    total_line = over_p if over_p is not None else under_p
 
     def _set_ml(side: str, val: float | None) -> None:
         col = ml.get(side)
@@ -182,25 +363,30 @@ def extract_pinnacle_row_from_event(
     return out
 
 
-def events_to_odds_frame(
-    events_open: list[dict[str, Any]],
-    events_close: list[dict[str, Any]] | None,
+def extract_pinnacle_row_from_event(
+    ev: dict[str, Any],
     bookmaker_key: str,
     output_columns: dict[str, Any],
+    *,
+    snapshot_role: str = "single",
+    team_registry: TeamNameRegistry | None = None,
+) -> dict[str, Any | None]:
+    """Извлечь коэффициенты для одного события в колонки legacy-конфига (R19/R20 ``output_columns``)."""
+    return _extract_row_legacy_pinnacle(
+        ev,
+        bookmaker_key,
+        output_columns,
+        snapshot_role=snapshot_role,
+        team_registry=team_registry,
+    )
+
+
+def _events_to_odds_frame_v2(
+    events_open: list[dict[str, Any]],
+    events_close: list[dict[str, Any]] | None,
+    profiles: Sequence[BookmakerExtractionProfile],
     team_registry: TeamNameRegistry | None = None,
 ) -> pd.DataFrame:
-    """Построить DataFrame для merge: ключ ``game_date`` + нормализованные команды.
-
-    Args:
-        events_open: Снимок «open» (или единственный снимок).
-        events_close: Снимок «close»; может быть ``None``.
-        bookmaker_key: Например ``pinnacle``.
-        output_columns: Ветка YAML ``output_columns``.
-        team_registry: Необязательный реестр; иначе только :func:`normalize_team_key`.
-
-    Returns:
-        DataFrame с колонками ``game_date``, ``home_team_norm``, ``away_team_norm``, ``pinnacle_*``.
-    """
     close_idx: dict[str, dict[str, Any]] = {}
     for ev in events_close or []:
         if not isinstance(ev, dict):
@@ -226,13 +412,87 @@ def events_to_odds_frame(
                 game_date = ""
         hk = _team_key(home, team_registry)
         ak = _team_key(away, team_registry)
+        c_utc = _parse_commence_time_utc(ev)
         row: dict[str, Any] = {
             "game_date": game_date,
             "home_team_norm": hk,
             "away_team_norm": ak,
+            "commence_time_utc": c_utc,
+        }
+        for p in profiles:
+            if events_close:
+                ovals = extract_bookmaker_row_from_event(
+                    ev,
+                    p,
+                    snapshot_role="open",
+                    team_registry=team_registry,
+                )
+                row.update(ovals)
+                ev_c = close_idx.get(f"{hk}|{ak}")
+                if ev_c is not None:
+                    cvals = extract_bookmaker_row_from_event(
+                        ev_c,
+                        p,
+                        snapshot_role="close",
+                        team_registry=team_registry,
+                    )
+                    for k, v in cvals.items():
+                        if v is not None:
+                            row[k] = v
+            else:
+                single = extract_bookmaker_row_from_event(
+                    ev,
+                    p,
+                    snapshot_role="single",
+                    team_registry=team_registry,
+                )
+                row.update(single)
+        rows.append(row)
+
+    return pd.DataFrame(rows)
+
+
+def _events_to_odds_frame_legacy(
+    events_open: list[dict[str, Any]],
+    events_close: list[dict[str, Any]] | None,
+    bookmaker_key: str,
+    output_columns: dict[str, Any],
+    team_registry: TeamNameRegistry | None = None,
+) -> pd.DataFrame:
+    close_idx: dict[str, dict[str, Any]] = {}
+    for ev in events_close or []:
+        if not isinstance(ev, dict):
+            continue
+        hk = _team_key(str(ev.get("home_team", "")), team_registry)
+        ak = _team_key(str(ev.get("away_team", "")), team_registry)
+        close_idx[f"{hk}|{ak}"] = ev
+
+    rows: list[dict[str, Any]] = []
+    for ev in events_open:
+        if not isinstance(ev, dict):
+            continue
+        home = str(ev.get("home_team") or "")
+        away = str(ev.get("away_team") or "")
+        commence = ev.get("commence_time") or ev.get("commenceTime")
+        game_date = ""
+        if isinstance(commence, str):
+            try:
+                game_date = (
+                    datetime.fromisoformat(commence.replace("Z", "+00:00")).date().isoformat()
+                )
+            except ValueError:
+                game_date = ""
+        hk = _team_key(home, team_registry)
+        ak = _team_key(away, team_registry)
+        c_utc = _parse_commence_time_utc(ev)
+        row: dict[str, Any] = {
+            "game_date": game_date,
+            "home_team_norm": hk,
+            "away_team_norm": ak,
+            "commence_time_utc": c_utc,
         }
         if events_close:
-            open_vals = extract_pinnacle_row_from_event(
+            open_vals = _extract_row_legacy_pinnacle(
                 ev,
                 bookmaker_key,
                 output_columns,
@@ -242,7 +502,7 @@ def events_to_odds_frame(
             row.update(open_vals)
             ev_c = close_idx.get(f"{hk}|{ak}")
             if ev_c is not None:
-                close_vals = extract_pinnacle_row_from_event(
+                close_vals = _extract_row_legacy_pinnacle(
                     ev_c,
                     bookmaker_key,
                     output_columns,
@@ -253,7 +513,7 @@ def events_to_odds_frame(
                     if v is not None:
                         row[k] = v
         else:
-            single_vals = extract_pinnacle_row_from_event(
+            single_vals = _extract_row_legacy_pinnacle(
                 ev,
                 bookmaker_key,
                 output_columns,
@@ -264,6 +524,49 @@ def events_to_odds_frame(
         rows.append(row)
 
     return pd.DataFrame(rows)
+
+
+def events_to_odds_frame(
+    events_open: list[dict[str, Any]],
+    events_close: list[dict[str, Any]] | None,
+    bookmaker_key: str,
+    output_columns: dict[str, Any],
+    team_registry: TeamNameRegistry | None = None,
+    *,
+    book_cfg: Any | None = None,
+    bookmaker_profiles: Any | None = None,
+) -> pd.DataFrame:
+    """Построить DataFrame: ключ ``game_date`` + нормализованные команды + optional ``commence_time_utc``.
+
+    Если в ``book_cfg`` (или в ``bookmaker_profiles``) заданы профили, извлекаются **все**
+    букмекеры из **одного** снимка события, строка на event — V2-имена колонок. Иначе
+    сценарий R19/R20: один букмекер, имена из ``output_columns``.
+
+    Args:
+        events_open: Снимок «open» (или единственный).
+        events_close: Снимок «close``; ``None`` — single snapshot.
+        bookmaker_key: Ключ в JSON (e.g. ``pinnacle``) для legacy-режима.
+        output_columns: Ветка ``output_columns`` из YAML, только legacy-режим.
+        team_registry: Алиасы команд.
+        book_cfg: Узел конфига (``book_root``) с ``bookmaker_profiles``.
+        bookmaker_profiles: Прямого словаря / DictConfig, переопределяет извлечение из ``book_cfg``.
+
+    Returns:
+        DataFrame: ``game_date``, ``home_team_norm``, ``away_team_norm``, ``commence_time_utc``,
+        далее V2-поля **или** legacy ``pinnacle_*`` и т.д.
+    """
+    profs = _resolve_extraction_profiles(book_cfg, bookmaker_profiles)
+    if profs:
+        return _events_to_odds_frame_v2(
+            events_open, events_close, profs, team_registry=team_registry
+        )
+    return _events_to_odds_frame_legacy(
+        events_open,
+        events_close,
+        bookmaker_key,
+        output_columns,
+        team_registry=team_registry,
+    )
 
 
 def write_unmatched_odds_teams_report(

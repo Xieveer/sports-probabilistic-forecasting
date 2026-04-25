@@ -202,7 +202,14 @@ def backfill_day_frames(
         )
         ev_o = unwrap_odds_payload(p_open)
         ev_c = unwrap_odds_payload(p_close)
-        return events_to_odds_frame(ev_o, ev_c, primary, out_cols, team_registry=team_registry)
+        return events_to_odds_frame(
+            ev_o,
+            ev_c,
+            primary,
+            out_cols,
+            team_registry=team_registry,
+            book_cfg=book_root,
+        )
 
     iso_mid = f"{day_s}T{open_t}Z"
     p_one = client.fetch_odds_for_sport(
@@ -212,7 +219,14 @@ def backfill_day_frames(
         use_cache=True,
     )
     ev = unwrap_odds_payload(p_one)
-    return events_to_odds_frame(ev, None, primary, out_cols, team_registry=team_registry)
+    return events_to_odds_frame(
+        ev,
+        None,
+        primary,
+        out_cols,
+        team_registry=team_registry,
+        book_cfg=book_root,
+    )
 
 
 def _concat_dedup(parts: list[pd.DataFrame]) -> pd.DataFrame:
