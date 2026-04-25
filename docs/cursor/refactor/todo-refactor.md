@@ -28,6 +28,7 @@
 | R17    | 🔴 High     | High      | ✅     | 17-й ✅ (NHL Web API провайдер данных) |
 | R18    | 🔴 High     | Medium    | ✅     | 18-й ✅ (lp_eu_a18: Optuna reg + feature selection) |
 | R19    | 🔴 High     | High      | ✅     | 19-й ✅ (NHL production + Odds API + Telegram-бот; R19.11-R19.12 — операционно; stretch R19.17-R19.20 отложены) |
+| R20    | 🔴 High     | High      | 🟡     | 20-й (Pinnacle odds: backfill 3 сезонов + инкрементальный автоапдейт) |
 
 ---
 
@@ -130,6 +131,17 @@
   - [ ] R15.2 — Добавить в toctree `index.rst`
   - [ ] R15.3 — Ревизия `quickstart.rst` на консистентность
   - [ ] R15.4 — Smoke-check сборки docs
+
+- [ ] **R20** — Pinnacle odds: историческая загрузка 3 сезонов + инкрементальный автоапдейт
+  - [x] R20.1 — OddsStore: хранение линий Pinnacle в source-слое (parquet) ✅ 2026-04-25
+  - [ ] R20.2 — Season-aware конфигурация + расширение CLI backfill для multi-season
+  - [ ] R20.3 — Инкрементальный odds refresh: логика определения нового диапазона дат
+  - [ ] R20.4 — Интеграция odds refresh в source_refresh pipeline
+  - [ ] R20.5 — Конфигурация: расширение YAML для odds pipeline
+  - [ ] R20.6 — Валидация и наблюдаемость odds-данных
+  - [ ] R20.7 — Тесты: unit + integration для odds pipeline
+  - [ ] R20.8 — *(операционный)* Исторический backfill 3 сезонов NHL
+  - [ ] R20.9 — TeamNameRegistry: единый реестр нормализации названий команд NHL/Odds API
 
 - [ ] **R16** — MLflow: сравнительная визуализация метрик по запускам
   - [ ] R16.1 — Добавить теги `sweep_id` и `run_index` в trainer

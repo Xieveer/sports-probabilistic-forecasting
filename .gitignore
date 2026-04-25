@@ -58,6 +58,8 @@ multirun/
 /data/processed
 /data/predictions
 /data/source
+# Pinnacle odds store (R20.1) — explicit pattern (parent /data/source may be ignored)
+data/source/*/odds/
 /data/.schema_snapshots
 /models/*.cbm
 /models/*/*.cbm
