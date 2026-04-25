@@ -233,6 +233,80 @@ def test_run_backfill_range_with_store_non_empty_upserts(
     assert recorded == [1]
 
 
+def test_upsert_if_non_empty_rejects_v2_invalid_line_before_file_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called: list[int] = []
+
+    def _u(_df: object, _path: object) -> None:  # noqa: ANN001
+        called.append(1)
+
+    monkeypatch.setattr(backfill_mod, "upsert_odds_store_file", _u)
+    bad = pd.DataFrame(
+        [
+            {
+                "pinnacle_winner_withOT_home_close": 1.9,
+                "pinnacle_total_withOT_line_open": 0.1,
+            }
+        ]
+    )
+    with pytest.raises(RuntimeError, match="backfill: store"):
+        backfill_mod._upsert_if_non_empty(
+            bad,
+            tmp_path / "x.parquet",
+            context="backfill: store",  # noqa: SLF001
+        )
+    assert called == []
+
+
+def test_upsert_if_non_empty_rejects_negative_minutes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called: list[int] = []
+
+    def _u(_df: object, _path: object) -> None:  # noqa: ANN001
+        called.append(1)
+
+    monkeypatch.setattr(backfill_mod, "upsert_odds_store_file", _u)
+    bad = pd.DataFrame([{"onexbet_winner_home_close": 1.8, "open_minutes_before": -1.0}])
+    with pytest.raises(RuntimeError, match="t_open_m"):
+        backfill_mod._upsert_if_non_empty(
+            bad,
+            tmp_path / "y.parquet",
+            context="t_open_m",  # noqa: SLF001
+        )
+    assert called == []
+
+
+def test_upsert_if_non_empty_accepts_v2_valid_row(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called: list[tuple[str, int]] = []
+
+    def _u(_df, path) -> None:  # noqa: ANN001
+        called.append((str(path), len(_df)))  # noqa: SLF001
+
+    monkeypatch.setattr(backfill_mod, "upsert_odds_store_file", _u)
+    good = pd.DataFrame(
+        [
+            {
+                "pinnacle_winner_withOT_home_close": 1.9,
+                "pinnacle_total_withOT_line_open": 5.5,
+                "open_minutes_before": 100.0,
+            }
+        ]
+    )
+    backfill_mod._upsert_if_non_empty(  # noqa: SLF001
+        good,
+        tmp_path / "z.parquet",
+        context="t_ok",  # noqa: SLF001
+    )
+    assert len(called) == 1 and called[0][1] == 1
+
+
 def test_backfill_stops_on_quota(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

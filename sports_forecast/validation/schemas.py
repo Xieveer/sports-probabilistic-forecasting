@@ -11,27 +11,54 @@ Usage::
     from sports_forecast.validation.schemas import InterimSchema
     InterimSchema.validate(df)
 
-    from sports_forecast.validation.schemas import validate_pinnacle_odds_float_columns
-    validate_pinnacle_odds_float_columns(odds_df, context="backfill")
+    from sports_forecast.validation.schemas import validate_odds_float_columns
+    validate_odds_float_columns(odds_df, context="backfill")
 """
 
 from __future__ import annotations
+
+from typing import Final
 
 import pandas as pd
 from pandera import Check, Column, DataFrameSchema
 from pandera.errors import SchemaError, SchemaErrors
 
+from sports_forecast.data.providers.odds.store import ODDS_STORE_COLUMNS_V1, ODDS_STORE_COLUMNS_V2
 
-# Согласовано с :data:`sports_forecast.data.providers.odds.store.ODDS_STORE_COLUMNS` (только decimal).
-_PINNACLE_ODDS_FLOAT_COLS: tuple[str, ...] = (
-    "pinnacle_home_open",
-    "pinnacle_away_open",
-    "pinnacle_draw_open",
-    "pinnacle_home_close",
-    "pinnacle_away_close",
-    "pinnacle_draw_close",
-    "pinnacle_total_open",
-    "pinnacle_total_close",
+
+# Метаданные store (не odds-числа)
+_ODDS_STORE_NON_DECIMAL_V2: Final[frozenset[str]] = frozenset(
+    {
+        "game_date",
+        "home_team_norm",
+        "away_team_norm",
+        "commence_time_utc",
+        "open_snapshot_utc",
+        "close_snapshot_utc",
+        "open_minutes_before",
+        "close_minutes_before",
+        "fetched_at",
+    }
+)
+
+# R20 V1: только decimal-колонки Pinnacle
+_PINNACLE_ODDS_FLOAT_COLS: tuple[str, ...] = tuple(
+    c for c in ODDS_STORE_COLUMNS_V1 if c.startswith("pinnacle_")
+)
+
+# R21 V2: decimal (home/away/draw, over/under) без total_line
+_ODDS_V2_DECIMAL_COLS: Final[tuple[str, ...]] = tuple(
+    c for c in ODDS_STORE_COLUMNS_V2 if c not in _ODDS_STORE_NON_DECIMAL_V2 and "_line_" not in c
+)
+# R21: линия тотала (point)
+_ODDS_V2_TOTAL_LINE_COLS: Final[tuple[str, ...]] = tuple(
+    c for c in ODDS_STORE_COLUMNS_V2 if "_line_" in c
+)
+_ODDS_MINUTES_BEFORE_COLS: Final[tuple[str, ...]] = ("open_minutes_before", "close_minutes_before")
+
+# Union V1 + V2 decimal (уникальные имена) — одна проверка диапазона
+_ODDS_DECIMAL_COLS: Final[tuple[str, ...]] = tuple(
+    dict.fromkeys([*_PINNACLE_ODDS_FLOAT_COLS, *_ODDS_V2_DECIMAL_COLS])
 )
 
 
@@ -41,23 +68,114 @@ def _pinnacle_odds_in_valid_range(s: pd.Series) -> bool:
     return bool(ok.all()) if len(s) else True
 
 
+def _odds_total_line_in_valid_range(s: pd.Series) -> bool:
+    """True, если все ненулевые значения в [0.5, 20.0] (V2 total line / point)."""
+    ok = s.isna() | ((s >= 0.5) & (s <= 20.0))
+    return bool(ok.all()) if len(s) else True
+
+
+def _odds_minutes_nonnegative(s: pd.Series) -> bool:
+    """True, если ``open_minutes_before``/``close_minutes_before`` — null или >= 0."""
+    ok = s.isna() | (s >= 0)
+    return bool(ok.all()) if len(s) else True
+
+
+# Колонка для Pandera: decimal odds (V1 + V2)
+_OddsDecimalColumn = Column(
+    dtype="float",
+    nullable=True,
+    checks=Check(
+        _pinnacle_odds_in_valid_range,
+        error="decimal odds must be in [1.01, 100.0] or null",
+    ),
+)
+
+_OddsTotalLineColumn = Column(
+    dtype="float",
+    nullable=True,
+    checks=Check(
+        _odds_total_line_in_valid_range,
+        error="total line must be in [0.5, 20.0] or null",
+    ),
+)
+
+_OddsMinutesColumn = Column(
+    dtype="float",
+    nullable=True,
+    checks=Check(
+        _odds_minutes_nonnegative,
+        error="minutes_before must be >= 0 or null",
+    ),
+)
+
+# Публично: R20-совместимая схема только с V1-колонками (Pinnacle)
 PinnacleOddsNumericSchema = DataFrameSchema(
-    columns={
-        c: Column(
-            dtype="float",
-            nullable=True,
-            checks=Check(
-                _pinnacle_odds_in_valid_range,
-                error=f"{c}: decimal odds must be in [1.01, 100.0] or null",
-            ),
-        )
-        for c in _PINNACLE_ODDS_FLOAT_COLS
-    },
+    columns=dict.fromkeys(_PINNACLE_ODDS_FLOAT_COLS, _OddsDecimalColumn),
     strict=False,
     coerce=True,
     name="PinnacleOddsNumericSchema",
-    description="Pinnacle decimal odds: nullable float, 1.01…100.0 (на NaN проверки нет).",
+    description="Pinnacle decimal odds (R20 V1): nullable float, 1.01…100.0 (на NaN проверки нет).",
 )
+
+
+def _build_odds_store_checks_schema(
+    have_decimal: list[str],
+    have_line: list[str],
+    have_minutes: list[str],
+) -> DataFrameSchema:
+    """Собрать схему по фактически присутствующим колонкам."""
+    col_map: dict[str, Column] = {}
+    for c in have_decimal:
+        col_map[c] = _OddsDecimalColumn
+    for c in have_line:
+        col_map[c] = _OddsTotalLineColumn
+    for c in have_minutes:
+        col_map[c] = _OddsMinutesColumn
+    return DataFrameSchema(
+        col_map,
+        strict=False,
+        coerce=True,
+        name="OddsStoreNumericV2",
+        description="Odds store: decimal, total_line, minutes_before (nullable).",
+    )
+
+
+def validate_odds_float_columns(
+    df: pd.DataFrame,
+    *,
+    context: str = "odds",
+) -> None:
+    """Pandera-валидация odds-чисел для R20 (V1) и R21 (V2): букмекеры Pinnacle/1xBet.
+
+    Проверяет **только присутствующие** в ``df`` колонки:
+
+    * decimal: ``pinnacle_home_open`` (V1) и/или V2 ``*_winner_*`` / ``*_over_*`` / ``*_under_*`` —
+      диапазон [1.01, 100.0], nullable;
+    * ``*_total_*_line_*`` (V2): [0.5, 20.0], nullable;
+    * ``open_minutes_before``, ``close_minutes_before`` — >= 0, nullable.
+
+    Пустой ``df`` пропускается. Нет известных колонок — пропуск.
+
+    Args:
+        df: кадр из backfill/refresh/store.
+        context: префикс :exc:`RuntimeError` (контекст).
+
+    Raises:
+        RuntimeError: обёртка вокруг :exc:`SchemaError` / :exc:`SchemaErrors`.
+    """
+    if df is None or df.empty:
+        return
+    have_dec = [c for c in _ODDS_DECIMAL_COLS if c in df.columns]
+    have_line = [c for c in _ODDS_V2_TOTAL_LINE_COLS if c in df.columns]
+    have_min = [c for c in _ODDS_MINUTES_BEFORE_COLS if c in df.columns]
+    if not have_dec and not have_line and not have_min:
+        return
+    sub = _build_odds_store_checks_schema(have_dec, have_line, have_min)
+    cols = have_dec + have_line + have_min
+    try:
+        sub.validate(df[cols])
+    except (SchemaError, SchemaErrors) as e:
+        raise RuntimeError(f"{context}: {e!s}") from e
 
 
 def validate_pinnacle_odds_float_columns(
@@ -65,31 +183,8 @@ def validate_pinnacle_odds_float_columns(
     *,
     context: str = "odds",
 ) -> None:
-    """Pandera-валидация колонок ``pinnacle_*`` (диапазон 1.01–100.0, nullable).
-
-    Пустой ``df`` не валидируется. Резервные/отсутствующие колонки отбрасываются из проверки.
-
-    Args:
-        df: Кадр с возможными odds-колонками.
-        context: Сообщение об ошибке (лог-контекст).
-
-    Raises:
-        SchemaError, SchemaErrors: Найдены ненулевые значения вне диапазона.
-    """
-    if df is None or df.empty:
-        return
-    have = [c for c in _PINNACLE_ODDS_FLOAT_COLS if c in df.columns]
-    if not have:
-        return
-    sub = DataFrameSchema(
-        {c: PinnacleOddsNumericSchema.columns[c] for c in have},
-        strict=False,
-        coerce=True,
-    )
-    try:
-        sub.validate(df[have])
-    except (SchemaError, SchemaErrors) as e:
-        raise RuntimeError(f"{context}: {e!s}") from e
+    """Обратная совместимость: то же, что :func:`validate_odds_float_columns`."""
+    validate_odds_float_columns(df, context=context)
 
 
 # ============================================================================

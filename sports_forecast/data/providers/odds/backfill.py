@@ -44,7 +44,7 @@ from sports_forecast.data.providers.odds.team_name_registry import (
     load_nhl_team_name_registry,
 )
 from sports_forecast.utils.log_config import get_logger
-from sports_forecast.validation.schemas import validate_pinnacle_odds_float_columns
+from sports_forecast.validation.schemas import validate_odds_float_columns
 
 
 logger = get_logger(__name__)
@@ -376,7 +376,7 @@ def _upsert_if_non_empty(
 ) -> None:
     if chunk.empty or store_path is None:
         return
-    validate_pinnacle_odds_float_columns(chunk, context=context)
+    validate_odds_float_columns(chunk, context=context)
     upsert_odds_store_file(chunk, store_path)
 
 

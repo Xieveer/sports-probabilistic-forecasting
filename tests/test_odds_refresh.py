@@ -25,7 +25,10 @@ from sports_forecast.data.providers.odds.refresh import (
     save_refresh_state,
 )
 from sports_forecast.data.providers.odds.store import ODDS_STORE_COLUMNS
-from sports_forecast.validation.schemas import validate_pinnacle_odds_float_columns
+from sports_forecast.validation.schemas import (
+    validate_odds_float_columns,
+    validate_pinnacle_odds_float_columns,
+)
 
 
 def _book_root_nhl() -> dict:
@@ -216,6 +219,62 @@ def test_validate_pinnacle_odds_rejects_out_of_range() -> None:
     bad = pd.DataFrame([{"pinnacle_home_close": 1.0}])
     with pytest.raises(RuntimeError, match="unit"):
         validate_pinnacle_odds_float_columns(bad, context="unit")
+    with pytest.raises(RuntimeError, match="unit2"):
+        validate_odds_float_columns(bad, context="unit2")
+
+
+def test_validate_odds_v2_rejects_invalid_line() -> None:
+    bad = pd.DataFrame([{"pinnacle_total_withOT_line_open": 0.4}])
+    with pytest.raises(RuntimeError, match="refresh_v2_line"):
+        validate_odds_float_columns(bad, context="refresh_v2_line")
+
+
+def test_run_odds_refresh_store_metrics_v2_in_log(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    st_path = tmp_path / "s" / "odds" / "refresh_state.json"
+    sp = tmp_path / "s" / "odds" / "pinnacle_odds.parquet"
+    row = _row(
+        pinnacle_winner_withOT_home_close=1.95,
+        onexbet_winner_home_close=1.9,
+    )
+    store_mod.save_odds_store(pd.DataFrame([row]), sp)
+
+    def _bf(**kwargs) -> pd.DataFrame:  # noqa: ANN003
+        return pd.DataFrame(
+            [
+                _row(
+                    game_date="2025-12-25",
+                    pinnacle_winner_withOT_home_close=1.95,
+                    onexbet_winner_home_close=1.9,
+                )
+            ]
+        )
+
+    caplog.set_level(logging.INFO)
+    monkeypatch.setattr(
+        "sports_forecast.data.providers.odds.refresh.load_bookmaker_config",
+        lambda k: _fake_book_cfg(),
+    )
+    r = run_odds_refresh(
+        tournament="nhl",
+        store_path=sp,
+        refresh_state_path=st_path,
+        project_root=tmp_path,
+        source_config_name=None,
+        today=date(2025, 12, 25),
+        run_backfill_fn=_bf,
+        auto_merge=False,
+    )
+    assert r.merged_source is False
+    messages = " ".join(rec.message for rec in caplog.records)
+    assert "odds store metrics" in messages
+    assert "pinnacle_coverage_pct" in messages
+    assert "onexbet_coverage_pct" in messages
 
 
 def test_run_odds_refresh_backfill_result_quota_fields(

@@ -22,6 +22,8 @@ from sports_forecast.validation.gates import (
 )
 from sports_forecast.validation.schemas import (
     RawSchema,
+    validate_odds_float_columns,
+    validate_pinnacle_odds_float_columns,
 )
 
 
@@ -78,6 +80,77 @@ def processed_long_df() -> pd.DataFrame:
                 }
             )
     return pd.DataFrame(rows)
+
+
+# ============================================================================
+# Tests — Odds store (Pandera V1/V2, R20/R21)
+# ============================================================================
+
+
+class TestValidateOddsFloatColumnsV2:
+    """R21.7: decimal + total_line + timing для V2, совместимость с V1."""
+
+    def test_v2_positive_sample(self) -> None:
+        df = pd.DataFrame(
+            [
+                {
+                    "pinnacle_winner_withOT_home_open": 1.91,
+                    "pinnacle_winner_withOT_away_open": 2.05,
+                    "pinnacle_winner_withOT_draw_open": None,
+                    "pinnacle_winner_withOT_home_close": 1.9,
+                    "pinnacle_winner_withOT_away_close": 2.1,
+                    "pinnacle_winner_withOT_draw_close": None,
+                    "pinnacle_total_withOT_line_open": 5.5,
+                    "pinnacle_total_withOT_over_open": 1.95,
+                    "pinnacle_total_withOT_under_open": 1.95,
+                    "pinnacle_total_withOT_line_close": 5.5,
+                    "pinnacle_total_withOT_over_close": 1.94,
+                    "pinnacle_total_withOT_under_close": 1.96,
+                    "onexbet_winner_home_close": 1.88,
+                    "onexbet_winner_away_close": 2.2,
+                    "onexbet_winner_draw_close": 4.0,
+                    "onexbet_total_line_close": 5.0,
+                    "onexbet_total_over_close": 1.9,
+                    "onexbet_total_under_close": 1.92,
+                    "open_minutes_before": 3000.0,
+                    "close_minutes_before": 120.0,
+                }
+            ]
+        )
+        validate_odds_float_columns(df, context="test_v2_ok")
+        validate_pinnacle_odds_float_columns(df, context="alias_ok")
+
+    def test_rejects_decimal_below_min(self) -> None:
+        df = pd.DataFrame([{"pinnacle_winner_withOT_home_close": 1.0}])
+        with pytest.raises(RuntimeError, match="test_bad_dec"):
+            validate_odds_float_columns(df, context="test_bad_dec")
+
+    def test_rejects_total_line_below_range(self) -> None:
+        df = pd.DataFrame([{"pinnacle_total_withOT_line_open": 0.4}])
+        with pytest.raises(RuntimeError, match="test_bad_line"):
+            validate_odds_float_columns(df, context="test_bad_line")
+
+    def test_rejects_total_line_above_range(self) -> None:
+        df = pd.DataFrame([{"onexbet_total_line_open": 25.0}])
+        with pytest.raises(RuntimeError, match="test_bad_line_hi"):
+            validate_odds_float_columns(df, context="test_bad_line_hi")
+
+    def test_rejects_negative_minutes(self) -> None:
+        df = pd.DataFrame([{"open_minutes_before": -1.0}])
+        with pytest.raises(RuntimeError, match="test_bad_time"):
+            validate_odds_float_columns(df, context="test_bad_time")
+
+    def test_rejects_negative_close_minutes(self) -> None:
+        df = pd.DataFrame([{"close_minutes_before": -0.01}])
+        with pytest.raises(RuntimeError, match="test_bad_close_m"):
+            validate_odds_float_columns(df, context="test_bad_close_m")
+
+    def test_v1_column_still_validated(self) -> None:
+        good = pd.DataFrame([{"pinnacle_home_close": 2.0}])
+        validate_odds_float_columns(good, context="v1")
+        bad = pd.DataFrame([{"pinnacle_total_open": 1.0}])
+        with pytest.raises(RuntimeError, match="v1bad"):
+            validate_odds_float_columns(bad, context="v1bad")
 
 
 # ============================================================================

@@ -37,7 +37,7 @@ from sports_forecast.data.providers.odds.team_name_registry import (
     load_nhl_team_name_registry,
 )
 from sports_forecast.utils.log_config import get_logger
-from sports_forecast.validation.schemas import validate_pinnacle_odds_float_columns
+from sports_forecast.validation.schemas import validate_odds_float_columns
 
 
 logger = get_logger(__name__)
@@ -238,6 +238,41 @@ def _log_unmatched_report_metrics(report_path: Path) -> int:
     if n:
         logger.info("odds metrics: unmatched_report_rows=%d → %s", n, report_path)
     return n
+
+
+def _log_store_odds_post_validate(
+    store_df: pd.DataFrame,
+) -> None:
+    """Краткие per-bookmaker метрики по загруженному store после V2-валидации (R21)."""
+    if store_df is None or store_df.empty:
+        return
+    n = len(store_df)
+    if _PINNACLE_V2_COVERAGE_COL in store_df.columns:
+        k = int(store_df[_PINNACLE_V2_COVERAGE_COL].notna().sum())
+        logger.info(
+            "odds store metrics: rows=%d pinnacle_close_nonnull=%d pinnacle_coverage_pct=%.2f (col=%s)",
+            n,
+            k,
+            100.0 * float(k) / float(n),
+            _PINNACLE_V2_COVERAGE_COL,
+        )
+    elif _PINNACLE_V1_COVERAGE_COL in store_df.columns:
+        k = int(store_df[_PINNACLE_V1_COVERAGE_COL].notna().sum())
+        logger.info(
+            "odds store metrics: rows=%d pinnacle_close_nonnull=%d pinnacle_coverage_pct=%.2f (legacy col=%s)",
+            n,
+            k,
+            100.0 * float(k) / float(n),
+            _PINNACLE_V1_COVERAGE_COL,
+        )
+    if _ONEXBET_V2_COVERAGE_COL in store_df.columns:
+        kx = int(store_df[_ONEXBET_V2_COVERAGE_COL].notna().sum())
+        logger.info(
+            "odds store metrics: onexbet_close_nonnull=%d onexbet_coverage_pct=%.2f (col=%s)",
+            kx,
+            100.0 * float(kx) / float(n),
+            _ONEXBET_V2_COVERAGE_COL,
+        )
 
 
 def default_refresh_state_path(
@@ -547,9 +582,8 @@ def run_odds_refresh(
 
     final_store = load_odds_store(p_store)
     if not final_store.empty:
-        validate_pinnacle_odds_float_columns(
-            final_store, context="odds refresh: store after backfill"
-        )
+        validate_odds_float_columns(final_store, context="odds refresh: store after backfill")
+        _log_store_odds_post_validate(final_store)
 
     if req_rem is not None or req_used is not None:
         logger.info(
