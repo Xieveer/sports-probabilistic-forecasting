@@ -99,6 +99,19 @@
 
 ---
 
+### 2026-04-25 — R20.9: TeamNameRegistry + unmatched report
+
+- **Задача:** `backlog/R20.md` (подзадача R20.9, отмечена как выполненная)
+- **Ограничения и компромиссы:**
+  - `nhl.yaml` — реестр пустой (обе секции `{}`): алиасы появятся только после первого production backfill, когда `unmatched_teams.csv` покажет несовпадения. До тех пор `_team_key` всегда возвращает `normalize_team_key` — функционально корректно, но сопоставление NHL ↔ Odds API по-прежнему зависит от единообразия нормализации в двух источниках.
+  - `write_unmatched_odds_teams_report` итерирует через `iterrows()` (O(n)) — для DataFrame ~10k строк незначительно, но при большом историческом backfill лучше векторизованный подход.
+  - Сопутствующие изменения в `assembler.py` (`_merge_full_source_snapshot`) и `bot/__main__.py` / `backfill.py` (`load_dotenv`) выходят за формальный скоп R20.9, однако не вносят регрессий; добавление `python-dotenv` обосновано production-сценарием.
+- **Возможные улучшения / техдолг:**
+  - После первого backfill NHL: заполнить `nhl.yaml` реальными алиасами из `unmatched_teams.csv`; добавить CI-тест, проверяющий, что каждый canonical в реестре совпадает с одним из ключей в `source.csv`.
+  - Заменить `iterrows()` в `write_unmatched_odds_teams_report` на set-based vectorized diff между `odds_df` и `source_match_keys`.
+  - Добавить типизированный `TypeAlias` для `MatchKey = tuple[str, str, str]` для ясности сигнатур.
+  - Рассмотреть автогенерацию скелета `nhl.yaml` командой CLI (из `unmatched_teams.csv` → YAML-шаблон с пустыми canonical для заполнения вручную).
+
 ### 2026-04-18 — R19: NHL production + Odds API + Telegram-бот
 
 - **Задача:** `backlog/R19.md` → `done_task/R19.md`
