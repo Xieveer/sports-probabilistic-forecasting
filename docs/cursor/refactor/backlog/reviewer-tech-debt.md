@@ -307,3 +307,14 @@
   - R21.14: убрать `"open_minutes_before"` из `_ODDS_MINUTES_BEFORE_COLS` в Pandera schemas (V3 store не имеет `open_minutes_before`).
   - После R21.9 (full V3 backfill): удалить V1 + V2-только ветки из union `_ODDS_DECIMAL_COLS` — упростить до V3-only или V3 + V1 legacy.
   - Покрыть тестом сценарий `load_odds_store` на реальный V2 parquet (V2→V3 migration at load). Сейчас тест `test_migrate_v2_to_v3_drops_open_and_draw_pinnacle` проверяет функцию напрямую, но не через `load_odds_store`.
+
+### 2026-04-25 — R21.12 Подробное логирование API-вызовов
+
+- **Задача:** `backlog/R21.md` (подзадача R21.12) → `done_task/R21.12.md`
+- **Ограничения и компромиссы:**
+  - `snapshot_discovery.py` по-прежнему логирует полный URL с `apiKey` в WARNING-сообщениях при `seed fetch failed` (код: `f"... for url: {url}"`). Это **pre-existing** поведение, выходящее за рамки R21.12. В реальных запуска (terminal log) apiKey виден в этих строках. Исправление — за пределами R21.12, предложено ниже.
+  - Cache-hit логирует `x-requests-remaining` из `last_quota()`, а не из реального заголовка HTTP (заголовок недоступен при кеш-хите). Логически корректно, но значение может устареть, если кеш-хиты идут до первого реального HTTP-запроса.
+  - `_log_backfill_close_payload` логирует INFO на каждый день вне зависимости от того, пуст ли ответ (0 events). При массовом backfill это создаёт шум «events_found=0» для дней без матчей. Функционально безвредно.
+- **Возможные улучшения / техдолг:**
+  - `snapshot_discovery.py`: заменить `f"... for url: {url}"` на `f"... for path: {path}"` (strip query). Аналогично подходу `_log_network_response` в client.py. Рекомендуется как часть R21.14 или отдельного hotfix.
+  - В `_log_backfill_close_payload`: добавить guard `if not evs: return` для подавления INFO при 0 events (или понизить до DEBUG).
