@@ -1,9 +1,9 @@
-"""Планирование снимков open/close для The Odds API: динамика по `commence_time` и legacy-fallback (R21.4).
+"""Планирование снимков для The Odds API: динамика по `commence_time` и legacy-fallback.
 
-Используется для выбора ISO-моментов запроса к ``/historical/.../odds`` до интеграции в
-:mod:`sports_forecast.data.providers.odds.backfill` (R21.5). Один HTTP-ответ содержит все
-события на момент ``date``; на уровне дня берётся ``min(commence_time)`` по матчам календарного
-дня (UTC) для согласованного open/close.
+**R21.11:** целевой путь — один **close**-снимок за *N* минут до
+``min(commence_time)`` (см. :class:`CloseSnapshotPlan`, :func:`discover_close_snapshot_for_day`).
+
+Устаревший (но сохранён для тестов) — :func:`discover_snapshots_for_day` (open/close, probe-цикл).
 """
 
 from __future__ import annotations
@@ -22,11 +22,21 @@ logger = get_logger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class SnapshotPlan:
-    """Набор ISO-моментов снимков и смещений от опорного ``commence_time`` (R21 V2)."""
+    """Набор ISO-моментов снимков и смещений от опорного ``commence_time`` (R21 V2, legacy)."""
 
     open_iso: str
     close_iso: str
     open_minutes_before: int
+    close_minutes_before: int
+    reference_commence_time_utc: str | None
+    used_legacy_timestamps: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CloseSnapshotPlan:
+    """Один close-снимок (R21.11 V3): момент запроса, минуты до ``commence``, опорный ``commence``."""
+
+    close_iso: str
     close_minutes_before: int
     reference_commence_time_utc: str | None
     used_legacy_timestamps: bool
@@ -105,8 +115,16 @@ def to_api_iso_z(dt: datetime) -> str:
 
 
 def build_close_snapshot_iso(earliest_commence_utc: datetime, close_margin_hours: float) -> str:
-    """Время снимка close: ``earliest_commence_utc - close_margin_hours`` (см. R21 backlog)."""
+    """Время снимка close: ``earliest_commence_utc - close_margin_hours`` (legacy R21.4)."""
     delta = timedelta(hours=float(close_margin_hours))
+    return to_api_iso_z(earliest_commence_utc - delta)
+
+
+def build_close_snapshot_iso_tminus(
+    earliest_commence_utc: datetime, close_t_minus_minutes: int
+) -> str:
+    """Момент close-снимка: ``earliest_commence_utc - close_t_minus_minutes`` (R21.11 V3)."""
+    delta = timedelta(minutes=int(close_t_minus_minutes))
     return to_api_iso_z(earliest_commence_utc - delta)
 
 
@@ -147,6 +165,77 @@ def _legacy_isos(
 def _parse_any_iso_to_utc(s: str) -> datetime:
     s2 = s.replace("Z", "+00:00")
     return datetime.fromisoformat(s2).astimezone(timezone.utc)
+
+
+def discover_close_snapshot_for_day(
+    client: HistoricalOddsClient,
+    sport_key: str,
+    day: date,
+    *,
+    regions: str = "us",
+    close_t_minus_minutes: int = 15,
+    legacy_open_time_utc: str = "12:00:00",
+    legacy_close_time_utc: str = "23:30:00",
+    use_cache: bool = True,
+) -> tuple[CloseSnapshotPlan, Any]:
+    """Выбрать момент **одного** close-снимка и вернуть payload (R21.11, V3 close-only store).
+
+    Алгоритм:
+        1. **Seed-запрос** в ``{day}T{legacy_open}``; из ответа — ``min(commence_time)`` на ``day`` (UTC).
+        2. Если ``commence`` известен: ``close_iso = min(commence) - close_t_minus_minutes``; второй
+           запрос по ``close_iso`` (фактическая линия close).
+        3. Иначе: снимок по фиксированному ``legacy_close`` (как R20) — без опорного ``commence``.
+
+    **HTTP:** до 2 GET на день (seed + close) — без цикла open-probe.
+
+    Args:
+        client: Клиент The Odds API.
+        sport_key: Ключ спорта (например ``icehockey_nhl``).
+        day: Календарный день матчей (сравнение с ``commence_time`` в UTC).
+        close_t_minus_minutes: За сколько минут до старта ближайшего матча снимать close (NHL V3: 15).
+        legacy_open_time_utc: Время/ISO **seed**-запроса, чтобы извлечь ``commence`` (как в R21.4).
+        legacy_close_time_utc: Запасной момент снимка, если ``commence`` в seed не определён.
+        use_cache: Кэш клиента.
+
+    Returns:
+        ``(план, payload_close)`` — сырой ответ API с линиями **на момент** ``close_iso``.
+    """
+    legacy_o, legacy_c = _legacy_isos(day, legacy_open_time_utc, legacy_close_time_utc)
+    try:
+        p_seed = client.fetch_odds_for_sport(
+            sport_key,
+            regions=regions,
+            date_iso=legacy_o,
+            use_cache=use_cache,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("close snapshot: seed fetch failed (%s), legacy close only", exc)
+        p_seed = {}
+    ref_dt = earliest_commence_on_day_from_payload(p_seed, day)
+    if ref_dt is None:
+        p_close = client.fetch_odds_for_sport(
+            sport_key, regions=regions, date_iso=legacy_c, use_cache=use_cache
+        )
+        plan = CloseSnapshotPlan(
+            close_iso=legacy_c,
+            close_minutes_before=0,
+            reference_commence_time_utc=None,
+            used_legacy_timestamps=True,
+        )
+        return (plan, p_close)
+    close_iso = build_close_snapshot_iso_tminus(ref_dt, close_t_minus_minutes)
+    p_close = client.fetch_odds_for_sport(
+        sport_key, regions=regions, date_iso=close_iso, use_cache=use_cache
+    )
+    ref_iso = to_api_iso_z(ref_dt)
+    close_m = minutes_before_commence(ref_dt, _parse_any_iso_to_utc(close_iso))
+    plan = CloseSnapshotPlan(
+        close_iso=close_iso,
+        close_minutes_before=close_m,
+        reference_commence_time_utc=ref_iso,
+        used_legacy_timestamps=False,
+    )
+    return (plan, p_close)
 
 
 def discover_snapshots_for_day(

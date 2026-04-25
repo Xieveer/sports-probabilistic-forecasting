@@ -154,7 +154,7 @@
   - [x] R21.7 — Валидация + Pandera V2 (multi-bookmaker, total_line, timing) ✅ 2026-04-25
   - [x] R21.8 — Тесты: unit + integration для V2 odds pipeline ✅ 2026-04-25
   - [x] **R21.10** — Schema V3: close-only (17 cols), убрать draw_withOT, has_draw filtering ✅ 2026-04-26
-  - [ ] **R21.11** — Snapshot discovery: close-only at T-15min (замена open+close probe)
+  - [x] **R21.11** — Snapshot discovery: close-only at T-15min (замена open+close probe) ✅ 2026-04-26
   - [ ] **R21.12** — Подробное логирование API-вызовов (day X/N, events, quota)
   - [ ] **R21.13** — Team-name registry: ручное заполнение для 32 команд NHL
   - [ ] **R21.14** — Тесты + конфиг: обновление под V3 schema

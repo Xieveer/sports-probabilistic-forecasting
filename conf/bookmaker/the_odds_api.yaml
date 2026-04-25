@@ -43,10 +43,10 @@ bookmaker_profiles:
     total_semantics: total
     has_draw: true
 
-# Параметры динамического discovery снимков open/close (R21.4+; runtime — в snapshot_discovery).
+# Параметры close-only snapshot (R21.11): T−N минут до min(commence) по seed-запросу; см. discover_close_snapshot_for_day.
+# Устаревшие open_probe / close_margin_hours (R21.4) в backfill не используются — оставьте в комментариях при необходимости сравнения.
 snapshot_discovery:
-  open_probe_offsets_hours: [168, 72, 24]
-  close_margin_hours: 1
+  close_t_minus_minutes: 15
 
 # Имена колонок в source.csv после merge — legacy (R19/R20), один Pinnacle без суффиксов семантики.
 # R21 V2: колонки OddsStore и merge формируются по bookmaker_profiles (префикс + winner_semantics/total_semantics);
@@ -79,7 +79,7 @@ backfill:
 # quota_budget_per_run: максимум реальных HTTP GET к The Odds API за один запуск
 # (``run_backfill``, инкрементальный odds-refresh). Кэш на диск не уменьшает счётчик;
 # 0 = без лимита. При исчерпании — graceful stop, прогресс в OddsStore/checkpoint.
-quota_budget_per_run: 100
+quota_budget_per_run: 800
 
 # seasons: календарные границы по турниру (ключ = каталог data/source, напр. nhl).
 # Используется в ``backfill --seasons N`` (N последних окон) и пустом OddsStore

@@ -5,7 +5,9 @@
 
 from sports_forecast.data.providers.odds.client import OddsApiClient, OddsApiQuotaSnapshot
 from sports_forecast.data.providers.odds.snapshot_discovery import (
+    CloseSnapshotPlan,
     SnapshotPlan,
+    discover_close_snapshot_for_day,
     discover_snapshots_for_day,
 )
 from sports_forecast.data.providers.odds.store import (
@@ -31,9 +33,11 @@ __all__ = [
     "ODDS_STORE_COLUMNS_V1",
     "ODDS_STORE_COLUMNS_V2",
     "ODDS_STORE_COLUMNS_V3",
+    "CloseSnapshotPlan",
     "OddsApiClient",
     "OddsApiQuotaSnapshot",
     "SnapshotPlan",
+    "discover_close_snapshot_for_day",
     "discover_snapshots_for_day",
     "load_odds_store",
     "max_game_date_in_store",

@@ -1,4 +1,4 @@
-"""Unit-тесты динамического выбора open/close снимков (R21.4)."""
+"""Unit-тесты: close-only T−N (R21.11) и устар. open/close + probe (R21.4)."""
 
 from __future__ import annotations
 
@@ -7,9 +7,12 @@ from typing import Any
 
 from sports_forecast.data.providers.odds.enrichment import unwrap_odds_payload
 from sports_forecast.data.providers.odds.snapshot_discovery import (
+    CloseSnapshotPlan,
     SnapshotPlan,
     build_close_snapshot_iso,
+    build_close_snapshot_iso_tminus,
     commence_datetimes_from_events_payload,
+    discover_close_snapshot_for_day,
     discover_snapshots_for_day,
     earliest_commence_on_day_from_payload,
     has_events_for_calendar_day,
@@ -26,6 +29,94 @@ def _ev(commence: str) -> dict[str, Any]:
         "away_team": "B",
         "bookmakers": [],
     }
+
+
+def test_build_close_snapshot_iso_tminus_15m() -> None:
+    ref = datetime(2024, 1, 10, 20, 0, tzinfo=timezone.utc)
+    assert build_close_snapshot_iso_tminus(ref, 15) == "2024-01-10T19:45:00Z"
+
+
+def test_discover_close_snapshot_happy_t15() -> None:
+    day = date(2024, 1, 10)
+    ref_utc = datetime(2024, 1, 10, 20, 0, tzinfo=timezone.utc)
+    seed = {"data": [_ev("2024-01-10T20:00:00Z")]}
+    t_close = build_close_snapshot_iso_tminus(ref_utc, 15)
+    assert t_close == "2024-01-10T19:45:00Z"
+
+    class C:
+        def __init__(self) -> None:
+            self.calls: list[str | None] = []
+
+        def fetch_odds_for_sport(
+            self,
+            _sport: str,
+            *,
+            regions: str = "us",  # noqa: ARG002
+            date_iso: str | None = None,
+            use_cache: bool = True,  # noqa: ARG002
+        ) -> object:
+            self.calls.append(date_iso)
+            if date_iso and "T12:00:00" in date_iso and day.isoformat() in (date_iso or ""):
+                return seed
+            if date_iso == t_close:
+                return {"data": [_ev("2024-01-10T20:00:00Z")]}
+            return {"data": []}
+
+    client = C()
+    plan, p_close = discover_close_snapshot_for_day(
+        client,  # type: ignore[arg-type]
+        "icehockey_nhl",
+        day,
+        regions="eu",
+        close_t_minus_minutes=15,
+        legacy_open_time_utc="12:00:00",
+        legacy_close_time_utc="23:30:00",
+    )
+    assert isinstance(plan, CloseSnapshotPlan)
+    assert plan.close_iso == t_close
+    assert plan.reference_commence_time_utc == "2024-01-10T20:00:00Z"
+    assert plan.close_minutes_before == 15
+    assert not plan.used_legacy_timestamps
+    assert len(unwrap_odds_payload(p_close)) >= 1
+    assert len(client.calls) == 2
+
+
+def test_discover_close_snapshot_no_commence_uses_legacy_close() -> None:
+    day = date(2024, 2, 1)
+
+    class C:
+        def __init__(self) -> None:
+            self.calls: list[str | None] = []
+
+        def fetch_odds_for_sport(
+            self,
+            _sport: str,
+            *,
+            date_iso: str | None = None,
+            **_kwargs: object,
+        ) -> object:
+            self.calls.append(date_iso)
+            if date_iso and "T12:00:00" in date_iso and "2024-02-01" in (date_iso or ""):
+                return {"data": []}
+            if date_iso and "T23:30:00" in (date_iso or ""):
+                return {"data": []}
+            return {"data": []}
+
+    c = C()
+    plan, _p = discover_close_snapshot_for_day(
+        c,  # type: ignore[arg-type]
+        "icehockey_nhl",
+        day,
+        regions="us",
+        close_t_minus_minutes=15,
+        legacy_open_time_utc="12:00:00",
+        legacy_close_time_utc="23:30:00",
+    )
+    assert plan.used_legacy_timestamps
+    assert plan.close_iso == "2024-02-01T23:30:00Z"
+    assert plan.reference_commence_time_utc is None
+    assert plan.close_minutes_before == 0
+    assert len(c.calls) == 2
 
 
 def test_happy_path_known_commence_and_minutes() -> None:
@@ -237,19 +328,19 @@ def test_unwrap_from_enrichment() -> None:
     assert unwrap_odds_payload({"data": [{"a": 1}]}) == [{"a": 1}]
 
 
-def test_snapshot_discovery_params_empty_offsets_falls_back_to_default() -> None:
-    """Пустой ``open_probe_offsets_hours`` в YAML → дефолтный tuple (R21.8 / tech-debt R21.5)."""
-    from sports_forecast.data.providers.odds.backfill import _snapshot_discovery_params
+def test_close_t_minus_from_config() -> None:
+    from sports_forecast.data.providers.odds.backfill import _close_t_minus_minutes_from_config
 
-    off, margin = _snapshot_discovery_params(
-        {"snapshot_discovery": {"open_probe_offsets_hours": [], "close_margin_hours": 2.5}}
+    assert _close_t_minus_minutes_from_config({}) == 15
+    assert (
+        _close_t_minus_minutes_from_config({"snapshot_discovery": {"close_t_minus_minutes": 20}})
+        == 20
     )
-    assert off == (168.0, 72.0, 24.0)
-    assert margin == 2.5
-
-
-def test_snapshot_discovery_params_non_numeric_close_margin_falls_back() -> None:
-    from sports_forecast.data.providers.odds.backfill import _snapshot_discovery_params
-
-    _off, margin = _snapshot_discovery_params({"snapshot_discovery": {"close_margin_hours": "bad"}})
-    assert margin == 1.0
+    assert (
+        _close_t_minus_minutes_from_config({"snapshot_discovery": {"close_t_minus_minutes": 0}})
+        == 1
+    )
+    assert (
+        _close_t_minus_minutes_from_config({"snapshot_discovery": {"close_t_minus_minutes": "x"}})
+        == 15
+    )

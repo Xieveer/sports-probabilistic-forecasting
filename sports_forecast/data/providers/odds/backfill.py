@@ -1,9 +1,9 @@
 """Идемпотентный backfill исторических линий The Odds API (окно 2–3 сезонов).
 
-Один календарный день: по умолчанию (R21.5) моменты open/close подбираются
-:func:`snapshot_discovery.discover_snapshots_for_day` (параметры в ``snapshot_discovery`` YAML);
-на диск кэшируются ответы. Режим фиксированных UTC-времён: ``--legacy-timestamps`` / параметр
-``legacy_timestamps``.
+Один календарный день: по умолчанию (R21.11) **один** close-снимок
+:func:`snapshot_discovery.discover_close_snapshot_for_day` (T−N минут до ``commence``;
+``snapshot_discovery.close_t_minus_minutes`` в YAML). Режим фиксированного UTC: ``--legacy-timestamps`` /
+``legacy_timestamps`` — один снимок по ``backfill.close_snapshot_utc``.
 
 CLI (диапазон дат)::
 
@@ -35,8 +35,8 @@ from sports_forecast.config.loaders import PROJECT_ROOT, load_bookmaker_config
 from sports_forecast.data.providers.odds.client import OddsApiClient, QuotaBudgetError
 from sports_forecast.data.providers.odds.enrichment import events_to_odds_frame, unwrap_odds_payload
 from sports_forecast.data.providers.odds.snapshot_discovery import (
-    SnapshotPlan,
-    discover_snapshots_for_day,
+    CloseSnapshotPlan,
+    discover_close_snapshot_for_day,
 )
 from sports_forecast.data.providers.odds.store import upsert_odds_store_file
 from sports_forecast.data.providers.odds.team_name_registry import (
@@ -150,39 +150,30 @@ def _book_get(book_root: Any, key: str) -> Any:
     return OmegaConf.select(book_root, key)
 
 
-def _snapshot_discovery_params(
-    book_root: Any,
-) -> tuple[tuple[float, ...], float]:
-    """Параметры :func:`discover_snapshots_for_day` из ``bookmaker.snapshot_discovery`` (R21.5)."""
+def _close_t_minus_minutes_from_config(book_root: Any) -> int:
+    """``snapshot_discovery.close_t_minus_minutes`` (R21.11), по умолчанию 15."""
     raw = _book_get(book_root, "snapshot_discovery")
     if raw is None:
-        return (168.0, 72.0, 24.0), 1.0
+        return 15
     sd = raw if isinstance(raw, dict) else (OmegaConf.to_container(raw, resolve=True) or {})
     if not isinstance(sd, dict):
-        return (168.0, 72.0, 24.0), 1.0
-    off = sd.get("open_probe_offsets_hours")
-    if isinstance(off, (list, tuple)) and off:
-        offsets: tuple[float, ...] = tuple(float(x) for x in off)
-    else:
-        offsets = (168.0, 72.0, 24.0)
+        return 15
     try:
-        close_margin = float(sd.get("close_margin_hours", 1.0))
+        m = int(sd.get("close_t_minus_minutes", 15))
     except (TypeError, ValueError):
-        close_margin = 1.0
-    return (offsets, close_margin)
+        m = 15
+    return max(1, m)
 
 
-def _attach_snapshot_timing(
+def _attach_close_snapshot_timing(
     fr: pd.DataFrame,
-    plan: SnapshotPlan,
+    plan: CloseSnapshotPlan,
 ) -> pd.DataFrame:
-    """Добавить в кадр колонки таймингов из :class:`SnapshotPlan` (R21.5 / OddsStore V2)."""
+    """Добавить в кадр V3: ``close_snapshot_utc``, ``close_minutes_before`` (R21.11)."""
     if fr.empty:
         return fr
     out = fr.copy()
-    out["open_snapshot_utc"] = plan.open_iso
     out["close_snapshot_utc"] = plan.close_iso
-    out["open_minutes_before"] = int(plan.open_minutes_before)
     out["close_minutes_before"] = int(plan.close_minutes_before)
     return out
 
@@ -227,31 +218,26 @@ def backfill_day_frames(
     book_root: Any,
     *,
     regions: str = "eu",
-    use_open_close: bool = True,
     team_registry: TeamNameRegistry | None = None,
     legacy_timestamps: bool = False,
 ) -> pd.DataFrame:
-    """Загрузить (с кэшем) снимки на день и вернуть таблицу для merge.
+    """Загрузить (с кэшем) **close**-снимок на день и вернуть таблицу для OddsStore V3.
 
-    По умолчанию (``legacy_timestamps=False``) моменты open/close подбираются через
-    :func:`snapshot_discovery.discover_snapshots_for_day` и ``snapshot_discovery.*`` в YAML;
-    в кадр добавляются ``open_snapshot_utc``, ``close_snapshot_utc``,
-    ``open_minutes_before``, ``close_minutes_before`` (см. :class:`SnapshotPlan`).
+    При ``legacy_timestamps=False`` — :func:`snapshot_discovery.discover_close_snapshot_for_day`
+    (T−N минут до ``min(commence)``). В кадр: ``close_snapshot_utc``, ``close_minutes_before``.
 
     Args:
         client: Клиент API.
         sport_key: Ключ спорта (``icehockey_nhl``).
-        day: Календарная дата (для двух ISO timestamp внутри дня).
-        book_root: Узел ``bookmaker`` (или корень) с ``bookmakers``, ``output_columns``,
-            ``backfill``, опционально ``snapshot_discovery``.
-        regions: Регион букмекеров (Pinnacle часто в ``eu``).
-        use_open_close: Два снимка в день; ``False`` — один снимок (экономия квоты).
-        team_registry: Нормализация названий (alias → canonical) для согласованного merge/stored.
-        legacy_timestamps: ``True`` — только фиксированные ``backfill.open_snapshot_utc`` /
-            ``close_snapshot_utc`` (как R20), без динамического discovery.
+        day: Календарная дата матчей (UTC по ``commence``).
+        book_root: Узел ``bookmaker`` с ``bookmakers``, ``output_columns``, ``backfill``,
+            ``snapshot_discovery``.
+        regions: Регион букмекеров.
+        team_registry: Нормализация названий (alias → canonical).
+        legacy_timestamps: ``True`` — одна GET по ``backfill.close_snapshot_utc`` (без discovery).
 
     Returns:
-        DataFrame для :func:`enrichment.merge_odds_into_source_dataframe` с колонками тайминга.
+        DataFrame для :func:`enrichment.merge_odds_into_source_dataframe` / OddsStore V3.
     """
     bk = _book_get(book_root, "bookmakers") or {}
     primary = str(bk.get("primary", "pinnacle"))
@@ -270,93 +256,45 @@ def backfill_day_frames(
         bf = {}
     open_t = str(bf.get("open_snapshot_utc", "12:00:00"))
     close_t = str(bf.get("close_snapshot_utc", "23:30:00"))
-    legacy_o, legacy_c = _legacy_day_snapshot_isos(day, open_t, close_t)
+    _legacy_open_iso, legacy_c = _legacy_day_snapshot_isos(day, open_t, close_t)
 
-    def _frame_and_timing(ev_o, ev_c, plan: SnapshotPlan) -> pd.DataFrame:
+    def _one_close_frame(events: list[dict[str, Any]], plan: CloseSnapshotPlan) -> pd.DataFrame:
         fr = events_to_odds_frame(
-            ev_o,
-            ev_c,
+            events,
+            None,
             primary,
             out_cols,
             team_registry=team_registry,
             book_cfg=book_root,
         )
-        return _attach_snapshot_timing(fr, plan)
-
-    if not use_open_close:
-        if legacy_timestamps:
-            p_one = client.fetch_odds_for_sport(
-                sport_key,
-                regions=regions,
-                date_iso=legacy_o,
-                use_cache=True,
-            )
-            ev = unwrap_odds_payload(p_one)
-            plan = SnapshotPlan(
-                open_iso=legacy_o,
-                close_iso=legacy_o,
-                open_minutes_before=0,
-                close_minutes_before=0,
-                reference_commence_time_utc=None,
-                used_legacy_timestamps=True,
-            )
-            return _frame_and_timing(ev, None, plan)
-        # Динамический режим: discovery задаёт open/close ISO; в таблицу — один снимок (open).
-        off_h, close_margin = _snapshot_discovery_params(book_root)
-        plan, p_open, _p_close = discover_snapshots_for_day(
-            client,
-            sport_key,
-            day,
-            regions=regions,
-            open_probe_offsets_hours=off_h,
-            close_margin_hours=close_margin,
-            legacy_open_time_utc=open_t,
-            legacy_close_time_utc=close_t,
-            use_cache=True,
-        )
-        ev = unwrap_odds_payload(p_open)
-        return _frame_and_timing(ev, None, plan)
+        return _attach_close_snapshot_timing(fr, plan)
 
     if legacy_timestamps:
-        p_open = client.fetch_odds_for_sport(
-            sport_key,
-            regions=regions,
-            date_iso=legacy_o,
-            use_cache=True,
-        )
         p_close = client.fetch_odds_for_sport(
-            sport_key,
-            regions=regions,
-            date_iso=legacy_c,
-            use_cache=True,
+            sport_key, regions=regions, date_iso=legacy_c, use_cache=True
         )
-        ev_o = unwrap_odds_payload(p_open)
-        ev_c = unwrap_odds_payload(p_close)
-        plan = SnapshotPlan(
-            open_iso=legacy_o,
+        ev = unwrap_odds_payload(p_close)
+        plan = CloseSnapshotPlan(
             close_iso=legacy_c,
-            open_minutes_before=0,
             close_minutes_before=0,
             reference_commence_time_utc=None,
             used_legacy_timestamps=True,
         )
-        return _frame_and_timing(ev_o, ev_c, plan)
+        return _one_close_frame(ev, plan)
 
-    off_h, close_margin = _snapshot_discovery_params(book_root)
-    plan, p_open, p_close = discover_snapshots_for_day(
+    tminus = _close_t_minus_minutes_from_config(book_root)
+    plan, p_close = discover_close_snapshot_for_day(
         client,
         sport_key,
         day,
         regions=regions,
-        open_probe_offsets_hours=off_h,
-        close_margin_hours=close_margin,
+        close_t_minus_minutes=tminus,
         legacy_open_time_utc=open_t,
         legacy_close_time_utc=close_t,
         use_cache=True,
     )
-    ev_o = unwrap_odds_payload(p_open)
-    ev_c = unwrap_odds_payload(p_close)
-    return _frame_and_timing(ev_o, ev_c, plan)
+    ev = unwrap_odds_payload(p_close)
+    return _one_close_frame(ev, plan)
 
 
 def _concat_dedup(parts: list[pd.DataFrame]) -> pd.DataFrame:
@@ -388,7 +326,6 @@ def _backfill_date_range(
     *,
     sport_key: str,
     regions: str,
-    use_open_close: bool,
     team_registry: TeamNameRegistry | None,
     legacy_timestamps: bool = False,
 ) -> tuple[pd.DataFrame, bool]:
@@ -402,7 +339,6 @@ def _backfill_date_range(
                 d,
                 book_root,
                 regions=regions,
-                use_open_close=use_open_close,
                 team_registry=team_registry,
                 legacy_timestamps=legacy_timestamps,
             )
@@ -425,7 +361,6 @@ def run_backfill(
     sport_key: str = "icehockey_nhl",
     regions: str = "eu",
     out_parquet: Path | None = None,
-    use_open_close: bool = True,
     store_path: Path | None = None,
     bookmaker_key: str = "the_odds_api",
     legacy_timestamps: bool = False,
@@ -441,8 +376,8 @@ def run_backfill(
         seasons_last_n: Число последних сезонов из ``bookmaker.seasons.{tournament}``; альтернатива датам.
         tournament: Ключ в ``seasons`` и в пути store по умолчанию.
         store_path: Если задан, upsert в Parquet-файл OddsStore.
-        legacy_timestamps: Только фиксированные ``backfill.open_snapshot_utc``/``close_snapshot_utc``;
-            иначе динамический :func:`snapshot_discovery.discover_snapshots_for_day` (по YAML).
+        legacy_timestamps: Только фиксированный ``backfill.close_snapshot_utc``; иначе
+            :func:`snapshot_discovery.discover_close_snapshot_for_day` (T−N мин, по YAML).
 
     Returns:
         :class:`BackfillRunResult` с дедуп DataFrame, флагом исчерпания квоты и
@@ -487,7 +422,6 @@ def run_backfill(
                 s1,
                 sport_key=sport_key,
                 regions=regions,
-                use_open_close=use_open_close,
                 team_registry=team_registry,
                 legacy_timestamps=legacy_timestamps,
             )
@@ -518,7 +452,6 @@ def run_backfill(
             date_to,
             sport_key=sport_key,
             regions=regions,
-            use_open_close=use_open_close,
             team_registry=team_registry,
             legacy_timestamps=legacy_timestamps,
         )
@@ -598,11 +531,6 @@ def main(argv: list[str] | None = None) -> int:
         help="Upsert в OddsStore. Без значения: data/source/TOURNAMENT/odds/pinnacle_odds.parquet",
     )
     parser.add_argument(
-        "--single-snapshot",
-        action="store_true",
-        help="Один снимок на день (меньше запросов; open=close)",
-    )
-    parser.add_argument(
         "--legacy-timestamps",
         action="store_true",
         help="Только backfill.open_snapshot_utc/close в конфиге (R20), без динамического snapshot discovery",
@@ -643,7 +571,6 @@ def main(argv: list[str] | None = None) -> int:
             sport_key=args.sport_key,
             regions=args.regions,
             out_parquet=args.out,
-            use_open_close=not args.single_snapshot,
             store_path=store_path,
             legacy_timestamps=args.legacy_timestamps,
         )

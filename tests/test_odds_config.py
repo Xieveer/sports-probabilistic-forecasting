@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-from numbers import Real
 from typing import Any, Final
 
 import pytest
@@ -92,27 +91,22 @@ class TestTheOddsApiBookmakerProfiles:
 
 
 class TestTheOddsApiSnapshotDiscovery:
-    """Типы и наличие snapshot_discovery (параметры для R21.4+)."""
+    """Параметры snapshot_discovery (R21.11: close_t_minus_minutes)."""
 
     def test_snapshot_discovery_types(self, the_odds_book_root: DictConfig) -> None:
         raw = _as_plain(OmegaConf.select(the_odds_book_root, "snapshot_discovery"))
         assert isinstance(raw, dict), "snapshot_discovery должен быть mapping"
-        offsets = raw.get("open_probe_offsets_hours")
-        margin = raw.get("close_margin_hours")
-        assert isinstance(offsets, list), "open_probe_offsets_hours должен быть списком"
-        assert all(isinstance(x, int) and not isinstance(x, bool) for x in offsets), (
-            "open_probe_offsets_hours: ожидаются целые часы (int)"
+        tmin = raw.get("close_t_minus_minutes")
+        assert tmin is not None, "close_t_minus_minutes обязателен"
+        assert isinstance(tmin, int) and not isinstance(tmin, bool), (
+            "close_t_minus_minutes: ожидается int (минуты до старта)"
         )
-        assert margin is not None, "close_margin_hours обязателен"
-        assert isinstance(margin, Real) and not isinstance(margin, bool), (
-            "close_margin_hours должен быть числом (int или float)"
-        )
+        assert tmin >= 1
 
-    def test_snapshot_discovery_non_empty_offsets(self, the_odds_book_root: DictConfig) -> None:
+    def test_snapshot_discovery_positive_tminus(self, the_odds_book_root: DictConfig) -> None:
         raw = _as_plain(OmegaConf.select(the_odds_book_root, "snapshot_discovery"))
         assert isinstance(raw, dict)
-        offsets = raw.get("open_probe_offsets_hours")
-        assert isinstance(offsets, list) and len(offsets) >= 1
+        assert int(raw.get("close_t_minus_minutes", 0) or 0) >= 1
 
 
 class TestNhlSourceOddsBookmakers:

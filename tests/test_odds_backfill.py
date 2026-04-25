@@ -12,7 +12,7 @@ from omegaconf import OmegaConf
 
 from sports_forecast.data.providers.odds import backfill as backfill_mod
 from sports_forecast.data.providers.odds.backfill import (
-    _snapshot_discovery_params,
+    _close_t_minus_minutes_from_config,
     backfill_day_frames,
     default_odds_store_path,
     last_n_season_windows,
@@ -24,7 +24,7 @@ from sports_forecast.data.providers.odds.client import (
     OddsApiQuotaSnapshot,
     QuotaBudgetError,
 )
-from sports_forecast.data.providers.odds.snapshot_discovery import SnapshotPlan
+from sports_forecast.data.providers.odds.snapshot_discovery import CloseSnapshotPlan
 
 
 def _minimal_bookmaker_node(
@@ -172,10 +172,7 @@ def test_run_backfill_range_with_store_non_empty_upserts(
     """Пустой ответ API даёт 0 строк — upsert всё равно вызывается только при non-empty (см. код)."""
     monkeypatch.setenv("ODDS_API_KEY", "test-key")
     book = _minimal_bookmaker_node(seasons_nhl=[])
-    book["snapshot_discovery"] = {
-        "open_probe_offsets_hours": [24.0, 12.0],
-        "close_margin_hours": 2.0,
-    }
+    book["snapshot_discovery"] = {"close_t_minus_minutes": 15}
     cfg = OmegaConf.create({"bookmaker": book})
     monkeypatch.setattr(
         "sports_forecast.data.providers.odds.backfill.load_bookmaker_config",
@@ -331,7 +328,7 @@ def test_backfill_stops_on_quota(
         "sports_forecast.data.providers.odds.backfill.load_bookmaker_config",
         lambda _k: cfg,
     )
-    # Реальный клиент: квота 1 — только один сетевой GET; backfill (2 снимка) упрётся в лимит.
+    # Квота 1: legacy close — один GET на день, лимит не исчерпан.
     cfg_flat = cfg.bookmaker
     client = OddsApiClient(bookmaker_cfg=cfg_flat, cache_dir=tmp_path, max_real_http_requests=1)
     resp = MagicMock()
@@ -354,11 +351,10 @@ def test_backfill_stops_on_quota(
         date(2024, 1, 1),
         sport_key="icehockey_nhl",
         regions="eu",
-        use_open_close=True,
         team_registry=None,
         legacy_timestamps=True,
     )
-    assert hit is True
+    assert hit is False
 
 
 def test_client_quota_raises_before_second_request(
@@ -415,15 +411,13 @@ def _sample_odds_one_row() -> pd.DataFrame:
     )
 
 
-def test_backfill_day_frames_discover_adds_timing_and_uses_config(
+def test_backfill_day_frames_discover_close_adds_timing_and_uses_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Режим по умолчанию: discover_snapshots_for_day; колонки тайминга; параметры из snapshot_discovery."""
-    plan = SnapshotPlan(
-        open_iso="2024-01-15T10:00:00Z",
+    """Режим по умолчанию: discover_close_snapshot_for_day; V3: только close-* тайминги."""
+    plan = CloseSnapshotPlan(
         close_iso="2024-01-15T20:00:00Z",
-        open_minutes_before=100,
-        close_minutes_before=50,
+        close_minutes_before=15,
         reference_commence_time_utc="2024-01-15T22:00:00Z",
         used_legacy_timestamps=False,
     )
@@ -431,12 +425,12 @@ def test_backfill_day_frames_discover_adds_timing_and_uses_config(
 
     def _discover(  # noqa: ANN001
         _client, _sport_key, _day, **kwargs: object
-    ) -> tuple[SnapshotPlan, dict[str, list[object]], dict[str, list[object]]]:
+    ) -> tuple[CloseSnapshotPlan, dict[str, list[object]]]:
         discover_calls.append(kwargs)
-        return (plan, {"data": []}, {"data": []})
+        return (plan, {"data": []})
 
     monkeypatch.setattr(
-        "sports_forecast.data.providers.odds.backfill.discover_snapshots_for_day",
+        "sports_forecast.data.providers.odds.backfill.discover_close_snapshot_for_day",
         _discover,
     )
     last_book_cfg: dict = {}
@@ -457,10 +451,7 @@ def test_backfill_day_frames_discover_adds_timing_and_uses_config(
         pass
 
     book = _minimal_bookmaker_node(seasons_nhl=[])
-    book["snapshot_discovery"] = {
-        "open_probe_offsets_hours": [48.0, 24.0],
-        "close_margin_hours": 1.5,
-    }
+    book["snapshot_discovery"] = {"close_t_minus_minutes": 15}
     book["bookmaker_profiles"] = {
         "pinnacle": {
             "key": "pinnacle",
@@ -477,84 +468,37 @@ def test_backfill_day_frames_discover_adds_timing_and_uses_config(
         legacy_timestamps=False,
     )
     assert len(df) == 1
-    assert df["open_snapshot_utc"].iloc[0] == plan.open_iso
     assert df["close_snapshot_utc"].iloc[0] == plan.close_iso
-    assert int(df["open_minutes_before"].iloc[0]) == 100
-    assert int(df["close_minutes_before"].iloc[0]) == 50
+    assert int(df["close_minutes_before"].iloc[0]) == 15
+    assert "open_snapshot_utc" not in df.columns
     assert discover_calls
-    assert discover_calls[0]["open_probe_offsets_hours"] == (48.0, 24.0)
-    assert discover_calls[0]["close_margin_hours"] == 1.5
+    assert discover_calls[0]["close_t_minus_minutes"] == 15
     assert "bookmaker_profiles" in last_book_cfg
 
 
-def test_backfill_day_frames_single_snapshot_dynamic_no_legacy(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``use_open_close=False``, ``legacy_timestamps=False``: один снимок + discover (R21.5 tech-debt)."""
-    plan = SnapshotPlan(
-        open_iso="2024-01-20T10:00:00Z",
-        close_iso="2024-01-20T10:00:00Z",
-        open_minutes_before=200,
-        close_minutes_before=0,
-        reference_commence_time_utc="2024-01-20T20:00:00Z",
-        used_legacy_timestamps=False,
-    )
-
-    def _discover(  # noqa: ANN001
-        _client, _sport_key, _day, **kwargs: object
-    ) -> tuple[SnapshotPlan, dict[str, list[object]], dict[str, list[object]]]:
-        return (plan, {"data": [{"k": 1}]}, {"data": []})
-
-    monkeypatch.setattr(
-        "sports_forecast.data.providers.odds.backfill.discover_snapshots_for_day",
-        _discover,
-    )
-
-    def _eto(_ev_o, _ev_c, *_, **__):  # noqa: ANN001
-        return _sample_odds_one_row()
-
-    monkeypatch.setattr(
-        "sports_forecast.data.providers.odds.backfill.events_to_odds_frame",
-        _eto,
-    )
-    book = _minimal_bookmaker_node(seasons_nhl=[])
-    book["snapshot_discovery"] = {"open_probe_offsets_hours": [12.0], "close_margin_hours": 1.0}
-    df = backfill_day_frames(
-        object(),  # type: ignore[arg-type]
-        "icehockey_nhl",
-        date(2024, 1, 20),
-        book,
-        use_open_close=False,
-        legacy_timestamps=False,
-    )
-    assert len(df) == 1
-    assert df["open_snapshot_utc"].iloc[0] == plan.open_iso
-    assert int(df["open_minutes_before"].iloc[0]) == 200
-
-
-def test_snapshot_discovery_params_from_book() -> None:
-    off, m = _snapshot_discovery_params(
-        {
-            "snapshot_discovery": {
-                "open_probe_offsets_hours": [99.0, 1.0],
-                "close_margin_hours": 3.25,
+def test_close_t_minus_from_book_yaml() -> None:
+    assert (
+        _close_t_minus_minutes_from_config(
+            {
+                "snapshot_discovery": {
+                    "close_t_minus_minutes": 20,
+                }
             }
-        }
+        )
+        == 20
     )
-    assert off == (99.0, 1.0)
-    assert m == 3.25
 
 
-def test_backfill_day_frames_legacy_no_discover_fixed_isos(
+def test_backfill_day_frames_legacy_no_discover_fixed_close_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """legacy_timestamps: два запроса по фиксированным ISO; discover не вызывается."""
+    """legacy_timestamps: один GET по backfill.close; discover не вызывается."""
 
     def _discover_boom(*_a, **_k):  # noqa: ANN202
-        raise AssertionError("discover_snapshots_for_day must not run in legacy mode")
+        raise AssertionError("discover_close_snapshot_for_day must not run in legacy mode")
 
     monkeypatch.setattr(
-        "sports_forecast.data.providers.odds.backfill.discover_snapshots_for_day",
+        "sports_forecast.data.providers.odds.backfill.discover_close_snapshot_for_day",
         _discover_boom,
     )
     fetches: list[str] = []
@@ -580,10 +524,9 @@ def test_backfill_day_frames_legacy_no_discover_fixed_isos(
         book,
         legacy_timestamps=True,
     )
-    assert fetches[0] == "2024-01-15T12:00:00Z" and fetches[1] == "2024-01-15T23:30:00Z"
-    assert df["open_snapshot_utc"].iloc[0] == "2024-01-15T12:00:00Z"
+    assert fetches == ["2024-01-15T23:30:00Z"]
     assert df["close_snapshot_utc"].iloc[0] == "2024-01-15T23:30:00Z"
-    assert int(df["open_minutes_before"].iloc[0]) == 0
+    assert "open_snapshot_utc" not in df.columns
     assert int(df["close_minutes_before"].iloc[0]) == 0
 
 
