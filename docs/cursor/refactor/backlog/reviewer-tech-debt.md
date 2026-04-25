@@ -205,6 +205,20 @@
   - Добавить тест-фикстуру, которая кросс-валидирует `{bm}_{winner_semantics}_*` колонки из профилей с `ODDS_STORE_COLUMNS_V2` (например, через `startswith`-check).
   - Параметризовать `test_nhl_odds_includes_configured_bookmakers` через загрузку профилей из `the_odds_api.yaml` вместо hardcode-списка.
 
+### 2026-04-25 — R21.3: Enrichment multi-bookmaker + total line + V2 naming
+
+- **Задача:** `backlog/R21.md` (sub-task R21.3) → `done_task/R21.3.md`
+- **Ограничения и компромиссы:**
+  - `has_draw` хранится в `BookmakerExtractionProfile`, но **не используется** для фильтрации draw-колонок: `_v2_row_keys_for_profile` всегда генерирует `{prefix}_{w}_draw_{open,close}` для всех профилей. Pinnacle (has_draw=False) имеет эти колонки в схеме, они просто остаются `None`. Поведение корректное, но немного несогласованное с семантикой поля.
+  - `_totals_line_and_prices` берёт `point` из первого outcome с непустым `point`, а не строго из outcome `"Over"`. В реальных данных оба имеют одинаковый `point`, так что результат идентичен. При нестандартном ответе API (разные `point` у Over и Under) возьмётся тот, что встретился первым в JSON.
+  - `mkt["point"]` (market-level) проверяется первым — это защитный fallback для API-версий, которые кладут `point` на уровне рынка, а не outcome. В текущих данных The Odds API используется outcome-level.
+  - `_events_to_odds_frame_v2` строит close-индекс по ключу `hk|ak`. Если два события имеют одинаковые нормализованные названия команд (теоретически, при коллизии в `TeamNameRegistry`), второе перезапишет первое.
+- **Возможные улучшения / техдолг:**
+  - R21.7/R21.8: использовать `has_draw` для валидации — если у букмекера `has_draw=False`, а draw-колонка ненулевая, логировать аномалию.
+  - R21.7/R21.8: добавить тест, что при `has_draw=False` (Pinnacle) в результирующем DataFrame draw-колонки содержат только `None`/NaN.
+  - После завершения R21.6: вывести `output_columns` в YAML как `deprecated: true` и добавить предупреждение в `_extract_row_legacy_pinnacle`.
+  - Кросс-валидация `winner_semantics` / `total_semantics` профиля против `ODDS_STORE_COLUMNS_V2` (отложена из R21.2) теперь возможна — добавить в R21.7 или R21.8.
+
 ### 2026-04-25 — R21.1: OddsStore V2 schema + V1→V2 migration
 
 - **Задача:** `backlog/R21.md` (sub-task R21.1, файл остаётся в backlog до завершения R21.2–R21.9)
