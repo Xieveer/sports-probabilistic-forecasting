@@ -49,7 +49,19 @@ sport: ice_hockey
 split_strategy:
   enabled: false
 
+# Post-step после provider.fetch (source_refresh): инкрементальный refresh в OddsStore + merge в source.csv.
+# См. sports_forecast.data.providers.odds.refresh.run_odds_refresh
 odds:
   enabled: true
-  # Линии не идут в feature pipeline; merge офлайн: enrichment.merge_odds_into_source_csv
   bookmaker: the_odds_api
+  # Ключ рынка The Odds API (icehockey_nhl — NHL)
+  sport_key: icehockey_nhl
+  # Перекрытие дат относительно max(game_date) в store (дни)
+  incremental_buffer_days: 3
+  # Максимум календарных дат за один прогон (сегментация + refresh_state.json)
+  max_days_per_refresh: 30
+  # После upsert в parquet — вызвать merge_odds_into_source_csv для source.csv
+  auto_merge: true
+  # Опционально: явные пути (по умолчанию data/source/<tournament>/odds/...)
+  # state_path: null
+  # unmatched_report_path: null
