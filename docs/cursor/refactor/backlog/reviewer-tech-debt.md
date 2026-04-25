@@ -245,6 +245,19 @@
   - Добавить тест на патологичный ввод `_legacy_isos` (`"12:00:00Z"` без даты).
   - Вынести тест-моки клиента в `conftest.py` как reusable fixture (`FakeOddsClient`) — облегчит R21.8 тесты.
 
+### 2026-04-25 — R21.8 Тесты: unit + integration для V2 odds pipeline
+
+- **Задача:** `backlog/R21.md` (подзадача R21.8) → `done_task/R21.8.md`
+- **Ограничения и компромиссы:**
+  - Мок-клиенты API (`class C`) определяются inline в каждом тесте snapshot_discovery; предложенный в tech-debt R21.5 reusable `FakeOddsClient` в `conftest.py` не реализован — inline-подход гибче для per-test ветвления, но добавляет дублирование.
+  - Integration-тест (`test_end_to_end_mock_backfill_store_v2_merge_source_csv`) использует `events_to_odds_frame` напрямую, а не полный `backfill_day_frames` с mock-клиентом. Это упрощение: `backfill_day_frames` покрыт отдельным unit-тестом с monkeypatch. Полный e2e (client → discover → backfill_day_frames → store → merge) через один тест отсутствует.
+  - Покрытие измерено структурно (каждый публичный путь), но не через `coverage.py` — формальный отчёт по строкам отсутствует. Рекомендуется добавить `make test-cov` / CI coverage gate после R21.9.
+  - `test_backfill_day_frames_discover_adds_timing_and_uses_config` проверяет, что `"bookmaker_profiles" in last_book_cfg`, используя side-effect в mock `_eto`. Если сигнатура `events_to_odds_frame` изменится (переименование параметра), тест не упадёт, но `last_book_cfg` останется пустым — молчаливое false-negative.
+- **Возможные улучшения / техдолг:**
+  - Добавить `conftest.py` с `FakeOddsClient` fixture, переиспользуемой в test_snapshot_discovery и test_odds_backfill (устраняет дублирование inline-классов).
+  - Добавить `make test-cov` / `pytest --cov` в CI с gate ≥ 80% по модулям `sports_forecast/data/providers/odds/`.
+  - Расширить integration-тест до полного пути `backfill_day_frames(mock_client, ...)` → `upsert_odds_store_file` → `merge_odds_into_source_csv` в одном fixture-пространстве (после R21.9 когда V1-fallback путей станет меньше).
+
 ### 2026-04-25 — R21.6 Merge/refresh pipeline V2: no-suffix merge, per-bookmaker coverage
 
 - **Задача:** `backlog/R21.md` (подзадача R21.6; R21 не перенесён в done_task до закрытия всех подзадач)
