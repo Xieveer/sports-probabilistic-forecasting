@@ -51,6 +51,7 @@ split_strategy:
 
 # Post-step после provider.fetch (source_refresh): инкрементальный refresh в OddsStore + merge в source.csv.
 # См. sports_forecast.data.providers.odds.refresh.run_odds_refresh
+# Пути store/state/unmatched: относительно data/source/<tournament>/ (null = значения по умолчанию ниже).
 odds:
   enabled: true
   bookmaker: the_odds_api
@@ -62,6 +63,11 @@ odds:
   max_days_per_refresh: 30
   # После upsert в parquet — вызвать merge_odds_into_source_csv для source.csv
   auto_merge: true
-  # Опционально: явные пути (по умолчанию data/source/<tournament>/odds/...)
-  # state_path: null
-  # unmatched_report_path: null
+  # Parquet store (по умолчанию data/source/nhl/odds/pinnacle_odds.parquet)
+  store_path: odds/pinnacle_odds.parquet
+  # JSON checkpoint: last_successful_date, in_progress_from (data/source/nhl/odds/refresh_state.json)
+  state_path: odds/refresh_state.json
+  # Отчёт несоответствий odds↔source по командам (data/source/nhl/odds/unmatched_teams.csv)
+  unmatched_report_path: odds/unmatched_teams.csv
+  # Мин. доля строк source с непустым pinnacle_home_close; ниже — WARNING в лог
+  min_odds_coverage_pct: 70.0

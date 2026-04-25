@@ -16,7 +16,11 @@ from sports_forecast.data.providers.odds.backfill import (
     main,
     run_backfill,
 )
-from sports_forecast.data.providers.odds.client import OddsApiClient, QuotaBudgetError
+from sports_forecast.data.providers.odds.client import (
+    OddsApiClient,
+    OddsApiQuotaSnapshot,
+    QuotaBudgetError,
+)
 
 
 def _minimal_bookmaker_node(
@@ -131,6 +135,9 @@ def test_run_backfill_seasons_and_store_upsert(
         def fetch_odds_for_sport(self, *a, **k):  # noqa: ANN002, ANN003
             return {"data": []}
 
+        def last_quota(self) -> OddsApiQuotaSnapshot:
+            return OddsApiQuotaSnapshot(requests_remaining=None, requests_used=None)
+
     monkeypatch.setattr(
         "sports_forecast.data.providers.odds.backfill.OddsApiClient",
         lambda *a, **k: FakeClient(),
@@ -195,7 +202,8 @@ def test_run_backfill_range_with_store_non_empty_upserts(
     )
 
     class FakeClient:
-        pass
+        def last_quota(self) -> OddsApiQuotaSnapshot:
+            return OddsApiQuotaSnapshot(requests_remaining=None, requests_used=None)
 
     monkeypatch.setattr(
         "sports_forecast.data.providers.odds.backfill.OddsApiClient",

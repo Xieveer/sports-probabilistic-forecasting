@@ -10,11 +10,86 @@ Usage::
 
     from sports_forecast.validation.schemas import InterimSchema
     InterimSchema.validate(df)
+
+    from sports_forecast.validation.schemas import validate_pinnacle_odds_float_columns
+    validate_pinnacle_odds_float_columns(odds_df, context="backfill")
 """
 
 from __future__ import annotations
 
+import pandas as pd
 from pandera import Check, Column, DataFrameSchema
+from pandera.errors import SchemaError, SchemaErrors
+
+
+# Согласовано с :data:`sports_forecast.data.providers.odds.store.ODDS_STORE_COLUMNS` (только decimal).
+_PINNACLE_ODDS_FLOAT_COLS: tuple[str, ...] = (
+    "pinnacle_home_open",
+    "pinnacle_away_open",
+    "pinnacle_draw_open",
+    "pinnacle_home_close",
+    "pinnacle_away_close",
+    "pinnacle_draw_close",
+    "pinnacle_total_open",
+    "pinnacle_total_close",
+)
+
+
+def _pinnacle_odds_in_valid_range(s: pd.Series) -> bool:
+    """True, если все ненулевые значения в [1.01, 100.0]."""
+    ok = s.isna() | ((s >= 1.01) & (s <= 100.0))
+    return bool(ok.all()) if len(s) else True
+
+
+PinnacleOddsNumericSchema = DataFrameSchema(
+    columns={
+        c: Column(
+            dtype="float",
+            nullable=True,
+            checks=Check(
+                _pinnacle_odds_in_valid_range,
+                error=f"{c}: decimal odds must be in [1.01, 100.0] or null",
+            ),
+        )
+        for c in _PINNACLE_ODDS_FLOAT_COLS
+    },
+    strict=False,
+    coerce=True,
+    name="PinnacleOddsNumericSchema",
+    description="Pinnacle decimal odds: nullable float, 1.01…100.0 (на NaN проверки нет).",
+)
+
+
+def validate_pinnacle_odds_float_columns(
+    df: pd.DataFrame,
+    *,
+    context: str = "odds",
+) -> None:
+    """Pandera-валидация колонок ``pinnacle_*`` (диапазон 1.01–100.0, nullable).
+
+    Пустой ``df`` не валидируется. Резервные/отсутствующие колонки отбрасываются из проверки.
+
+    Args:
+        df: Кадр с возможными odds-колонками.
+        context: Сообщение об ошибке (лог-контекст).
+
+    Raises:
+        SchemaError, SchemaErrors: Найдены ненулевые значения вне диапазона.
+    """
+    if df is None or df.empty:
+        return
+    have = [c for c in _PINNACLE_ODDS_FLOAT_COLS if c in df.columns]
+    if not have:
+        return
+    sub = DataFrameSchema(
+        {c: PinnacleOddsNumericSchema.columns[c] for c in have},
+        strict=False,
+        coerce=True,
+    )
+    try:
+        sub.validate(df[have])
+    except (SchemaError, SchemaErrors) as e:
+        raise RuntimeError(f"{context}: {e!s}") from e
 
 
 # ============================================================================

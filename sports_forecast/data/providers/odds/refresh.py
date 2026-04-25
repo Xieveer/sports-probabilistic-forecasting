@@ -25,6 +25,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from sports_forecast.config.loaders import PROJECT_ROOT, load_bookmaker_config, load_source_config
 from sports_forecast.data.providers.odds.backfill import (
+    BackfillRunResult,
     default_odds_store_path,
     last_n_season_windows,
     run_backfill,
@@ -36,6 +37,7 @@ from sports_forecast.data.providers.odds.team_name_registry import (
     load_nhl_team_name_registry,
 )
 from sports_forecast.utils.log_config import get_logger
+from sports_forecast.validation.schemas import validate_pinnacle_odds_float_columns
 
 
 logger = get_logger(__name__)
@@ -44,6 +46,11 @@ _REFRESH_STATE_NAME: Final[str] = "refresh_state.json"
 _DEFAULT_BUFFER_DAYS: Final[int] = 3
 _DEFAULT_MAX_DAYS: Final[int] = 30
 _DEFAULT_AUTO_MERGE: Final[bool] = True
+_DEFAULT_MIN_COVERAGE_PCT: Final[float] = 70.0
+# Относительно ``data/source/{tournament}/``
+_DEFAULT_STORE_REL: Final[str] = "odds/pinnacle_odds.parquet"
+_DEFAULT_STATE_REL: Final[str] = "odds/refresh_state.json"
+_DEFAULT_UNMATCHED_REL: Final[str] = "odds/unmatched_teams.csv"
 
 
 @dataclass
@@ -89,10 +96,109 @@ class OddsRefreshResult:
     quota_hit: bool
     state: RefreshState
     used_empty_store_season: bool
+    requests_remaining: int | None
+    requests_used: int | None
 
 
 def _now_utc_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def resolve_path_under_tournament_source(
+    project_root: Path,
+    tournament: str,
+    configured: Any,
+    default_relative: str,
+) -> Path:
+    """Путь к файлу под ``data/source/{tournament}/``: абсолютный как есть, иначе относительный.
+
+    ``None``/пустая строка/``null``/``~`` — ``default_relative`` (например ``odds/pinnacle_odds.parquet``).
+    """
+    base = (project_root / "data" / "source" / tournament).resolve()
+    if configured is None:
+        return (base / default_relative).resolve()
+    s = str(configured).strip()
+    if not s or s.lower() in ("null", "none", "~"):
+        return (base / default_relative).resolve()
+    p = Path(s)
+    if p.is_absolute():
+        return p.resolve()
+    return (base / p).resolve()
+
+
+def _normalize_backfill_out(
+    out: pd.DataFrame | BackfillRunResult,
+) -> tuple[pd.DataFrame, bool, int | None, int | None]:
+    """:func:`run_backfill` / мок, совместимый с ``DataFrame``."""
+    if isinstance(out, BackfillRunResult):
+        return (
+            out.frame,
+            out.quota_hit,
+            out.requests_remaining,
+            out.requests_used,
+        )
+    return out, False, None, None
+
+
+def _log_source_odds_metrics(
+    source_csv: Path,
+    min_odds_coverage_pct: float,
+    store_rows: int,
+) -> None:
+    """Лог: coverage (``pinnacle_home_close``), match rate, предупреждение ниже порога.
+
+    *Match rate* трактуем как долю строк source с непустым ``pinnacle_home_close`` после merge.
+    """
+    if not source_csv.is_file():
+        return
+    try:
+        src = pd.read_csv(source_csv, low_memory=False)
+    except OSError as e:
+        logger.warning("odds metrics: не прочитан source.csv — %s", e)
+        return
+    col = "pinnacle_home_close"
+    n = len(src)
+    if n == 0:
+        return
+    if col not in src.columns:
+        logger.info("odds metrics: нет колонки %s — coverage не посчитан", col)
+        return
+    with_close = int(src[col].notna().sum())
+    coverage = 100.0 * float(with_close) / float(n)
+    # Доля source, сопоставленных с store (оценка «matched» post-merge)
+    match_rate_pct = coverage
+    logger.info(
+        "odds metrics: source_rows=%d %s_nonnull=%d match_rate_vs_source_pct=%.2f "
+        "odds_coverage_pct=%.2f (store_rows=%d)",
+        n,
+        col,
+        with_close,
+        match_rate_pct,
+        coverage,
+        store_rows,
+    )
+    if coverage < min_odds_coverage_pct:
+        logger.warning(
+            "odds coverage %.2f%% < min_odds_coverage_pct=%.2f — проверьте merge/registry/API",
+            coverage,
+            min_odds_coverage_pct,
+        )
+
+
+def _log_unmatched_report_metrics(report_path: Path) -> int:
+    """Число строк-исключений (без заголовка) в ``unmatched_teams.csv``."""
+    if not report_path.is_file():
+        return 0
+    try:
+        text = report_path.read_text(encoding="utf-8")
+        n_lines = len(text.splitlines()) if text else 0
+    except OSError as e:
+        logger.warning("odds metrics: не прочитан unmatched report %s — %s", report_path, e)
+        return 0
+    n = max(0, n_lines - 1)
+    if n:
+        logger.info("odds metrics: unmatched_report_rows=%d → %s", n, report_path)
+    return n
 
 
 def default_refresh_state_path(
@@ -239,14 +345,40 @@ def _resolve_team_registry(tournament: str, sport_key: str) -> TeamNameRegistry 
     return None
 
 
-def _odds_params_from_source(source_name: str | None) -> tuple[int, int, bool]:
+def _odds_runtime_from_source(
+    source_name: str | None,
+    tournament: str,
+    project_root: Path,
+) -> tuple[int, int, bool, Path, Path, Path, float]:
+    """Параметры odds из ``source.yaml``: буфер, cap, merge, пути, порог coverage."""
+    d_store = default_odds_store_path(tournament, project_root)
+    d_state = default_refresh_state_path(tournament, project_root)
+    d_unm = resolve_path_under_tournament_source(
+        project_root, tournament, None, _DEFAULT_UNMATCHED_REL
+    )
     if not source_name:
-        return _DEFAULT_BUFFER_DAYS, _DEFAULT_MAX_DAYS, _DEFAULT_AUTO_MERGE
+        return (
+            _DEFAULT_BUFFER_DAYS,
+            _DEFAULT_MAX_DAYS,
+            _DEFAULT_AUTO_MERGE,
+            d_store,
+            d_state,
+            d_unm,
+            _DEFAULT_MIN_COVERAGE_PCT,
+        )
     try:
         sc: DictConfig = load_source_config(source_name)
     except (FileNotFoundError, OSError) as e:
         logger.debug("refresh: нет source %s — дефолты — %s", source_name, e)
-        return _DEFAULT_BUFFER_DAYS, _DEFAULT_MAX_DAYS, _DEFAULT_AUTO_MERGE
+        return (
+            _DEFAULT_BUFFER_DAYS,
+            _DEFAULT_MAX_DAYS,
+            _DEFAULT_AUTO_MERGE,
+            d_store,
+            d_state,
+            d_unm,
+            _DEFAULT_MIN_COVERAGE_PCT,
+        )
     o = sc.get("odds") or {}
     b = o.get("incremental_buffer_days", _DEFAULT_BUFFER_DAYS)
     m = o.get("max_days_per_refresh", _DEFAULT_MAX_DAYS)
@@ -260,7 +392,21 @@ def _odds_params_from_source(source_name: str | None) -> tuple[int, int, bool]:
     except (TypeError, ValueError):
         mi = _DEFAULT_MAX_DAYS
     am_bool = am if isinstance(am, bool) else str(am).lower() in ("1", "true", "yes")
-    return max(0, bi), max(1, mi), am_bool
+    p_store = resolve_path_under_tournament_source(
+        project_root, tournament, o.get("store_path"), _DEFAULT_STORE_REL
+    )
+    p_state = resolve_path_under_tournament_source(
+        project_root, tournament, o.get("state_path"), _DEFAULT_STATE_REL
+    )
+    p_unm = resolve_path_under_tournament_source(
+        project_root, tournament, o.get("unmatched_report_path"), _DEFAULT_UNMATCHED_REL
+    )
+    mc = o.get("min_odds_coverage_pct", _DEFAULT_MIN_COVERAGE_PCT)
+    try:
+        min_cov = float(mc)
+    except (TypeError, ValueError):
+        min_cov = _DEFAULT_MIN_COVERAGE_PCT
+    return max(0, bi), max(1, mi), am_bool, p_store, p_state, p_unm, min_cov
 
 
 def run_odds_refresh(
@@ -271,13 +417,15 @@ def run_odds_refresh(
     buffer_days: int | None = None,
     max_days_per_refresh: int | None = None,
     auto_merge: bool | None = None,
+    min_odds_coverage_pct: float | None = None,
     source_config_name: str | None = "nhl",
     store_path: Path | None = None,
     refresh_state_path: Path | None = None,
+    unmatched_report_path: Path | None = None,
     source_csv_path: Path | None = None,
     project_root: Path | None = None,
     today: date | None = None,
-    run_backfill_fn: Callable[..., pd.DataFrame] | None = None,
+    run_backfill_fn: Callable[..., pd.DataFrame | BackfillRunResult] | None = None,
 ) -> OddsRefreshResult:
     """Инкрементальный refresh: backfill в окне, upsert store, optional merge в ``source.csv``.
 
@@ -292,17 +440,21 @@ def run_odds_refresh(
     if book_root is None:
         book_root = cfg_book
 
-    b_def, m_def, am_def = _odds_params_from_source(source_config_name)
+    b_def, m_def, am_def, cfg_store, cfg_state, cfg_unm, cfg_min_cov = _odds_runtime_from_source(
+        source_config_name, tournament, root
+    )
     buf = b_def if buffer_days is None else buffer_days
     mx_days = m_def if max_days_per_refresh is None else max_days_per_refresh
     do_merge = am_def if auto_merge is None else auto_merge
+    min_cov_cfg = cfg_min_cov if min_odds_coverage_pct is None else float(min_odds_coverage_pct)
     if buf < 0:
         raise ValueError("buffer_days must be >= 0")
     if mx_days < 1:
         raise ValueError("max_days_per_refresh must be >= 1")
 
-    st_path = refresh_state_path or default_refresh_state_path(tournament, root)
-    p_store = store_path or default_odds_store_path(tournament, root)
+    p_store = store_path or cfg_store
+    st_path = refresh_state_path or cfg_state
+    p_unmatched = unmatched_report_path or cfg_unm
     p_csv = source_csv_path or default_source_csv_path(tournament, root)
     backfill_call = run_backfill_fn or run_backfill
     reg = _resolve_team_registry(tournament, sport_key)
@@ -332,6 +484,8 @@ def run_odds_refresh(
             quota_hit=False,
             state=st_skip,
             used_empty_store_season=plan.used_empty_store_season,
+            requests_remaining=None,
+            requests_used=None,
         )
 
     before = RefreshState(
@@ -341,7 +495,7 @@ def run_odds_refresh(
     )
     save_refresh_state(st_path, before)
 
-    new_part = backfill_call(
+    raw_out = backfill_call(
         date_from=seg.date_from,
         date_to=seg.date_to,
         tournament=tournament,
@@ -349,12 +503,21 @@ def run_odds_refresh(
         store_path=p_store,
         bookmaker_key=bookmaker_key,
     )
-    if not isinstance(new_part, pd.DataFrame):
-        new_part = pd.DataFrame()
+    new_part, quota_hit, req_rem, req_used = _normalize_backfill_out(raw_out)
     n_new = len(new_part)
-    quota_hit = False  # backfill не возвращает флаг квоты; зарезервировано
 
     final_store = load_odds_store(p_store)
+    if not final_store.empty:
+        validate_pinnacle_odds_float_columns(
+            final_store, context="odds refresh: store after backfill"
+        )
+
+    if req_rem is not None or req_used is not None:
+        logger.info(
+            "odds refresh: The Odds API quota (посл. ответ) requests_remaining=%s requests_used=%s",
+            req_rem,
+            req_used,
+        )
     st_after: RefreshState
     if has_more and next_in_progress is not None:
         st_after = RefreshState(
@@ -378,10 +541,13 @@ def run_odds_refresh(
             out_csv_path=None,
             book_cfg=cfg_book,
             team_registry=reg,
+            unmatched_teams_path=p_unmatched,
             tournament=tournament,
             project_root=root,
         )
         merged = True
+        _log_source_odds_metrics(p_csv, min_cov_cfg, len(final_store))
+        _log_unmatched_report_metrics(p_unmatched)
     elif do_merge and not p_csv.exists():
         logger.info("odds refresh: source.csv нет — merge пропущен: %s", p_csv)
     elif do_merge and final_store.empty:
@@ -395,4 +561,6 @@ def run_odds_refresh(
         quota_hit=quota_hit,
         state=st_after,
         used_empty_store_season=plan.used_empty_store_season,
+        requests_remaining=req_rem,
+        requests_used=req_used,
     )

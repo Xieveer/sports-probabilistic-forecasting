@@ -38,11 +38,22 @@ from sports_forecast.data.providers.odds.team_name_registry import (
     load_nhl_team_name_registry,
 )
 from sports_forecast.utils.log_config import get_logger
+from sports_forecast.validation.schemas import validate_pinnacle_odds_float_columns
 
 
 logger = get_logger(__name__)
 
 _PINNACLE_ODDS_FILE: Final[str] = "pinnacle_odds.parquet"
+
+
+@dataclass(frozen=True)
+class BackfillRunResult:
+    """Результат :func:`run_backfill` (DataFrame + флаги квоты, для refresh/логов)."""
+
+    frame: pd.DataFrame
+    quota_hit: bool
+    requests_remaining: int | None
+    requests_used: int | None
 
 
 @dataclass(frozen=True)
@@ -213,6 +224,18 @@ def _concat_dedup(parts: list[pd.DataFrame]) -> pd.DataFrame:
     )
 
 
+def _upsert_if_non_empty(
+    chunk: pd.DataFrame,
+    store_path: Path,
+    *,
+    context: str,
+) -> None:
+    if chunk.empty or store_path is None:
+        return
+    validate_pinnacle_odds_float_columns(chunk, context=context)
+    upsert_odds_store_file(chunk, store_path)
+
+
 def _backfill_date_range(
     client: OddsApiClient,
     book_root: Any,
@@ -259,7 +282,7 @@ def run_backfill(
     use_open_close: bool = True,
     store_path: Path | None = None,
     bookmaker_key: str = "the_odds_api",
-) -> pd.DataFrame:
+) -> BackfillRunResult:
     """Собрать backfill: либо ``date_from..date_to``, либо ``seasons_last_n`` последних сезонов.
 
     Сезоны обрабатываются **по очереди** (с логами по каждому). При ``store_path`` после каждого
@@ -273,7 +296,8 @@ def run_backfill(
         store_path: Если задан, upsert в Parquet-файл OddsStore.
 
     Returns:
-        Общий дедуп DataFrame.
+        :class:`BackfillRunResult` с дедуп DataFrame, флагом исчерпания квоты и
+        (после запросов) снимком ``x-requests-*`` с последнего ответа API.
     """
     if seasons_last_n is not None:
         if date_from is not None or date_to is not None:
@@ -297,6 +321,7 @@ def run_backfill(
 
     ran_seasons: list[str] = []
     all_chunks: list[pd.DataFrame] = []
+    hit_quota_out = False
 
     if seasons_last_n is not None:
         try:
@@ -317,7 +342,7 @@ def run_backfill(
                 team_registry=team_registry,
             )
             if not chunk.empty and store_path is not None:
-                upsert_odds_store_file(chunk, store_path)
+                _upsert_if_non_empty(chunk, store_path, context="backfill:upsert")
                 logger.info(
                     "backfill: upsert store после сезона %s (%d строк) → %s",
                     name,
@@ -326,6 +351,7 @@ def run_backfill(
                 )
             all_chunks.append(chunk)
             if hit_quota:
+                hit_quota_out = True
                 logger.info(
                     "backfill: достигнут лимит сетевых запросов за run (%s) — дальше не идём",
                     quota,
@@ -335,7 +361,7 @@ def run_backfill(
         assert date_from is not None and date_to is not None
         name = f"{date_from}..{date_to}"
         logger.info("backfill: диапазон %s", name)
-        chunk, _hit_quota = _backfill_date_range(
+        chunk, hit_quota = _backfill_date_range(
             client,
             book_root,
             date_from,
@@ -345,12 +371,14 @@ def run_backfill(
             use_open_close=use_open_close,
             team_registry=team_registry,
         )
+        hit_quota_out = hit_quota
         all_chunks.append(chunk)
         if not chunk.empty and store_path is not None:
-            upsert_odds_store_file(chunk, store_path)
+            _upsert_if_non_empty(chunk, store_path, context="backfill:upsert")
             logger.info("backfill: upsert store (%d строк) → %s", len(chunk), store_path)
 
     result = _concat_dedup(all_chunks)
+    q_snap = client.last_quota()
     if out_parquet is not None and not result.empty:
         out_parquet.parent.mkdir(parents=True, exist_ok=True)
         result.to_parquet(out_parquet, index=False)
@@ -361,7 +389,12 @@ def run_backfill(
         logger.info(
             "backfill: обработаны сезоны: %s; всего строк: %d", ", ".join(ran_seasons), len(result)
         )
-    return result
+    return BackfillRunResult(
+        frame=result,
+        quota_hit=hit_quota_out,
+        requests_remaining=q_snap.requests_remaining,
+        requests_used=q_snap.requests_used,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

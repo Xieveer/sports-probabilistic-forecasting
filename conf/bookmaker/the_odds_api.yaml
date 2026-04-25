@@ -53,10 +53,14 @@ backfill:
   open_snapshot_utc: "12:00:00"
   close_snapshot_utc: "23:30:00"
 
-# Лимит **сетевых** запросов к API за один CLI-run (кэш не уменьшает счётчик). 0 = без лимита.
+# quota_budget_per_run: максимум реальных HTTP GET к The Odds API за один запуск
+# (``run_backfill``, инкрементальный odds-refresh). Кэш на диск не уменьшает счётчик;
+# 0 = без лимита. При исчерпании — graceful stop, прогресс в OddsStore/checkpoint.
 quota_budget_per_run: 100
 
-# Календарные границы сезонов NHL (для `backfill --seasons N`); октябрь–июнь, UTC-даты.
+# seasons: календарные границы по турниру (ключ = каталог data/source, напр. nhl).
+# Используется в ``backfill --seasons N`` (N последних окон) и пустом OddsStore
+# (refresh подставляет окно последнего сезона). Даты в ISO UTC.
 seasons:
   nhl:
     - name: "2023-24"

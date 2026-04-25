@@ -70,7 +70,7 @@ def _run_odds_post_fetch(tournament: str, source_cfg: DictConfig, source_csv: Pa
     )
     logger.info(
         "odds refresh: finished source_csv=%s new_odds_rows=%d store_rows=%d merged_source=%s "
-        "segment=%s..%s quota_hit=%s",
+        "segment=%s..%s quota_hit=%s api_remaining=%s",
         source_csv,
         result.new_odds_rows,
         result.store_rows,
@@ -78,6 +78,7 @@ def _run_odds_post_fetch(tournament: str, source_cfg: DictConfig, source_csv: Pa
         result.segment.date_from,
         result.segment.date_to,
         result.quota_hit,
+        result.requests_remaining,
     )
 
 

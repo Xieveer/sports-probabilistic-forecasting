@@ -9,18 +9,23 @@ import pandas as pd
 import pytest
 from omegaconf import OmegaConf
 
+from sports_forecast.config.loaders import PROJECT_ROOT
 from sports_forecast.data.providers.odds import refresh as refresh_mod
 from sports_forecast.data.providers.odds import store as store_mod
+from sports_forecast.data.providers.odds.backfill import BackfillRunResult
 from sports_forecast.data.providers.odds.refresh import (
     RefreshState,
+    _odds_runtime_from_source,
     build_incremental_need_range,
     build_refresh_segment,
     default_refresh_state_path,
     load_refresh_state,
+    resolve_path_under_tournament_source,
     run_odds_refresh,
     save_refresh_state,
 )
 from sports_forecast.data.providers.odds.store import ODDS_STORE_COLUMNS
+from sports_forecast.validation.schemas import validate_pinnacle_odds_float_columns
 
 
 def _book_root_nhl() -> dict:
@@ -180,3 +185,97 @@ def _fake_book_cfg() -> object:
 def test_default_refresh_state_path() -> None:
     p = default_refresh_state_path("nhl", Path("/p"))
     assert p == Path("/p/data/source/nhl/odds/refresh_state.json")
+
+
+def test_resolve_path_under_tournament_source_relative_and_absolute() -> None:
+    root = Path("/repo")
+    rel = resolve_path_under_tournament_source(
+        root, "nhl", "odds/custom.parquet", "odds/pinnacle_odds.parquet"
+    )
+    assert rel == root / "data" / "source" / "nhl" / "odds" / "custom.parquet"
+    assert (
+        resolve_path_under_tournament_source(root, "nhl", None, "odds/pinnacle_odds.parquet")
+        == root / "data" / "source" / "nhl" / "odds" / "pinnacle_odds.parquet"
+    )
+    assert resolve_path_under_tournament_source(
+        root, "nhl", "/var/o.parquet", "odds/pinnacle_odds.parquet"
+    ) == Path("/var/o.parquet")
+
+
+def test_odds_runtime_from_nhl_config_paths() -> None:
+    _b, _m, _a, p_store, p_state, p_unm, min_cov = _odds_runtime_from_source(
+        "nhl", "nhl", PROJECT_ROOT
+    )
+    assert p_store == PROJECT_ROOT / "data" / "source" / "nhl" / "odds" / "pinnacle_odds.parquet"
+    assert p_state.name == "refresh_state.json"
+    assert p_unm.name == "unmatched_teams.csv"
+    assert min_cov == 70.0
+
+
+def test_validate_pinnacle_odds_rejects_out_of_range() -> None:
+    bad = pd.DataFrame([{"pinnacle_home_close": 1.0}])
+    with pytest.raises(RuntimeError, match="unit"):
+        validate_pinnacle_odds_float_columns(bad, context="unit")
+
+
+def test_run_odds_refresh_backfill_result_quota_fields(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    st_path = tmp_path / "s" / "odds" / "refresh_state.json"
+    sp = tmp_path / "s" / "odds" / "pinnacle_odds.parquet"
+    store_mod.save_odds_store(
+        pd.DataFrame([_row()]),
+        sp,
+    )
+
+    def _bf(**kwargs) -> BackfillRunResult:  # noqa: ANN003
+        return BackfillRunResult(
+            frame=pd.DataFrame([_row(game_date="2025-12-25")]),
+            quota_hit=False,
+            requests_remaining=42,
+            requests_used=58,
+        )
+
+    monkeypatch.setattr(
+        "sports_forecast.data.providers.odds.refresh.load_bookmaker_config",
+        lambda k: _fake_book_cfg(),
+    )
+    r = run_odds_refresh(
+        tournament="nhl",
+        store_path=sp,
+        refresh_state_path=st_path,
+        project_root=tmp_path,
+        source_config_name=None,
+        today=date(2025, 12, 25),
+        run_backfill_fn=_bf,
+        auto_merge=False,
+    )
+    assert r.requests_remaining == 42
+    assert r.requests_used == 58
+
+
+def test_log_source_coverage_warning(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    from sports_forecast.data.providers.odds import refresh as refresh_mod
+
+    caplog.set_level(logging.WARNING)
+    src = tmp_path / "source.csv"
+    # 3 строки: две с NaN в pinnacle_home_close, одна с коэф. → 33% < 50%
+    src.write_text(
+        "id,datetime,home_team,away_team,pinnacle_home_close\n"
+        "a,2025-01-01T00:00:00+00:00,x,y,\n"
+        "b,2025-01-02T00:00:00+00:00,x,y,\n"
+        "c,2025-01-03T00:00:00+00:00,x,y,1.95\n",
+        encoding="utf-8",
+    )
+    refresh_mod._log_source_odds_metrics(
+        src,
+        min_odds_coverage_pct=50.0,
+        store_rows=1,
+    )
+    assert any("min_odds_coverage" in r.message for r in caplog.records)
