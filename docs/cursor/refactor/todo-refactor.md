@@ -151,7 +151,7 @@
   - [x] R21.4 — Snapshot discovery: динамический алгоритм open/close (probe schedule) ✅ 2026-04-25
   - [x] R21.5 — Backfill: multi-bookmaker + dynamic snapshots integration ✅ 2026-04-25
   - [x] R21.6 — Merge/refresh: обновление пайплайна source.csv для V2 ✅ 2026-04-25
-  - [ ] R21.7 — Валидация + Pandera V2 (multi-bookmaker, total_line, timing)
+  - [x] R21.7 — Валидация + Pandera V2 (multi-bookmaker, total_line, timing) ✅ 2026-04-25
   - [ ] R21.8 — Тесты: unit + integration для V2 odds pipeline
   - [ ] R21.9 — *(операционный)* Миграция store + re-backfill 3 сезонов
 

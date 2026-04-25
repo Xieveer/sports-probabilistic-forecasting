@@ -256,6 +256,18 @@
   - После R21.9 (миграция store V1→V2): удалить V1-fallback в `_log_source_odds_metrics` и упростить приоритет до V2 Pinnacle → onexbet.
   - Добавить тест для сценария «source содержит и V1, и V2 колонки одновременно» — убедиться, что `drop_from_left` корректно заменяет обе группы без суффиксов.
 
+### 2026-04-25 — R21.7 Pandera V2 validation + observability hooks
+
+- **Задача:** `backlog/R21.md` (подзадача R21.7) → `done_task/R21.7.md`
+- **Ограничения и компромиссы:**
+  - `_OddsDecimalColumn`, `_OddsTotalLineColumn`, `_OddsMinutesColumn` — singleton Column-объекты, разделяемые между несколькими схемами через `dict.fromkeys`. Pandera не мутирует Column при добавлении в схему (всё тесты проходят), однако при смене мажорной версии Pandera поведение может измениться. При следующем upgrade Pandera стоит проверить, что singleton-шаринг остаётся безопасным.
+  - `open_minutes_before` / `close_minutes_before` валидируются как `float` (а не `int`). Логически значения — целые минуты, но хранятся как float (деление datetime), что приводит к типу `float64` в pandas. Проверка `>= 0` корректна, но нет верхней границы (теоретически возможны значения вроде 1e9 при некорректных данных).
+  - Валидация в `refresh.run_odds_refresh` — post-store sanity-check (после загрузки уже сохранённого store), а не перед upsert. Сам pre-upsert fail-fast реализован в `backfill._upsert_if_non_empty`. Это двухуровневая защита, но пропуск данных через refresh без прохождения через backfill (если вызов `run_backfill_fn` возвращает что-то неожиданное) не поймается до записи.
+- **Возможные улучшения / техдолг:**
+  - Добавить верхнюю границу для `minutes_before` (например `<= 20_000`, ~14 дней) — защита от аномальных данных.
+  - Рассмотреть `int` / nullable int dtype для `minutes_before` колонок в V2 store (сейчас `float64`), если Pandas 2.x + Arrow-backend станет стандартом.
+  - После R21.9 (миграция V1→V2): удалить V1-ветку из `_ODDS_DECIMAL_COLS` (union больше не нужен — все данные в V2) и упростить до `_ODDS_V2_DECIMAL_COLS`.
+
 ### 2026-04-25 — R21.5 Backfill: dynamic snapshot discovery integration
 
 - **Задача:** `backlog/R21.md` (подзадача R21.5) → `done_task/R21.5.md`
