@@ -130,3 +130,20 @@
   - Автоматическое определение `BOT_TOURNAMENTS` из реестра promoted-моделей вместо env-var / хардкода по умолчанию.
   - Интеграционный тест для бота (mock FastAPI + aiogram test client).
   - R19.17–R19.20: travel-фичи (справочник арен), motivation/clinch context, injury report, оценка модели vs Pinnacle closing на holdout.
+
+---
+
+### 2026-04-25 — R20.2: season-aware backfill CLI + quota budget
+
+- **Задача:** `backlog/R20.md` (подзадача R20.2) → `done_task/R20.2.md`
+- **Ограничения и компромиссы:**
+  - `run_backfill` переведён на keyword-only API — это ломает вызов с позиционными аргументами; внутри проекта других вызывающих нет, но при расширении к R20.3/R20.4 нужно иметь в виду.
+  - `_read_quota_budget` использует `book_root.get(...)` вместо `OmegaConf.select(...)` — смешение API; работает корректно, но нарушает единообразие с остальным кодом `backfill.py`.
+  - `assert date_from is not None and date_to is not None` (строка 335) защищает после валидации ValueError, но `assert` отключается при `-O`; лучше явный `if/raise`.
+  - В режиме `--from/--to` факт достижения quota stop логируется только на уровне `warning` внутри `_backfill_date_range`; в `run_backfill` дополнительный лог для range-case отсутствует — для оператора может быть неочевидно.
+  - `_backfill_date_range` — приватная функция, но тестируется напрямую в `test_backfill_stops_on_quota`; если внутренний контракт изменится, тест сломается.
+- **Возможные улучшения / техдолг:**
+  - Заменить `book_root.get(...)` на `OmegaConf.select(book_root, "quota_budget_per_run")` в `_read_quota_budget` для единообразия.
+  - Добавить `if _hit_quota: logger.warning(...)` в ветке range-mode `run_backfill`, чтобы оператор явно видел факт частичной загрузки.
+  - Добавить тест для `--store` без явного пути (default path через `default_odds_store_path`), чтобы покрыть ветку `args.store == ""` в `main`.
+  - Заменить `assert` на `if date_from is None or date_to is None: raise AssertionError(...)` или добавить `# noqa: S101` с комментарием о том, что это second-guard после ValueError.
