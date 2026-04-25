@@ -55,6 +55,8 @@ split_strategy:
 odds:
   enabled: true
   bookmaker: the_odds_api
+  # Букмекеры The Odds API для multi-bookmaker пайплайна (см. conf/bookmaker/the_odds_api.yaml → bookmaker_profiles)
+  bookmakers: [pinnacle, onexbet]
   # Ключ рынка The Odds API (icehockey_nhl — NHL)
   sport_key: icehockey_nhl
   # Перекрытие дат относительно max(game_date) в store (дни)

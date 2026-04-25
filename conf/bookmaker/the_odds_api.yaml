@@ -29,8 +29,29 @@ sport_keys:
 bookmakers:
   primary: pinnacle
 
-# Имена колонок в source.csv после merge (согласовано с эпиком R19).
-# Значения берутся из снимков opening vs closing по документации API / снапшотам.
+# Профили букмекеров (R21): семантика имён для V2 store / enrichment.
+# Контракт: winner / total = regulation; winner_withOT / total_withOT = полный матч (вкл. ОТ/буллиты).
+bookmaker_profiles:
+  pinnacle:
+    key: pinnacle
+    winner_semantics: winner_withOT
+    total_semantics: total_withOT
+    has_draw: false
+  onexbet:
+    key: onexbet
+    winner_semantics: winner
+    total_semantics: total
+    has_draw: true
+
+# Параметры динамического discovery снимков open/close (R21.4+; runtime — в snapshot_discovery).
+snapshot_discovery:
+  open_probe_offsets_hours: [168, 72, 24]
+  close_margin_hours: 1
+
+# Имена колонок в source.csv после merge — legacy (R19/R20), один Pinnacle без суффиксов семантики.
+# R21 V2: колонки OddsStore и merge формируются по bookmaker_profiles (префикс + winner_semantics/total_semantics);
+# канонический список: sports_forecast.data.providers.odds.store.ODDS_STORE_COLUMNS_V2.
+# Значения по-прежнему из снимков opening vs closing (или динамических снимков после R21.5).
 output_columns:
   moneyline:
     home_open: pinnacle_home_open
@@ -48,10 +69,12 @@ rate_limit:
   # Соблюдать заголовки x-requests-remaining / x-requests-used; кэш ответов на диск.
   min_interval_sec: 0.5
 
-# Параметры backfill (два снимка в сутки — вдвое больше запросов; open=null — только close)
+# Параметры backfill: фиксированные UTC-времена внутри календарного дня (legacy).
+# Deprecated: основной поток R21 — snapshot_discovery + динамические ISO; эти поля — fallback,
+# если commence_time недоступен или включён legacy-режим (см. backfill CLI / R21.5).
 backfill:
-  open_snapshot_utc: "12:00:00"
-  close_snapshot_utc: "23:30:00"
+  open_snapshot_utc: "12:00:00" # deprecated: fallback fixed open
+  close_snapshot_utc: "23:30:00" # deprecated: fallback fixed close
 
 # quota_budget_per_run: максимум реальных HTTP GET к The Odds API за один запуск
 # (``run_backfill``, инкрементальный odds-refresh). Кэш на диск не уменьшает счётчик;

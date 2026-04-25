@@ -146,7 +146,7 @@
 
 - [ ] **R21** — Multi-bookmaker odds: Pinnacle (OT) + 1xBet (regulation), total line, dynamic snapshots
   - [x] R21.1 — Data model V2: расширенная схема OddsStore (33 cols) + миграция V1→V2 ✅ 2026-04-25
-  - [ ] R21.2 — Конфигурация: multi-bookmaker profiles + snapshot discovery params
+  - [x] R21.2 — Конфигурация: multi-bookmaker profiles + snapshot discovery params ✅ 2026-04-25
   - [ ] R21.3 — Enrichment: total line (point) + multi-bookmaker extraction
   - [ ] R21.4 — Snapshot discovery: динамический алгоритм open/close (probe schedule)
   - [ ] R21.5 — Backfill: multi-bookmaker + dynamic snapshots integration

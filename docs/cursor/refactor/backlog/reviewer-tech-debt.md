@@ -193,6 +193,18 @@
   - Добавить тест сценария `source_cfg=None` (когда `load_source_config` бросает `FileNotFoundError`): сейчас покрыт логикой кода, но явного теста нет.
   - При выполнении R20.5: синхронизировать и дополнить nhl.yaml-секцию (добавить `store_path`), а не дублировать правки.
 
+### 2026-04-25 — R21.2: Конфигурация multi-bookmaker profiles + snapshot_discovery
+
+- **Задача:** `backlog/R21.md` (sub-task R21.2) → `done_task/R21.2.md`
+- **Ограничения и компромиссы:**
+  - Секция `output_columns` (legacy V1: `pinnacle_home_open`, `pinnacle_total_open`, …) и новая `bookmaker_profiles` сосуществуют в одном YAML. Это допустимо как промежуточное состояние, но создаёт два конкурирующих источника истины по именам колонок до замены в R21.3/R21.6.
+  - `test_nhl_odds_includes_configured_bookmakers` жёстко проверяет `bms == ["pinnacle", "onexbet"]`. При добавлении нового букмекера тест придётся обновить вручную — нет параметризации через `bookmaker_profiles` из самого конфига.
+  - Нет проверки, что значения `winner_semantics` / `total_semantics` в профилях соответствуют именам колонок в `ODDS_STORE_COLUMNS_V2` (R21.1). Несоответствие можно внести в YAML без теста. Кросс-валидация будет возможна после R21.3.
+- **Возможные улучшения / техдолг:**
+  - R21.3/R21.6: удалить или явно пометить `output_columns` как `deprecated` после перехода enrichment и merge на `bookmaker_profiles`-генерацию колонок.
+  - Добавить тест-фикстуру, которая кросс-валидирует `{bm}_{winner_semantics}_*` колонки из профилей с `ODDS_STORE_COLUMNS_V2` (например, через `startswith`-check).
+  - Параметризовать `test_nhl_odds_includes_configured_bookmakers` через загрузку профилей из `the_odds_api.yaml` вместо hardcode-списка.
+
 ### 2026-04-25 — R21.1: OddsStore V2 schema + V1→V2 migration
 
 - **Задача:** `backlog/R21.md` (sub-task R21.1, файл остаётся в backlog до завершения R21.2–R21.9)
