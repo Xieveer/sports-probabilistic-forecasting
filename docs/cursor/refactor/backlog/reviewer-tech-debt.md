@@ -293,3 +293,17 @@
   - `quota_budget_per_run` default: при dynamic discovery 3–5 probe-запросов/день вместо 2 — дефолт следует пересмотреть (R21.9 или операционная настройка).
   - Нет теста для `use_open_close=False` + `legacy_timestamps=False` (dynamic single-snapshot ветка). Добавить в R21.8.
   - `_snapshot_discovery_params` не тестируется изолированно для edge-cases (пустой список offsets, нечисловые значения). Добавить юнит-тест в R21.8.
+
+### 2026-04-25 — R21.10 Schema V3: close-only, миграции V1/V2→V3, enrichment close-only
+
+- **Задача:** `backlog/R21.md` (подзадача R21.10) → `done_task/R21.10.md`
+- **Ограничения и компромиссы:**
+  - `extract_bookmaker_row_from_event` сохранил ветки `snapshot_role="open"` и `"single"` для обратной совместимости V2-тестов (R21.1–R21.8). До R21.14 legacy-тесты могут опираться на эти пути; после R21.14 ветки `"open"`/`"single"` стоит помечать deprecated или убирать.
+  - `_events_to_odds_frame_v2` переименована семантически (V3 close-only), но имя функции ещё содержит `_v2`. До R21.14 достаточно; после — рекомендуется переименовать в `_events_to_odds_frame_v3` для ясности.
+  - `write_unmatched_odds_teams_report` принимает `key_date_col` (новый параметр), но существующие вызывающие код (`refresh.py`) по умолчанию использует `"game_date"`. При переходе к V3 store с `commence_time_utc`-based key-date нужно убедиться, что вызов обновлён (R21.14 или R21.9).
+  - Pandera `_ODDS_MINUTES_BEFORE_COLS` содержит `"open_minutes_before"`, которая в V3 store отсутствует — включена для V2/V1 backward-compat; в R21.14 можно убрать `"open_minutes_before"` из проверки Pandera, если V1/V2 store больше не используются.
+- **Возможные улучшения / техдолг:**
+  - R21.14: переименовать `_events_to_odds_frame_v2` → `_events_to_odds_frame_v3`, убрать `"open"`/`"single"` ветку из `extract_bookmaker_row_from_event` как deprecated.
+  - R21.14: убрать `"open_minutes_before"` из `_ODDS_MINUTES_BEFORE_COLS` в Pandera schemas (V3 store не имеет `open_minutes_before`).
+  - После R21.9 (full V3 backfill): удалить V1 + V2-только ветки из union `_ODDS_DECIMAL_COLS` — упростить до V3-only или V3 + V1 legacy.
+  - Покрыть тестом сценарий `load_odds_store` на реальный V2 parquet (V2→V3 migration at load). Сейчас тест `test_migrate_v2_to_v3_drops_open_and_draw_pinnacle` проверяет функцию напрямую, но не через `load_odds_store`.
