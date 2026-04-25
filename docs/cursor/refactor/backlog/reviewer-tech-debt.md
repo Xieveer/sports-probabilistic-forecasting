@@ -164,6 +164,21 @@
   - Добавить тест для `--store` без явного пути (default path через `default_odds_store_path`), чтобы покрыть ветку `args.store == ""` в `main`.
   - Заменить `assert` на `if date_from is None or date_to is None: raise AssertionError(...)` или добавить `# noqa: S101` с комментарием о том, что это second-guard после ValueError.
 
+### 2026-04-25 — R20.5/R20.6/R20.7 Конфиг + валидация + наблюдаемость + тесты
+
+- **Задача:** `backlog/R20.md` (подзадачи R20.5/6/7 → `done_task/R20.5.md`, `done_task/R20.6.md`, `done_task/R20.7.md`)
+- **Ограничения и компромиссы:**
+  - `match_rate_vs_source_pct` в `_log_source_odds_metrics` — это синоним `odds_coverage_pct` (доля строк source с непустым `pinnacle_home_close`). Настоящий match rate (matched events / total events, пришедших от API) требует сохранения счётчика ответа API на этапе backfill и передачи его в метрики merge. Сейчас оба числа совпадают; для промышленной наблюдаемости желательно разделить.
+  - `validate_pinnacle_odds_float_columns` бросает `RuntimeError` (оборачивает `SchemaError/SchemaErrors`). При нарушении диапазона весь backfill/refresh прерывается. Это корректное fail-fast поведение, но для лёгких данных (единичные выбросы из-за парсинга) может быть избыточным. Альтернатива — `warn_only`-режим с log.warning и продолжением.
+  - `_odds_runtime_from_source` читает весь `conf/source/{source}.yaml` при каждом вызове `run_odds_refresh`; при частых вызовах в тестах или Airflow это несущественно, но кеширование было бы чище.
+  - Фикстура `pinnacle_odds.parquet` создаётся через `store_mod.save_odds_store()` в `tmp_path` — нет статического файла как артефакта для регрессионного тестирования формата parquet.
+- **Возможные улучшения / техдолг:**
+  - Разделить `match_rate` и `coverage`: `match_rate = n_matched / n_api_events` (требует `BackfillRunResult.n_fetched_events`), `coverage = non_null_close / n_source_rows`.
+  - Добавить `warn_only: bool` параметр в `validate_pinnacle_odds_float_columns` для мягкого режима при наличии outlier-данных.
+  - Тест для `_log_source_odds_metrics` при отсутствующей колонке `pinnacle_home_close` (ветка `if col not in src.columns`).
+  - Тест для `_log_unmatched_report_metrics` с непустым CSV-файлом.
+  - Рассмотреть кеширование `load_source_config` через `functools.lru_cache` при `source_config_name` как аргументе (сейчас читается при каждом вызове `_odds_runtime_from_source`).
+
 ### 2026-04-25 — R20.4 Интеграция odds refresh в source_refresh pipeline
 
 - **Задача:** `backlog/R20.md` (подзадача R20.4 → отмечена `[x]` внутри R20.md)

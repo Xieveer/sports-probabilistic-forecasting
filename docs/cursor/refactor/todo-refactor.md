@@ -137,9 +137,9 @@
   - [x] R20.2 — Season-aware конфигурация + расширение CLI backfill для multi-season ✅ 2026-04-25
   - [x] R20.3 — Инкрементальный odds refresh: логика определения нового диапазона дат ✅ 2026-04-25
   - [x] R20.4 — Интеграция odds refresh в source_refresh pipeline ✅ 2026-04-25
-  - [ ] R20.5 — Конфигурация: расширение YAML для odds pipeline
-  - [ ] R20.6 — Валидация и наблюдаемость odds-данных
-  - [ ] R20.7 — Тесты: unit + integration для odds pipeline
+  - [x] R20.5 — Конфигурация: расширение YAML для odds pipeline ✅ 2026-04-25
+  - [x] R20.6 — Валидация и наблюдаемость odds-данных ✅ 2026-04-25
+  - [x] R20.7 — Тесты: unit + integration для odds pipeline ✅ 2026-04-25
   - [ ] R20.8 — *(операционный)* Исторический backfill 3 сезонов NHL
   - [x] R20.9 — TeamNameRegistry: единый реестр нормализации названий команд NHL/Odds API ✅ 2026-04-25
 
