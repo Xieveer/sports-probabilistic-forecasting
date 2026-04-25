@@ -22,6 +22,10 @@ from sports_forecast.utils.log_config import get_logger
 logger = get_logger(__name__)
 
 
+class QuotaBudgetError(RuntimeError):
+    """Достигнут лимит реальных HTTP-запросов к The Odds API за один run (см. ``max_real_http_requests``)."""
+
+
 @dataclass(frozen=True)
 class OddsApiQuotaSnapshot:
     """Снимок квоты из заголовков ответа The Odds API."""
@@ -40,6 +44,8 @@ class OddsApiClient:
         bookmaker_cfg: Результат ``load_bookmaker_config("the_odds_api")``; при ``None`` загружается автоматически.
         cache_dir: Каталог JSON-кэша; по умолчанию ``data/cache/the_odds_api``.
         session: Внешняя ``requests.Session`` (для тестов).
+        max_real_http_requests: Если задан, после стольки успешных сетевых GET (кэш не считается) следующий
+            запрос вызовет :class:`QuotaBudgetError` до отправки; ``None`` — без лимита.
     """
 
     def __init__(
@@ -48,6 +54,7 @@ class OddsApiClient:
         *,
         cache_dir: Path | None = None,
         session: requests.Session | None = None,
+        max_real_http_requests: int | None = None,
     ) -> None:
         cfg_in = (
             bookmaker_cfg if bookmaker_cfg is not None else load_bookmaker_config("the_odds_api")
@@ -70,6 +77,8 @@ class OddsApiClient:
         rl = self._book.get("rate_limit") or {}
         self._min_interval_sec = float(rl.get("min_interval_sec", 0.5))
         self._last_request_ts: float = 0.0
+        self._max_real_http_requests = max_real_http_requests
+        self._real_http_requests = 0
 
         self._cache_dir = cache_dir or (PROJECT_ROOT / "data" / "cache" / "the_odds_api")
         self._cache_dir.mkdir(parents=True, exist_ok=True)
@@ -146,6 +155,7 @@ class OddsApiClient:
             Распарсенный JSON.
 
         Raises:
+            QuotaBudgetError: Если исчерпан внутренний лимит сетевых запросов за run.
             requests.HTTPError: При фатальной HTTP-ошибке после retries.
         """
         q = dict(params)
@@ -159,16 +169,36 @@ class OddsApiClient:
                 cached: dict[str, Any] | list[Any] = json.load(f)
             return cached
 
+        if (
+            self._max_real_http_requests is not None
+            and self._real_http_requests >= self._max_real_http_requests
+        ):
+            raise QuotaBudgetError(
+                f"Достигнут лимит сетевых запросов The Odds API за run: "
+                f"{self._max_real_http_requests}"
+            )
+
         url = f"{self._base_url.rstrip('/')}{full_path}"
         self._throttle()
         logger.debug("Odds API GET %s", full_path)
         resp = self._session.get(url, params=q, timeout=120)
         self._last_request_ts = time.monotonic()
+        self._real_http_requests += 1
         self._parse_quota_headers(resp)
         if resp.status_code == 429:
             logger.warning("Odds API 429 — ожидание 60с и одна повторная попытка без кэша")
             time.sleep(60)
+            if (
+                self._max_real_http_requests is not None
+                and self._real_http_requests >= self._max_real_http_requests
+            ):
+                raise QuotaBudgetError(
+                    f"Достигнут лимит сетевых запросов The Odds API за run: "
+                    f"{self._max_real_http_requests}"
+                )
             resp = self._session.get(url, params=q, timeout=120)
+            self._last_request_ts = time.monotonic()
+            self._real_http_requests += 1
             self._parse_quota_headers(resp)
         resp.raise_for_status()
         data: dict[str, Any] | list[Any] = resp.json()
