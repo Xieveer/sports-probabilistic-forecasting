@@ -52,6 +52,29 @@ logger = get_logger(__name__)
 _PINNACLE_ODDS_FILE: Final[str] = "pinnacle_odds.parquet"
 
 
+def _log_backfill_close_payload(
+    day: date,
+    payload: object,
+) -> None:
+    evs = unwrap_odds_payload(payload)
+    keys: set[str] = set()
+    for ev in evs:
+        if not isinstance(ev, dict):
+            continue
+        for bm in ev.get("bookmakers") or []:
+            if not isinstance(bm, dict):
+                continue
+            k = bm.get("key")
+            if k is not None:
+                keys.add(str(k))
+    logger.info(
+        "backfill_day_frames: day=%s events_found=%d bookmakers_in_response=%s",
+        day.isoformat(),
+        len(evs),
+        sorted(keys),
+    )
+
+
 @dataclass(frozen=True)
 class BackfillRunResult:
     """Результат :func:`run_backfill` (DataFrame + флаги квоты, для refresh/логов)."""
@@ -273,6 +296,7 @@ def backfill_day_frames(
         p_close = client.fetch_odds_for_sport(
             sport_key, regions=regions, date_iso=legacy_c, use_cache=True
         )
+        _log_backfill_close_payload(day, p_close)
         ev = unwrap_odds_payload(p_close)
         plan = CloseSnapshotPlan(
             close_iso=legacy_c,
@@ -293,6 +317,7 @@ def backfill_day_frames(
         legacy_close_time_utc=close_t,
         use_cache=True,
     )
+    _log_backfill_close_payload(day, p_close)
     ev = unwrap_odds_payload(p_close)
     return _one_close_frame(ev, plan)
 
@@ -331,7 +356,17 @@ def _backfill_date_range(
 ) -> tuple[pd.DataFrame, bool]:
     """Собрать дни [d0,d1]. Второй элемент — True, если остановка по :exc:`QuotaBudgetError` (частичные данные)."""
     parts: list[pd.DataFrame] = []
-    for d in daterange(d0, d1):
+    days = daterange(d0, d1)
+    total_days = len(days)
+    for i, d in enumerate(days, start=1):
+        qsnap = client.last_quota()
+        logger.info(
+            "backfill: Day %d/%d date=%s quota_remaining=%s",
+            i,
+            total_days,
+            d.isoformat(),
+            qsnap.requests_remaining,
+        )
         try:
             fr = backfill_day_frames(
                 client,
@@ -470,9 +505,17 @@ def run_backfill(
     elif out_parquet is not None and result.empty:
         logger.info("backfill: пустой результат — %s не создан", out_parquet)
     if ran_seasons:
-        logger.info(
-            "backfill: обработаны сезоны: %s; всего строк: %d", ", ".join(ran_seasons), len(result)
-        )
+        seasons_label = ", ".join(ran_seasons)
+    else:
+        assert date_from is not None and date_to is not None
+        seasons_label = f"{date_from.isoformat()}..{date_to.isoformat()}"
+    logger.info(
+        "Backfill done: seasons=%s, total_rows=%d, quota_used=%s, quota_remaining=%s",
+        seasons_label,
+        len(result),
+        q_snap.requests_used,
+        q_snap.requests_remaining,
+    )
     return BackfillRunResult(
         frame=result,
         quota_hit=hit_quota_out,

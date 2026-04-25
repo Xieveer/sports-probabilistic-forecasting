@@ -21,6 +21,9 @@ from sports_forecast.utils.log_config import get_logger
 
 logger = get_logger(__name__)
 
+# Статус в логе: HTTP-код или метка для cache-hit.
+_ApiLogStatus = int | str
+
 
 class QuotaBudgetError(RuntimeError):
     """Достигнут лимит реальных HTTP-запросов к The Odds API за один run (см. ``max_real_http_requests``)."""
@@ -118,6 +121,24 @@ class OddsApiClient:
         safe = cache_key.replace("/", "_").replace("?", "_")
         return self._cache_dir / f"{safe}.json"
 
+    @staticmethod
+    def _log_network_response(
+        full_path: str,
+        *,
+        status: _ApiLogStatus,
+        x_requests_remaining: str | None,
+        cached: bool,
+    ) -> None:
+        """Лог GET The Odds API: только path и заголовки, без query (секрет не в URL)."""
+        rem = x_requests_remaining if x_requests_remaining is not None else "n/a"
+        logger.info(
+            "Odds API: path=%s status=%s x-requests-remaining=%s cached=%s",
+            full_path,
+            status,
+            rem,
+            cached,
+        )
+
     def _parse_quota_headers(self, resp: requests.Response) -> None:
         rem = resp.headers.get("x-requests-remaining")
         used = resp.headers.get("x-requests-used")
@@ -164,7 +185,15 @@ class OddsApiClient:
         key = cache_key or f"{full_path}?{urlencode(sorted((k, str(v)) for k, v in q.items()))}"
         cpath = self._cache_path(key)
         if use_cache and cpath.is_file():
-            logger.debug("Odds API cache hit: %s", cpath)
+            snap = self.last_quota()
+            self._log_network_response(
+                full_path,
+                status="cache",
+                x_requests_remaining=str(snap.requests_remaining)
+                if snap.requests_remaining is not None
+                else None,
+                cached=True,
+            )
             with cpath.open(encoding="utf-8") as f:
                 cached: dict[str, Any] | list[Any] = json.load(f)
             return cached
@@ -180,11 +209,16 @@ class OddsApiClient:
 
         url = f"{self._base_url.rstrip('/')}{full_path}"
         self._throttle()
-        logger.debug("Odds API GET %s", full_path)
         resp = self._session.get(url, params=q, timeout=120)
         self._last_request_ts = time.monotonic()
         self._real_http_requests += 1
         self._parse_quota_headers(resp)
+        self._log_network_response(
+            full_path,
+            status=resp.status_code,
+            x_requests_remaining=resp.headers.get("x-requests-remaining"),
+            cached=False,
+        )
         if resp.status_code == 429:
             logger.warning("Odds API 429 — ожидание 60с и одна повторная попытка без кэша")
             time.sleep(60)
@@ -200,6 +234,12 @@ class OddsApiClient:
             self._last_request_ts = time.monotonic()
             self._real_http_requests += 1
             self._parse_quota_headers(resp)
+            self._log_network_response(
+                full_path,
+                status=resp.status_code,
+                x_requests_remaining=resp.headers.get("x-requests-remaining"),
+                cached=False,
+            )
         resp.raise_for_status()
         data: dict[str, Any] | list[Any] = resp.json()
         with cpath.open("w", encoding="utf-8") as f:

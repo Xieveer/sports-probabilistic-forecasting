@@ -282,6 +282,12 @@ def extract_bookmaker_row_from_event(
     away_name = str(ev.get("away_team") or "")
     bm = _find_bookmaker(ev, profile.api_key)
     if bm is None:
+        logger.debug(
+            "bookmaker %s not found in event %s vs %s",
+            profile.api_key,
+            home_name,
+            away_name,
+        )
         return out
 
     hh, aa, dd = _h2h_prices(

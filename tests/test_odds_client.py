@@ -43,6 +43,7 @@ def test_odds_client_cache_hit(
     tmp_path: Path,
     odds_cfg_dict: dict,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setenv("ODDS_API_KEY", "test-key")
     cfg = OmegaConf.create(odds_cfg_dict)
@@ -54,19 +55,27 @@ def test_odds_client_cache_hit(
     cpath = tmp_path / "test_key.json"
     cpath.write_text(json.dumps(payload), encoding="utf-8")
 
-    out = client.get_json("/sports/x/odds", {"regions": "eu"}, cache_key=cache_key, use_cache=True)
+    with caplog.at_level("INFO"):
+        out = client.get_json(
+            "/sports/x/odds", {"regions": "eu"}, cache_key=cache_key, use_cache=True
+        )
     assert out == payload
     session.get.assert_not_called()
+    assert "cached=True" in caplog.text
+    assert "test-key" not in caplog.text
+    assert "/sports/x/odds" in caplog.text
 
 
 def test_quota_headers(
     tmp_path: Path,
     odds_cfg_dict: dict,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setenv("ODDS_API_KEY", "test-key")
     cfg = OmegaConf.create(odds_cfg_dict)
     resp = MagicMock()
+    resp.status_code = 200
     resp.headers = {"x-requests-remaining": "42", "x-requests-used": "8"}
     resp.json.return_value = []
     resp.raise_for_status = MagicMock()
@@ -74,7 +83,12 @@ def test_quota_headers(
     session.get.return_value = resp
 
     client = OddsApiClient(bookmaker_cfg=cfg, cache_dir=tmp_path, session=session)
-    client.get_json("/z", {"a": 1}, cache_key="k2", use_cache=False)
+    with caplog.at_level("INFO"):
+        client.get_json("/z", {"a": 1}, cache_key="k2", use_cache=False)
     q = client.last_quota()
     assert q.requests_remaining == 42
     assert q.requests_used == 8
+    assert "status=200" in caplog.text
+    assert "x-requests-remaining=42" in caplog.text
+    assert "cached=False" in caplog.text
+    assert "test-key" not in caplog.text
