@@ -28,8 +28,8 @@
 | R17    | 🔴 High     | High      | ✅     | 17-й ✅ (NHL Web API провайдер данных) |
 | R18    | 🔴 High     | Medium    | ✅     | 18-й ✅ (lp_eu_a18: Optuna reg + feature selection) |
 | R19    | 🔴 High     | High      | ✅     | 19-й ✅ (NHL production + Odds API + Telegram-бот; R19.11-R19.12 — операционно; stretch R19.17-R19.20 отложены) |
-| R20    | 🔴 High     | High      | 🟡     | 20-й (Pinnacle odds: backfill 3 сезонов + инкрементальный автоапдейт) |
-| R21    | 🔴 High     | High      | 🟡     | 21-й (Multi-bookmaker odds: V2 done → V3 close-only, drop draw_withOT, T-15min, logging, team registry) |
+| R20    | 🔴 High     | High      | ✅     | 20-й ✅ (Pinnacle odds: backfill 3 сезонов + инкрементальный автоапдейт) |
+| R21    | 🔴 High     | High      | ✅     | 21-й ✅ (Multi-bookmaker V3 + логи; R21.13 реестр — частично по unmatched) |
 
 ---
 
@@ -107,6 +107,9 @@
   - [ ] R19.19 — *(stretch)* Оценка vs Pinnacle на holdout
   - [ ] R19.20 — *(stretch)* Injury report
 
+- [x] **R20** — Pinnacle odds: историческая загрузка + инкрементальный refresh; операционный backfill 3 сезонов ✅ 2026-04-26; см. `docs/cursor/refactor/backlog/R20.md`, `done_task/R20.8.md`
+- [x] **R21** — Multi-bookmaker V3 (R21.10–R21.14) + операционный re-backfill ✅ 2026-04-26; см. `docs/cursor/refactor/backlog/R21.md`, `done_task/R21.9.md` (R21.13: реестр + док; доразметка по `unmatched` — по мере необходимости)
+
 ### В работе / Backlog 🟡
 
 - [ ] **R4** — Реализовать рабочий monitoring DAG
@@ -132,33 +135,6 @@
   - [ ] R15.2 — Добавить в toctree `index.rst`
   - [ ] R15.3 — Ревизия `quickstart.rst` на консистентность
   - [ ] R15.4 — Smoke-check сборки docs
-
-- [ ] **R20** — Pinnacle odds: историческая загрузка 3 сезонов + инкрементальный автоапдейт
-  - [x] R20.1 — OddsStore: хранение линий Pinnacle в source-слое (parquet) ✅ 2026-04-25
-  - [x] R20.2 — Season-aware конфигурация + расширение CLI backfill для multi-season ✅ 2026-04-25
-  - [x] R20.3 — Инкрементальный odds refresh: логика определения нового диапазона дат ✅ 2026-04-25
-  - [x] R20.4 — Интеграция odds refresh в source_refresh pipeline ✅ 2026-04-25
-  - [x] R20.5 — Конфигурация: расширение YAML для odds pipeline ✅ 2026-04-25
-  - [x] R20.6 — Валидация и наблюдаемость odds-данных ✅ 2026-04-25
-  - [x] R20.7 — Тесты: unit + integration для odds pipeline ✅ 2026-04-25
-  - [ ] R20.8 — *(операционный)* Исторический backfill 3 сезонов NHL
-  - [x] R20.9 — TeamNameRegistry: единый реестр нормализации названий команд NHL/Odds API ✅ 2026-04-25
-
-- [ ] **R21** — Multi-bookmaker odds: V2 done → V3 close-only, drop draw_withOT, T-15min
-  - [x] R21.1 — Data model V2: расширенная схема OddsStore (33 cols) + миграция V1→V2 ✅ 2026-04-25
-  - [x] R21.2 — Конфигурация: multi-bookmaker profiles + snapshot discovery params ✅ 2026-04-25
-  - [x] R21.3 — Enrichment: total line (point) + multi-bookmaker extraction ✅ 2026-04-25
-  - [x] R21.4 — Snapshot discovery: динамический алгоритм open/close (probe schedule) ✅ 2026-04-25
-  - [x] R21.5 — Backfill: multi-bookmaker + dynamic snapshots integration ✅ 2026-04-25
-  - [x] R21.6 — Merge/refresh: обновление пайплайна source.csv для V2 ✅ 2026-04-25
-  - [x] R21.7 — Валидация + Pandera V2 (multi-bookmaker, total_line, timing) ✅ 2026-04-25
-  - [x] R21.8 — Тесты: unit + integration для V2 odds pipeline ✅ 2026-04-25
-  - [x] **R21.10** — Schema V3: close-only (17 cols), убрать draw_withOT, has_draw filtering ✅ 2026-04-26
-  - [x] **R21.11** — Snapshot discovery: close-only at T-15min (замена open+close probe) ✅ 2026-04-26
-  - [x] **R21.12** — Подробное логирование API-вызовов (day X/N, events, quota) ✅ 2026-04-25
-  - [~] **R21.13** — Team-name registry: ручное заполнение для 32 команд NHL *(header+реестр готов; DoD после V3 re-backfill)*
-  - [x] **R21.14** — Тесты + конфиг: обновление под V3 schema ✅ 2026-04-25
-  - [ ] R21.9 — *(операционный)* Re-backfill 3 сезонов NHL с V3 (зависит от R21.10–R21.14)
 
 - [ ] **R16** — MLflow: сравнительная визуализация метрик по запускам
   - [ ] R16.1 — Добавить теги `sweep_id` и `run_index` в trainer

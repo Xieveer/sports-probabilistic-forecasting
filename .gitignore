@@ -60,6 +60,8 @@ multirun/
 /data/source
 # Pinnacle odds store (R20.1) — explicit pattern (parent /data/source may be ignored)
 data/source/*/odds/
+# The Odds API JSON cache (регенерируется клиентом; не коммитить)
+data/cache/the_odds_api/
 /data/.schema_snapshots
 /models/*.cbm
 /models/*/*.cbm
@@ -81,6 +83,7 @@ predictions.db
 mlruns.backup.*
 
 # Logs
+logs/
 *.log
 
 # Documentation
