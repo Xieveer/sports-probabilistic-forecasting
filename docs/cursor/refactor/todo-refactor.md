@@ -149,13 +149,13 @@
   - [ ] R16.6 — *(Опционально)* Grafana dashboard JSON
    - [ ] R16.7 — Документировать workflow сравнения
 
-- [ ] **R22** — NHL: обучение, materialize, roadmap фич; см. `backlog/R22.md` *(Phase A ✅ 2026-05-03; Phase C ✅ 2026-05-03; R22.4–R22.6 ✅ 2026-05-03)*
+- [ ] **R22** — NHL: обучение, materialize, roadmap фич; см. `backlog/R22.md` *(Phase A ✅ 2026-05-03; Phase C ✅ 2026-05-03; R22.4–R22.6 ✅ 2026-05-04)*
   - [x] R22.1 — Конфиг NHL training (split, target, алгоритм, features) ✅ 2026-05-03
   - [x] R22.2 — NHL baseline training sweep + promote (субсуммирует R19.11) ✅ 2026-05-03
   - [x] R22.3 — NHL materialize + API verification (субсуммирует R19.12) ✅ 2026-05-03
   - [x] R22.4 — *(stretch)* Расширенные roster-фичи (top-N агрегаты, goalie proxy, injury count; TOI отложен — нет в API) ✅ 2026-05-03
   - [x] R22.5 — *(stretch)* Travel / rest (км между аренами, сдвиг TZ; `NhlScheduleFeatureGenerator`) ✅ 2026-05-04
-  - [x] R22.6 — *(stretch)* Motivation / playoff context ✅ 2026-05-03
+  - [x] R22.6 — *(stretch)* Motivation / playoff context ✅ 2026-05-04
   - [ ] R22.7 — *(stretch)* Model evaluation vs Pinnacle closing line
   - [x] R22.8 — Рынки NHL: `winner_withOT`, `total_withOT` (параллельно основному времени) ✅ 2026-05-03
 

@@ -371,7 +371,7 @@
 - **Возможные улучшения / техдолг:**
   - Подключить TOI и/или реальный starter, когда появятся стабильные поля в данных (R19.20+).
 
-### 2026-05-03 — R22.6 Motivation / playoff context (NHL standings)
+### 2026-05-04 — R22.6 Motivation / playoff context (NHL standings)
 
 - **Задача:** `backlog/R22.md` (R22.6 Phase B stretch; R22 остаётся в backlog до завершения R22.7)
 - **Ограничения и компромиссы:**
