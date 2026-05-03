@@ -4,6 +4,10 @@ nhl_standings:
   enabled: true
   datetime_column: datetime
   form_window: 5
+  # Мотивация / плей-офф-контекст (очки таблицы, линия плей-оффа, опционально game_type / match_end)
+  motivation:
+    enabled: true
+    playoff_line_slots: 8
   required_columns:
     - home_team
     - away_team
