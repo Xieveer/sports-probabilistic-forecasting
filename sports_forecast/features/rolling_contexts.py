@@ -259,12 +259,14 @@ def _tournament_ewm_metrics(tournament_cfg: Any) -> list[dict[str, str]] | None:
         raw = getattr(tournament_cfg, "ewm_metrics", None)
     if raw is None:
         return None
-    if isinstance(raw, DictConfig):
+    if OmegaConf.is_config(raw):
         raw = OmegaConf.to_container(raw, resolve=True)
     if not isinstance(raw, list) or len(raw) == 0:
         return None
     out: list[dict[str, str]] = []
     for item in raw:
+        if OmegaConf.is_config(item):
+            item = OmegaConf.to_container(item, resolve=True)
         if not isinstance(item, dict):
             continue
         m = item.get("metric")
@@ -287,7 +289,7 @@ def _tournament_ewm_spans(tournament_cfg: Any) -> list[int] | None:
         raw = getattr(tournament_cfg, "ewm_spans", None)
     if raw is None:
         return None
-    if isinstance(raw, DictConfig):
+    if OmegaConf.is_config(raw):
         raw = OmegaConf.to_container(raw, resolve=True)
     if not isinstance(raw, list) or len(raw) == 0:
         return None

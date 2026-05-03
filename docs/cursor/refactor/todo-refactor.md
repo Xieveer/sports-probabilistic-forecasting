@@ -132,6 +132,7 @@
   - [x] R27.5 — `StreakFeatureGenerator` — серии + win rate
   - [x] R27.7 — Inseason context ✅ (в R28.2)
   - [x] R27.9 — Lineup continuity (Jaccard), seniority, stability
+  - [x] R27.10 — CI smoke: Hydra `nhl` + `advanced` + synthetic wide (`test_r27_nhl_advanced_pipeline_smoke`); fix ListConfig `ewm_metrics` inject
 - [x] **R23** — CI/CD, секреты, prod deploy, observability, refresh ✅ 2026-05-03; см. `done_task/R23.md`
   - [x] R23.1 — GitHub Actions: lint + test on PR (ci.yml, Python 3.10/3.12, uv cache)
   - [x] R23.2 — GitHub Actions: Docker build + push ghcr.io (docker.yml, api/worker/telegram-bot)

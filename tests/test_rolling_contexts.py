@@ -3,10 +3,13 @@
 from typing import Any
 
 import pytest
+from omegaconf import OmegaConf
 
 from sports_forecast.features.rolling_contexts import (
     _load_column_aliases,
     _resolve_keys,
+    _tournament_ewm_metrics,
+    _tournament_ewm_spans,
     expand_rolling_generators_inplace,
     load_rolling_context_library,
     materialize_features_config,
@@ -148,6 +151,18 @@ def test_expand_without_aliases_backward_compat() -> None:
         c for c in features_cfg["generators"]["ewm_diff"]["contexts"] if c["name"] == "inseason"
     )
     assert ins["keys"] == ["pl", "season"]
+
+
+def test_tournament_ewm_metrics_accepts_omegaconf_listconfig() -> None:
+    """Hydra отдаёт ``ewm_metrics`` как ListConfig — парсер не должен возвращать None."""
+    tc = OmegaConf.create(
+        {
+            "ewm_metrics": [{"metric": "sog_diff_ft", "label": "sog"}],
+            "ewm_spans": [5, 15],
+        }
+    )
+    assert _tournament_ewm_metrics(tc) == [{"metric": "sog_diff_ft", "label": "sog"}]
+    assert _tournament_ewm_spans(tc) == [5, 15]
 
 
 def test_materialize_injects_sport_ewm_generators() -> None:
