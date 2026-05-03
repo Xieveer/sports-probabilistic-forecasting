@@ -330,3 +330,17 @@
   - После R21.9: убрать `"open_minutes_before"` из `_ODDS_MINUTES_BEFORE_COLS` (Pandera cleanup).
   - После R21.9: переименовать `_events_to_odds_frame_v2` → `_events_to_odds_frame_v3` в `enrichment.py`.
   - Добавить negative test V3 в `TestValidateOddsFloatColumnsV3` (decimal < 1.0, line < 0).
+
+### 2026-05-03 — R22 Phase A (R22.1–R22.3): NHL training config, season-holdout split, Makefile, docs
+
+- **Задача:** `backlog/R22.md` (Phase A завершена; Phase B/C — в работе)
+- **Ограничения и компромиссы:**
+  - R22.2 и R22.3 реализованы как Makefile-цели и операционная документация (`HOW_TO_ADD_NEW_TOURNAMENT.md`); фактический прогон `make train-sweep-nhl`, `make promote`, `make materialize` — операционный шаг, не покрытый автотестами (зависит от наличия NHL parquet-данных в `data/processed/nhl`).
+  - `subset_frame_for_season_holdout` вызывается в `trainer.py` **дважды**: один раз до выбора фичей (для фильтрации датафрейма), второй раз при train/test-split (повторная маскировка по `holdout_seasons`). Функционально корректно, но избыточно; при рефакторинге trainer можно объединить в одну точку.
+  - `train_eval_split.holdout_seasons` в YAML поддерживает только один сезон в baseline-конфиге (`20242025`). Несколько сезонов поддерживается кодом, но не проверено на NHL-данных с несколькими holdout-сезонами.
+  - Изменение в `backfill.py` (`load_dotenv` в `run_backfill`) добавлено вне явного scope R22 (минимальный bugfix для programmatic-вызовов без CLI). Логически относится к R20/R21 fix-up.
+- **Возможные улучшения / техдолг:**
+  - После первого реального прогона `make train-sweep-nhl`: зафиксировать MLflow experiment name и promoted model path в документации (README или HOW_TO_ADD_NEW_TOURNAMENT.md).
+  - Добавить интеграционный smoke-тест: загрузить маленький NHL parquet-срез и проверить полный pipeline split → features → train на корректность (сейчас только unit-тесты на `train_eval_split.py`).
+  - Рассмотреть вынос двойного вызова `subset_frame_for_season_holdout` в trainer в единую точку (до feature selection), убрав дублирование маскировки на этапе split.
+  - При добавлении Phase C (R22.8, `winner_withOT`): валидировать, что `season_column` присутствует в NHL parquet с OT-данными.
