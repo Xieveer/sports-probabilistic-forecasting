@@ -397,3 +397,17 @@
   - При появлении точных координат арен в данных — подставлять из источника или обновлять справочник при переездах команд.
   - DST-aware сдвиг или локальное время старта матча из API для более точного «jet lag» признака.
   - Суммарные км за скользящее окно (7 дней) как отдельные фичи.
+
+### 2026-05-03 — R26: Единый контракт odds (NHL BettingSimulator в train)
+
+- **Задача:** `backlog/R26.md` → `done_task/R26.md`
+- **Ограничения и компромиссы:**
+  - `build_synthetic_odds_raw_series` итерирует по строкам (`iterrows`) — для типичных датасетов NHL (~2–3k строк в train_long) приемлемо; при росте до 100k+ может стать узким местом.
+  - `apply_tournament_default_bookmaker` подменяет профиль только при `bookmaker.name == fonbet`; если корневой дефолт когда-либо изменится — нужно обновить условие.
+  - Synthetic dict строит `str(d)` — Python-dict repr; `extract_odds_from_raw` парсит его через `ast.literal_eval`. Хрупкость при нестандартных float-значениях (NaN, Inf) не устранена (унаследовано от существующего контракта Fonbet/UEL).
+  - `select_columns` в `nhl.yaml` теперь явно включает `odds_raw`; если clean пропустит этап synthetic (нет Pinnacle-колонок), строка будет `None` — тренер не упадёт (zero-coverage warning), но BettingSimulator не посчитается.
+- **Возможные улучшения / техдолг:**
+  - Заменить `iterrows` на vectorized-сборку dict: `pd.concat` + `apply` на уровне группы, или специализированный builder без Python-loop — для масштабирования на плотные long датасеты.
+  - Унифицировать synthetic-сборку и fonbet-парсинг через общий объект `OddsDict` (датакласс), устранив хрупкость `ast.literal_eval`.
+  - R22.7 (holdout eval vs Pinnacle) по-прежнему открыта: R26 покрывает train-time BettingSimulator, но не изолированный OOD holdout-отчёт — при необходимости сделать отдельной задачей.
+  - Implied probability 2-way (market-benchmark) — упомянута в R26.3, юнит-тесты не добавлены; задел есть в `synthetic_odds_raw`, но вычисление vig/no-vig вероятности ещё не реализовано.

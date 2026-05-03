@@ -34,7 +34,7 @@
 | R23    | 🔴 High     | High      | 🟡     | 23-й (CI/CD, секреты, prod deploy, observability, refresh) |
 | R24    | 🟡 Medium   | Medium    | 🟡     | 24-й (Telegram UX: меню, подписки, admin, polish) |
 | R25    | 🟡 Medium   | High      | 🟡     | 25-й (NHL: team stats, player props, lineup-driven inference; после R22 baseline) |
-| R26    | 🟡 Medium   | High      | 🟡     | 26-й (единый контракт odds → беттинг-метрики в train; NHL + merge-источники) |
+| R26    | 🟡 Medium   | High      | ✅     | 26-й ✅ (единый контракт odds → беттинг-метрики в train; NHL + merge-источники) |
 
 ---
 
@@ -114,6 +114,13 @@
 
 - [x] **R20** — Pinnacle odds: историческая загрузка + инкрементальный refresh; операционный backfill 3 сезонов ✅ 2026-04-26; см. `docs/cursor/refactor/done_task/R20.md`, `done_task/R20.8.md`
 - [x] **R21** — Multi-bookmaker V3 (R21.10–R21.14) + операционный re-backfill ✅ 2026-04-26; см. `docs/cursor/refactor/done_task/R21.md`, `done_task/R21.9.md` (R21.13: реестр + док; доразметка по `unmatched` — по мере необходимости)
+- [x] **R26** — Единый контракт odds для беттинг-метрик в `train` (как UEL/LP), NHL через реестр + merge + конфиг букмекера ✅ 2026-05-03; см. `done_task/R26.md`
+  - [x] R26.1 — YAML-контракт: `the_odds_api` / synthetic `odds_raw` vs `wide_columns` + обоснование в эпике
+  - [x] R26.2 — Данные: `select_columns` / clean — odds в processed long + вне фич
+  - [x] R26.3 — `betting/odds.py`: `winner_withOT` long + общий entrypoint; тесты (в т.ч. long decimal, wide transport)
+  - [x] R26.4 — Hydra: `nhl` / `nhl_train` defaults `bookmaker` ≠ fonbet (`apply_tournament_default_bookmaker`)
+  - [x] R26.5 — `trainer.py`: вызов общего извлечения odds, логи покрытия, zero-coverage warn
+  - [x] R26.6 — `HOW_TO_ADD_NEW_TOURNAMENT.md` раздел Odds (dict vs merge wide)
 
 ### В работе / Backlog 🟡
 
@@ -195,14 +202,6 @@
   - [ ] R25.16 — Delta materialize pipeline
   - [ ] R25.17 — API invalidation при re-materialize
   - [ ] R25.18 — Telegram hook «lineup locked» (контракт → R24)
-
-- [ ] **R26** — Единый контракт odds для беттинг-метрик в `train` (как UEL/LP), NHL через реестр + merge + конфиг букмекера; см. `backlog/R26.md`
-  - [ ] R26.1 — YAML-контракт: `the_odds_api` / synthetic `odds_raw` vs `wide_columns` + обоснование в эпике
-  - [ ] R26.2 — Данные: `select_columns` / clean — odds в processed long + вне фич
-  - [ ] R26.3 — `betting/odds.py`: `winner_withOT` long + общий entrypoint; тесты (в т.ч. implied 2-way / long decimal)
-  - [ ] R26.4 — Hydra: `nhl` / `nhl_train` defaults `bookmaker` ≠ fonbet
-  - [ ] R26.5 — `trainer.py`: вызов общего извлечения odds, логи покрытия
-  - [ ] R26.6 — `HOW_TO_ADD_NEW_TOURNAMENT.md` + при необходимости `reviewer-tech-debt.md`
 
 ---
 
