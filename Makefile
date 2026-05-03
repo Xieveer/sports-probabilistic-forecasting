@@ -48,7 +48,7 @@ help:
 	@echo "  make train        - запустить training-пайплайн (одиночный эксперимент)"
 	@echo "  make train-sweep  - запустить sweep через Hydra --multirun"
 	@echo "  make train-sweep-nhl - NHL baseline (tournament=nhl_train, catboost+lgbm, advanced)"
-	@echo "  make train-sweep-nhl-ot-winner - NHL winner_withOT (R22.8), catboost+lgbm, advanced"
+	@echo "  make train-sweep-nhl-ot-winner - NHL winner_withOT (R22.8), catboost+lgbm+dummy, advanced"
 	@echo "  make train-sweep-nhl-ot-total  - NHL total_over_withOT line=6.5 (R22.8)"
 	@echo "  make promote      - сравнить модели и выбрать лучшую для продакшена"
 	@echo "  make dvc-repro    - перепроизвести датасет с DVC"
@@ -241,12 +241,13 @@ train-sweep-nhl:
 		features=advanced
 
 # R22.8: full-match labels (pl_goals_full); отдельный MLflow experiment от baseline winner.
+# dummy — prior baseline для сравнения log-loss в MLflow (тот же features=advanced в конфиге).
 train-sweep-nhl-ot-winner:
 	uv run python -m sports_forecast.train --multirun \
 		tournament=nhl_train \
 		market=winner_withOT \
 		market_spec=winner_withOT \
-		algorithm=catboost,lgbm \
+		algorithm=catboost,lgbm,dummy \
 		features=advanced
 
 # R22.8: total over full match; одна линия 6.5 (другие линии — через market_spec.line=...).

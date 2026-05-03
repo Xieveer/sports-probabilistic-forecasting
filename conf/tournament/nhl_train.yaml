@@ -14,7 +14,7 @@
 #       market_spec=winner_withOT algorithm=catboost features=advanced
 #   uv run python -m sports_forecast.train tournament=nhl_train market=total_withOT \\
 #       market_spec=total_over_withOT market_spec.line=6.5 algorithm=catboost features=advanced
-#   make train-sweep-nhl-ot-winner   # multirun catboost+lgbm
+#   make train-sweep-nhl-ot-winner   # multirun catboost+lgbm+dummy (advanced фичи)
 # Контракт колонок: docs/cursor/context/HOW_TO_ADD_NEW_MARKET.md (NHL full vs regulation).
 # ------------------------------------------------------------------------------
 # R22 Phase A note: baseline ``market=winner`` uses ``player_win`` ↔ ``home_points`` (long pl_points),

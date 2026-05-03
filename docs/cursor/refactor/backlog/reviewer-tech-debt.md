@@ -87,7 +87,7 @@
 
 ### 2026-04-25 — R20.1: OddsStore (Parquet-хранилище линий Pinnacle)
 
-- **Задача:** `backlog/R20.md` (подзадача R20.1, отмечена как выполненная)
+- **Задача:** `done_task/R20.md` (подзадача R20.1, отмечена как выполненная)
 - **Ограничения и компромиссы:**
   - Атомарность гарантирована только для операции записи (`to_parquet` + `rename`); полный цикл load–merge–save не является атомарным — при одновременном вызове `upsert_odds_store_file` из двух процессов возможен race condition на фазе load (последний writer перезапишет данные первого). Для текущего однопроцессного pipeline это некритично.
   - Паттерн `.gitignore` `data/source/*/odds/` технически избыточен, поскольку `/data/source` уже покрывает весь каталог. Оставлен как явный self-documenting комментарий для будущих контрибьюторов.
@@ -101,7 +101,7 @@
 
 ### 2026-04-25 — R20.9: TeamNameRegistry + unmatched report
 
-- **Задача:** `backlog/R20.md` (подзадача R20.9, отмечена как выполненная)
+- **Задача:** `done_task/R20.md` (подзадача R20.9, отмечена как выполненная)
 - **Ограничения и компромиссы:**
   - `nhl.yaml` — реестр пустой (обе секции `{}`): алиасы появятся только после первого production backfill, когда `unmatched_teams.csv` покажет несовпадения. До тех пор `_team_key` всегда возвращает `normalize_team_key` — функционально корректно, но сопоставление NHL ↔ Odds API по-прежнему зависит от единообразия нормализации в двух источниках.
   - `write_unmatched_odds_teams_report` итерирует через `iterrows()` (O(n)) — для DataFrame ~10k строк незначительно, но при большом историческом backfill лучше векторизованный подход.
@@ -135,7 +135,7 @@
 
 ### 2026-04-25 — R20.3: incremental odds refresh + checkpoint/resume
 
-- **Задача:** `backlog/R20.md` (подзадача R20.3) → `done_task/R20.3.md`
+- **Задача:** `done_task/R20.md` (подзадача R20.3) → `done_task/R20.3.md`
 - **Ограничения и компромиссы:**
   - `quota_hit` жёстко захардкожен в `False`: `run_backfill` не возвращает флаг исчерпания квоты; поле зарезервировано для интеграции с R20.6. Оператор не узнает о частичной загрузке из поля результата до реализации R20.6.
   - При краше во время `backfill_call` следующий запуск повторяет весь сегмент целиком (с `seg.date_from`), а не с точки фактического сбоя. Безопасно из-за идемпотентного upsert, но при `max_days_per_refresh=30` это лишняя нагрузка на API-квоту.
@@ -151,7 +151,7 @@
 
 ### 2026-04-25 — R20.2: season-aware backfill CLI + quota budget
 
-- **Задача:** `backlog/R20.md` (подзадача R20.2) → `done_task/R20.2.md`
+- **Задача:** `done_task/R20.md` (подзадача R20.2) → `done_task/R20.2.md`
 - **Ограничения и компромиссы:**
   - `run_backfill` переведён на keyword-only API — это ломает вызов с позиционными аргументами; внутри проекта других вызывающих нет, но при расширении к R20.3/R20.4 нужно иметь в виду.
   - `_read_quota_budget` использует `book_root.get(...)` вместо `OmegaConf.select(...)` — смешение API; работает корректно, но нарушает единообразие с остальным кодом `backfill.py`.
@@ -166,7 +166,7 @@
 
 ### 2026-04-25 — R20.5/R20.6/R20.7 Конфиг + валидация + наблюдаемость + тесты
 
-- **Задача:** `backlog/R20.md` (подзадачи R20.5/6/7 → `done_task/R20.5.md`, `done_task/R20.6.md`, `done_task/R20.7.md`)
+- **Задача:** `done_task/R20.md` (подзадачи R20.5/6/7 → `done_task/R20.5.md`, `done_task/R20.6.md`, `done_task/R20.7.md`)
 - **Ограничения и компромиссы:**
   - `match_rate_vs_source_pct` в `_log_source_odds_metrics` — это синоним `odds_coverage_pct` (доля строк source с непустым `pinnacle_home_close`). Настоящий match rate (matched events / total events, пришедших от API) требует сохранения счётчика ответа API на этапе backfill и передачи его в метрики merge. Сейчас оба числа совпадают; для промышленной наблюдаемости желательно разделить.
   - `validate_pinnacle_odds_float_columns` бросает `RuntimeError` (оборачивает `SchemaError/SchemaErrors`). При нарушении диапазона весь backfill/refresh прерывается. Это корректное fail-fast поведение, но для лёгких данных (единичные выбросы из-за парсинга) может быть избыточным. Альтернатива — `warn_only`-режим с log.warning и продолжением.
@@ -181,7 +181,7 @@
 
 ### 2026-04-25 — R20.4 Интеграция odds refresh в source_refresh pipeline
 
-- **Задача:** `backlog/R20.md` (подзадача R20.4 → отмечена `[x]` внутри R20.md)
+- **Задача:** `done_task/R20.md` (подзадача R20.4 → отмечена `[x]` внутри R20.md)
 - **Ограничения и компромиссы:**
   - `ValueError` / `OSError` из `run_odds_refresh` не перехватываются в `main()` — при ошибке odds CLI завершается с трейсбеком вместо чистого `logger.error` + `return 1`. Поведение документировано в docstring как intentional fail-fast, но для операторов Airflow менее удобно, чем структурированный exit-код с логом.
   - `_DEFAULT_SPORT_KEY = "icehockey_nhl"` зашит как fallback в `source_refresh.py` — для любого нового турнира без явного `odds.sport_key` в конфиге этот дефолт будет семантически неверным.
@@ -195,7 +195,7 @@
 
 ### 2026-04-25 — R21.2: Конфигурация multi-bookmaker profiles + snapshot_discovery
 
-- **Задача:** `backlog/R21.md` (sub-task R21.2) → `done_task/R21.2.md`
+- **Задача:** `done_task/R21.md` (sub-task R21.2) → `done_task/R21.2.md`
 - **Ограничения и компромиссы:**
   - Секция `output_columns` (legacy V1: `pinnacle_home_open`, `pinnacle_total_open`, …) и новая `bookmaker_profiles` сосуществуют в одном YAML. Это допустимо как промежуточное состояние, но создаёт два конкурирующих источника истины по именам колонок до замены в R21.3/R21.6.
   - `test_nhl_odds_includes_configured_bookmakers` жёстко проверяет `bms == ["pinnacle", "onexbet"]`. При добавлении нового букмекера тест придётся обновить вручную — нет параметризации через `bookmaker_profiles` из самого конфига.
@@ -207,7 +207,7 @@
 
 ### 2026-04-25 — R21.3: Enrichment multi-bookmaker + total line + V2 naming
 
-- **Задача:** `backlog/R21.md` (sub-task R21.3) → `done_task/R21.3.md`
+- **Задача:** `done_task/R21.md` (sub-task R21.3) → `done_task/R21.3.md`
 - **Ограничения и компромиссы:**
   - `has_draw` хранится в `BookmakerExtractionProfile`, но **не используется** для фильтрации draw-колонок: `_v2_row_keys_for_profile` всегда генерирует `{prefix}_{w}_draw_{open,close}` для всех профилей. Pinnacle (has_draw=False) имеет эти колонки в схеме, они просто остаются `None`. Поведение корректное, но немного несогласованное с семантикой поля.
   - `_totals_line_and_prices` берёт `point` из первого outcome с непустым `point`, а не строго из outcome `"Over"`. В реальных данных оба имеют одинаковый `point`, так что результат идентичен. При нестандартном ответе API (разные `point` у Over и Under) возьмётся тот, что встретился первым в JSON.
@@ -221,7 +221,7 @@
 
 ### 2026-04-25 — R21.1: OddsStore V2 schema + V1→V2 migration
 
-- **Задача:** `backlog/R21.md` (sub-task R21.1, файл остаётся в backlog до завершения R21.2–R21.9)
+- **Задача:** `done_task/R21.md` (sub-task R21.1, файл остаётся в backlog до завершения R21.2–R21.9)
 - **Ограничения и компромиссы:**
   - `validate_pinnacle_odds_float_columns` в `refresh.py` (R20) проверяет V1-имена колонок (`pinnacle_home_open`, …). После V2-миграции ни одна из них не попадёт в V2-store → валидация тихо пропускается (`have=[]`). Данные фактически не валидируются до выполнения R21.7.
   - `_log_source_odds_metrics` в `refresh.py` использует V1-имя `pinnacle_home_close` для метрики coverage. После merge V2-store в source.csv эта колонка отсутствует → лог выводит «нет колонки», метрика не считается до выполнения R21.6.
@@ -234,7 +234,7 @@
 
 ### 2026-04-25 — R21.4 Snapshot discovery
 
-- **Задача:** `backlog/R21.md` (подзадача R21.4) → `done_task/R21.4.md`
+- **Задача:** `done_task/R21.md` (подзадача R21.4) → `done_task/R21.4.md`
 - **Ограничения и компромиссы:**
   - Seed-запрос (`legacy_open_time_utc`) делается всегда, даже если `ref_dt` будет найден и open-probe даст другой ISO. При probe-попадании seed payload отбрасывается и не возвращается как `p_open` — минорный overhead (1 extra API call / cached miss). В R21.5 можно реиспользовать seed как `p_open` если он совпадает с выбранным open.
   - `used_legacy_timestamps=True` устанавливается как при полном legacy-fallback (нет `ref_dt`), так и при частичном (close динамический, open из legacy). R21.5 при интеграции должен учесть эту семантику (флаг означает «open из legacy», не «оба из legacy»).
@@ -247,7 +247,7 @@
 
 ### 2026-04-25 — R21.8 Тесты: unit + integration для V2 odds pipeline
 
-- **Задача:** `backlog/R21.md` (подзадача R21.8) → `done_task/R21.8.md`
+- **Задача:** `done_task/R21.md` (подзадача R21.8) → `done_task/R21.8.md`
 - **Ограничения и компромиссы:**
   - Мок-клиенты API (`class C`) определяются inline в каждом тесте snapshot_discovery; предложенный в tech-debt R21.5 reusable `FakeOddsClient` в `conftest.py` не реализован — inline-подход гибче для per-test ветвления, но добавляет дублирование.
   - Integration-тест (`test_end_to_end_mock_backfill_store_v2_merge_source_csv`) использует `events_to_odds_frame` напрямую, а не полный `backfill_day_frames` с mock-клиентом. Это упрощение: `backfill_day_frames` покрыт отдельным unit-тестом с monkeypatch. Полный e2e (client → discover → backfill_day_frames → store → merge) через один тест отсутствует.
@@ -260,7 +260,7 @@
 
 ### 2026-04-25 — R21.6 Merge/refresh pipeline V2: no-suffix merge, per-bookmaker coverage
 
-- **Задача:** `backlog/R21.md` (подзадача R21.6; R21 не перенесён в done_task до закрытия всех подзадач)
+- **Задача:** `done_task/R21.md` (подзадача R21.6; R21 не перенесён в done_task до закрытия всех подзадач)
 - **Ограничения и компромиссы:**
   - `_ODDS_JOIN_KEYS` в `enrichment.py` дублирует `ODDS_DEDUP_KEYS` из `store.py` (одинаковые тройки). Не импортирован напрямую, чтобы избежать циклической зависимости между enrichment и store. При рефакторинге: вынести в отдельный `constants.py` модуль.
   - `_log_source_odds_metrics` читает `source.csv` с диска при каждом refresh. На больших файлах — лишний I/O. Можно принимать DataFrame как опциональный аргумент или передавать кэш из вызывающего кода (отложить до R21.9 или при появлении проблем производительности).
@@ -271,7 +271,7 @@
 
 ### 2026-04-25 — R21.7 Pandera V2 validation + observability hooks
 
-- **Задача:** `backlog/R21.md` (подзадача R21.7) → `done_task/R21.7.md`
+- **Задача:** `done_task/R21.md` (подзадача R21.7) → `done_task/R21.7.md`
 - **Ограничения и компромиссы:**
   - `_OddsDecimalColumn`, `_OddsTotalLineColumn`, `_OddsMinutesColumn` — singleton Column-объекты, разделяемые между несколькими схемами через `dict.fromkeys`. Pandera не мутирует Column при добавлении в схему (всё тесты проходят), однако при смене мажорной версии Pandera поведение может измениться. При следующем upgrade Pandera стоит проверить, что singleton-шаринг остаётся безопасным.
   - `open_minutes_before` / `close_minutes_before` валидируются как `float` (а не `int`). Логически значения — целые минуты, но хранятся как float (деление datetime), что приводит к типу `float64` в pandas. Проверка `>= 0` корректна, но нет верхней границы (теоретически возможны значения вроде 1e9 при некорректных данных).
@@ -283,7 +283,7 @@
 
 ### 2026-04-25 — R21.5 Backfill: dynamic snapshot discovery integration
 
-- **Задача:** `backlog/R21.md` (подзадача R21.5) → `done_task/R21.5.md`
+- **Задача:** `done_task/R21.md` (подзадача R21.5) → `done_task/R21.5.md`
 - **Ограничения и компромиссы:**
   - В legacy-режиме `open_minutes_before = 0` и `close_minutes_before = 0` — семантически неточно (0 означает «ровно в момент игры», тогда как legacy-timestamp произвольный). Правильнее было бы хранить `None` / sentinel, но это потребует nullable int в V2-схеме (R21.1). Принято как временный компромисс до R21.7 (Pandera V2 валидация).
   - `validate_pinnacle_odds_float_columns` вызывается в `_upsert_if_non_empty` — устаревшее V1-имя, не охватывает V2-колонки (1xBet, total_line). Не вызывает ошибок (V2-колонки просто не проверяются), устраняется в R21.7.
@@ -296,7 +296,7 @@
 
 ### 2026-04-25 — R21.10 Schema V3: close-only, миграции V1/V2→V3, enrichment close-only
 
-- **Задача:** `backlog/R21.md` (подзадача R21.10) → `done_task/R21.10.md`
+- **Задача:** `done_task/R21.md` (подзадача R21.10) → `done_task/R21.10.md`
 - **Ограничения и компромиссы:**
   - `extract_bookmaker_row_from_event` сохранил ветки `snapshot_role="open"` и `"single"` для обратной совместимости V2-тестов (R21.1–R21.8). До R21.14 legacy-тесты могут опираться на эти пути; после R21.14 ветки `"open"`/`"single"` стоит помечать deprecated или убирать.
   - `_events_to_odds_frame_v2` переименована семантически (V3 close-only), но имя функции ещё содержит `_v2`. До R21.14 достаточно; после — рекомендуется переименовать в `_events_to_odds_frame_v3` для ясности.
@@ -310,7 +310,7 @@
 
 ### 2026-04-25 — R21.12 Подробное логирование API-вызовов
 
-- **Задача:** `backlog/R21.md` (подзадача R21.12) → `done_task/R21.12.md`
+- **Задача:** `done_task/R21.md` (подзадача R21.12) → `done_task/R21.12.md`
 - **Ограничения и компромиссы:**
   - ~~`snapshot_discovery.py` по-прежнему логирует полный URL с `apiKey` в WARNING-сообщениях при `seed fetch failed`.~~ **Исправлено в R21.14** (2026-04-25): `_safe_fetch_exception_detail()` — WARNING выводит только тип исключения + HTTP status; URL в логи не попадает.
   - Cache-hit логирует `x-requests-remaining` из `last_quota()`, а не из реального заголовка HTTP (заголовок недоступен при кеш-хите). Логически корректно, но значение может устареть, если кеш-хиты идут до первого реального HTTP-запроса.
@@ -321,7 +321,7 @@
 
 ### 2026-04-25 — R21.14 Тесты + конфиг V3, apiKey fix
 
-- **Задача:** `backlog/R21.md` (подзадача R21.14) → `done_task/R21.14.md`
+- **Задача:** `done_task/R21.md` (подзадача R21.14) → `done_task/R21.14.md`
 - **Ограничения и компромиссы:**
   - `_ODDS_MINUTES_BEFORE_COLS` в Pandera по-прежнему содержит `"open_minutes_before"` для backward-compat V1/V2 store. В V3 store колонка отсутствует, Pandera её пропускает (`strict=False`). Убрать безопасно только после R21.9 (full V3 backfill), когда V1/V2 parquet больше не загружаются.
   - `_events_to_odds_frame_v2` в `enrichment.py` — имя функции содержит `_v2`, хотя обрабатывает V3-поток (close-only). До R21.9 функциональных последствий нет.
@@ -333,7 +333,7 @@
 
 ### 2026-05-03 — R22.8 OT-рынки NHL (winner_withOT / total_withOT)
 
-- **Задача:** `backlog/R22.md` (подзадача R22.8, Phase C) — OT-inclusive markets, NHL
+- **Задача:** `done_task/R22.md` (подзадача R22.8, Phase C) — OT-inclusive markets, NHL
 - **Ограничения и компромиссы:**
   - `home_goals_full` / `away_goals_full` — это копия `home_points` / `away_points` (transform `copy` в `nhl.yaml` `derived_columns`). Семантически правильно для текущего NHL boxscore (где `*_ft` уже включает OT). Если в будущем появится источник, где `*_ft` не включает буллит-гол победителя, контракт потребует пересмотра — сейчас это явно задокументировано в `ice_hockey.yaml` и `HOW_TO_ADD_NEW_MARKET.md`.
   - Трансформация `copy` в `_apply_derived_columns` (`clean.py`) применяется только тогда, когда в YAML прописан `transform: copy`; другие турниры не затронуты — проверено grep'ом по всем `conf/tournament/*.yaml`.
@@ -348,7 +348,7 @@
 
 ### 2026-05-03 — R22 Phase A (R22.1–R22.3): NHL training config, season-holdout split, Makefile, docs
 
-- **Задача:** `backlog/R22.md` (Phase A завершена; Phase B/C — в работе)
+- **Задача:** `done_task/R22.md` (Phase A завершена; Phase B/C — в работе)
 - **Ограничения и компромиссы:**
   - R22.2 и R22.3 реализованы как Makefile-цели и операционная документация (`HOW_TO_ADD_NEW_TOURNAMENT.md`); фактический прогон `make train-sweep-nhl`, `make promote`, `make materialize` — операционный шаг, не покрытый автотестами (зависит от наличия NHL parquet-данных в `data/processed/nhl`).
   - `subset_frame_for_season_holdout` вызывается в `trainer.py` **дважды**: один раз до выбора фичей (для фильтрации датафрейма), второй раз при train/test-split (повторная маскировка по `holdout_seasons`). Функционально корректно, но избыточно; при рефакторинге trainer можно объединить в одну точку.
@@ -363,7 +363,7 @@
 
 ### 2026-05-03 — R22.4: расширенные NHL roster-фичи
 
-- **Задача:** `backlog/R22.md` (R22.4 Phase B stretch)
+- **Задача:** `done_task/R22.md` (R22.4 Phase B stretch)
 - **Ограничения и компромиссы:**
   - **TOI:** сезонный `roster/{team}/{season}` Web API не отдаёт TOI; агрегаты по льду не считаем (без фиктивных значений). Возможное направление: per-game ``playerByGameStats`` или отдельный фид.
   - **Стартовый вратарь:** ``*_primary_goalie_sweater`` — эвристика «первый вратарь в порядке API», не объявленный стартёр на матч.
@@ -373,7 +373,7 @@
 
 ### 2026-05-04 — R22.6 Motivation / playoff context (NHL standings)
 
-- **Задача:** `backlog/R22.md` (R22.6 Phase B stretch; R22 остаётся в backlog до завершения R22.7)
+- **Задача:** `done_task/R22.md` (R22.6 Phase B stretch; R22.7 снова открыта после отката `pinnacle_holdout`, см. R26)
 - **Ограничения и компромиссы:**
   - **Межконференционный шум:** `standing_rank_gap` и `*_playoff_spots_out` вычисляются по `*_conference_standing` (ранг внутри конференции), но wide-CSV не содержит признака «обе команды в одной конференции». Для матчей регулярного сезона между командами разных конференций разница рангов информативна лишь косвенно — модель получает сигнал без различия «internal vs cross-conference».
   - **`same_conference_standing_pressure` не реализован:** для надёжного признака «одна конференция» нужны явные колонки `home_conference` / `away_conference` в `source.csv` / interim; без них вычисление non-trivial и может давать ложные срабатывания. Задокументировано в module docstring как tech-debt.
@@ -387,7 +387,7 @@
 
 ### 2026-05-04 — R22.5 Travel / rest (NHL schedule)
 
-- **Задача:** `backlog/R22.md` (R22.5 Phase B stretch)
+- **Задача:** `done_task/R22.md` (R22.5 Phase B stretch)
 - **Ограничения и компромиссы:**
   - Координаты арен — статический справочник `NHL_ARENA_GEO` (центр города/арены), не геокодирование строки `location` из CSV; нейтральные площадки и смена арены команды не моделируются.
   - «Площадка матча» = домашняя команда строки (`home_team`); расстояние считается между ареной предыдущей игры команды и текущей — корректно для типичного NHL home/away.

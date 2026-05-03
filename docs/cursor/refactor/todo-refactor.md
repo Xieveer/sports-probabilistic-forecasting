@@ -30,10 +30,11 @@
 | R19    | 🔴 High     | High      | ✅     | 19-й ✅ (NHL production + Odds API + Telegram-бот; R19.11-R19.12 — операционно; stretch R19.17-R19.20 отложены) |
 | R20    | 🔴 High     | High      | ✅     | 20-й ✅ (Pinnacle odds: backfill 3 сезонов + инкрементальный автоапдейт) |
 | R21    | 🔴 High     | High      | ✅     | 21-й ✅ (Multi-bookmaker V3 + логи; R21.13 реестр — частично по unmatched) |
-| R22    | 🔴 High     | Medium    | 🟡     | 22-й (NHL: обучение, materialize, roadmap фич) |
+| R22    | 🔴 High     | Medium    | 🟡     | 22-й (NHL baseline + OT + фичи ✅; R22.7 открыта — откат `pinnacle_holdout`, см. R26) |
 | R23    | 🔴 High     | High      | 🟡     | 23-й (CI/CD, секреты, prod deploy, observability, refresh) |
 | R24    | 🟡 Medium   | Medium    | 🟡     | 24-й (Telegram UX: меню, подписки, admin, polish) |
 | R25    | 🟡 Medium   | High      | 🟡     | 25-й (NHL: team stats, player props, lineup-driven inference; после R22 baseline) |
+| R26    | 🟡 Medium   | High      | 🟡     | 26-й (единый контракт odds → беттинг-метрики в train; NHL + merge-источники) |
 
 ---
 
@@ -111,8 +112,8 @@
   - [ ] R19.19 — *(stretch)* Оценка vs Pinnacle на holdout → **R22.7**
   - [ ] R19.20 — *(stretch)* Injury report → по возможности в **R22.4**
 
-- [x] **R20** — Pinnacle odds: историческая загрузка + инкрементальный refresh; операционный backfill 3 сезонов ✅ 2026-04-26; см. `docs/cursor/refactor/backlog/R20.md`, `done_task/R20.8.md`
-- [x] **R21** — Multi-bookmaker V3 (R21.10–R21.14) + операционный re-backfill ✅ 2026-04-26; см. `docs/cursor/refactor/backlog/R21.md`, `done_task/R21.9.md` (R21.13: реестр + док; доразметка по `unmatched` — по мере необходимости)
+- [x] **R20** — Pinnacle odds: историческая загрузка + инкрементальный refresh; операционный backfill 3 сезонов ✅ 2026-04-26; см. `docs/cursor/refactor/done_task/R20.md`, `done_task/R20.8.md`
+- [x] **R21** — Multi-bookmaker V3 (R21.10–R21.14) + операционный re-backfill ✅ 2026-04-26; см. `docs/cursor/refactor/done_task/R21.md`, `done_task/R21.9.md` (R21.13: реестр + док; доразметка по `unmatched` — по мере необходимости)
 
 ### В работе / Backlog 🟡
 
@@ -149,14 +150,14 @@
   - [ ] R16.6 — *(Опционально)* Grafana dashboard JSON
    - [ ] R16.7 — Документировать workflow сравнения
 
-- [ ] **R22** — NHL: обучение, materialize, roadmap фич; см. `backlog/R22.md` *(Phase A ✅ 2026-05-03; Phase C ✅ 2026-05-03; R22.4–R22.6 ✅ 2026-05-04)*
+- [ ] **R22** — NHL: R22.1–R22.6, R22.8 ✅; **R22.7** открыта (откат `pinnacle_holdout`); см. `docs/cursor/refactor/done_task/R22.md`, план замены — **R26**
   - [x] R22.1 — Конфиг NHL training (split, target, алгоритм, features) ✅ 2026-05-03
   - [x] R22.2 — NHL baseline training sweep + promote (субсуммирует R19.11) ✅ 2026-05-03
   - [x] R22.3 — NHL materialize + API verification (субсуммирует R19.12) ✅ 2026-05-03
   - [x] R22.4 — *(stretch)* Расширенные roster-фичи (top-N агрегаты, goalie proxy, injury count; TOI отложен — нет в API) ✅ 2026-05-03
   - [x] R22.5 — *(stretch)* Travel / rest (км между аренами, сдвиг TZ; `NhlScheduleFeatureGenerator`) ✅ 2026-05-04
   - [x] R22.6 — *(stretch)* Motivation / playoff context ✅ 2026-05-04
-  - [ ] R22.7 — *(stretch)* Model evaluation vs Pinnacle closing line
+  - [ ] R22.7 — *(stretch)* Оценка vs Pinnacle / betting на holdout *(откат standalone CLI; реализация — R26 или отдельное решение)*
   - [x] R22.8 — Рынки NHL: `winner_withOT`, `total_withOT` (параллельно основному времени) ✅ 2026-05-03
 
 - [ ] **R23** — CI/CD, секреты, prod deploy, observability, refresh; см. `backlog/R23.md`
@@ -194,6 +195,14 @@
   - [ ] R25.16 — Delta materialize pipeline
   - [ ] R25.17 — API invalidation при re-materialize
   - [ ] R25.18 — Telegram hook «lineup locked» (контракт → R24)
+
+- [ ] **R26** — Единый контракт odds для беттинг-метрик в `train` (как UEL/LP), NHL через реестр + merge + конфиг букмекера; см. `backlog/R26.md`
+  - [ ] R26.1 — YAML-контракт: `the_odds_api` / synthetic `odds_raw` vs `wide_columns` + обоснование в эпике
+  - [ ] R26.2 — Данные: `select_columns` / clean — odds в processed long + вне фич
+  - [ ] R26.3 — `betting/odds.py`: `winner_withOT` long + общий entrypoint; тесты (в т.ч. implied 2-way / long decimal)
+  - [ ] R26.4 — Hydra: `nhl` / `nhl_train` defaults `bookmaker` ≠ fonbet
+  - [ ] R26.5 — `trainer.py`: вызов общего извлечения odds, логи покрытия
+  - [ ] R26.6 — `HOW_TO_ADD_NEW_TOURNAMENT.md` + при необходимости `reviewer-tech-debt.md`
 
 ---
 

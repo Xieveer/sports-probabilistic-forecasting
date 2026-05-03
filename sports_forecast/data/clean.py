@@ -270,6 +270,11 @@ def _apply_dtype_conversion(
 
                 df[col] = pd.to_datetime(df[col], format=dt_format, errors=dt_errors)
 
+                # Pandera interim/processed схемы ожидают naive datetime64[ns]. Источники в UTC
+                # (NHL Web API и др.) дают datetime64[ns, UTC] — приводим к UTC без tz.
+                if getattr(df[col].dtype, "tz", None) is not None:
+                    df[col] = df[col].dt.tz_convert("UTC").dt.tz_localize(None)
+
                 # Подсчитываем NaT после конвертации
                 nat_count = df[col].isna().sum()
                 if nat_count > 0:
