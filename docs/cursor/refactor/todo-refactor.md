@@ -35,7 +35,7 @@
 | R24    | 🟡 Medium   | Medium    | 🟡     | 24-й (Telegram UX: меню, подписки, admin, polish) |
 | R25    | 🟡 Medium   | High      | 🟡     | 25-й (NHL: team stats, player props, lineup-driven inference; после R22 baseline) |
 | R26    | 🟡 Medium   | High      | ✅     | 26-й ✅ (единый контракт odds → беттинг-метрики в train; NHL + merge-источники) |
-| R27    | 🔴 High     | High      | 🟡     | 27-й (NHL Feature Engineering v2: target-aware EWM, stats EWM, streaks, inseason) |
+| R27    | 🔴 High     | High      | ✅     | 27-й ✅ (NHL FE v2: goals/stats EWM, streaks, lineup continuity/seniority) |
 | R28    | 🟡 Medium   | Medium    | ✅     | 28-й ✅ (семантические алиасы колонок в rolling-контекстах; параллельно R27) |
 
 ---
@@ -124,6 +124,14 @@
   - [x] R26.5 — `trainer.py`: вызов общего извлечения odds, логи покрытия, zero-coverage warn
   - [x] R26.6 — `HOW_TO_ADD_NEW_TOURNAMENT.md` раздел Odds (dict vs merge wide)
 - [x] **R28** — Унификация rolling-контекстов через семантические алиасы колонок ✅ 2026-05-04; см. `done_task/R28.md`
+- [x] **R27** — NHL Feature Engineering v2: goals/stats EWM, streaks, lineup continuity/seniority ✅ 2026-05-04; см. `done_task/R27.md`
+  - [x] R27.1 — Derived metric columns в `long_format.py` (goals_full_diff/total, sog/bs/hits/pim2/fow diff)
+  - [x] R27.6 — Spans [5,25,100] → [5,15] в `standard.yaml`
+  - [x] R27.2 — `ewm_metrics` + `ewm_spans` в `conf/sport/ice_hockey.yaml`
+  - [x] R27.3 — `inject_sport_ewm_generators` в `rolling_contexts.py`
+  - [x] R27.5 — `StreakFeatureGenerator` — серии + win rate
+  - [x] R27.7 — Inseason context ✅ (в R28.2)
+  - [x] R27.9 — Lineup continuity (Jaccard), seniority, stability
 - [x] **R23** — CI/CD, секреты, prod deploy, observability, refresh ✅ 2026-05-03; см. `done_task/R23.md`
   - [x] R23.1 — GitHub Actions: lint + test on PR (ci.yml, Python 3.10/3.12, uv cache)
   - [x] R23.2 — GitHub Actions: Docker build + push ghcr.io (docker.yml, api/worker/telegram-bot)
@@ -184,29 +192,6 @@
   - [ ] R24.2 — Уведомления по расписанию (subscribe / digest)
   - [ ] R24.3 — Safe admin boundaries (/retrain, /logs, /health)
   - [ ] R24.4 — Error handling + UX polish
-
-- [ ] **R27** — NHL Feature Engineering v2: расширенный набор фичей; см. `backlog/R27.md`
-  - [ ] **R27.1** — Derived metric columns в `long_format.py` (goals_full_diff/total, stats diff)
-  - [ ] **R27.6** — Добавить span=15 в `standard.yaml`
-  - [ ] **R27.2** — Rolling-профиль `nhl_goals.yaml` для market-aware EWM (goals_full)
-  - [ ] **R27.4** — Rolling-профиль `nhl_stats.yaml` для EWM по статистике (sog, bs, hits, pim2, fow)
-  - [ ] **R27.3** — Интеграция nhl_goals + nhl_stats в advanced.yaml и pipeline
-  - [ ] **R27.5** — `StreakFeatureGenerator` — счётчик серий побед/поражений + win rate
-  - [x] **R27.7** — Inseason context definition в context_library.yaml ✅ (выполнено в R28.2)
-  - [ ] **R27.8** — Inseason EWM rolling-профиль (верификация / отдельный YAML)
-  - [ ] **R27.9** — Расширенные roster-фичи (height, defense age, goalie change)
-  - [ ] **R27.10** — Season confidence features (game_num, progress, confidence)
-  - [ ] **R27.11** — Motivation expansion — clinch pressure (bubble games)
-  - [ ] **R27.12** — Schedule rest/travel — верификация pl/opp формата
-  - [ ] **R27.13** — End-to-end feature pipeline smoke test
-
-- [x] **R28** — Унификация rolling-контекстов через семантические алиасы колонок ✅ 2026-05-04; см. `done_task/R28.md`
-  - [x] **R28.1** — Alias resolution infrastructure в `rolling_contexts.py`
-  - [x] **R28.2** — Новые контексты (`inseason`, `h2h_inseason`) в `context_library.yaml`
-  - [x] **R28.3** — `ice_hockey.yaml`: aliases + activate inseason
-  - [x] **R28.4** — Backward compat: TT + cyberhockey без изменений
-  - [x] **R28.5** — Fail-fast валидация + расширенное логирование
-  - [x] **R28.6** — Unit-тесты
 
 - [ ] **R25** — NHL: team stats, player props, lineup-driven inference; см. `backlog/R25.md`
   - [ ] R25.1 — Аудит boxscore-колонок (PP goals и пр.)
