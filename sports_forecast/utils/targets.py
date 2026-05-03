@@ -598,7 +598,7 @@ def get_target_name(market_spec: DictConfig, line: float | None = None) -> str:
 
     # Подставляем line если есть placeholder {line} или добавляем line для total/handicap
     market_family = market_spec.get("market_family", "")
-    if market_family in ["total", "handicap"]:
+    if market_family in ["total", "handicap", "total_withOT"]:
         if line is None:
             line = market_spec.get("line")
         if line is not None:

@@ -18,6 +18,13 @@ data:
 
 data_clean:
   derived_columns:
+    # Явные финальные голы для OT-рынков (копия home_points/away_points; см. ice_hockey.yaml, R22.8).
+    home_goals_full:
+      source: home_points
+      transform: copy
+    away_goals_full:
+      source: away_points
+      transform: copy
     tour_num:
       source: datetime
       transform: hour_to_time_of_day
@@ -30,6 +37,10 @@ data_clean:
     - status
     - home_points
     - away_points
+    - home_goals_reg
+    - away_goals_reg
+    - home_goals_full
+    - away_goals_full
     - home_team
     - away_team
     - season

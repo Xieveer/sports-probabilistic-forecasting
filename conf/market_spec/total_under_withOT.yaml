@@ -1,0 +1,23 @@
+# Total under full match (OT/SO goals).
+
+name: total_under_withOT
+market_family: total_withOT
+side: under
+description: "Total under (full match goals incl. OT/SO)"
+
+line: ???
+
+data_format: wide
+
+target_source_key: total_sum_full_under
+target_name: target_total_under_full
+
+feature_prefixes:
+  - "home_f_"
+  - "away_f_"
+
+prematch_line:
+  enabled: true
+  source: "odds_feed"
+  timing: "close"
+  market_key: "total"

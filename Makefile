@@ -8,7 +8,7 @@ TESTS := tests
 DOCS_SOURCE := docs/source
 DOCS_BUILD := docs/build
 
-.PHONY: help init install lint format fix test test-unit test-cov test-watch test-file pre-commit train train-sweep train-sweep-nhl promote clean dvc-repro
+.PHONY: help init install lint format fix test test-unit test-cov test-watch test-file pre-commit train train-sweep train-sweep-nhl train-sweep-nhl-ot-winner train-sweep-nhl-ot-total promote clean dvc-repro
 .PHONY: docs docs-serve docs-clean docs-open docs-coverage docs-linkcheck tree
 .PHONY: api api-dev bot-dev bot-up materialize docker-up docker-down docker-build docker-logs db-init
 .PHONY: airflow-init airflow-up airflow-down airflow-logs
@@ -48,6 +48,8 @@ help:
 	@echo "  make train        - запустить training-пайплайн (одиночный эксперимент)"
 	@echo "  make train-sweep  - запустить sweep через Hydra --multirun"
 	@echo "  make train-sweep-nhl - NHL baseline (tournament=nhl_train, catboost+lgbm, advanced)"
+	@echo "  make train-sweep-nhl-ot-winner - NHL winner_withOT (R22.8), catboost+lgbm, advanced"
+	@echo "  make train-sweep-nhl-ot-total  - NHL total_over_withOT line=6.5 (R22.8)"
 	@echo "  make promote      - сравнить модели и выбрать лучшую для продакшена"
 	@echo "  make dvc-repro    - перепроизвести датасет с DVC"
 	@echo ""
@@ -235,6 +237,25 @@ train-sweep-nhl:
 		tournament=nhl_train \
 		market=winner \
 		market_spec=winner \
+		algorithm=catboost,lgbm \
+		features=advanced
+
+# R22.8: full-match labels (pl_goals_full); отдельный MLflow experiment от baseline winner.
+train-sweep-nhl-ot-winner:
+	uv run python -m sports_forecast.train --multirun \
+		tournament=nhl_train \
+		market=winner_withOT \
+		market_spec=winner_withOT \
+		algorithm=catboost,lgbm \
+		features=advanced
+
+# R22.8: total over full match; одна линия 6.5 (другие линии — через market_spec.line=...).
+train-sweep-nhl-ot-total:
+	uv run python -m sports_forecast.train --multirun \
+		tournament=nhl_train \
+		market=total_withOT \
+		market_spec=total_over_withOT \
+		market_spec.line=6.5 \
 		algorithm=catboost,lgbm \
 		features=advanced
 

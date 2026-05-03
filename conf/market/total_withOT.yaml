@@ -1,0 +1,17 @@
+# Market family: total goals with overtime / shootout (full match).
+# Таргеты через ``total_sum_full`` / ``total_sum_full_under`` (home_goals_full + away_goals_full).
+
+family: total_withOT
+description: "Total goals full match (incl. OT/SO); отдельные прогоны от ``total``"
+
+target_logic:
+  type: comparison
+  operands:
+    - home_goals_full
+    - away_goals_full
+  operator: sum
+  compare_with: line
+
+available_sides:
+  - over
+  - under

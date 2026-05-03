@@ -291,6 +291,46 @@ InterimSchema = DataFrameSchema(
             ],
             description="Очки гостевой команды/игрока",
         ),
+        "home_goals_reg": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            checks=[
+                Check.ge(0, error="home_goals_reg не может быть отрицательным"),
+                Check.le(50, error="home_goals_reg > 50 — подозрительно"),
+            ],
+            description="NHL: голы дома в регламенте (периоды 1–3), из home_score_mt",
+        ),
+        "away_goals_reg": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            checks=[
+                Check.ge(0, error="away_goals_reg не может быть отрицательным"),
+                Check.le(50, error="away_goals_reg > 50 — подозрительно"),
+            ],
+            description="NHL: голы гостей в регламенте, из away_score_mt",
+        ),
+        "home_goals_full": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            checks=[
+                Check.ge(0, error="home_goals_full не может быть отрицательным"),
+                Check.le(50, error="home_goals_full > 50 — подозрительно"),
+            ],
+            description="NHL: финальные голы дома (регламент+ОТ/БУ), алиас к финальному счёту",
+        ),
+        "away_goals_full": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            checks=[
+                Check.ge(0, error="away_goals_full не может быть отрицательным"),
+                Check.le(50, error="away_goals_full > 50 — подозрительно"),
+            ],
+            description="NHL: финальные голы гостей (регламент+ОТ/БУ)",
+        ),
         # --- NHL / ice_hockey (опционально; strict=False всё равно разрешает прочие колонки) ---
         "season": Column(
             dtype="object",

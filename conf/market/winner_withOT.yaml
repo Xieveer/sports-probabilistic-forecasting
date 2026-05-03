@@ -1,0 +1,15 @@
+# Market family: winner with overtime / shootout (full match), ice hockey.
+# Отдельно от ``winner``: таргеты только через ``target_sources.player_win_full`` (pl_goals_full).
+
+family: winner_withOT
+description: "Winner (full match incl. OT/SO); NHL — колонки *_goals_full"
+
+target_logic:
+  type: comparison
+  operands:
+    - player_goals_full
+    - opponent_goals_full
+  operator: greater
+
+available_sides:
+  - h2h

@@ -1,0 +1,14 @@
+# Winner full match (OT/SO). Long format; таргет: pl_goals_full > opp_goals_full.
+
+name: winner_withOT
+market_family: winner_withOT
+side: player
+description: "H2H win by final score (NHL boxscore home_score_ft; includes OT/SO)"
+
+data_format: long
+
+target_source_key: player_win_full
+target_name: target_is_win_full_match
+
+prematch_line:
+  enabled: false

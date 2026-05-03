@@ -175,7 +175,9 @@ class SingleExperimentRunner:
         if hasattr(cfg.market_spec, "side"):
             tags["side"] = cfg.market_spec.side
 
-        if cfg.market.family in ("total", "handicap") and hasattr(cfg.market_spec, "line"):
+        if cfg.market.family in ("total", "total_withOT", "handicap") and hasattr(
+            cfg.market_spec, "line"
+        ):
             tags["line"] = str(cfg.market_spec.line)
 
         if hasattr(cfg.market_spec, "data_format"):

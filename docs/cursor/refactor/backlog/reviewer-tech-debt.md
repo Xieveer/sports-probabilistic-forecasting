@@ -331,6 +331,21 @@
   - После R21.9: переименовать `_events_to_odds_frame_v2` → `_events_to_odds_frame_v3` в `enrichment.py`.
   - Добавить negative test V3 в `TestValidateOddsFloatColumnsV3` (decimal < 1.0, line < 0).
 
+### 2026-05-03 — R22.8 OT-рынки NHL (winner_withOT / total_withOT)
+
+- **Задача:** `backlog/R22.md` (подзадача R22.8, Phase C) — OT-inclusive markets, NHL
+- **Ограничения и компромиссы:**
+  - `home_goals_full` / `away_goals_full` — это копия `home_points` / `away_points` (transform `copy` в `nhl.yaml` `derived_columns`). Семантически правильно для текущего NHL boxscore (где `*_ft` уже включает OT). Если в будущем появится источник, где `*_ft` не включает буллит-гол победителя, контракт потребует пересмотра — сейчас это явно задокументировано в `ice_hockey.yaml` и `HOW_TO_ADD_NEW_MARKET.md`.
+  - Трансформация `copy` в `_apply_derived_columns` (`clean.py`) применяется только тогда, когда в YAML прописан `transform: copy`; другие турниры не затронуты — проверено grep'ом по всем `conf/tournament/*.yaml`.
+  - Фактические прогоны `make train-sweep-nhl-ot-winner` / `make train-sweep-nhl-ot-total` — операционные и не покрыты автотестами (требуют NHL interim parquet с колонками `*_goals_full` / `*_goals_reg` после пересборки features).
+  - `allowed_market_specs` в `ice_hockey.yaml` для `winner_withOT` не содержит поля `lines` (линии не применимы для winner); для `total_withOT` линии прописаны, но не валидируются автоматически на соответствие фактической line из market_spec. Это принятый компромисс (аналогично существующему `total`).
+  - `market_key: "total"` в `prematch_line` для `total_over_withOT` / `total_under_withOT` — условный; реальный ключ OddsAPI для тотала с OT может отличаться у разных букмекеров. Предупреждение оставлено в комментарии YAML.
+- **Возможные улучшения / техдолг:**
+  - После первого реального `make train-sweep-nhl-ot-winner`: зафиксировать MLflow experiment name и promoted model path.
+  - При интеграции OddsAPI для `total_withOT`: уточнить `market_key` (возможно, потребуется отдельный ключ вроде `total_full` или специфичный для букмекера); зафиксировать контракт в конфиге и `HOW_TO_ADD_NEW_MARKET.md`.
+  - Рассмотреть интеграционный тест: NHL interim parquet (минимальный срез) → `_apply_derived_columns` → проверка наличия `home_goals_full`/`away_goals_full` в выводе (сейчас покрыто юнит-тестами `targets.py`, но не сквозным clean-пайплайном).
+  - Если понадобится различать «OT без буллит-гола» vs «включая буллит-гол у победителя» — потребуется отдельная derived-колонка и контракт в assembler; текущая схема считает финальный счёт с +1 победителю при победе в буллитах (NHL boxscore семантика).
+
 ### 2026-05-03 — R22 Phase A (R22.1–R22.3): NHL training config, season-holdout split, Makefile, docs
 
 - **Задача:** `backlog/R22.md` (Phase A завершена; Phase B/C — в работе)

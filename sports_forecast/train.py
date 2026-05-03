@@ -61,7 +61,7 @@ def _get_mlflow_experiment_name(cfg: DictConfig) -> str:
     market = cfg.market.family
     side = cfg.market_spec.get("side", "")
 
-    if market in ("total", "handicap") and hasattr(cfg.market_spec, "line"):
+    if market in ("total", "total_withOT", "handicap") and hasattr(cfg.market_spec, "line"):
         line = cfg.market_spec.line
         return f"{tournament}__{market}__{side}_{line}"
 

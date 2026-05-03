@@ -1,0 +1,24 @@
+# Total over full match (OT/SO goals). Линия задаётся через CLI: market_spec.line=6.5
+
+name: total_over_withOT
+market_family: total_withOT
+side: over
+description: "Total over (full match goals incl. OT/SO)"
+
+line: ???
+
+data_format: wide
+
+target_source_key: total_sum_full
+target_name: target_total_over_full
+
+feature_prefixes:
+  - "home_f_"
+  - "away_f_"
+
+prematch_line:
+  enabled: true
+  source: "odds_feed"
+  timing: "close"
+  # У букмекеров определение тотала с ОТ может отличаться — сверяйте с контрактом источника коэф.
+  market_key: "total"

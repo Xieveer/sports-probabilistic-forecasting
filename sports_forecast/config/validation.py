@@ -44,7 +44,7 @@ def validate_experiment_config(cfg: DictConfig, project_root: Path) -> None:
     elif OmegaConf.is_missing(cfg.market, "family"):
         errors.append("market.family не задан! Укажите: market=total")
     else:
-        allowed_families = ["winner", "total", "handicap"]
+        allowed_families = ["winner", "total", "handicap", "winner_withOT", "total_withOT"]
         if cfg.market.family not in allowed_families:
             errors.append(
                 f"market.family должен быть одним из {allowed_families}, "
@@ -58,7 +58,11 @@ def validate_experiment_config(cfg: DictConfig, project_root: Path) -> None:
         errors.append("market_spec.name не задан! Укажите: market_spec=total_over")
 
     # 4. Для total/handicap: line обязателен
-    if hasattr(cfg, "market") and cfg.market.get("family") in ["total", "handicap"]:
+    if hasattr(cfg, "market") and cfg.market.get("family") in [
+        "total",
+        "total_withOT",
+        "handicap",
+    ]:
         if "line" not in cfg.market_spec or OmegaConf.is_missing(cfg.market_spec, "line"):
             errors.append(
                 f"market_spec.line обязателен для {cfg.market.family} markets! "

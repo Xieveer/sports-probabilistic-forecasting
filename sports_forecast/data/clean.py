@@ -348,6 +348,7 @@ def _apply_derived_columns(
 
     Note:
         Поддерживаемые трансформации:
+            - copy: копия колонки ``source`` в ``col_name`` (тот же dtype/значения)
             - extract_last_char: извлечь последний символ из строки
             - dayofweek: день недели из datetime (0=Пн, 6=Вс)
             - hour: час из datetime
@@ -377,7 +378,11 @@ def _apply_derived_columns(
 
         try:
             # Применяем трансформацию
-            if transform == "extract_last_char":
+            if transform == "copy":
+                df[col_name] = df[source_col].copy()
+                added_columns.append(col_name)
+
+            elif transform == "extract_last_char":
                 df[col_name] = df[source_col].astype(str).str[-1]
                 added_columns.append(col_name)
 

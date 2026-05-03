@@ -190,6 +190,30 @@ data_format: long   # или wide
 
 ---
 
+## NHL: регламент vs полный матч (ОТ / буллиты), R22.8
+
+Контракт имён (raw → interim после ``clean``):
+
+| Смысл | Raw (NHL assembler) | Interim колонки | Hydra / таргет |
+|--------|---------------------|-----------------|----------------|
+| Финальный счёт матча (регламент + ОТ; при победе в бу у победителя +1 гол в финале) | ``home_score_ft``, ``away_score_ft`` | ``home_points``, ``away_points`` (как раньше); плюс явные ``home_goals_full``, ``away_goals_full`` (копия points в ``nhl.yaml`` ``derived_columns``) | ``winner_withOT`` → ``player_win_full`` → ``pl_goals_full`` vs ``opp_goals_full``; ``total_*_withOT`` → ``total_sum_full*`` → сумма ``*_goals_full`` |
+| Только периоды 1–3 (регулярное время) | ``home_score_mt``, ``away_score_mt`` | ``home_goals_reg``, ``away_goals_reg`` | Для отдельных экспериментов: ``player_win_reg`` (long); не смешивать с OT-таргетами в одном head без multi-task |
+
+**Важно:** ``home_points`` / ``away_points`` по-прежнему маппятся из ``*_ft`` (финал). Семantics baseline ``market=winner`` / ``total`` не менялись; рынки ``*_withOT`` задают **отдельные** experiment/market_spec и ссылаются на ``*_goals_full``, чтобы контракт API/Hydra был явным.
+
+Обучение (отдельные прогоны):
+
+```bash
+uv run python -m sports_forecast.train tournament=nhl_train market=winner_withOT \
+  market_spec=winner_withOT algorithm=catboost features=advanced
+uv run python -m sports_forecast.train tournament=nhl_train market=total_withOT \
+  market_spec=total_over_withOT market_spec.line=6.5 algorithm=catboost features=advanced
+```
+
+После обновления interim нужно пересобрать features/processed, чтобы в parquet появились ``*_goals_reg`` / ``*_goals_full`` (см. ``nhl`` ``data_clean.select_columns``).
+
+---
+
 ## Частые ошибки
 
 ### 1. `KeyError: '<target_source_key>'`

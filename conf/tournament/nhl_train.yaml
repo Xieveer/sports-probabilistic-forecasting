@@ -5,13 +5,22 @@
 # ``models/nhl_train/<market_spec>/…`` — keep ``tournament=nhl`` for ingest/features-only workflows.
 #
 # ------------------------------------------------------------------------------
-# Phase C (R22.8) — OT-inclusive markets (separate runs, do not merge targets):
-#   - ``winner_withOT`` / ``total_withOT``: add ``conf/market*`` + labels per HOW_TO_ADD_NEW_MARKET;
-#   - Train with ``tournament=nhl_train market=<family> market_spec=<spec>`` parallel to this baseline.
-# Baseline here = regulation-time winner via ``market=winner`` + ``market_spec=winner`` (ice_hockey
-# ``home_score_ft`` → ``home_points`` in clean; long-format ``player_win`` target).
+# Phase C (R22.8) — OT-inclusive markets: отдельные Hydra-прогоны от baseline winner/total.
+#   - Имена: ``winner_withOT`` (long), ``total_over_withOT`` / ``total_under_withOT`` (wide, нужна line).
+#   - Лейблы: финальный счёт ``pl_goals_full`` / ``home_goals_full`` (источник: boxscore ``*_ft``);
+#     регламент: ``*_goals_reg`` ← ``*_mt``. Семантика ``home_points`` не менялась (= финал из ``*_ft``).
+# Примеры:
+#   uv run python -m sports_forecast.train tournament=nhl_train market=winner_withOT \\
+#       market_spec=winner_withOT algorithm=catboost features=advanced
+#   uv run python -m sports_forecast.train tournament=nhl_train market=total_withOT \\
+#       market_spec=total_over_withOT market_spec.line=6.5 algorithm=catboost features=advanced
+#   make train-sweep-nhl-ot-winner   # multirun catboost+lgbm
+# Контракт колонок: docs/cursor/context/HOW_TO_ADD_NEW_MARKET.md (NHL full vs regulation).
+# ------------------------------------------------------------------------------
+# R22 Phase A note: baseline ``market=winner`` uses ``player_win`` ↔ ``home_points`` (long pl_points),
+# which today equals final score from ``home_score_ft`` — see HOW_TO_ADD_NEW_MARKET NHL section.
 #
-# Hydra examples:
+# Hydra examples (baseline):
 #   make train-sweep-nhl
 #   uv run python -m sports_forecast.train tournament=nhl_train market=winner market_spec=winner \\
 #       algorithm=catboost features=advanced
