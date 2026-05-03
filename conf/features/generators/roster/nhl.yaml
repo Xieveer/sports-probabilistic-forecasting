@@ -3,6 +3,8 @@ nhl_roster:
   type: nhl_roster
   enabled: true
   datetime_column: datetime
+  # Топ-N самых молодых скатеров (отдельно нападающие и защитники) для средних age/height.
+  young_skaters_n: 9
   required_columns:
     - datetime
     - home_roster

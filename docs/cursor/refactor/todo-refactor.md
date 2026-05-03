@@ -153,7 +153,7 @@
   - [x] R22.1 — Конфиг NHL training (split, target, алгоритм, features) ✅ 2026-05-03
   - [x] R22.2 — NHL baseline training sweep + promote (субсуммирует R19.11) ✅ 2026-05-03
   - [x] R22.3 — NHL materialize + API verification (субсуммирует R19.12) ✅ 2026-05-03
-  - [ ] R22.4 — *(stretch)* Расширенные roster-фичи (TOI, goalie starter)
+  - [x] R22.4 — *(stretch)* Расширенные roster-фичи (top-N агрегаты, goalie proxy, injury count; TOI отложен — нет в API) ✅ 2026-05-03
   - [ ] R22.5 — *(stretch)* Travel / rest features
   - [ ] R22.6 — *(stretch)* Motivation / playoff context
   - [ ] R22.7 — *(stretch)* Model evaluation vs Pinnacle closing line
