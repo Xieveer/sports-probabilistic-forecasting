@@ -3,6 +3,12 @@
 
 Библиотека: ``conf/features/generators/rolling/context_library.yaml``.
 Активные имена: ``rolling_context_names`` в ``conf/sport/*.yaml`` (мержится в tournament).
+
+R28 — ``rolling_column_aliases`` (опционально в sport/tournament):
+    Плоский маппинг ``{имя_колонки_в_library: фактическая_колонка_в_данных}``.
+    Позволяет одному и тому же абстрактному контексту (ключ в library) использовать
+    разные колонки в разных спортах. Если секция отсутствует — ключи из library
+    используются как есть (обратная совместимость).
 """
 
 from __future__ import annotations
@@ -46,6 +52,11 @@ def load_rolling_context_library() -> tuple[tuple[str, ...], dict[str, dict[str,
     return order, out_defs
 
 
+def clear_rolling_context_library_cache() -> None:
+    """Сбросить кэш библиотеки (тесты / hot-reload YAML)."""
+    load_rolling_context_library.cache_clear()
+
+
 def _tournament_rolling_names(tournament_cfg: Any) -> list[str] | None:
     """Вернуть rolling_context_names из конфига турнира или None."""
     if tournament_cfg is None:
@@ -61,9 +72,60 @@ def _tournament_rolling_names(tournament_cfg: Any) -> list[str] | None:
     raise TypeError(f"rolling_context_names must be a list, got {type(names)}")
 
 
+def _load_column_aliases(tournament_cfg: Any) -> dict[str, str]:
+    """Загрузить ``rolling_column_aliases`` из sport/tournament (опционально).
+
+    Returns:
+        Словарь old_col -> new_col. Пустой dict если секция отсутствует.
+    """
+    if tournament_cfg is None:
+        return {}
+    raw: Any
+    if isinstance(tournament_cfg, dict):
+        raw = tournament_cfg.get("rolling_column_aliases")
+    elif isinstance(tournament_cfg, DictConfig):
+        raw = OmegaConf.select(tournament_cfg, "rolling_column_aliases")
+    else:
+        raw = getattr(tournament_cfg, "rolling_column_aliases", None)
+    if raw is None:
+        return {}
+    if isinstance(raw, DictConfig):
+        raw = OmegaConf.to_container(raw, resolve=True)
+    if not isinstance(raw, dict):
+        raise TypeError(f"rolling_column_aliases must be a mapping, got {type(raw)}")
+    out: dict[str, str] = {}
+    for k, v in raw.items():
+        if v is None or str(v).strip() == "":
+            continue
+        ks, vs = str(k), str(v)
+        out[ks] = vs
+        if ks == vs:
+            logger.warning(
+                "rolling_contexts: rolling_column_aliases identity mapping %s → %s (no effect)",
+                ks,
+                vs,
+            )
+    return out
+
+
+def _resolve_keys(keys: list[str], aliases: dict[str, str]) -> list[str]:
+    """Подставить алиасы колонок; неизвестные ключи остаются без изменений."""
+    if not aliases:
+        return list(keys)
+    return [aliases.get(k, k) for k in keys]
+
+
 def _sort_by_canonical(names: list[str], canonical_order: tuple[str, ...]) -> list[str]:
     rank = {n: i for i, n in enumerate(canonical_order)}
     return sorted(names, key=lambda x: rank.get(x, 10_000))
+
+
+def _ewm_compute_diff_for_generator(gen_key: str, gen: dict[str, Any]) -> bool:
+    """Правило compute_diff для EWM с ``context_source: library``."""
+    explicit = gen.get("library_compute_diff")
+    if explicit is not None:
+        return bool(explicit)
+    return not gen_key.endswith("_total")
 
 
 def _build_ewm_context(
@@ -71,24 +133,40 @@ def _build_ewm_context(
     spec: dict[str, Any],
     *,
     compute_diff: bool,
+    aliases: dict[str, str],
 ) -> dict[str, Any]:
+    raw_keys = list(spec["keys"])
+    keys = _resolve_keys(raw_keys, aliases)
     if spec.get("h2h"):
-        return {"name": name, "keys": list(spec["keys"]), "h2h": True}
-    ctx: dict[str, Any] = {
-        "name": name,
-        "keys": list(spec["keys"]),
-        "players": list(spec.get("players", ["pl", "opp"])),
-        "compute_diff": compute_diff,
-    }
+        ctx: dict[str, Any] = {"name": name, "keys": keys, "h2h": True}
+    else:
+        ctx = {
+            "name": name,
+            "keys": keys,
+            "players": list(spec.get("players", ["pl", "opp"])),
+            "compute_diff": compute_diff,
+        }
+    logger.debug(
+        "rolling_contexts: context %r keys %s → %s (ewm compute_diff=%s)",
+        name,
+        raw_keys,
+        keys,
+        compute_diff,
+    )
     return ctx
 
 
-def _build_count_context(name: str, spec: dict[str, Any]) -> dict[str, Any]:
+def _build_count_context(
+    name: str, spec: dict[str, Any], *, aliases: dict[str, str]
+) -> dict[str, Any]:
+    raw_keys = list(spec["keys"])
+    keys = _resolve_keys(raw_keys, aliases)
+    logger.debug("rolling_contexts: context %r keys %s → %s (count)", name, raw_keys, keys)
     if spec.get("h2h"):
-        return {"name": name, "keys": list(spec["keys"]), "h2h": True}
+        return {"name": name, "keys": keys, "h2h": True}
     return {
         "name": name,
-        "keys": list(spec["keys"]),
+        "keys": keys,
         "players": list(spec.get("players", ["pl", "opp"])),
     }
 
@@ -109,6 +187,10 @@ def expand_rolling_generators_inplace(
     gens = features_cfg.get("generators")
     if not isinstance(gens, dict):
         return
+
+    aliases = _load_column_aliases(tournament_cfg)
+    if aliases:
+        logger.info("rolling_contexts: rolling_column_aliases (%d): %s", len(aliases), aliases)
 
     canonical_order, definitions = load_rolling_context_library()
     requested = _tournament_rolling_names(tournament_cfg)
@@ -132,22 +214,32 @@ def expand_rolling_generators_inplace(
             enabled,
         )
 
-    for gen_key in ("ewm_diff", "ewm_total", "count"):
-        gen = gens.get(gen_key)
+    for gen_key, gen in gens.items():
         if not isinstance(gen, dict):
             continue
         if gen.get("context_source") != "library":
             continue
 
+        gen_type = str(gen.get("type", ""))
         contexts: list[dict[str, Any]] = []
         for name in enabled:
             spec = definitions[name]
-            if gen_key == "ewm_diff":
-                contexts.append(_build_ewm_context(name, spec, compute_diff=True))
-            elif gen_key == "ewm_total":
-                contexts.append(_build_ewm_context(name, spec, compute_diff=False))
+            if gen_type == "count":
+                contexts.append(_build_count_context(name, spec, aliases=aliases))
+            elif gen_type == "ewm":
+                contexts.append(
+                    _build_ewm_context(
+                        name,
+                        spec,
+                        compute_diff=_ewm_compute_diff_for_generator(gen_key, gen),
+                        aliases=aliases,
+                    )
+                )
             else:
-                contexts.append(_build_count_context(name, spec))
+                raise ValueError(
+                    f"Generator {gen_key!r}: context_source=library requires type 'ewm' or 'count', "
+                    f"got {gen_type!r}"
+                )
 
         gen["contexts"] = contexts
         del gen["context_source"]

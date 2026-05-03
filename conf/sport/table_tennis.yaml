@@ -16,6 +16,7 @@ sport: table_tennis
 # ============================================================================
 # ROLLING (EWM / Count): какие контексты из context_library.yaml включать
 # ============================================================================
+# Опционально: rolling_column_aliases: {library_col: actual_col} — см. sports_forecast.features.rolling_contexts (R28).
 # В настольном теннисе нет консольных команд (pl_cteam) — контексты team / h2h_team не задаём.
 rolling_context_names:
   - global

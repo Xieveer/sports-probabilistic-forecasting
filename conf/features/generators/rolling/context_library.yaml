@@ -10,12 +10,14 @@ canonical_order:
   - tour_num
   - tour_side
   - form
+  - inseason
   - team
   - h2h_global
   - h2h_match_state
   - h2h_match_num
   - h2h_side
   - h2h_form
+  - h2h_inseason
   - h2h_team
 
 definitions:
@@ -47,6 +49,11 @@ definitions:
     keys: ["pl", "pl_state"]
     players: ["pl", "opp"]
 
+  # NHL / multi-season: сброс EWM при смене season (алиас колонки — rolling_column_aliases в sport).
+  inseason:
+    keys: ["pl", "season"]
+    players: ["pl", "opp"]
+
   # Киберхоккей: консольная команда; в настольном теннисе колонок нет — исключить из rolling_context_names
   team:
     keys: ["pl", "pl_cteam"]
@@ -70,6 +77,10 @@ definitions:
 
   h2h_form:
     keys: ["pl", "opp", "pl_state"]
+    h2h: true
+
+  h2h_inseason:
+    keys: ["pl", "opp", "season"]
     h2h: true
 
   h2h_team:

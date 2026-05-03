@@ -19,7 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from hydra import compose, initialize_config_dir
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from sports_forecast.utils.log_config import get_logger
 
@@ -112,11 +112,16 @@ def load_source_config(source_name: str) -> DictConfig:
 def load_bookmaker_config(bookmaker: str) -> DictConfig | None:
     """Загрузить конфигурацию букмекера.
 
+    Читает YAML напрямую через OmegaConf — без Hydra compose, чтобы не конфликтовать
+    с уже инициализированным GlobalHydra (например, внутри @hydra.main).
+    Возвращает DictConfig с обёрткой ``bookmaker:`` для совместимости с
+    ``apply_tournament_default_bookmaker``.
+
     Args:
-        bookmaker: Название букмекера (например: ``'fonbet'``).
+        bookmaker: Название букмекера (например: ``'fonbet'``, ``'the_odds_api'``).
 
     Returns:
-        DictConfig с конфигурацией букмекера или None если не найден.
+        DictConfig вида ``{bookmaker: {name: ..., ...}}`` или None если не найден.
     """
     config_path = PROJECT_ROOT / "conf" / "bookmaker" / f"{bookmaker}.yaml"
     if not config_path.exists():
@@ -124,11 +129,8 @@ def load_bookmaker_config(bookmaker: str) -> DictConfig | None:
         return None
 
     try:
-        with initialize_config_dir(config_dir=CONF_DIR, version_base="1.3"):
-            return compose(  # type: ignore[no-any-return]
-                config_name=f"bookmaker/{bookmaker}",
-                return_hydra_config=False,
-            )
+        raw = OmegaConf.load(config_path)
+        return OmegaConf.create({"bookmaker": raw})  # type: ignore[no-any-return]
     except Exception as e:
         logger.error("Ошибка загрузки конфига букмекера %s: %s", bookmaker, e)
         return None

@@ -12,19 +12,26 @@ sport: ice_hockey
 
 # Без team / h2h_team (нет pl_cteam/opp_cteam в типовом NHL source); при добавлении консолидированных
 # имён команд расширьте список и column_mapping.
+#
+# R28: без tour_num / match_num — в NHL ``tour_num`` в данных = time-of-day (см. tournament nhl derived),
+# а ``match_num`` = номер матча в мини-турнире (TT), не «игра сезона». Контекст ``inseason`` даёт
+# группировку по ``season`` (см. context_library + rolling_column_aliases при необходимости).
 rolling_context_names:
   - global
   - match_state
-  - match_num
   - weekday
-  - tour_num
   - tour_side
   - form
+  - inseason
   - h2h_global
   - h2h_match_state
-  - h2h_match_num
   - h2h_side
   - h2h_form
+  - h2h_inseason
+
+# R28: опционально {имя_колонки_из_context_library: фактическая_колонка_в_long}.
+# Для NHL колонка ``season`` уже совпадает с library — оставляем пустой mapping как контракт.
+rolling_column_aliases: {}
 
 form_params:
   fg_trigger_minutes: 360
