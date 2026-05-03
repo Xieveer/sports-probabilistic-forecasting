@@ -14,6 +14,7 @@ repos:
       - id: check-added-large-files
         args: [--maxkb=1000]  # Ограничение размера файлов (1MB)
       - id: check-yaml  # Проверка YAML файлов
+        exclude: ^docker-compose\.prod\.yml$  # !reset tag is Compose-specific, not standard YAML
       - id: check-toml  # Проверка TOML файлов
       - id: check-merge-conflict  # Проверка конфликтов слияния
       - id: debug-statements  # Находит забытые breakpoint(), pdb

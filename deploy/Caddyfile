@@ -1,0 +1,28 @@
+# Reverse proxy + автоматический HTTPS (Let's Encrypt) для production.
+#
+# Обязательно: DNS A/AAAA записи SF_API_DOMAIN → IP VPS; порты 80/443 открыты.
+# Для Grafana/MLflow за отдельными хостами задайте SF_GRAFANA_DOMAIN / SF_MLFLOW_DOMAIN
+# в docker-compose.prod (caddy.environment). Basic auth: `caddy hash-password`, затем
+# блок basicauth в копии этого файла — см. docs/deploy/secrets.md.
+#
+# Внутри compose Grafana слушает :3000 без TLS; наружу её выводит только Caddy (если задан домен).
+
+{$SF_API_DOMAIN} {
+    encode gzip zstd
+    reverse_proxy api:8000
+}
+
+# Раскомментируйте при выставлении SF_GRAFANA_DOMAIN (и переменных basicauth при необходимости):
+# {$SF_GRAFANA_DOMAIN} {
+#     basicauth /* {
+#         {$GRAFANA_BASIC_AUTH_USER} {$GRAFANA_BASIC_AUTH_HASH}
+#     }
+#     reverse_proxy grafana:3000
+# }
+#
+# {$SF_MLFLOW_DOMAIN} {
+#     basicauth /* {
+#         {$MLFLOW_BASIC_AUTH_USER} {$MLFLOW_BASIC_AUTH_HASH}
+#     }
+#     reverse_proxy mlflow:5000
+# }

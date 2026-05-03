@@ -212,6 +212,57 @@
           "legendFormat": "p50 {{ tournament }}"
         }
       ]
+    },
+    {
+      "title": "Last materialize age (s)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28},
+      "targets": [
+        {
+          "expr": "time() - sf_model_last_materialize_timestamp",
+          "legendFormat": "{{ tournament }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {"thresholdsStyle": {"mode": "line"}},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "yellow", "value": 21600},
+              {"color": "red", "value": 43200}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Host root FS free % (node_exporter)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28},
+      "targets": [
+        {
+          "expr": "100 * node_filesystem_avail_bytes{fstype!=\"\",mountpoint=\"/\"} / node_filesystem_size_bytes{fstype!=\"\",mountpoint=\"/\"}",
+          "legendFormat": "free %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              {"color": "red", "value": 0},
+              {"color": "yellow", "value": 10},
+              {"color": "green", "value": 15}
+            ]
+          }
+        }
+      }
     }
   ],
   "refresh": "30s",

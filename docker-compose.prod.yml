@@ -1,0 +1,126 @@
+# Production overrides (R23.5–R23.7). Использование:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Оценка ресурсов одного хоста:
+#   • Только inference (API + PostgreSQL + Prometheus/Grafana + Caddy): ~2 vCPU / 4 GB RAM;
+#     worker не держите постоянно running — запускайте `compose run worker` по расписанию.
+#   • Inference + периодический NHL refresh/materialize на этом же VPS: ~4 vCPU / 8 GB RAM,
+#     отдельный диск/volume под data/, mlflow_artifacts и логи.
+#
+# TLS: сервис `caddy` (deploy/Caddyfile). Задайте SF_API_DOMAIN и DNS A/AAAA на этот хост.
+#
+# Образы CI: см. .github/workflows/docker.yml — пакеты
+#   ghcr.io/<github-owner>/sports-probabilistic-forecasting-{api,worker,telegram-bot}:latest
+
+services:
+  api:
+    build: !reset
+    image: ${SF_API_IMAGE:?set SF_API_IMAGE to ghcr.io owner/image from CI}
+    pull_policy: always
+    ports: !reset []
+    cpus: "2.0"
+    mem_limit: 2g
+    logging: &prod_logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      DATABASE_URL: postgresql://sf_user:${POSTGRES_PASSWORD}@db:5432/sports_forecast
+
+  telegram-bot:
+    build: !reset
+    # Задайте свой ghcr.io/<owner>/… при использовании profile bot (см. .env.example).
+    image: ${SF_BOT_IMAGE:-ghcr.io/your-github-user/sports-probabilistic-forecasting-telegram-bot:latest}
+    pull_policy: always
+    logging: *prod_logging
+    cpus: "0.5"
+    mem_limit: 512m
+
+  mlflow:
+    ports: !reset []
+    cpus: "1.0"
+    mem_limit: 1536m
+    logging: *prod_logging
+    environment:
+      MLFLOW_BACKEND_STORE_URI: postgresql://sf_user:${POSTGRES_PASSWORD}@db:5432/sports_forecast
+      MLFLOW_DEFAULT_ARTIFACT_ROOT: /mlflow/artifacts
+    command: >
+      mlflow server
+        --host 0.0.0.0
+        --port 5000
+        --backend-store-uri postgresql://sf_user:${POSTGRES_PASSWORD}@db:5432/sports_forecast
+        --default-artifact-root /mlflow/artifacts
+
+  worker:
+    build: !reset
+    image: ${SF_WORKER_IMAGE:?set SF_WORKER_IMAGE}
+    pull_policy: always
+    cpus: "2.0"
+    mem_limit: 4g
+    logging: *prod_logging
+    environment:
+      DATABASE_URL: postgresql://sf_user:${POSTGRES_PASSWORD}@db:5432/sports_forecast
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+
+  prometheus:
+    ports: !reset []
+    cpus: "0.5"
+    mem_limit: 768m
+    logging: *prod_logging
+    volumes:
+      - ./monitoring/prometheus/prometheus.prod.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus_data:/prometheus
+
+  grafana:
+    ports: !reset []
+    cpus: "0.5"
+    mem_limit: 512m
+    logging: *prod_logging
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+
+  db:
+    cpus: "1.0"
+    mem_limit: 1536m
+    logging: *prod_logging
+    shm_size: "256mb"
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    restart: unless-stopped
+    cpus: "0.25"
+    mem_limit: 128m
+    logging: *prod_logging
+    command:
+      - "--path.rootfs=/host"
+    volumes:
+      - "/:/host:ro,rslave"
+    pid: host
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SF_API_DOMAIN: ${SF_API_DOMAIN:?}
+      # Опционально: отдельные хосты для UI (см. комментарии в deploy/Caddyfile)
+      SF_GRAFANA_DOMAIN: ${SF_GRAFANA_DOMAIN:-}
+      SF_MLFLOW_DOMAIN: ${SF_MLFLOW_DOMAIN:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,39 @@
+# R23.4 — deploy на VPS после успешной сборки образов (или вручную).
+#
+# Secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY (private key для SSH).
+# Опционально Variable DEPLOY_PROJECT_DIR — каталог с compose на сервере (по умолчанию /opt/sports-forecast).
+name: Deploy
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [Docker]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "${{ vars.DEPLOY_PROJECT_DIR != '' && vars.DEPLOY_PROJECT_DIR || '/opt/sports-forecast' }}"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
