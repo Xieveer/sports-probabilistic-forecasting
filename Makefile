@@ -8,7 +8,7 @@ TESTS := tests
 DOCS_SOURCE := docs/source
 DOCS_BUILD := docs/build
 
-.PHONY: help init install lint format fix test test-unit test-cov test-watch test-file pre-commit train train-sweep promote clean dvc-repro
+.PHONY: help init install lint format fix test test-unit test-cov test-watch test-file pre-commit train train-sweep train-sweep-nhl promote clean dvc-repro
 .PHONY: docs docs-serve docs-clean docs-open docs-coverage docs-linkcheck tree
 .PHONY: api api-dev bot-dev bot-up materialize docker-up docker-down docker-build docker-logs db-init
 .PHONY: airflow-init airflow-up airflow-down airflow-logs
@@ -47,6 +47,7 @@ help:
 	@echo "Пайплайн:"
 	@echo "  make train        - запустить training-пайплайн (одиночный эксперимент)"
 	@echo "  make train-sweep  - запустить sweep через Hydra --multirun"
+	@echo "  make train-sweep-nhl - NHL baseline (tournament=nhl_train, catboost+lgbm, advanced)"
 	@echo "  make promote      - сравнить модели и выбрать лучшую для продакшена"
 	@echo "  make dvc-repro    - перепроизвести датасет с DVC"
 	@echo ""
@@ -54,7 +55,7 @@ help:
 	@echo "  make api-dev       - запустить FastAPI локально (dev, SQLite)"
 	@echo "  make bot-dev       - Telegram-бот (нужны BOT_TOKEN, BOT_ALLOWED_USER_IDS)"
 	@echo "  make bot-up        - бот в docker compose (с сервисом api)"
-	@echo "  make materialize   - материализовать предсказания в DB"
+	@echo "  make materialize   - материализовать предсказания в DB (NHL: TOURNAMENT=nhl_train после promote)"
 	@echo "  make db-init       - инициализировать таблицы DB (SQLite)"
 	@echo ""
 	@echo "Docker:"
@@ -228,6 +229,15 @@ train-sweep:
 		algorithm=catboost,lgbm,logreg \
 		features=basic
 
+# NHL baseline (R22): regulation winner, advanced features, season holdout — см. conf/tournament/nhl_train.yaml
+train-sweep-nhl:
+	uv run python -m sports_forecast.train --multirun \
+		tournament=nhl_train \
+		market=winner \
+		market_spec=winner \
+		algorithm=catboost,lgbm \
+		features=advanced
+
 # Sweep: все модели × все фичи
 train-sweep-full:
 	uv run python -m sports_forecast.train --multirun \
@@ -237,14 +247,8 @@ train-sweep-full:
 		algorithm=catboost,lgbm,logreg \
 		features=basic,advanced
 
-# NHL baseline (R19): эксперимент MLflow = nhl__winner__player
-nhl-train-baseline:
-	uv run python -m sports_forecast.train --multirun \
-		tournament=nhl \
-		market=winner \
-		market_spec=winner \
-		algorithm=catboost,lgbm,logreg \
-		features=basic,advanced
+# NHL baseline: см. train-sweep-nhl (tournament=nhl_train, MLflow experiment nhl_train__winner)
+nhl-train-baseline: train-sweep-nhl
 
 # Выбор лучшей модели (compare)
 promote:
@@ -335,7 +339,7 @@ db-init:
 	@echo "🗄️  Инициализация Prediction Store..."
 	uv run python -c "from sports_forecast.service.db.engine import init_db; init_db(); print('✅ Таблицы созданы')"
 
-# Материализация предсказаний
+# Материализация предсказаний (NHL promoted: TOURNAMENT=nhl_train MARKET=winner SPEC=winner)
 materialize:
 	@echo "🔮 Материализация предсказаний..."
 	uv run python -m sports_forecast.materialize \

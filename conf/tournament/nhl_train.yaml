@@ -1,0 +1,42 @@
+# NHL baseline training config (R22 Phase A). Hydra group: ``tournament=nhl_train``.
+#
+# Composes full tournament definition from ``nhl`` (same processed parquet paths as ``tournament=nhl``).
+# Artifact paths / MLflow experiment use ``name: nhl_train`` so promoted models live under
+# ``models/nhl_train/<market_spec>/…`` — keep ``tournament=nhl`` for ingest/features-only workflows.
+#
+# ------------------------------------------------------------------------------
+# Phase C (R22.8) — OT-inclusive markets (separate runs, do not merge targets):
+#   - ``winner_withOT`` / ``total_withOT``: add ``conf/market*`` + labels per HOW_TO_ADD_NEW_MARKET;
+#   - Train with ``tournament=nhl_train market=<family> market_spec=<spec>`` parallel to this baseline.
+# Baseline here = regulation-time winner via ``market=winner`` + ``market_spec=winner`` (ice_hockey
+# ``home_score_ft`` → ``home_points`` in clean; long-format ``player_win`` target).
+#
+# Hydra examples:
+#   make train-sweep-nhl
+#   uv run python -m sports_forecast.train tournament=nhl_train market=winner market_spec=winner \\
+#       algorithm=catboost features=advanced
+#
+# Season holdout override (e.g. finished season only):
+#   tournament.train_eval_split.holdout_seasons=[20232024]
+#
+# Promote / MLflow experiment name: ``nhl_train__winner``
+#   make promote EXP=nhl_train__winner
+#
+# Materialize (after deploy.yaml under promoted ``best/``):
+#   make materialize TOURNAMENT=nhl_train MARKET=winner SPEC=winner
+# ------------------------------------------------------------------------------
+
+defaults:
+  - nhl
+
+name: nhl_train
+
+# Full-season holdout (temporal). Rows with ``season`` in holdout → test; others → train.
+# SEASON_ID format matches NHL source (8-digit string or int in parquet, e.g. 20242025).
+train_eval_split:
+  kind: season_holdout
+  season_column: season
+  holdout_seasons:
+    - "20242025"
+  # Restrict train rows to these seasons only; null = all seasons except holdout.
+  train_seasons: null

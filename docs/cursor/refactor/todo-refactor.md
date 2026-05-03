@@ -30,6 +30,10 @@
 | R19    | 🔴 High     | High      | ✅     | 19-й ✅ (NHL production + Odds API + Telegram-бот; R19.11-R19.12 — операционно; stretch R19.17-R19.20 отложены) |
 | R20    | 🔴 High     | High      | ✅     | 20-й ✅ (Pinnacle odds: backfill 3 сезонов + инкрементальный автоапдейт) |
 | R21    | 🔴 High     | High      | ✅     | 21-й ✅ (Multi-bookmaker V3 + логи; R21.13 реестр — частично по unmatched) |
+| R22    | 🔴 High     | Medium    | 🟡     | 22-й (NHL: обучение, materialize, roadmap фич) |
+| R23    | 🔴 High     | High      | 🟡     | 23-й (CI/CD, секреты, prod deploy, observability, refresh) |
+| R24    | 🟡 Medium   | Medium    | 🟡     | 24-й (Telegram UX: меню, подписки, admin, polish) |
+| R25    | 🟡 Medium   | High      | 🟡     | 25-й (NHL: team stats, player props, lineup-driven inference; после R22 baseline) |
 
 ---
 
@@ -96,16 +100,16 @@
   - [x] R19.8 — NhlScheduleFeatureGenerator (schedule density, fatigue)
   - [x] R19.9 — NhlStandingsFeatureGenerator (standings, form)
   - [x] R19.10 — NhlRosterFeatureGenerator (MVP)
-  - [ ] R19.11 — *(операционно)* NHL baseline training sweep + promote
-  - [ ] R19.12 — *(операционно)* NHL materialize + API verification
+  - [ ] R19.11 — *(операционно)* NHL baseline training sweep + promote → **R22.2**
+  - [ ] R19.12 — *(операционно)* NHL materialize + API verification → **R22.3**
   - [x] R19.13 — Bot scaffolding (aiogram 3, auth middleware, /start /help)
   - [x] R19.14 — Бот: /predict, /upcoming (inline keyboard)
   - [x] R19.15 — Бот: /status, /refresh, /models (admin guard)
   - [x] R19.16 — Бот: systemd unit, make bot-dev/bot-up
-  - [ ] R19.17 — *(stretch)* Travel-фичи
-  - [ ] R19.18 — *(stretch)* Motivation/playoff context
-  - [ ] R19.19 — *(stretch)* Оценка vs Pinnacle на holdout
-  - [ ] R19.20 — *(stretch)* Injury report
+  - [ ] R19.17 — *(stretch)* Travel-фичи → **R22.5**
+  - [ ] R19.18 — *(stretch)* Motivation/playoff context → **R22.6**
+  - [ ] R19.19 — *(stretch)* Оценка vs Pinnacle на holdout → **R22.7**
+  - [ ] R19.20 — *(stretch)* Injury report → по возможности в **R22.4**
 
 - [x] **R20** — Pinnacle odds: историческая загрузка + инкрементальный refresh; операционный backfill 3 сезонов ✅ 2026-04-26; см. `docs/cursor/refactor/backlog/R20.md`, `done_task/R20.8.md`
 - [x] **R21** — Multi-bookmaker V3 (R21.10–R21.14) + операционный re-backfill ✅ 2026-04-26; см. `docs/cursor/refactor/backlog/R21.md`, `done_task/R21.9.md` (R21.13: реестр + док; доразметка по `unmatched` — по мере необходимости)
@@ -144,6 +148,52 @@
   - [ ] R16.5 — Расширить скрипт: multi-metric subplots, best-run highlight
   - [ ] R16.6 — *(Опционально)* Grafana dashboard JSON
    - [ ] R16.7 — Документировать workflow сравнения
+
+- [ ] **R22** — NHL: обучение, materialize, roadmap фич; см. `backlog/R22.md`
+  - [ ] R22.1 — Конфиг NHL training (split, target, алгоритм, features)
+  - [ ] R22.2 — NHL baseline training sweep + promote (субсуммирует R19.11)
+  - [ ] R22.3 — NHL materialize + API verification (субсуммирует R19.12)
+  - [ ] R22.4 — *(stretch)* Расширенные roster-фичи (TOI, goalie starter)
+  - [ ] R22.5 — *(stretch)* Travel / rest features
+  - [ ] R22.6 — *(stretch)* Motivation / playoff context
+  - [ ] R22.7 — *(stretch)* Model evaluation vs Pinnacle closing line
+  - [ ] R22.8 — Рынки NHL: `winner_withOT`, `total_withOT` (параллельно основному времени)
+
+- [ ] **R23** — CI/CD, секреты, prod deploy, observability, refresh; см. `backlog/R23.md`
+  - [ ] R23.1 — GitHub Actions: lint + test on PR
+  - [ ] R23.2 — GitHub Actions: Docker build + push (ghcr.io)
+  - [ ] R23.3 — `.env.example` + secrets management
+  - [ ] R23.4 — GitHub Actions: deploy hook (SSH, workflow_dispatch)
+  - [ ] R23.5 — Рекомендации по серверу + `docker-compose.prod.yml`
+  - [ ] R23.6 — Reverse proxy + HTTPS (Caddy/nginx)
+  - [ ] R23.7 — Observability production (Prometheus/Grafana, alerts)
+  - [ ] R23.8 — Scheduled data refresh (cron / Airflow DAG)
+
+- [ ] **R24** — Telegram UX (меню, подписки, admin, polish); см. `backlog/R24.md`
+  - [ ] R24.1 — Inline-меню и навигация
+  - [ ] R24.2 — Уведомления по расписанию (subscribe / digest)
+  - [ ] R24.3 — Safe admin boundaries (/retrain, /logs, /health)
+  - [ ] R24.4 — Error handling + UX polish
+
+- [ ] **R25** — NHL: team stats, player props, lineup-driven inference; см. `backlog/R25.md`
+  - [ ] R25.1 — Аудит boxscore-колонок (PP goals и пр.)
+  - [ ] R25.2 — Target sources для team stats в ice_hockey.yaml
+  - [ ] R25.3 — Market family & spec configs для team stats
+  - [ ] R25.4 — Training config для ≥2 team stat markets
+  - [ ] R25.5 — Baseline sweep team stats + promote + materialize
+  - [ ] R25.6 — Player prop data schema (player × game grain)
+  - [ ] R25.7 — Player prop targets + market family/spec
+  - [ ] R25.8 — PlayerRollingFeatureGenerator
+  - [ ] R25.9 — Training config + baseline sweep для player props
+  - [ ] R25.10 — Player prop materialize + API endpoint
+  - [ ] R25.11 — ABC LineupProvider (контракт)
+  - [ ] R25.12 — Реализация lineup provider (3rd-party сервис)
+  - [ ] R25.13 — Protocol refresh job (T-60m)
+  - [ ] R25.14 — Lineup diff + событие lineup_changed
+  - [ ] R25.15 — Rematerialize policy (конфиг, пороги)
+  - [ ] R25.16 — Delta materialize pipeline
+  - [ ] R25.17 — API invalidation при re-materialize
+  - [ ] R25.18 — Telegram hook «lineup locked» (контракт → R24)
 
 ---
 

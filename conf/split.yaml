@@ -1,6 +1,10 @@
 # @package split
 # Train/Test Split Configuration
 # Стратегия разделения данных для обучения и тестирования
+#
+# После фильтрации по сезонам (см. ``tournament.train_eval_split`` в e.g.
+# ``conf/tournament/nhl_train.yaml``) внутренний train/test по-прежнему задаётся
+# долей ``test_size``, если не активен ``kind: season_holdout`` (тогда test = целиком holdout-сезоны).
 
 # Стратегия split
 strategy: time_series  # time_series/random/stratified

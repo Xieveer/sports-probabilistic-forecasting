@@ -38,6 +38,11 @@ from sports_forecast.training.calibration import ModelCalibrator
 from sports_forecast.training.model_factory import ModelFactory
 from sports_forecast.training.optimization.optuna_optimizer import OptunaHyperOptimizer
 from sports_forecast.training.optimization.tscv import TimeSeriesCrossValidator
+from sports_forecast.training.train_eval_split import (
+    normalize_season_token,
+    subset_frame_for_season_holdout,
+    uses_season_holdout_split,
+)
 from sports_forecast.utils.log_config import get_logger
 from sports_forecast.utils.metrics import (
     compute_calibration_table,
@@ -256,30 +261,49 @@ class SingleExperimentRunner:
                 target = target.iloc[df.index].reset_index(drop=True)
                 logger.info("Данные отсортированы по времени: %s", time_col)
 
+            if uses_season_holdout_split(cfg):
+                te_cfg = cfg.tournament.train_eval_split
+                df, target = subset_frame_for_season_holdout(df, target, te_cfg)
+
             # 2. Выбор фичей
             logger.info("Выбор фичей...")
             features, feature_names = self._select_features(df, cfg)
             logger.info("Фичи: %d колонок", len(feature_names))
 
-            # 3. Train/Test split (90/10)
+            # 3. Train/Test split — trailing fraction or full-season holdout
             test_size = cfg.get("split", {}).get("test_size", 0.1)
-            split_idx = int(len(features) * (1 - test_size))
-
-            train_features = features.iloc[:split_idx]
-            test_features = features.iloc[split_idx:]
-            train_target = target.iloc[:split_idx]
-            test_target = target.iloc[split_idx:]
-
-            # Сохраняем полный df для test set (нужен для odds)
-            test_df = df.iloc[split_idx:]
-
-            logger.info(
-                "Split: train=%d (%.1f%%), test=%d (%.1f%%)",
-                len(train_features),
-                (1 - test_size) * 100,
-                len(test_features),
-                test_size * 100,
-            )
+            if uses_season_holdout_split(cfg):
+                te_cfg = cfg.tournament.train_eval_split
+                season_col = OmegaConf.select(te_cfg, "season_column", default="season")
+                holdout_tokens = {normalize_season_token(x) for x in list(te_cfg.holdout_seasons)}
+                season_series = df[season_col].map(normalize_season_token)
+                test_mask = season_series.isin(holdout_tokens)
+                train_mask = ~test_mask
+                train_features = features.loc[train_mask].reset_index(drop=True)
+                test_features = features.loc[test_mask].reset_index(drop=True)
+                train_target = target.loc[train_mask].reset_index(drop=True)
+                test_target = target.loc[test_mask].reset_index(drop=True)
+                test_df = df.loc[test_mask].reset_index(drop=True)
+                logger.info(
+                    "Split (season holdout): train=%d, test=%d (holdout seasons=%s)",
+                    len(train_features),
+                    len(test_features),
+                    sorted(holdout_tokens),
+                )
+            else:
+                split_idx = int(len(features) * (1 - test_size))
+                train_features = features.iloc[:split_idx]
+                test_features = features.iloc[split_idx:]
+                train_target = target.iloc[:split_idx]
+                test_target = target.iloc[split_idx:]
+                test_df = df.iloc[split_idx:]
+                logger.info(
+                    "Split: train=%d (%.1f%%), test=%d (%.1f%%)",
+                    len(train_features),
+                    (1 - test_size) * 100,
+                    len(test_features),
+                    test_size * 100,
+                )
 
             # 4. Калибровочный split (если включена калибровка)
             cal_features = None

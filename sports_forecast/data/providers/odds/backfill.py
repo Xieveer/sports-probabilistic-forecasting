@@ -418,6 +418,10 @@ def run_backfill(
         :class:`BackfillRunResult` с дедуп DataFrame, флагом исчерпания квоты и
         (после запросов) снимком ``x-requests-*`` с последнего ответа API.
     """
+    # Как в ``main()`` этого модуля: programmatic вызовы (например ``source_refresh`` →
+    # ``run_odds_refresh``) не проходят через CLI и иначе не видят ``PROJECT_ROOT/.env``.
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
+
     if seasons_last_n is not None:
         if date_from is not None or date_to is not None:
             raise ValueError("Нельзя сочетать seasons_last_n с date_from/date_to")
