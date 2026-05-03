@@ -322,6 +322,8 @@ uv run python -m sports_forecast.features.features_build \
 Конфиг ``conf/tournament/nhl_train.yaml`` задаёт тот же ``data/processed/nhl``, что и ``tournament=nhl``,
 но имя турнира ``nhl_train`` используется для MLflow и каталогов ``models/nhl_train/…`` (baseline R22).
 
+> **На будущее:** отдельный файл `nhl_train.yaml` — осознанный trade-off (данные = `nhl`, артефакты обучения = `nhl_train`); при расширении числа турниров или training-профилей стоит **пересмотреть** единый договор: только NHL, паттерн `*_train` для всех promoted-турниров, или один YAML + overrides. Пометка в журнале: `docs/cursor/refactor/backlog/reviewer-tech-debt.md` (блок R22 Phase A).
+
 ```bash
 # Sweep обучения (CatBoost + LightGBM, advanced фичи, season holdout — см. YAML)
 make train-sweep-nhl
