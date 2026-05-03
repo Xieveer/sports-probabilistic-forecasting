@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import pandas as pd
 
 from sports_forecast.features.generators.streak_generator import StreakFeatureGenerator
@@ -106,3 +108,45 @@ def test_streak_goals_full_fallback_columns() -> None:
     )
     out = gen.generate(df)
     assert float(out.loc[out["side"] == "h", "pl_win_streak"].iloc[0]) == 0.0
+
+
+def test_streak_many_matches_completes_quickly() -> None:
+    """Регрессия O(n²): поиск away по id не должен сканировать весь long на каждый матч."""
+    n_m = 4000
+    base = pd.Timestamp("2020-01-01", tz="UTC")
+    rows: list[dict[str, object]] = []
+    for m in range(n_m):
+        tid = m + 1
+        ts = base + pd.Timedelta(days=m)
+        rows.append(
+            {
+                "id": tid,
+                "datetime": ts,
+                "side": "h",
+                "pl": f"H{m % 20}",
+                "opp": f"A{m % 20}",
+                "pl_points": 2.0,
+                "opp_points": 1.0,
+            }
+        )
+        rows.append(
+            {
+                "id": tid,
+                "datetime": ts,
+                "side": "a",
+                "pl": f"A{m % 20}",
+                "opp": f"H{m % 20}",
+                "pl_points": 1.0,
+                "opp_points": 2.0,
+            }
+        )
+    df = pd.DataFrame(rows)
+    gen = StreakFeatureGenerator(
+        {"type": "streak", "enabled": True, "win_mode": "points", "win_rate_windows": [5]}
+    )
+    t0 = time.perf_counter()
+    out = gen.generate(df)
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 5.0, f"streak too slow: {elapsed:.2f}s for {len(df)} rows"
+    assert len(out) == 2 * n_m
+    assert out["pl_win_streak"].notna().all()

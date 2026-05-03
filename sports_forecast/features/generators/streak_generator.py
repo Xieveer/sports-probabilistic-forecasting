@@ -15,6 +15,36 @@ from sports_forecast.utils.log_config import get_logger
 logger = get_logger(__name__)
 
 
+def _apply_match_result(
+    team: str,
+    won: float,
+    ws: dict[str, int],
+    ls: dict[str, int],
+    hist: dict[str, list[float]],
+) -> None:
+    """Обновить win/lose streak и историю исходов команды ``team`` после матча."""
+    if np.isnan(won):
+        ws[team] = 0
+        ls[team] = 0
+        hist[team].append(float("nan"))
+        return
+    if won == 1.0:
+        ws[team] = ws[team] + 1
+        ls[team] = 0
+        hist[team].append(1.0)
+    else:
+        ws[team] = 0
+        ls[team] = ls[team] + 1
+        hist[team].append(0.0)
+
+
+def _win(plv: float, oppv: float) -> float:
+    """1.0 если ``plv > oppv``, 0.0 если проигрыш, nan при неполных данных."""
+    if np.isnan(plv) or np.isnan(oppv):
+        return float("nan")
+    return 1.0 if plv > oppv else 0.0
+
+
 class StreakFeatureGenerator(BaseFeatureGenerator):
     """Фичи серий и win-rate до матча (без утечки текущего результата).
 
@@ -79,89 +109,84 @@ class StreakFeatureGenerator(BaseFeatureGenerator):
             )
 
         long = df.copy()
-        for name in self.get_feature_names():
-            long[name] = np.nan
+        n = len(long)
+        feat_names = self.get_feature_names()
+        out: dict[str, np.ndarray] = {
+            name: np.full(n, np.nan, dtype=np.float64) for name in feat_names
+        }
 
         ws: dict[str, int] = defaultdict(int)
         ls: dict[str, int] = defaultdict(int)
         hist: dict[str, list[float]] = defaultdict(list)
 
+        ids = long["id"].to_numpy()
+        sides = long["side"].astype(str).str.strip().str.lower().to_numpy()
+        pl_pts = pd.to_numeric(long[pl_c], errors="coerce").to_numpy(dtype=np.float64, copy=False)
+        opp_pts = pd.to_numeric(long[opp_c], errors="coerce").to_numpy(dtype=np.float64, copy=False)
+        pl_names = long["pl"].astype(str).to_numpy()
+
+        # O(n): id матча → позиция строки home / away (iloc).
+        id_sides: dict[Any, dict[str, int]] = {}
+        for pos in range(n):
+            mid = ids[pos]
+            side = sides[pos]
+            bucket = id_sides.setdefault(mid, {})
+            if side == "h":
+                bucket["h"] = pos
+            elif side == "a":
+                bucket["a"] = pos
+
         dt = pd.to_datetime(long["datetime"], errors="coerce", utc=True)
-        home_rows = long["side"].astype(str) == "h"
-        # Один представитель на матч (домашняя сторона), хронология по времени
-        order = (
-            long.loc[home_rows].assign(_dt=dt[home_rows]).sort_values(["_dt", "id"]).index.to_list()
+        home_mask = sides == "h"
+        home_pos = np.flatnonzero(home_mask)
+        if len(home_pos) == 0:
+            for name in feat_names:
+                long[name] = out[name]
+            return long
+
+        order_df = pd.DataFrame(
+            {"pos": home_pos, "_dt": dt.iloc[home_pos].to_numpy(), "id": ids[home_pos]}
         )
+        order = order_df.sort_values(["_dt", "id"])["pos"].astype(int).tolist()
 
         for hi in order:
-            row_h = long.loc[hi]
-            mid = row_h["id"]
-            same = long.index[long["id"] == mid]
-            away_idx = None
-            for j in same:
-                if str(long.loc[j, "side"]) != "h":
-                    away_idx = j
-                    break
-            if away_idx is None:
+            mid = ids[hi]
+            pair = id_sides.get(mid, {})
+            ai = pair.get("a")
+            if ai is None:
                 logger.warning("%s: матч id=%s без away-строки — пропуск", self.name, mid)
                 continue
 
-            row_a = long.loc[away_idx]
-            h_team, a_team = row_h["pl"], row_h["opp"]
-            try:
-                h_pl, h_opp = float(row_h[pl_c]), float(row_h[opp_c])
-                a_pl, a_opp = float(row_a[pl_c]), float(row_a[opp_c])
-            except (TypeError, ValueError):
-                h_pl = h_opp = a_pl = a_opp = float("nan")
+            h_team = str(pl_names[hi])
+            a_team = str(pl_names[ai])
+            h_pl, h_opp = pl_pts[hi], opp_pts[hi]
+            a_pl, a_opp = pl_pts[ai], opp_pts[ai]
 
-            def _win(plv: float, oppv: float) -> float:
-                if np.isnan(plv) or np.isnan(oppv):
-                    return float("nan")
-                return 1.0 if plv > oppv else 0.0
+            w_h = _win(float(h_pl), float(h_opp))
+            w_a = _win(float(a_pl), float(a_opp))
 
-            w_h = _win(h_pl, h_opp)
-            # Для away-строки pl=a_team: победа если a_pl > a_opp
-            w_a = _win(a_pl, a_opp)
-
-            teams = (str(h_team), str(a_team))
-            for idx, team, opp_team in (
-                (hi, teams[0], teams[1]),
-                (away_idx, teams[1], teams[0]),
-            ):
-                long.loc[idx, "pl_win_streak"] = ws[team]
-                long.loc[idx, "pl_lose_streak"] = ls[team]
-                long.loc[idx, "opp_win_streak"] = ws[opp_team]
-                long.loc[idx, "opp_lose_streak"] = ls[opp_team]
-                long.loc[idx, "streak_diff"] = float(ws[team] - ws[opp_team])
+            for row_pos, team, opp_team in ((hi, h_team, a_team), (ai, a_team, h_team)):
+                out["pl_win_streak"][row_pos] = float(ws[team])
+                out["pl_lose_streak"][row_pos] = float(ls[team])
+                out["opp_win_streak"][row_pos] = float(ws[opp_team])
+                out["opp_lose_streak"][row_pos] = float(ls[opp_team])
+                out["streak_diff"][row_pos] = float(ws[team] - ws[opp_team])
                 hist_list = hist[team]
                 for wn in self._windows:
                     tail = hist_list[-wn:] if wn > 0 else []
                     rate = float(np.nanmean(tail)) if tail else float("nan")
-                    long.loc[idx, f"pl_win_rate_last{wn}"] = rate
+                    out[f"pl_win_rate_last{wn}"][row_pos] = rate
 
                 ho_list = hist[opp_team]
                 for wn in self._windows:
                     tail_o = ho_list[-wn:] if wn > 0 else []
                     rate_o = float(np.nanmean(tail_o)) if tail_o else float("nan")
-                    long.loc[idx, f"opp_win_rate_last{wn}"] = rate_o
+                    out[f"opp_win_rate_last{wn}"][row_pos] = rate_o
 
-            # Обновление состояния после матча (один раз на команду)
-            def _apply(team: str, won: float) -> None:
-                if np.isnan(won):
-                    ws[team] = 0
-                    ls[team] = 0
-                    hist[team].append(float("nan"))
-                    return
-                if won == 1.0:
-                    ws[team] = ws[team] + 1
-                    ls[team] = 0
-                    hist[team].append(1.0)
-                else:
-                    ws[team] = 0
-                    ls[team] = ls[team] + 1
-                    hist[team].append(0.0)
+            _apply_match_result(h_team, w_h, ws, ls, hist)
+            _apply_match_result(a_team, w_a, ws, ls, hist)
 
-            _apply(str(h_team), w_h)
-            _apply(str(a_team), w_a)
+        for name in feat_names:
+            long[name] = out[name]
 
         return long

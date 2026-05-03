@@ -251,10 +251,12 @@ class FeaturePipeline:
             logger.info("Пре-генераторы (%d)...", len(self.pre_generators))
             for pg in self.pre_generators:
                 df_wide = pg(df_wide)
-                # Собираем колонки для контекста wide→long
+                # Только колонки, реально появившиеся в wide (пропущенный пре-ген не даёт контекст).
                 if hasattr(pg, "get_context_column_names"):
-                    pre_gen_columns.extend(pg.get_context_column_names())
-            logger.info("  Пре-генераторы добавили колонки: %s", pre_gen_columns)
+                    for col in pg.get_context_column_names():
+                        if col in df_wide.columns and col not in pre_gen_columns:
+                            pre_gen_columns.append(col)
+            logger.info("  Пре-генераторы → контекст wide→long: %s", pre_gen_columns)
 
         # 1. Трансформация в long format (если требуется)
         requires_long = self.config.get("requires_long", True)
