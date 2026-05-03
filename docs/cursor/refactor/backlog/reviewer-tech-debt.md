@@ -371,6 +371,20 @@
 - **Возможные улучшения / техдолг:**
   - Подключить TOI и/или реальный starter, когда появятся стабильные поля в данных (R19.20+).
 
+### 2026-05-03 — R22.6 Motivation / playoff context (NHL standings)
+
+- **Задача:** `backlog/R22.md` (R22.6 Phase B stretch; R22 остаётся в backlog до завершения R22.7)
+- **Ограничения и компромиссы:**
+  - **Межконференционный шум:** `standing_rank_gap` и `*_playoff_spots_out` вычисляются по `*_conference_standing` (ранг внутри конференции), но wide-CSV не содержит признака «обе команды в одной конференции». Для матчей регулярного сезона между командами разных конференций разница рангов информативна лишь косвенно — модель получает сигнал без различия «internal vs cross-conference».
+  - **`same_conference_standing_pressure` не реализован:** для надёжного признака «одна конференция» нужны явные колонки `home_conference` / `away_conference` в `source.csv` / interim; без них вычисление non-trivial и может давать ложные срабатывания. Задокументировано в module docstring как tech-debt.
+  - **`get_total_feature_count` vs опциональные мотивационные колонки:** `get_expected_feature_names()` всегда включает `motivation_playoffs_phase` и `motivation_extended_game` (два опциональных ключа), даже если во входном датафрейме нет колонок `game_type` / `match_end`. Реальные выходные фичи (`get_actual_feature_names(df)`) на 0–2 имени меньше — потребители, полагающиеся на `get_feature_names()` как на константу, должны учитывать это расхождение.
+  - **`game_type` / `match_end` — постфактумный контекст:** для pre-game строк оба поля обычно пусты → `nan`. Признаки полезны только при аналитике завершённых матчей или если источник данных проставляет их заранее (например, `playoffs` по расписанию).
+- **Возможные улучшения / техдолг:**
+  - Добавить колонки `home_conference` / `away_conference` в NHL assembler (из API `franchises` или standings response) — это разблокирует `same_conference_standing_pressure` (бинарный признак «тот же дивизион/конференция → давление в гонке значимее»).
+  - Рассмотреть более точный «division race density» proxy: например, разброс (std) очков команд top-4 в дивизионе на текущую дату. Требует расширения standings snapshot с дивизиональным срезом.
+  - Унифицировать `get_expected_feature_names()` / `get_actual_feature_names()` через публичный метод `get_optional_feature_keys()` — явный контракт «эти колонки могут отсутствовать» снизит риск несоответствия для downstream.
+  - Суммарные «очки позади 8-го места» как абсолютная величина (`points_behind_playoff`) дополнят rank-based `*_playoff_spots_out` и будут менее чувствительны к числу сыгранных матчей.
+
 ### 2026-05-04 — R22.5 Travel / rest (NHL schedule)
 
 - **Задача:** `backlog/R22.md` (R22.5 Phase B stretch)
