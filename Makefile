@@ -204,7 +204,7 @@ features-basic:
 		tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by,nhl \
 		features=basic
 
-# Генерация фичей advanced (полный набор, для research)
+# Генерация фичей advanced (полный каркас пресета; NHL/streak только для ice_hockey — см. feature_pipeline в conf/sport)
 features-advanced:
 	@echo "🔬 Генерация фичей (advanced)..."
 	uv run python -m sports_forecast.features.features_build --multirun \

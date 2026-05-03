@@ -35,9 +35,9 @@ stages:
     deps:
     - path: conf/features/
       hash: md5
-      md5: 74d9399355f471c4e65f708ad8e20dd5.dir
-      size: 12400
-      nfiles: 11
+      md5: b3f76e4ef96ffee337becbaaba1b5df8.dir
+      size: 13861
+      nfiles: 12
     - path: conf/features_pipeline.yaml
       hash: md5
       md5: 9b14e0b39c22789be2f3d586a17631d2
@@ -51,27 +51,35 @@ stages:
       md5: 0ec8825f5cd1fdfe29a4c8ad14ede2b9.dir
       size: 33438166
       nfiles: 8
+    - path: sports_forecast/features/feature_pipeline_compose.py
+      hash: md5
+      md5: 1a005fb7311966650d4e4409478487d0
+      size: 9634
     - path: sports_forecast/features/features_build.py
       hash: md5
       md5: 866628dcf49b9449269eff38aca528d6
       size: 10304
     - path: sports_forecast/features/generators/
       hash: md5
-      md5: 39ff0f40a28fd205a5ff99618d1456ae.dir
-      size: 173516
-      nfiles: 18
+      md5: 903420888d6f27c3255f1aba4cd265e6.dir
+      size: 195812
+      nfiles: 20
     - path: sports_forecast/features/pipeline.py
       hash: md5
-      md5: d85f15ad808615bcd90db97789cc55cb
-      size: 17386
+      md5: 86f92ecbe1c6090f7cea691bc73e6443
+      size: 17719
+    - path: sports_forecast/features/rolling_contexts.py
+      hash: md5
+      md5: 93e34f7def9a04d10e7b7645aa5c93af
+      size: 14255
     params:
       params.yaml:
         features.config: advanced
     outs:
     - path: data/processed/
       hash: md5
-      md5: da03e19c6b975391ff599dec78287792.dir
-      size: 3158448062
+      md5: bf27e2c4258f308df0452bf8a0ef2578.dir
+      size: 2423023670
       nfiles: 32
   clean:
     cmd: uv run python -m sports_forecast.data.clean
@@ -82,9 +90,9 @@ stages:
       size: 252
     - path: conf/sport/
       hash: md5
-      md5: 3e8af544a5d2e8461ba382faa1b2e390.dir
-      size: 15192
-      nfiles: 3
+      md5: 125b4ed54b932de92fae85422a79529e.dir
+      size: 18176
+      nfiles: 5
     - path: conf/tournament/
       hash: md5
       md5: 520a84dcb39819a45bd072a151847df7.dir

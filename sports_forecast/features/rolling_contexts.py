@@ -21,6 +21,7 @@ from typing import Any
 import yaml
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
+from sports_forecast.features.feature_pipeline_compose import compose_feature_pipeline
 from sports_forecast.utils.log_config import get_logger
 
 
@@ -350,6 +351,7 @@ def materialize_features_config(
     Преобразовать конфиг фичей в plain dict и разрешить rolling library.
 
     Используется перед ``FeaturePipeline``, когда нужен доступ к ``tournament_cfg``.
+    Сначала применяется ``compose_feature_pipeline`` (R29: спорт / турнирные группы).
     """
     if isinstance(features_cfg, DictConfig):
         out = OmegaConf.to_container(features_cfg, resolve=True)
@@ -357,6 +359,7 @@ def materialize_features_config(
         out = dict(features_cfg)
     if not isinstance(out, dict):
         raise TypeError(f"features_cfg must resolve to dict, got {type(out)}")
+    compose_feature_pipeline(out, tournament_cfg=tournament_cfg)
     expand_rolling_generators_inplace(out, tournament_cfg=tournament_cfg)
     inject_sport_ewm_generators(out, tournament_cfg=tournament_cfg)
     return out

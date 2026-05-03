@@ -458,3 +458,15 @@
   - Вынести `_one_team` из `_add_lineup_features` в отдельный статический метод класса для улучшения читаемости и тестируемости.
   - Рассмотреть stateful-вариант roster seniority с сохранением `cum_app` / `last_sw` между инкрементальными вызовами (аналогично как EWM хранит состояние через GroupBy).
   - R27.8 (inseason EWM профиль с другими spans) остаётся открытым: после R27.7 `standard.yaml` автоматически генерирует inseason контекст с теми же spans [5,15]; если потребуется другой набор spans для inseason — создать `nhl_inseason.yaml`.
+
+### 2026-05-04 — R29: спорт-осознанная композиция feature pipeline
+
+- **Задача:** `backlog/R29.md` → `done_task/R29.md`
+- **Ограничения и компромиссы:**
+  - `_FALLBACK_SPORT_GROUPS` в `feature_pipeline_compose.py` дублирует данные из `conf/sport/*.yaml` как Python-словарь. При добавлении нового спорта нужно обновить как YAML, так и этот словарь — точка рассинхронизации. Принято сознательно, чтобы не читать YAML при каждом вызове и не завязываться на Hydra при вызове вне контекста compose.
+  - Только две группы (`nhl_boxscore`, `streak`) покрыты механизмом групп R29. Добавление новой optional-группы (например, `injury_report`, `player_props`) потребует расширения констант `GROUP_*_KEYS`, путей YAML и логики `_effective_feature_groups`.
+  - `compose_feature_pipeline` вызывается каждый раз при `materialize_features_config` (включая unit-тесты rolling/EWM) — защищено guard `_should_compose`, который возвращает `False` если `tournament_cfg` не содержит `sport`/`feature_pipeline`/`feature_pipeline_overrides`.
+- **Возможные улучшения / техдолг:**
+  - Загрузка групп через реестр YAML (читать `conf/sport/<sport>.yaml` напрямую), убрать `_FALLBACK_SPORT_GROUPS` — устранит дублирование, но потребует аккуратной интеграции с Hydra.
+  - Расширить механизм групп: помимо `nhl_boxscore` / `streak` поддержать произвольные группы через конфиг (ключ → список YAML-фрагментов), без хардкода в коде.
+  - Football и basketball YAML — пока заглушки без `form_params`, `rolling_context_names`, `target_sources`; при появлении данных потребуется полное заполнение по образцу `cyberhockey.yaml`.

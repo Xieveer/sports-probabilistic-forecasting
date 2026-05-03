@@ -25,11 +25,41 @@
 - `allowed_market_specs` — допустимые рынки и линии
 - `data_clean` — маппинг колонок, типы данных
 - `form_params` — пороги FG/DP для формы игрока
+- **`feature_pipeline.groups`** — какие **опциональные** пакеты генераторов включать помимо каркаса пресета `features` (см. ниже и `docs/cursor/context/feature_pipeline_composition.md`)
+
+### Пайплайн фичей (`feature_pipeline`, R29)
+
+Пресет **`features=basic`** / **`features=advanced`** задаёт **общий каркас** (`time`, `form`, `rolling`: EWM/Count с библиотекой контекстов). **Не хоккейные** турниры не должны получать NHL pre-gen (`nhl_schedule` / `nhl_standings` / `nhl_roster`) и **`streak`** только из-за пресета.
+
+Каноника задаётся в **`conf/sport/<sport>.yaml`**:
+
+```yaml
+feature_pipeline:
+  groups:
+    nhl_boxscore: true   # только ice_hockey (NHL API + boxscore колонки)
+    streak: true         # серии / win-rate (по умолчанию для хоккея)
+```
+
+Для киберхоккея и настольного тенниса в репозитории уже выставлено `nhl_boxscore: false`, `streak: false`.
+
+**Турнир** при необходимости задаёт только дифф:
+
+```yaml
+feature_pipeline_overrides:
+  groups:
+    streak: true         # пример: opt-in streak для киберхоккея
+  exclude_generators: []  # опционально: явно убрать ключи из generators
+```
+
+Композиция выполняется в коде (`compose_feature_pipeline` → `materialize_features_config`). Подробнее: **`docs/cursor/context/feature_pipeline_composition.md`**.
+
+---
 
 ### Существующие спорты
 
 | Спорт | Конфиг | Участники (wide) |
 |-------|--------|------------------|
+| Ice hockey | `conf/sport/ice_hockey.yaml` | `home_team` / `away_team` |
 | Cyberhockey | `conf/sport/cyberhockey.yaml` | `home_team` / `away_team` |
 | Table Tennis | `conf/sport/table_tennis.yaml` | `home_team` / `away_team` |
 
@@ -298,6 +328,7 @@ time_range:
 **Ключевые моменты:**
 
 - `defaults: [/sport@_here_: <sport>]` — наследует все настройки от спорта
+- `feature_pipeline_overrides` — при необходимости дифф к `feature_pipeline` спорта (см. раздел выше)
 - `data.processed_dir` — куда будут сохранены обработанные данные
 - `data_clean.select_columns` — какие столбцы попадут в interim данные
 - `target_sources`, `allowed_market_specs` — наследуются из спорта (можно override)
@@ -305,6 +336,8 @@ time_range:
 ---
 
 ## Шаг 5. Обновить DVC и feature pipeline
+
+DVC для этапа `features` уже использует **multirun** по списку турниров; менять `features=` в команде не требуется: состав генераторов определяется **спортом** и `feature_pipeline` (R29). После изменения `conf/features/`, `conf/sport/` или модулей композиции выполните `dvc repro features` (или полный `make dvc-repro`) и закоммитьте обновлённый **`dvc.lock`** — хэши `processed` и зависимостей сменятся.
 
 ### Добавить турнир в DVC pipeline
 

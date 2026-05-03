@@ -13,6 +13,12 @@
 
 sport: table_tennis
 
+# R29: form + rolling из пресета; без NHL и без streak.
+feature_pipeline:
+  groups:
+    nhl_boxscore: false
+    streak: false
+
 # ============================================================================
 # ROLLING (EWM / Count): какие контексты из context_library.yaml включать
 # ============================================================================

@@ -37,6 +37,7 @@
 | R26    | 🟡 Medium   | High      | ✅     | 26-й ✅ (единый контракт odds → беттинг-метрики в train; NHL + merge-источники) |
 | R27    | 🔴 High     | High      | ✅     | 27-й ✅ (NHL FE v2: goals/stats EWM, streaks, lineup continuity/seniority) |
 | R28    | 🟡 Medium   | Medium    | ✅     | 28-й ✅ (семантические алиасы колонок в rolling-контекстах; параллельно R27) |
+| R29    | 🔴 High     | Medium    | ✅     | 29-й ✅ (спорт-осознанная композиция feature pipeline: NHL/streak только для ice_hockey) |
 
 ---
 
@@ -124,6 +125,14 @@
   - [x] R26.5 — `trainer.py`: вызов общего извлечения odds, логи покрытия, zero-coverage warn
   - [x] R26.6 — `HOW_TO_ADD_NEW_TOURNAMENT.md` раздел Odds (dict vs merge wide)
 - [x] **R28** — Унификация rolling-контекстов через семантические алиасы колонок ✅ 2026-05-04; см. `done_task/R28.md`
+- [x] **R29** — Спорт-осознанная композиция feature pipeline: NHL/streak только для ice_hockey ✅ 2026-05-04; см. `done_task/R29.md`
+  - [x] R29.1 — ADR контракта слияния (`feature_pipeline_composition.md`)
+  - [x] R29.2 — `feature_pipeline.groups` в `conf/sport/*.yaml`
+  - [x] R29.3 — Рефактор `advanced.yaml`/`basic.yaml`; sport-профили; заглушки football/basketball
+  - [x] R29.4 — `compose_feature_pipeline` + INFO-логирование + вызов в `materialize_features_config`
+  - [x] R29.5 — `dvc.yaml`/`dvc.lock` обновлены; Makefile-комментарий
+  - [x] R29.6 — Тесты (uel_kz_1/lp_ru без NHL+streak; nhl с NHL+streak; opt-in через фикстуру)
+  - [x] R29.7 — `HOW_TO_ADD_NEW_TOURNAMENT.md` — раздел о `feature_pipeline` и ссылка на ADR
 - [x] **R27** — NHL Feature Engineering v2: goals/stats EWM, streaks, lineup continuity/seniority ✅ 2026-05-04; см. `done_task/R27.md`
   - [x] R27.1 — Derived metric columns в `long_format.py` (goals_full_diff/total, sog/bs/hits/pim2/fow diff)
   - [x] R27.6 — Spans [5,25,100] → [5,15] в `standard.yaml`

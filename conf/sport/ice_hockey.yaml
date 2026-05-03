@@ -10,6 +10,12 @@
 
 sport: ice_hockey
 
+# R29: NHL schedule/standings/roster (pre-gen) и streak — канонически для хоккея.
+feature_pipeline:
+  groups:
+    nhl_boxscore: true
+    streak: true
+
 # Без team / h2h_team (нет pl_cteam/opp_cteam в типовом NHL source); при добавлении консолидированных
 # имён команд расширьте список и column_mapping.
 #

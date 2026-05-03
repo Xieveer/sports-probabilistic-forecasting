@@ -1,0 +1,10 @@
+# Заглушка (R29): не подключайте в ``defaults`` турниров, пока не заполните target_sources,
+# data_clean, rolling_context_names и пр. (шаблон: cyberhockey.yaml / table_tennis.yaml).
+#
+# Отдельный набор групп/метрик для basketball — не общий «non-hockey advanced».
+sport: basketball
+
+feature_pipeline:
+  groups:
+    nhl_boxscore: false
+    streak: false

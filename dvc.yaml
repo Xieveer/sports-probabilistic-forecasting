@@ -60,6 +60,8 @@ stages:
     deps:
       - sports_forecast/features/features_build.py
       - sports_forecast/features/pipeline.py
+      - sports_forecast/features/rolling_contexts.py
+      - sports_forecast/features/feature_pipeline_compose.py
       - sports_forecast/features/generators/
       - conf/features/
       - conf/features_pipeline.yaml

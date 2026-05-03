@@ -9,6 +9,12 @@
 
 sport: cyberhockey
 
+# R29: без NHL pre-gen и без streak по умолчанию; opt-in через tournament.feature_pipeline_overrides.
+feature_pipeline:
+  groups:
+    nhl_boxscore: false
+    streak: false
+
 # ============================================================================
 # ROLLING (EWM / Count): какие контексты из context_library.yaml включать
 # ============================================================================
