@@ -428,3 +428,17 @@
   - Cron alerting: добавить `on_failure_command` или интеграцию healthchecks.io/Alertmanager для уведомления при падении cron-джобы.
   - Versionize Caddyfile: при появлении нескольких сервисов рассмотреть шаблонизацию через Caddyfile snippets или отдельный Caddyfile-фрагмент per-сервис.
   - Переработать `node-exporter` в именованную сеть (`networks: monitoring_net`) для изоляции scrape-трафика.
+
+### 2026-05-04 — R28: rolling_column_aliases + inseason context
+
+- **Задача:** `backlog/R28.md` → `done_task/R28.md`
+- **Ограничения и компромиссы:**
+  - **Глобальность алиасов:** `rolling_column_aliases` действует на все контексты разом — если одна и та же колонка в разных контекстах имеет разный смысл (и нужно маппить по-разному), текущий подход не покрывает этот случай. Риск — Low: таких ситуаций в проекте пока нет, но если появятся — нужен context-level override (Approach B из R28).
+  - **`loaders.py` — вне скоупа R28:** баг-фикс `load_bookmaker_config` (замена Hydra compose на `OmegaConf.load`) попал в тот же коммит; он корректен и тесты проходят, но не является частью R28. При ревью архитектуры следует проверить, нет ли ещё мест с аналогичным паттерном `initialize_config_dir` внутри `@hydra.main`.
+  - **`_ewm_compute_diff_for_generator` — новый API:** добавлен ключ `library_compute_diff` в конфиг генератора — нигде не задокументирован в конфигах (только в коде). При добавлении нового EWM-генератора разработчик должен знать об этом поле из кода, а не из конфига.
+  - **Backward compat через name-suffix:** fallback `gen_key.endswith("_total") → compute_diff=False` зависит от именования генератора в YAML. Если кто-то назовёт новый EWM-генератор `ewm_total_advanced`, он автоматически получит `compute_diff=False` — неочевидное поведение.
+- **Возможные улучшения / техдолг:**
+  - Добавить context-level override (`contexts.<name>.keys_override: [...]`) как Approach B для случаев, когда один контекст в разных спортах нужно маппить по-разному без изменения всех ключей.
+  - Задокументировать `library_compute_diff` в `standard.yaml` и/или в docstring `_ewm_compute_diff_for_generator` как явно поддерживаемый ключ конфига генератора.
+  - Заменить fallback `endswith("_total")` на явный дефолт `compute_diff: true` в YAML конфиге — уберёт неявную зависимость от именования.
+  - Проверить остальные места в `loaders.py` на аналогичный паттерн `initialize_config_dir` / `compose` внутри уже инициализированного Hydra-контекста (потенциальные GlobalHydra-конфликты).
