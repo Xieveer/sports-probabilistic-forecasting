@@ -98,8 +98,61 @@ seasons:
       date_to: "2026-06-30"
 
 # ---------------------------------------------------------------------------
-# Совместимость с ingest/betting (fonbet)
+# R26 — train-time BettingSimulator (NHL): primary = synthetic odds_raw из wide
 # ---------------------------------------------------------------------------
-# Поля base_mapping / market_keys / side_keys для этого провайдера не заданы:
-# парсинг идёт из JSON API, а не из python_dict odds_raw.
-# Для симулятора на merged-колонках — отдельный путь данных (не fonbet dict).
+# Выбран путь «как UEL/LP»: на clean из merge-колонок (Pinnacle close V3/V1)
+# собирается строковый Python-dict в колонке ``odds_raw`` — тот же контракт,
+# что и у Fonbet CSV; извлечение — ``extract_odds_from_raw`` + ``market_keys`` / ``side_keys``.
+#
+# Альтернатива (не используется по умолчанию): ``odds_transport.mode: wide_columns``
+# — читать decimal напрямую из merge-колонок без ``odds_raw`` (см. ``extract_betting_odds``).
+# Для новых турниров с merge odds: достаточно YAML (колонки + ключи), без отдельного eval-модуля.
+
+# Маппинг market_spec.name → ключ в synthetic dict (как у fonbet; для long winner_withOT
+# ключ берётся из side_keys, эти поля — для wide / totals).
+market_keys:
+  winner_withOT: "1"        # широкий fallback (редко); long → side_keys
+  total_over_withOT: "to_{line}"
+  total_under_withOT: "tu_{line}"
+
+# Long-format winner_withOT / winner: сторона строки → ключ в dict
+side_keys:
+  h: "1"
+  a: "2"
+
+# Сборка ``odds_raw`` на этапе clean (sports_forecast.data.clean): по первой
+# непустой колонке из списка кандидатов на строку.
+synthetic_odds_raw:
+  winner_withOT_h2h:
+    key_to_column_candidates:
+      "1":
+        - pinnacle_winner_withOT_home_close
+        - pinnacle_home_close
+      "2":
+        - pinnacle_winner_withOT_away_close
+        - pinnacle_away_close
+  total_withOT:
+    line_column_candidates:
+      - pinnacle_total_withOT_line_close
+    over_column_candidates:
+      - pinnacle_total_withOT_over_close
+    under_column_candidates:
+      - pinnacle_total_withOT_under_close
+    over_key_template: "to_{line}"
+    under_key_template: "tu_{line}"
+
+# Опциональный обход без dict: подставить non-null колонки для long h2h.
+odds_transport:
+  mode: null
+  long_winner_specs: [winner, winner_withOT]
+  home_close_column_candidates:
+    - pinnacle_winner_withOT_home_close
+    - pinnacle_home_close
+  away_close_column_candidates:
+    - pinnacle_winner_withOT_away_close
+    - pinnacle_away_close
+
+# ---------------------------------------------------------------------------
+# Совместимость с ingest (fonbet-стиль raw): merge из API
+# ---------------------------------------------------------------------------
+# base_mapping/patterns не используются — линии приходят из OddsStore + merge.

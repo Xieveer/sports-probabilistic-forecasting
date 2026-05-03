@@ -37,6 +37,7 @@ from sports_forecast.config import (
     print_config_summary,
     validate_experiment_config,
 )
+from sports_forecast.config.validation import apply_tournament_default_bookmaker
 from sports_forecast.training.trainer import SingleExperimentRunner
 from sports_forecast.utils.log_config import configure_logging, get_logger
 
@@ -80,6 +81,7 @@ def main(cfg: DictConfig) -> None:
     """
     log_level = cfg.logging.get("level", "INFO")
     configure_logging(level=log_level)
+    apply_tournament_default_bookmaker(cfg)
 
     logger.info("=" * 80)
     logger.info("TRAINING PIPELINE v2.0 (Single-Experiment Architecture)")

@@ -12,6 +12,7 @@ from sports_forecast.config.loaders import (
 )
 from sports_forecast.config.validation import (
     ConfigValidationError,
+    apply_tournament_default_bookmaker,
     check_line_allowed,
     get_allowed_lines,
     get_data_path,
@@ -22,6 +23,7 @@ from sports_forecast.config.validation import (
 
 __all__ = [
     "ConfigValidationError",
+    "apply_tournament_default_bookmaker",
     "check_line_allowed",
     "get_allowed_lines",
     "get_data_path",

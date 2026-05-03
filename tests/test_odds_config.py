@@ -16,7 +16,10 @@ from sports_forecast.data.providers.odds.enrichment import (
     BookmakerExtractionProfile,
     _v3_row_keys_for_profile,
 )
-from sports_forecast.data.providers.odds.store import ODDS_STORE_COLUMNS_V3
+from sports_forecast.data.providers.odds.store import (
+    ODDS_STORE_COLUMNS_V1,
+    ODDS_STORE_COLUMNS_V3,
+)
 
 
 _WINNER_SEMANTICS: Final[frozenset[str]] = frozenset({"winner", "winner_withOT"})
@@ -124,3 +127,27 @@ class TestNhlSourceOddsBookmakers:
         assert str(odds.get("sport_key") or "") == "icehockey_nhl"
         assert odds.get("store_path") is not None
         assert odds.get("state_path") is not None
+
+
+_MERGED_ODDS_COLUMN_NAMES: Final[frozenset[str]] = frozenset(ODDS_STORE_COLUMNS_V3) | frozenset(
+    ODDS_STORE_COLUMNS_V1
+)
+
+
+class TestR26SyntheticOddsContract:
+    """R26: synthetic_odds_raw ссылается только на реально merge-ящиеся колонки."""
+
+    def test_all_listed_columns_are_known_pinnacle_fields(
+        self, the_odds_book_root: DictConfig
+    ) -> None:
+        syn = OmegaConf.select(the_odds_book_root, "synthetic_odds_raw")
+        assert syn is not None
+        h2h = syn.get("winner_withOT_h2h") or {}
+        kmap = h2h.get("key_to_column_candidates") or {}
+        for _k, cols in dict(kmap).items():
+            for col in cols or []:
+                assert str(col) in _MERGED_ODDS_COLUMN_NAMES, f"неизвестная колонка: {col}"
+        tot = syn.get("total_withOT") or {}
+        for key in ("line_column_candidates", "over_column_candidates", "under_column_candidates"):
+            for col in tot.get(key) or []:
+                assert str(col) in _MERGED_ODDS_COLUMN_NAMES, f"неизвестная колонка: {col}"

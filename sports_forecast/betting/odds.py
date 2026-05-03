@@ -2,13 +2,17 @@
 Утилиты для работы с колонками букмекерских коэффициентов.
 
 Определяет имена колонок с коэффициентами на основе MarketSpec конфигурации.
-Парсинг raw odds dict из колонки ``odds_raw`` (passthrough от ingest-слоя).
+Парсинг raw odds dict из колонки ``odds_raw`` (passthrough от ingest-слоя или
+synthetic-сборки на clean из merge wide, R26).
+
+Единый вход для тренера: :func:`extract_betting_odds` (``odds_raw`` и опционально
+``odds_transport.mode=wide_columns`` в профиле букмекера).
 
 Examples:
     >>> col = get_odds_column_name(cfg.market_spec)
     >>> # "odds_total_over_6.5"
 
-    >>> odds_series = extract_odds_from_raw(test_df, cfg.market_spec)
+    >>> odds_series = extract_betting_odds(test_df, cfg.market_spec, cfg.bookmaker)
     >>> odds_series.head()
     0    1.48
     1    2.45
@@ -102,7 +106,8 @@ def get_odds_column_long_format(market_spec: DictConfig, side: str) -> str | Non
         >>> get_odds_column_long_format(cfg.market_spec, "a")
         'odds_away_win'
     """
-    if market_spec.name == "winner":
+    spec_name = market_spec.name
+    if spec_name in ("winner", "winner_withOT"):
         if side == "h":
             return "odds_home_win"
         if side == "a":
@@ -221,8 +226,8 @@ def _resolve_raw_key(
     market_keys = bookmaker_cfg.get("market_keys", {})
     side_keys = bookmaker_cfg.get("side_keys", {})
 
-    # Long-format winner: ключ зависит от стороны текущего игрока
-    if spec_name == "winner" and side is not None:
+    # Long-format winner / winner_withOT (NHL OT): ключ зависит от стороны текущего игрока
+    if spec_name in ("winner", "winner_withOT") and side is not None:
         key = side_keys.get(side)
         if key is None:
             logger.debug("side_keys не содержит ключ для side='%s'", side)
@@ -285,7 +290,7 @@ def extract_odds_from_raw(
 
     spec_name = market_spec.name
     data_format = market_spec.get("data_format", "wide")
-    is_long_winner = spec_name == "winner" and data_format == "long"
+    is_long_winner = spec_name in ("winner", "winner_withOT") and data_format == "long"
     has_side = "side" in df.columns
 
     # Для статических рынков ключ одинаков для всех строк — вычисляем один раз
@@ -326,3 +331,209 @@ def extract_odds_from_raw(
         len(df),
     )
     return odds_series
+
+
+def _first_valid_odds_from_columns(row: pd.Series, candidates: list[str]) -> float | None:
+    """Первый decimal > 1 из списка колонок строки (для synthetic odds_raw)."""
+    for col in candidates:
+        if col not in row.index:
+            continue
+        raw = row[col]
+        if raw is None or (isinstance(raw, float) and np.isnan(raw)):
+            continue
+        try:
+            val = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if val > 1.0:
+            return val
+    return None
+
+
+def _synthetic_odds_raw_applicable(df: pd.DataFrame, synthetic_cfg: dict | DictConfig) -> bool:
+    """Проверить, есть ли в данных колонки-кандидаты под секцию ``synthetic_odds_raw``."""
+    h2h = synthetic_cfg.get("winner_withOT_h2h") or synthetic_cfg.get("winner_h2h")
+    if h2h:
+        kmap = h2h.get("key_to_column_candidates") or {}
+        for _k, cols in dict(kmap).items():
+            cand = [c for c in (list(cols) if cols is not None else []) if c in df.columns]
+            if cand:
+                return True
+    tot = synthetic_cfg.get("total_withOT")
+    if tot:
+        for key in (
+            "line_column_candidates",
+            "over_column_candidates",
+            "under_column_candidates",
+        ):
+            cols = tot.get(key) or []
+            if any(c in df.columns for c in list(cols)):
+                return True
+    return False
+
+
+def build_synthetic_odds_raw_series(
+    df: pd.DataFrame,
+    synthetic_cfg: dict | DictConfig,
+) -> pd.Series:
+    """Построить колонку ``odds_raw`` (строка Python-dict) из wide merge-колонок.
+
+    Используется на clean (NHL + The Odds API): тренер затем вызывает
+    ``extract_odds_from_raw`` с теми же ``market_keys`` / ``side_keys``, что и для Fonbet.
+
+    Args:
+        df: Строки raw/interim с ``pinnacle_*`` close колонками.
+        synthetic_cfg: Узел ``bookmaker.synthetic_odds_raw`` из ``the_odds_api.yaml``.
+
+    Returns:
+        Series строк-словарей или NA, индекс как у ``df``.
+    """
+    h2h = synthetic_cfg.get("winner_withOT_h2h") or synthetic_cfg.get("winner_h2h")
+    tot = synthetic_cfg.get("total_withOT")
+    keys_h2h: dict[str, list[str]] = {}
+    if h2h:
+        kmap = h2h.get("key_to_column_candidates") or {}
+        for k, cols in dict(kmap).items():
+            keys_h2h[str(k)] = [
+                c for c in (list(cols) if cols is not None else []) if c in df.columns
+            ]
+
+    line_cands: list[str] = []
+    over_cands: list[str] = []
+    under_cands: list[str] = []
+    over_tpl = "to_{line}"
+    under_tpl = "tu_{line}"
+    if tot:
+        line_cands = [c for c in (tot.get("line_column_candidates") or []) if c in df.columns]
+        over_cands = [c for c in (tot.get("over_column_candidates") or []) if c in df.columns]
+        under_cands = [c for c in (tot.get("under_column_candidates") or []) if c in df.columns]
+        over_tpl = str(tot.get("over_key_template") or over_tpl)
+        under_tpl = str(tot.get("under_key_template") or under_tpl)
+
+    out: list[str | None] = []
+    for _idx, row in df.iterrows():
+        d: dict[str, float] = {}
+        for raw_key, cols in keys_h2h.items():
+            v = _first_valid_odds_from_columns(row, cols)
+            if v is not None:
+                d[raw_key] = v
+        if line_cands and over_cands and under_cands:
+            line_val = _first_valid_odds_from_columns(row, line_cands)
+            if line_val is not None:
+                line_s = str(line_val)
+                o = _first_valid_odds_from_columns(row, over_cands)
+                u = _first_valid_odds_from_columns(row, under_cands)
+                if o is not None:
+                    d[over_tpl.replace("{line}", line_s)] = o
+                if u is not None:
+                    d[under_tpl.replace("{line}", line_s)] = u
+        out.append(str(d) if d else None)
+    return pd.Series(out, index=df.index, dtype=object)
+
+
+def try_attach_synthetic_odds_raw_column(
+    df: pd.DataFrame,
+    bookmaker_node: DictConfig,
+    tournament_name: str,
+    clean_cfg: DictConfig | None = None,
+) -> pd.DataFrame:
+    """Добавить колонку ``odds_raw`` из ``synthetic_odds_raw``, если применимо.
+
+    Не перезаписывает непустой ``odds_raw``, если в ``clean_cfg`` не задан
+    ``synthetic_odds_raw_force: true``.
+
+    Args:
+        df: Датафрейм после derived_columns, до ``select_columns``.
+        bookmaker_node: Узел ``bookmaker`` (как в ``load_bookmaker_config``).
+        tournament_name: Имя турнира (логирование).
+        clean_cfg: Секция ``data_clean`` турнира.
+
+    Returns:
+        Копия или исходный ``df`` с возможной колонкой ``odds_raw``.
+    """
+    syn = bookmaker_node.get("synthetic_odds_raw")
+    if not syn:
+        return df
+    if not _synthetic_odds_raw_applicable(df, syn):
+        return df
+    force = bool(clean_cfg and clean_cfg.get("synthetic_odds_raw_force"))
+    if "odds_raw" in df.columns and not force:
+        ser_ex = df["odds_raw"]
+        if ser_ex.notna().any():
+            non_empty = ser_ex.astype(str).str.strip()
+            has_content = (
+                (non_empty != "") & (non_empty.str.lower() != "nan") & (non_empty != "None")
+            )
+            if has_content.any():
+                return df
+    series = build_synthetic_odds_raw_series(df, syn)
+    out = df.copy()
+    out["odds_raw"] = series
+    n_ok = int(series.notna().sum())
+    logger.info(
+        "Турнир %s: synthetic odds_raw из merge wide (R26), строк с dict: %d/%d",
+        tournament_name,
+        n_ok,
+        len(df),
+    )
+    return out
+
+
+def _extract_odds_wide_transport(
+    df: pd.DataFrame,
+    market_spec: DictConfig,
+    transport: dict | DictConfig,
+) -> pd.Series:
+    """Decimal из merge wide без ``odds_raw`` (long winner / winner_withOT)."""
+    spec_name = market_spec.name
+    data_format = market_spec.get("data_format", "wide")
+    long_specs = set(transport.get("long_winner_specs") or ["winner", "winner_withOT"])
+    if spec_name not in long_specs or data_format != "long" or "side" not in df.columns:
+        return pd.Series(np.nan, index=df.index, dtype=float)
+    home_cols = list(transport.get("home_close_column_candidates") or [])
+    away_cols = list(transport.get("away_close_column_candidates") or [])
+    home_col = next((c for c in home_cols if c in df.columns), None)
+    away_col = next((c for c in away_cols if c in df.columns), None)
+    if home_col is None or away_col is None:
+        return pd.Series(np.nan, index=df.index, dtype=float)
+    side = df["side"].astype(str).str.lower()
+    hclose = pd.to_numeric(df[home_col], errors="coerce")
+    aclose = pd.to_numeric(df[away_col], errors="coerce")
+    result = pd.Series(np.nan, index=df.index, dtype=float)
+    mask_h = side == "h"
+    mask_a = side == "a"
+    result.loc[mask_h] = hclose.loc[mask_h]
+    result.loc[mask_a] = aclose.loc[mask_a]
+    return result.where(result > 1.0)
+
+
+def extract_betting_odds(
+    df: pd.DataFrame,
+    market_spec: DictConfig,
+    bookmaker_cfg: DictConfig,
+) -> pd.Series:
+    """Единая точка входа для тренера: ``odds_raw`` или ``odds_transport: wide_columns``.
+
+    Args:
+        df: Test frame с passthrough колонками.
+        market_spec: Рынок.
+        bookmaker_cfg: Профиль букмекера (fonbet / the_odds_api / др.).
+
+    Returns:
+        Series коэффициентов в decimal для стороны ставки (long — по строке).
+    """
+    transport = bookmaker_cfg.get("odds_transport") or {}
+    mode = transport.get("mode")
+    if mode == "wide_columns":
+        ser = _extract_odds_wide_transport(df, market_spec, transport)
+        if ser.notna().any():
+            valid = int(ser.notna().sum())
+            logger.info(
+                "extract_betting_odds: transport=wide_columns bookmaker=%s market=%s, %d/%d",
+                bookmaker_cfg.get("name", "?"),
+                market_spec.name,
+                valid,
+                len(df),
+            )
+            return ser
+    return extract_odds_from_raw(df, market_spec, bookmaker_cfg)

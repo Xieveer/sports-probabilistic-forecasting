@@ -5,6 +5,10 @@
 # ``models/nhl_train/<market_spec>/…`` — keep ``tournament=nhl`` for ingest/features-only workflows.
 #
 # ------------------------------------------------------------------------------
+# R26: дефолтный профиль коэффициентов для train — ``the_odds_api`` (не fonbet из корня).
+# Подмена: ``apply_tournament_default_bookmaker`` (train / SingleExperimentRunner).
+# Явно: ``bookmaker=fonbet`` оставит fonbet (если нужен эксперимент).
+# ------------------------------------------------------------------------------
 # Phase C (R22.8) — OT-inclusive markets: отдельные Hydra-прогоны от baseline winner/total.
 #   - Имена: ``winner_withOT`` (long), ``total_over_withOT`` / ``total_under_withOT`` (wide, нужна line).
 #   - Лейблы: финальный счёт ``pl_goals_full`` / ``home_goals_full`` (источник: boxscore ``*_ft``);

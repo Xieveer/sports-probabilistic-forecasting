@@ -9,9 +9,49 @@ from pathlib import Path
 
 from omegaconf import DictConfig, OmegaConf
 
+from sports_forecast.config.loaders import load_bookmaker_config
+from sports_forecast.utils.log_config import get_logger
+
+
+logger = get_logger(__name__)
+
 
 class ConfigValidationError(Exception):
     """Ошибка валидации конфигурации."""
+
+
+def apply_tournament_default_bookmaker(cfg: DictConfig) -> None:
+    """Подставить профиль букмекера для NHL-турниров (R26).
+
+    Корневой ``config.yaml`` задаёт ``bookmaker=fonbet`` для UEL/LP. Для NHL коэффициенты
+    в merge wide (The Odds API) и ключи в ``conf/bookmaker/the_odds_api.yaml`` — при
+    дефолтном ``fonbet`` подменяем узел на ``the_odds_api``. Явный выбор через CLI
+    ``bookmaker=…`` сохраняется, если имя уже не ``fonbet``.
+
+    Args:
+        cfg: Полный Hydra-конфиг (содержит ``tournament``, ``bookmaker``).
+    """
+    tname = str(OmegaConf.select(cfg, "tournament.name") or "")
+    if tname != "nhl" and not tname.startswith("nhl_"):
+        return
+    bm = cfg.get("bookmaker")
+    if bm is None:
+        return
+    current = bm.get("name")
+    if current is not None and str(current) != "fonbet":
+        return
+    loaded = load_bookmaker_config("the_odds_api")
+    if loaded is None or not hasattr(loaded, "bookmaker"):
+        logger.warning(
+            "NHL: не удалось загрузить bookmaker the_odds_api для подмены дефолта fonbet"
+        )
+        return
+    cfg.bookmaker = loaded.bookmaker
+    logger.info(
+        "NHL tournament %s: bookmaker по умолчанию заменён на %s (R26)",
+        tname,
+        cfg.bookmaker.get("name", "the_odds_api"),
+    )
 
 
 def validate_experiment_config(cfg: DictConfig, project_root: Path) -> None:
@@ -244,5 +284,8 @@ def print_config_summary(cfg: DictConfig) -> None:
 
     if hasattr(cfg, "features"):
         print(f"  Features: {cfg.features.name}")
+
+    if hasattr(cfg, "bookmaker"):
+        print(f"  Bookmaker: {cfg.bookmaker.get('name', 'N/A')}")
 
     print("━" * 80)

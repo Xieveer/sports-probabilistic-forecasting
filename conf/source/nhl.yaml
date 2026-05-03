@@ -51,6 +51,8 @@ split_strategy:
 
 # Post-step после provider.fetch (source_refresh): инкрементальный refresh в OddsStore + merge в source.csv.
 # См. sports_forecast.data.providers.odds.refresh.run_odds_refresh
+# R26: имена close-колонок после merge должны совпадать с ``synthetic_odds_raw`` в conf/bookmaker/the_odds_api.yaml
+# (OddsStore V3 / legacy V1 — см. комментарии в YAML).
 # Пути store/state/unmatched: относительно data/source/<tournament>/ (null = значения по умолчанию ниже).
 odds:
   enabled: true

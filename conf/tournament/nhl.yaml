@@ -17,6 +17,9 @@ data:
     wide: inference_wide.parquet
 
 data_clean:
+  # R26: после merge The Odds API в source — собрать odds_raw для BettingSimulator (как UEL/LP).
+  build_synthetic_odds_raw: true
+  synthetic_odds_raw_bookmaker: the_odds_api
   derived_columns:
     # Явные финальные голы для OT-рынков (копия home_points/away_points; см. ice_hockey.yaml, R22.8).
     home_goals_full:
@@ -80,6 +83,8 @@ data_clean:
     - away_roster
     - tour_num
     - weekday
+    # Passthrough для тренера (в interim автодобавляется, если не указать — тоже ок)
+    - odds_raw
 
 stats:
   avg_home_points: 3.0

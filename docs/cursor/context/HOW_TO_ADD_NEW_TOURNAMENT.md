@@ -197,6 +197,24 @@ NHL Web API (`NhlWebApiSourceProvider`, пакет `sports_forecast/data/provide
 
 ---
 
+## Odds для обучения и BettingSimulator (dict vs merge wide)
+
+На **test/holdout** тренер может считать бизнес-метрики (`BettingSimulator`), если в строках датасета есть коэффициенты в форме, которую понимает единый вход `sports_forecast.betting.odds.extract_betting_odds` (по сути `odds_raw` или явный `odds_transport` в профиле букмекера).
+
+| Источник | Как попадает в parquet | Конфиг |
+|----------|-------------------------|--------|
+| CSV/фид с Python-dict в колонке | `column_mapping` → `odds_raw`, ingest | `conf/source/*.yaml` → `odds.bookmaker: fonbet` (или другой dict-профиль) |
+| The Odds API (merge wide в `source.csv`) | На **clean** из `pinnacle_*` close собирается **synthetic** строка `odds_raw` (контракт как у UEL/LP) | `conf/bookmaker/the_odds_api.yaml` (`synthetic_odds_raw`, `market_keys`, `side_keys`); турнир: `data_clean.build_synthetic_odds_raw`, `synthetic_odds_raw_bookmaker` (см. `conf/tournament/nhl.yaml`) |
+
+- **Реестр команд** для сопоставления API ↔ источник: `conf/bookmaker/team_name_registry/` (NHL и др.).
+- **Источник и авто-merge**: `conf/source/nhl.yaml` → секция `odds` (`bookmaker`, `bookmakers`, `store_path`, …).
+- **Профиль букмекера для train**: для NHL с дефолтным `fonbet` из корня `conf/config.yaml` перед обучением подставляется `the_odds_api` (`apply_tournament_default_bookmaker` в `sports_forecast.config.validation`).
+- **Не в модель**: `pinnacle_*` снимаются перед FeaturePipeline (`features_build.py`); `odds_raw` остаётся мета-колонкой (`column_utils.META_COLUMNS`).
+
+Альтернатива без dict (редко): в профиле букмекера задать `odds_transport.mode: wide_columns` и кандидатов колонок — см. комментарии в `conf/bookmaker/the_odds_api.yaml`.
+
+---
+
 ## Шаг 3. Положить исходные данные
 
 Разместите CSV/JSON файл в:

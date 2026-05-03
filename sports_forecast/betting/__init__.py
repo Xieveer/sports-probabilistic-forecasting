@@ -3,6 +3,7 @@ Betting module — симуляция ставок и утилиты для ра
 """
 
 from sports_forecast.betting.odds import (
+    extract_betting_odds,
     extract_odds_from_raw,
     find_odds_column,
     get_odds_column_name,
@@ -14,6 +15,7 @@ __all__ = [
     "BettingMetrics",
     "BettingResult",
     "BettingSimulator",
+    "extract_betting_odds",
     "extract_odds_from_raw",
     "find_odds_column",
     "get_odds_column_name",

@@ -528,7 +528,19 @@ def process_tournament(
             before,
         )
 
-    # 5.5. Добавляем производные колонки (derived_columns) из конфига
+    # 5.5. synthetic odds_raw (R26): NHL merge wide → dict string до select_columns
+    bm_for_syn = clean_cfg.get("synthetic_odds_raw_bookmaker")
+    build_syn = bool(clean_cfg.get("build_synthetic_odds_raw", False))
+    if build_syn and bm_for_syn:
+        from sports_forecast.betting.odds import try_attach_synthetic_odds_raw_column
+        from sports_forecast.config.loaders import load_bookmaker_config
+
+        loaded_bm = load_bookmaker_config(str(bm_for_syn))
+        if loaded_bm is not None:
+            bm_node = loaded_bm.bookmaker if hasattr(loaded_bm, "bookmaker") else loaded_bm
+            df = try_attach_synthetic_odds_raw_column(df, bm_node, tournament_name, clean_cfg)
+
+    # 5.6. Добавляем производные колонки (derived_columns) из конфига
     derived_cfg = clean_cfg.derived_columns if hasattr(clean_cfg, "derived_columns") else None
     df = _apply_derived_columns(df, derived_cfg, tournament_name)
 

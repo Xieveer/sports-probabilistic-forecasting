@@ -29,9 +29,10 @@ import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
 
-from sports_forecast.betting.odds import extract_odds_from_raw
+from sports_forecast.betting.odds import extract_betting_odds
 from sports_forecast.betting.simulator import BettingSimulator
 from sports_forecast.config import get_data_path
+from sports_forecast.config.validation import apply_tournament_default_bookmaker
 from sports_forecast.features.column_utils import get_feature_columns
 from sports_forecast.training.base import BaseModel
 from sports_forecast.training.calibration import ModelCalibrator
@@ -91,6 +92,7 @@ class SingleExperimentRunner:
         """
         self.config = config
         self.project_root = project_root
+        apply_tournament_default_bookmaker(config)
 
         logger.info("SingleExperimentRunner инициализирован")
         logger.info("  Project root: %s", project_root)
@@ -1012,16 +1014,34 @@ class SingleExperimentRunner:
             logger.info("BettingSimulator отключён (betting.enabled=false)")
             return {}
 
-        # Извлекаем odds из raw-колонки (dict string → numeric)
+        # Извлекаем odds (odds_raw или wide transport по профилю букмекера)
         bookmaker_cfg = cfg.get("bookmaker", {})
-        odds = extract_odds_from_raw(test_df, cfg.market_spec, bookmaker_cfg)
+        bm_name = bookmaker_cfg.get("name", "?")
+        logger.info(
+            "Бизнес-метрики: bookmaker.name=%s market_spec=%s",
+            bm_name,
+            cfg.market_spec.name,
+        )
+        odds = extract_betting_odds(test_df, cfg.market_spec, bookmaker_cfg)
         valid_odds_mask = odds.notna() & (odds > 1.0)
         valid_count = int(valid_odds_mask.sum())
+        n_test = len(odds)
+        valid_frac = float(valid_count / n_test) if n_test else 0.0
+        logger.info(
+            "Доля валидных odds на test: %.4f (%d / %d)",
+            valid_frac,
+            valid_count,
+            n_test,
+        )
 
         if valid_count == 0:
             logger.warning(
-                "Не удалось извлечь валидные odds из odds_raw "
-                "(market=%s) → бизнес-метрики пропущены",
+                "Нулевое покрытие odds на test — бизнес-метрики пропущены. "
+                "bookmaker=%s market=%s market_spec=%s. "
+                "Проверьте merge odds в source, блок synthetic_odds_raw после clean, "
+                "и соответствие bookmaker.market_keys / side_keys (конфиг-skew).",
+                bm_name,
+                cfg.market.get("family"),
                 cfg.market_spec.name,
             )
             return {}

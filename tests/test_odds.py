@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
 
 from sports_forecast.betting.odds import (
+    build_synthetic_odds_raw_series,
+    extract_betting_odds,
     extract_odds_from_raw,
     find_odds_column,
     get_odds_column_long_format,
@@ -84,6 +88,14 @@ class TestGetOddsColumnLongFormat:
 
     def test_winner_away_side(self) -> None:
         spec = _make_market_spec(name="winner")
+        assert get_odds_column_long_format(spec, "a") == "odds_away_win"
+
+    def test_winner_with_ot_home_side(self) -> None:
+        spec = _make_market_spec(name="winner_withOT")
+        assert get_odds_column_long_format(spec, "h") == "odds_home_win"
+
+    def test_winner_with_ot_away_side(self) -> None:
+        spec = _make_market_spec(name="winner_withOT")
         assert get_odds_column_long_format(spec, "a") == "odds_away_win"
 
     def test_winner_unknown_side(self) -> None:
@@ -259,3 +271,81 @@ class TestExtractOddsFromRaw:
         assert result.iloc[1] == pytest.approx(2.10)
         assert np.isnan(result.iloc[2])
         assert result.iloc[3] == pytest.approx(1.80)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# R26 — the_odds_api / winner_withOT / synthetic odds_raw
+# ─────────────────────────────────────────────────────────────────────────────
+
+_THE_ODDS_API_YAML = (
+    Path(__file__).resolve().parents[1] / "conf" / "bookmaker" / "the_odds_api.yaml"
+)
+_THE_ODDS_API_FLAT: DictConfig = OmegaConf.load(_THE_ODDS_API_YAML)
+
+
+class TestExtractOddsWinnerWithOT:
+    """Long winner_withOT + side → те же ключи, что у winner (the_odds_api)."""
+
+    def test_long_side_h_a(self) -> None:
+        df = pd.DataFrame(
+            {
+                "odds_raw": ["{'1': 1.6, '2': 2.3}", "{'1': 1.6, '2': 2.3}"],
+                "side": ["h", "a"],
+            }
+        )
+        spec = _make_market_spec(name="winner_withOT", data_format="long")
+        result = extract_odds_from_raw(df, spec, _THE_ODDS_API_FLAT)
+        assert result.iloc[0] == pytest.approx(1.6)
+        assert result.iloc[1] == pytest.approx(2.3)
+
+
+class TestSyntheticOddsRawBuild:
+    """Сборка odds_raw из pinnacle_* close (V3)."""
+
+    def test_builds_dict_string(self) -> None:
+        syn = _THE_ODDS_API_FLAT.synthetic_odds_raw
+        df = pd.DataFrame(
+            {
+                "pinnacle_winner_withOT_home_close": [1.55],
+                "pinnacle_winner_withOT_away_close": [2.45],
+            }
+        )
+        s = build_synthetic_odds_raw_series(df, syn)
+        parsed = extract_odds_from_raw(
+            pd.DataFrame({"odds_raw": s, "side": ["h"]}),
+            _make_market_spec(name="winner_withOT", data_format="long"),
+            _THE_ODDS_API_FLAT,
+        )
+        assert parsed.iloc[0] == pytest.approx(1.55)
+
+    def test_falls_back_to_legacy_v1_columns(self) -> None:
+        syn = _THE_ODDS_API_FLAT.synthetic_odds_raw
+        df = pd.DataFrame({"pinnacle_home_close": [1.9], "pinnacle_away_close": [1.95]})
+        s = build_synthetic_odds_raw_series(df, syn)
+        assert "1" in s.iloc[0] and "2" in s.iloc[0]
+
+
+class TestExtractBettingOddsWideTransport:
+    """Явный odds_transport.mode=wide_columns без odds_raw."""
+
+    def test_long_winner_with_ot_wide_transport(self) -> None:
+        transport = OmegaConf.create(
+            {
+                "mode": "wide_columns",
+                "long_winner_specs": ["winner_withOT"],
+                "home_close_column_candidates": ["pinnacle_winner_withOT_home_close"],
+                "away_close_column_candidates": ["pinnacle_winner_withOT_away_close"],
+            }
+        )
+        bm = OmegaConf.merge(_THE_ODDS_API_FLAT, OmegaConf.create({"odds_transport": transport}))
+        df = pd.DataFrame(
+            {
+                "pinnacle_winner_withOT_home_close": [1.7, 1.7],
+                "pinnacle_winner_withOT_away_close": [2.15, 2.15],
+                "side": ["h", "a"],
+            }
+        )
+        spec = _make_market_spec(name="winner_withOT", data_format="long")
+        out = extract_betting_odds(df, spec, bm)
+        assert out.iloc[0] == pytest.approx(1.7)
+        assert out.iloc[1] == pytest.approx(2.15)

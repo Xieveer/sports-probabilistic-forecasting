@@ -235,3 +235,54 @@ class TestValidateExperimentConfig:
         # tmp_path не содержит файлов данных
         with pytest.raises(ConfigValidationError, match="Файл данных не найден"):
             validate_experiment_config(valid_cfg, tmp_path)
+
+
+class TestApplyTournamentDefaultBookmaker:
+    """R26: NHL → the_odds_api при дефолтном fonbet из корня config."""
+
+    def test_nhl_train_replaces_fonbet(self) -> None:
+        from omegaconf import OmegaConf
+
+        from sports_forecast.config.validation import apply_tournament_default_bookmaker
+
+        cfg = OmegaConf.create(
+            {
+                "tournament": {"name": "nhl_train"},
+                "bookmaker": {
+                    "name": "fonbet",
+                    "market_keys": {"winner_home": "1"},
+                    "side_keys": {"h": "1", "a": "2"},
+                },
+            }
+        )
+        apply_tournament_default_bookmaker(cfg)
+        assert cfg.bookmaker.name == "the_odds_api"
+        assert "synthetic_odds_raw" in cfg.bookmaker
+
+    def test_explicit_non_fonbet_unchanged(self) -> None:
+        from omegaconf import OmegaConf
+
+        from sports_forecast.config.validation import apply_tournament_default_bookmaker
+
+        cfg = OmegaConf.create(
+            {
+                "tournament": {"name": "nhl_train"},
+                "bookmaker": {"name": "custom", "market_keys": {}},
+            }
+        )
+        apply_tournament_default_bookmaker(cfg)
+        assert cfg.bookmaker.name == "custom"
+
+    def test_non_nhl_unchanged(self) -> None:
+        from omegaconf import OmegaConf
+
+        from sports_forecast.config.validation import apply_tournament_default_bookmaker
+
+        cfg = OmegaConf.create(
+            {
+                "tournament": {"name": "uel_kz_1"},
+                "bookmaker": {"name": "fonbet"},
+            }
+        )
+        apply_tournament_default_bookmaker(cfg)
+        assert cfg.bookmaker.name == "fonbet"
