@@ -31,7 +31,7 @@
 | R20    | 🔴 High     | High      | ✅     | 20-й ✅ (Pinnacle odds: backfill 3 сезонов + инкрементальный автоапдейт) |
 | R21    | 🔴 High     | High      | ✅     | 21-й ✅ (Multi-bookmaker V3 + логи; R21.13 реестр — частично по unmatched) |
 | R22    | 🔴 High     | Medium    | 🟡     | 22-й (NHL baseline + OT + фичи ✅; R22.7 открыта — откат `pinnacle_holdout`, см. R26) |
-| R23    | 🔴 High     | High      | 🟡     | 23-й (CI/CD, секреты, prod deploy, observability, refresh) |
+| R23    | 🔴 High     | High      | ✅     | 23-й ✅ (CI/CD, секреты, prod deploy, observability, refresh) |
 | R24    | 🟡 Medium   | Medium    | 🟡     | 24-й (Telegram UX: меню, подписки, admin, polish) |
 | R25    | 🟡 Medium   | High      | 🟡     | 25-й (NHL: team stats, player props, lineup-driven inference; после R22 baseline) |
 | R26    | 🟡 Medium   | High      | ✅     | 26-й ✅ (единый контракт odds → беттинг-метрики в train; NHL + merge-источники) |
@@ -121,6 +121,15 @@
   - [x] R26.4 — Hydra: `nhl` / `nhl_train` defaults `bookmaker` ≠ fonbet (`apply_tournament_default_bookmaker`)
   - [x] R26.5 — `trainer.py`: вызов общего извлечения odds, логи покрытия, zero-coverage warn
   - [x] R26.6 — `HOW_TO_ADD_NEW_TOURNAMENT.md` раздел Odds (dict vs merge wide)
+- [x] **R23** — CI/CD, секреты, prod deploy, observability, refresh ✅ 2026-05-03; см. `done_task/R23.md`
+  - [x] R23.1 — GitHub Actions: lint + test on PR (ci.yml, Python 3.10/3.12, uv cache)
+  - [x] R23.2 — GitHub Actions: Docker build + push ghcr.io (docker.yml, api/worker/telegram-bot)
+  - [x] R23.3 — `.env.example` + `docs/deploy/secrets.md` (GitHub Secrets vs VPS .env)
+  - [x] R23.4 — GitHub Actions: deploy hook SSH + workflow_dispatch (deploy.yml)
+  - [x] R23.5 — `docker-compose.prod.yml`: limits, log rotation, node-exporter, caddy
+  - [x] R23.6 — Reverse proxy + HTTPS: Caddy 2, Let's Encrypt, basicauth Grafana/MLflow
+  - [x] R23.7 — Observability prod: prometheus.prod.yml, api_slo alerts, Grafana panels
+  - [x] R23.8 — Scheduled data refresh: `cron_refresh.py` + shell wrapper + unit tests
 
 ### В работе / Backlog 🟡
 
@@ -166,16 +175,6 @@
   - [x] R22.6 — *(stretch)* Motivation / playoff context ✅ 2026-05-04
   - [ ] R22.7 — *(stretch)* Оценка vs Pinnacle / betting на holdout *(откат standalone CLI; реализация — R26 или отдельное решение)*
   - [x] R22.8 — Рынки NHL: `winner_withOT`, `total_withOT` (параллельно основному времени) ✅ 2026-05-03
-
-- [ ] **R23** — CI/CD, секреты, prod deploy, observability, refresh; см. `backlog/R23.md`
-  - [ ] R23.1 — GitHub Actions: lint + test on PR
-  - [ ] R23.2 — GitHub Actions: Docker build + push (ghcr.io)
-  - [ ] R23.3 — `.env.example` + secrets management
-  - [ ] R23.4 — GitHub Actions: deploy hook (SSH, workflow_dispatch)
-  - [ ] R23.5 — Рекомендации по серверу + `docker-compose.prod.yml`
-  - [ ] R23.6 — Reverse proxy + HTTPS (Caddy/nginx)
-  - [ ] R23.7 — Observability production (Prometheus/Grafana, alerts)
-  - [ ] R23.8 — Scheduled data refresh (cron / Airflow DAG)
 
 - [ ] **R24** — Telegram UX (меню, подписки, admin, polish); см. `backlog/R24.md`
   - [ ] R24.1 — Inline-меню и навигация

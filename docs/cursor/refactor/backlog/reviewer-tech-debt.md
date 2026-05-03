@@ -411,3 +411,20 @@
   - Унифицировать synthetic-сборку и fonbet-парсинг через общий объект `OddsDict` (датакласс), устранив хрупкость `ast.literal_eval`.
   - R22.7 (holdout eval vs Pinnacle) по-прежнему открыта: R26 покрывает train-time BettingSimulator, но не изолированный OOD holdout-отчёт — при необходимости сделать отдельной задачей.
   - Implied probability 2-way (market-benchmark) — упомянута в R26.3, юнит-тесты не добавлены; задел есть в `synthetic_odds_raw`, но вычисление vig/no-vig вероятности ещё не реализовано.
+
+### 2026-05-03 — R23: CI/CD, секреты, production deploy на VPS
+
+- **Задача:** `backlog/R23.md` → `done_task/R23.md`
+- **Ограничения и компромиссы:**
+  - **`!reset` в docker-compose.prod.yml:** тег `!reset` — расширение Docker Compose, не стандартный YAML. Pre-commit `check-yaml` добавлен exclude; при смене YAML-линтера исключение нужно повторить. Альтернатива — Compose `extends:` (но ломает `!reset` семантику для массивов).
+  - **Deploy без healthcheck-барьера:** `deploy.yml` делает `up -d --remove-orphans`, но не дожидается healthcheck-прохождения новых контейнеров. Откат при ошибке — вручную. При CI-сбое `workflow_run` guard защищает, но partial-start сценарий не обрабатывается.
+  - **docker.yml не зависит от ci.yml:** CI и Docker — независимые workflows. При merge в main Docker может запустить параллельно с CI; образ теоретически может быть push-нут при фейловых тестах, если CI запустился раньше и ещё не завершился. Полное решение — caching стратегия или `workflow_run` от CI.
+  - **Cron без оркестратора:** `cron_refresh.py` — bash-уровень с `flock`; нет retry-политики, нет алертинга на cron-сбой напрямую (только через staleness-алерт). Airflow-DAG `dag_data_refresh.py` существует параллельно — два механизма рефреша.
+  - **node-exporter без сетевой изоляции:** сервис объявлен в `docker-compose.prod.yml`, но не добавлен в `networks:` базового compose; видимость зависит от дефолтного compose-поведения.
+  - **Caddy basic auth через env:** хэш пароля передаётся переменной окружения в контейнер Caddy; при утечке `.env` на сервере — раскрытие basic auth.
+- **Возможные улучшения / техдолг:**
+  - Добавить step `docker compose ps --filter health=healthy` или использовать `appleboy/ssh-action` с ожиданием healthcheck-порогов после деплоя.
+  - Связать `docker.yml` с `ci.yml` через `workflow_run` для гарантии «образ пушится только при зелёных тестах».
+  - Cron alerting: добавить `on_failure_command` или интеграцию healthchecks.io/Alertmanager для уведомления при падении cron-джобы.
+  - Versionize Caddyfile: при появлении нескольких сервисов рассмотреть шаблонизацию через Caddyfile snippets или отдельный Caddyfile-фрагмент per-сервис.
+  - Переработать `node-exporter` в именованную сеть (`networks: monitoring_net`) для изоляции scrape-трафика.
