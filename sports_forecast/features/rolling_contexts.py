@@ -13,6 +13,7 @@ R28 — ``rolling_column_aliases`` (опционально в sport/tournament):
 
 from __future__ import annotations
 
+import copy
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -245,6 +246,100 @@ def expand_rolling_generators_inplace(
         del gen["context_source"]
 
 
+def _tournament_ewm_metrics(tournament_cfg: Any) -> list[dict[str, str]] | None:
+    """Список ``{metric, label}`` из ``tournament_cfg.ewm_metrics`` или None."""
+    if tournament_cfg is None:
+        return None
+    raw: Any
+    if isinstance(tournament_cfg, dict):
+        raw = tournament_cfg.get("ewm_metrics")
+    elif isinstance(tournament_cfg, DictConfig):
+        raw = OmegaConf.select(tournament_cfg, "ewm_metrics")
+    else:
+        raw = getattr(tournament_cfg, "ewm_metrics", None)
+    if raw is None:
+        return None
+    if isinstance(raw, DictConfig):
+        raw = OmegaConf.to_container(raw, resolve=True)
+    if not isinstance(raw, list) or len(raw) == 0:
+        return None
+    out: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        m = item.get("metric")
+        lbl = item.get("label")
+        if m is not None and lbl is not None:
+            out.append({"metric": str(m), "label": str(lbl)})
+    return out or None
+
+
+def _tournament_ewm_spans(tournament_cfg: Any) -> list[int] | None:
+    """Список span из ``tournament_cfg.ewm_spans`` или None."""
+    if tournament_cfg is None:
+        return None
+    raw: Any
+    if isinstance(tournament_cfg, dict):
+        raw = tournament_cfg.get("ewm_spans")
+    elif isinstance(tournament_cfg, DictConfig):
+        raw = OmegaConf.select(tournament_cfg, "ewm_spans")
+    else:
+        raw = getattr(tournament_cfg, "ewm_spans", None)
+    if raw is None:
+        return None
+    if isinstance(raw, DictConfig):
+        raw = OmegaConf.to_container(raw, resolve=True)
+    if not isinstance(raw, list) or len(raw) == 0:
+        return None
+    try:
+        return [int(x) for x in raw]
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"ewm_spans must be a list of integers, got {raw!r}") from e
+
+
+def inject_sport_ewm_generators(features_cfg: dict[str, Any], tournament_cfg: Any) -> None:
+    """Клонирует ``ewm_diff`` / ``ewm_total`` для каждой записи ``sport.ewm_metrics`` (R27).
+
+    Вызывается после ``expand_rolling_generators_inplace``, когда у ``ewm_*`` уже есть
+    развёрнутые ``contexts``. У дополнительных генераторов warmup отключён, чтобы не
+    дублировать ``pl_ewm_warmup``.
+    """
+    metrics = _tournament_ewm_metrics(tournament_cfg)
+    if not metrics:
+        return
+    gens = features_cfg.get("generators")
+    if not isinstance(gens, dict):
+        return
+    span_override = _tournament_ewm_spans(tournament_cfg)
+    added = 0
+    for spec in metrics:
+        metric = spec["metric"]
+        label = spec["label"]
+        is_total = metric.endswith("_total") or label.endswith("_total")
+        src_key = "ewm_total" if is_total else "ewm_diff"
+        base = gens.get(src_key)
+        if not isinstance(base, dict) or "contexts" not in base:
+            logger.warning(
+                "inject_sport_ewm: нет развёрнутого %s — пропуск метрики %s",
+                src_key,
+                metric,
+            )
+            continue
+        gen_key = f"ewm_sport_{label}"
+        if gen_key in gens:
+            raise ValueError(f"inject_sport_ewm: ключ генератора {gen_key!r} уже занят")
+        tmpl = copy.deepcopy(base)
+        tmpl["metric"] = metric
+        tmpl["metric_label"] = label
+        tmpl["warmup"] = {"enabled": False}
+        if span_override is not None:
+            tmpl["spans"] = list(span_override)
+        gens[gen_key] = tmpl
+        added += 1
+    if added:
+        logger.info("inject_sport_ewm: добавлено %d EWM-генераторов по sport.ewm_metrics", added)
+
+
 def materialize_features_config(
     features_cfg: DictConfig | dict[str, Any],
     tournament_cfg: Any = None,
@@ -261,4 +356,5 @@ def materialize_features_config(
     if not isinstance(out, dict):
         raise TypeError(f"features_cfg must resolve to dict, got {type(out)}")
     expand_rolling_generators_inplace(out, tournament_cfg=tournament_cfg)
+    inject_sport_ewm_generators(out, tournament_cfg=tournament_cfg)
     return out

@@ -22,7 +22,7 @@ ewm_diff:
   enabled: true
   metric: "diff_ps"
   metric_label: "diff"
-  spans: [5, 25, 100]
+  spans: [5, 15]
   shift: 1
   min_periods: 3
   adjust: false
@@ -44,7 +44,7 @@ ewm_total:
   enabled: true
   metric: "total_ps"
   metric_label: "total"
-  spans: [5, 25, 100]
+  spans: [5, 15]
   shift: 1
   min_periods: 3
   adjust: false

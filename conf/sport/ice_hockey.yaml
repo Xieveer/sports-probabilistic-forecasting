@@ -33,6 +33,20 @@ rolling_context_names:
 # Для NHL колонка ``season`` уже совпадает с library — оставляем пустой mapping как контракт.
 rolling_column_aliases: {}
 
+# R27: горизонты EWM и дополнительные метрики (после materialize → клоны ewm_diff / ewm_total).
+ewm_spans: [5, 15]
+ewm_metrics:
+  - { metric: goals_full_diff, label: gf_diff }
+  - { metric: goals_full_total, label: gf_total }
+  - { metric: sog_diff_ft, label: sog }
+  - { metric: bs_diff_ft, label: bs }
+  - { metric: hits_diff_ft, label: hits }
+  - { metric: pim2_diff_ft, label: pim2 }
+  - { metric: fow_diff_ft, label: fow }
+
+# Граница «хоккейного года» (резерв под season_id; сезон в данных — колонка ``season``).
+season_start_month: 9
+
 form_params:
   fg_trigger_minutes: 360
   dp_trigger_minutes: 45

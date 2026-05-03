@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from datetime import date
 from typing import Any, Literal
 
@@ -77,6 +78,37 @@ def _height_inches(p: dict[str, Any]) -> float | None:
         except (TypeError, ValueError):
             pass
     return None
+
+
+def _roster_sweater_set(raw: Any) -> frozenset[int]:
+    """Множество номеров свитеров активного ростера (``players``)."""
+    blob = _parse_roster_blob(raw)
+    players = blob.get("players") or []
+    if not isinstance(players, list):
+        return frozenset()
+    out: set[int] = set()
+    for p in players:
+        if not isinstance(p, dict):
+            continue
+        sn = p.get("sweaterNumber")
+        if sn is None:
+            continue
+        try:
+            out.add(int(sn))
+        except (TypeError, ValueError):
+            continue
+    return frozenset(out)
+
+
+def _jaccard_sweaters(prev: frozenset[int] | None, cur: frozenset[int]) -> float:
+    if prev is None:
+        return float("nan")
+    if not prev and not cur:
+        return float("nan")
+    union = len(prev | cur)
+    if union == 0:
+        return float("nan")
+    return float(len(prev & cur)) / float(union)
 
 
 def _injured_count(blob: dict[str, Any]) -> float:
@@ -211,9 +243,27 @@ class NhlRosterFeatureGenerator(BaseFeatureGenerator):
             self._young_skaters_n = 9
         if self._young_skaters_n < 0:
             self._young_skaters_n = 0
+        self._lineup_enabled = bool(config.get("lineup_features_enabled", True))
+        try:
+            self._stability_window = max(1, int(config.get("stability_window", 5)))
+        except (TypeError, ValueError):
+            self._stability_window = 5
+
+    @staticmethod
+    def _lineup_column_names() -> list[str]:
+        return [
+            "home_lineup_continuity",
+            "away_lineup_continuity",
+            "home_roster_mean_seniority",
+            "away_roster_mean_seniority",
+            "home_roster_min_seniority",
+            "away_roster_min_seniority",
+            "home_roster_stability",
+            "away_roster_stability",
+        ]
 
     def get_feature_names(self) -> list[str]:
-        return [
+        base = [
             "home_roster_size",
             "away_roster_size",
             "home_avg_player_age",
@@ -239,6 +289,9 @@ class NhlRosterFeatureGenerator(BaseFeatureGenerator):
             "home_injured_listed",
             "away_injured_listed",
         ]
+        if self._lineup_enabled:
+            return base + self._lineup_column_names()
+        return base
 
     def _missing(self, df: pd.DataFrame) -> list[str]:
         return [c for c in self._required if c not in df.columns]
@@ -343,4 +396,63 @@ class NhlRosterFeatureGenerator(BaseFeatureGenerator):
         df["away_young_defense_mean_height_in"] = a_ydh
         df["home_injured_listed"] = h_inj
         df["away_injured_listed"] = a_inj
+        if self._lineup_enabled:
+            self._add_lineup_features(df, dt)
         return df
+
+    def _add_lineup_features(self, df: pd.DataFrame, dt: pd.Series) -> None:
+        """R27: Jaccard непрерывности состава, seniority, stability по последним матчам."""
+        for c in self._lineup_column_names():
+            df[c] = np.nan
+        if "home_team" not in df.columns or "away_team" not in df.columns:
+            logger.warning("%s: lineup фичи — нет home_team/away_team, заполнено NaN", self.name)
+            return
+
+        last_sw: dict[str, frozenset[int]] = {}
+        cum_app: dict[tuple[str, int], int] = {}
+        cont_hist: dict[str, list[float]] = defaultdict(list)
+        w = self._stability_window
+
+        for idx in dt.sort_values().index:
+            r = df.loc[idx]
+            ht_raw, at_raw = r.get("home_team"), r.get("away_team")
+            ht = (
+                str(ht_raw).strip()
+                if ht_raw is not None and not (isinstance(ht_raw, float) and np.isnan(ht_raw))
+                else ""
+            )
+            at = (
+                str(at_raw).strip()
+                if at_raw is not None and not (isinstance(at_raw, float) and np.isnan(at_raw))
+                else ""
+            )
+            if not ht or not at:
+                continue
+
+            hs = _roster_sweater_set(r.get("home_roster"))
+            aws = _roster_sweater_set(r.get("away_roster"))
+
+            def _one_team(team: str, cur: frozenset[int], prefix: str, row_idx: Any) -> None:
+                prev = last_sw.get(team)
+                cont = _jaccard_sweaters(prev, cur)
+                sens = [float(cum_app.get((team, sn), 0)) for sn in cur] if cur else []
+                mean_s = float(np.mean(sens)) if sens else float("nan")
+                min_s = float(np.min(sens)) if sens else float("nan")
+                hist = cont_hist[team]
+                cont_f = float(cont) if not np.isnan(cont) else float("nan")
+                combined = hist + ([cont_f] if not np.isnan(cont_f) else [])
+                stab_vals = combined[-w:] if w > 0 else combined
+                stab = float(np.mean(stab_vals)) if stab_vals else float("nan")
+                df.loc[row_idx, f"{prefix}_lineup_continuity"] = cont
+                df.loc[row_idx, f"{prefix}_roster_mean_seniority"] = mean_s
+                df.loc[row_idx, f"{prefix}_roster_min_seniority"] = min_s
+                df.loc[row_idx, f"{prefix}_roster_stability"] = stab
+                if not np.isnan(cont_f):
+                    cont_hist[team].append(cont_f)
+                for sn in cur:
+                    k = (team, sn)
+                    cum_app[k] = cum_app.get(k, 0) + 1
+                last_sw[team] = cur
+
+            _one_team(ht, hs, "home", idx)
+            _one_team(at, aws, "away", idx)

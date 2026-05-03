@@ -1,0 +1,7 @@
+# R27: серии побед/поражений и win-rate до текущего матча (shift=1 по истории команд).
+streak:
+  type: streak
+  enabled: true
+  # goals_full — если есть pl_goals_full/opp_goals_full; иначе points.
+  win_mode: goals_full
+  win_rate_windows: [5, 10]

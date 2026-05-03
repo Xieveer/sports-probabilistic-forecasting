@@ -291,13 +291,14 @@ def long_to_wide(
 
 def create_player_metrics(df: pd.DataFrame, metrics: list[str]) -> pd.DataFrame:
     """
-    Создать метрики для long format (diff_ps, total_ps, etc.).
+    Создать метрики для long format (diff_ps, total_ps, goals_*, stat diffs).
 
     Эти метрики используются как базовые для генерации фичей.
 
     Args:
         df: Long format датафрейм
-        metrics: Список метрик для создания ('diff', 'total')
+        metrics: Список имён метрик (``diff``/``total`` + R27 токены для NHL).
+            Для каждого токена, если нужных колонок нет в ``df``, метрика пропускается.
 
     Returns:
         Датафрейм с добавленными метриками
@@ -315,15 +316,42 @@ def create_player_metrics(df: pd.DataFrame, metrics: list[str]) -> pd.DataFrame:
     """
     result = df.copy()
 
+    def _diff_pair(name: str, pl_c: str, opp_c: str) -> None:
+        if name not in metrics:
+            return
+        if pl_c not in df.columns or opp_c not in df.columns:
+            logger.debug("create_player_metrics: пропуск %s (нет %s / %s)", name, pl_c, opp_c)
+            return
+        result[name] = df[pl_c] - df[opp_c]
+        logger.debug("Создана метрика: %s = %s - %s", name, pl_c, opp_c)
+
+    def _sum_pair(name: str, pl_c: str, opp_c: str) -> None:
+        if name not in metrics:
+            return
+        if pl_c not in df.columns or opp_c not in df.columns:
+            logger.debug("create_player_metrics: пропуск %s (нет %s / %s)", name, pl_c, opp_c)
+            return
+        result[name] = df[pl_c] + df[opp_c]
+        logger.debug("Создана метрика: %s = %s + %s", name, pl_c, opp_c)
+
     if "diff" in metrics and "pl_points" in df.columns and "opp_points" in df.columns:
-        # Разница очков (pl - opp)
         result["diff_ps"] = df["pl_points"] - df["opp_points"]
         logger.debug("Создана метрика: diff_ps = pl_points - opp_points")
 
     if "total" in metrics and "pl_points" in df.columns and "opp_points" in df.columns:
-        # Сумма очков
         result["total_ps"] = df["pl_points"] + df["opp_points"]
         logger.debug("Создана метрика: total_ps = pl_points + opp_points")
+
+    _diff_pair("goals_full_diff", "pl_goals_full", "opp_goals_full")
+    _sum_pair("goals_full_total", "pl_goals_full", "opp_goals_full")
+    _diff_pair("goals_reg_diff", "pl_goals_reg", "opp_goals_reg")
+    _sum_pair("goals_reg_total", "pl_goals_reg", "opp_goals_reg")
+
+    _diff_pair("sog_diff_ft", "pl_sog_ft", "opp_sog_ft")
+    _diff_pair("bs_diff_ft", "pl_bs_ft", "opp_bs_ft")
+    _diff_pair("hits_diff_ft", "pl_hits_ft", "opp_hits_ft")
+    _diff_pair("pim2_diff_ft", "pl_2pim_ft", "opp_2pim_ft")
+    _diff_pair("fow_diff_ft", "pl_fow_ft", "opp_fow_ft")
 
     return result
 

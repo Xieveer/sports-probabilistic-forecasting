@@ -3,6 +3,9 @@ nhl_roster:
   type: nhl_roster
   enabled: true
   datetime_column: datetime
+  # R27: continuity / seniority / stability (нужны ``home_team`` / ``away_team`` в wide).
+  lineup_features_enabled: true
+  stability_window: 5
   # Топ-N самых молодых скатеров (отдельно нападающие и защитники) для средних age/height.
   young_skaters_n: 9
   required_columns:

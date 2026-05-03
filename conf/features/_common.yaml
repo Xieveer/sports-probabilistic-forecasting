@@ -31,6 +31,29 @@ result_cols:
   - opp
   - diff_ps
   - total_ps
+  - goals_full_diff
+  - goals_full_total
+  - goals_reg_diff
+  - goals_reg_total
+  - sog_diff_ft
+  - bs_diff_ft
+  - hits_diff_ft
+  - pim2_diff_ft
+  - fow_diff_ft
+  - pl_goals_full
+  - opp_goals_full
+  - pl_goals_reg
+  - opp_goals_reg
+  - pl_sog_ft
+  - opp_sog_ft
+  - pl_bs_ft
+  - opp_bs_ft
+  - pl_hits_ft
+  - opp_hits_ft
+  - pl_2pim_ft
+  - opp_2pim_ft
+  - pl_fow_ft
+  - opp_fow_ft
   # Wide format
   - home_points
   - away_points
@@ -54,6 +77,15 @@ requires_long: true
 create_metrics:
   - "diff"    # diff_ps = pl_points - opp_points
   - "total"   # total_ps = pl_points + opp_points
+  - "goals_full_diff"
+  - "goals_full_total"
+  - "goals_reg_diff"
+  - "goals_reg_total"
+  - "sog_diff_ft"
+  - "bs_diff_ft"
+  - "hits_diff_ft"
+  - "pim2_diff_ft"
+  - "fow_diff_ft"
 
 # Контекстные колонки для wide→long трансформации.
 # TimeFeatureGenerator автоматически добавляет свои колонки (weekday, hour, ...)
@@ -61,3 +93,4 @@ create_metrics:
 long_format_context_columns:
   - "tour_num"
   - "tour_match_num"
+  - "season"

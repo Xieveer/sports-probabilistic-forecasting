@@ -28,6 +28,7 @@ from sports_forecast.features.generators.form_generator import FormFeatureGenera
 from sports_forecast.features.generators.roster_generator import NhlRosterFeatureGenerator
 from sports_forecast.features.generators.schedule_generator import NhlScheduleFeatureGenerator
 from sports_forecast.features.generators.standings_generator import NhlStandingsFeatureGenerator
+from sports_forecast.features.generators.streak_generator import StreakFeatureGenerator
 from sports_forecast.features.generators.time_generator import TimeFeatureGenerator
 from sports_forecast.features.long_format import (
     create_player_metrics,
@@ -64,6 +65,7 @@ class FeaturePipeline:
     # Маппинг типов генераторов на классы
     GENERATOR_MAP = {
         "form": FormFeatureGenerator,
+        "streak": StreakFeatureGenerator,
         "ewm": EWMFeatureGenerator,
         "count": CountFeatureGenerator,
         "time": TimeFeatureGenerator,

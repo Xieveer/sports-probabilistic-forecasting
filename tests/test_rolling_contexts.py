@@ -9,6 +9,7 @@ from sports_forecast.features.rolling_contexts import (
     _resolve_keys,
     expand_rolling_generators_inplace,
     load_rolling_context_library,
+    materialize_features_config,
 )
 
 
@@ -147,6 +148,45 @@ def test_expand_without_aliases_backward_compat() -> None:
         c for c in features_cfg["generators"]["ewm_diff"]["contexts"] if c["name"] == "inseason"
     )
     assert ins["keys"] == ["pl", "season"]
+
+
+def test_materialize_injects_sport_ewm_generators() -> None:
+    features_cfg: dict[str, Any] = {
+        "generators": {
+            "ewm_diff": {"type": "ewm", "context_source": "library", "spans": [99]},
+            "ewm_total": {"type": "ewm", "context_source": "library", "spans": [99]},
+            "count": {"type": "count", "context_source": "library"},
+        }
+    }
+    tournament_cfg = {
+        "rolling_context_names": ["global"],
+        "ewm_spans": [5, 15],
+        "ewm_metrics": [{"metric": "sog_diff_ft", "label": "sog"}],
+    }
+    out = materialize_features_config(features_cfg, tournament_cfg=tournament_cfg)
+    assert "ewm_sport_sog" in out["generators"]
+    g = out["generators"]["ewm_sport_sog"]
+    assert g["metric"] == "sog_diff_ft"
+    assert g["metric_label"] == "sog"
+    assert g["spans"] == [5, 15]
+    assert g["warmup"]["enabled"] is False
+
+
+def test_materialize_injects_goals_total_from_ewm_total_template() -> None:
+    features_cfg: dict[str, Any] = {
+        "generators": {
+            "ewm_diff": {"type": "ewm", "context_source": "library"},
+            "ewm_total": {"type": "ewm", "context_source": "library"},
+            "count": {"type": "count", "context_source": "library"},
+        }
+    }
+    tournament_cfg = {
+        "rolling_context_names": ["global"],
+        "ewm_metrics": [{"metric": "goals_full_total", "label": "gf_total"}],
+    }
+    out = materialize_features_config(features_cfg, tournament_cfg=tournament_cfg)
+    assert "ewm_sport_gf_total" in out["generators"]
+    assert out["generators"]["ewm_sport_gf_total"]["metric"] == "goals_full_total"
 
 
 def test_expand_library_unknown_type_raises() -> None:

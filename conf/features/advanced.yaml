@@ -5,7 +5,7 @@
 #   _common          → exclude_cols, result_cols, prefix, requires_long
 #   time/default     → long_format_context_columns (pre-generator, работает на wide)
 #   form/default     → form (fg/dp из tournament конфига, создает pl_state, match_state)
-#   rolling/standard → ewm (spans=[5,25,100]) + count (контексты из library + sport.rolling_context_names)
+#   rolling/standard → ewm (spans=[5,15]) + count (контексты из library + sport.rolling_context_names)
 #
 # Порядок важен: form должен быть перед rolling, т.к. создает контекстные колонки
 # (pl_state, opp_state, match_state), которые используются в ewm и count генераторах.
@@ -17,7 +17,8 @@ defaults:
   - generators/standings@generators: nhl
   - generators/roster@generators: nhl
   - generators/form@generators: default
+  - generators/streak@generators: default
   - generators/rolling@generators: standard
 
 name: advanced
-description: "Advanced featureset with multiple spans (5, 25, 100)"
+description: "Advanced featureset: EWM spans [5,15], sport ewm_metrics (NHL), streak, rolling contexts"
