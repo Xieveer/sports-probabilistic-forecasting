@@ -1,4 +1,4 @@
-# NHL: плотность расписания (пре-генератор, wide → context в long)
+# NHL: плотность расписания + travel/rest (R22.5), пре-генератор wide → long context
 nhl_schedule:
   type: nhl_schedule
   enabled: true
@@ -8,3 +8,6 @@ nhl_schedule:
     - away_team
     - datetime
     - home_sog_ft
+  travel:
+    # Км между ареной предыдущей игры команды и текущей; сдвиг часового пояса (std, без DST).
+    enabled: true
