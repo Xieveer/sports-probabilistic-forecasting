@@ -21,7 +21,7 @@ SingleExperimentRunner — оркестратор обучения одного 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import mlflow
 import numpy as np
@@ -57,6 +57,19 @@ from sports_forecast.utils.targets import (
 
 
 logger = get_logger(__name__)
+
+# Дефолтные колонки контекста для test_bet_trace (long NHL); переопределяются в conf/betting.yaml.
+_DEFAULT_TEST_BET_TRACE_COLUMNS: Final[tuple[str, ...]] = (
+    "datetime",
+    "pl",
+    "opp",
+    "side",
+    "is_home",
+    "pl_goals_full",
+    "opp_goals_full",
+    "match_id",
+    "id",
+)
 
 
 class SingleExperimentRunner:
@@ -981,6 +994,95 @@ class SingleExperimentRunner:
 
         return metrics
 
+    def _enrich_bet_trace_from_test_df(
+        self,
+        trace_df: pd.DataFrame,
+        test_df: pd.DataFrame,
+        row_index: pd.Index,
+        betting_cfg: Any,
+    ) -> pd.DataFrame:
+        """Добавить в trace контекст матча из ``test_df`` и производные поля.
+
+        Имена команд (long: ``pl`` / ``opp``), сторона строки (``side``, ``side_label``),
+        дата (``datetime``), счёт с ОТ (``pl_goals_full``/``opp_goals_full`` и
+        ``score_full_match``) — через ``test_bet_trace_extra_columns`` в conf/betting.yaml.
+
+        Args:
+            trace_df: Таблица из ``BettingSimulator`` (уже с ``original_row_index``).
+            test_df: Полный test DataFrame (те же индексы, что у holdout).
+            row_index: Индекс строк после фильтра валидных odds.
+            betting_cfg: Блок ``cfg.betting``.
+
+        Returns:
+            Тот же trace с доп. колонками и упорядоченными в начале контекстными полями.
+        """
+        want_raw = betting_cfg.get("test_bet_trace_extra_columns")
+        if want_raw is None:
+            want = list(_DEFAULT_TEST_BET_TRACE_COLUMNS)
+        elif isinstance(want_raw, (list, tuple)):
+            want = [str(x) for x in want_raw]
+        else:
+            cont = OmegaConf.to_container(want_raw, resolve=True)
+            want = [str(x) for x in cont] if isinstance(cont, list) else []
+
+        aligned = test_df.reindex(row_index)
+        present: list[str] = []
+        missing: list[str] = []
+        for c in want:
+            if c in aligned.columns:
+                trace_df[c] = aligned[c].to_numpy()
+                present.append(c)
+            else:
+                missing.append(c)
+        if missing:
+            logger.debug("test_bet_trace: колонки отсутствуют в test_df и пропущены: %s", missing)
+
+        if "side" in trace_df.columns:
+            _side_map = {"h": "home", "a": "away", "home": "home", "away": "away"}
+
+            def _side_label(v: Any) -> str:
+                if pd.isna(v):
+                    return ""
+                s = str(v).strip().lower()
+                return _side_map.get(s, str(v))
+
+            trace_df["side_label"] = trace_df["side"].map(_side_label)
+        elif "is_home" in trace_df.columns:
+            ih = pd.to_numeric(trace_df["is_home"], errors="coerce").fillna(0).astype(int)
+            trace_df["side_label"] = np.where(ih == 1, "home", "away")
+
+        if "pl_goals_full" in trace_df.columns and "opp_goals_full" in trace_df.columns:
+            pg = pd.to_numeric(trace_df["pl_goals_full"], errors="coerce")
+            og = pd.to_numeric(trace_df["opp_goals_full"], errors="coerce")
+            score = pd.Series(pd.NA, index=trace_df.index, dtype="string")
+            ok = pg.notna() & og.notna()
+            score.loc[ok] = [
+                f"{int(a)}-{int(b)}"
+                for a, b in zip(pg.loc[ok].tolist(), og.loc[ok].tolist(), strict=True)
+            ]
+            trace_df["score_full_match"] = score
+        elif "home_goals_full" in trace_df.columns and "away_goals_full" in trace_df.columns:
+            hg = pd.to_numeric(trace_df["home_goals_full"], errors="coerce")
+            ag = pd.to_numeric(trace_df["away_goals_full"], errors="coerce")
+            score = pd.Series(pd.NA, index=trace_df.index, dtype="string")
+            ok = hg.notna() & ag.notna()
+            score.loc[ok] = [
+                f"{int(a)}-{int(b)}"
+                for a, b in zip(hg.loc[ok].tolist(), ag.loc[ok].tolist(), strict=True)
+            ]
+            trace_df["score_full_match_home_away"] = score
+
+        prefix = ["original_row_index"]
+        derived = [
+            c
+            for c in ("side_label", "score_full_match", "score_full_match_home_away")
+            if c in trace_df.columns
+        ]
+        extra_mid = [c for c in present if c not in derived]
+        tail = [c for c in trace_df.columns if c not in prefix + extra_mid + derived]
+        col_order = prefix + extra_mid + derived + tail
+        return trace_df.loc[:, col_order]
+
     def _compute_business_metrics(
         self,
         model: BaseModel,
@@ -1090,6 +1192,9 @@ class SingleExperimentRunner:
         if trace_enabled and result.event_trace is not None and len(result.event_trace) > 0:
             trace_df = result.event_trace.copy()
             trace_df.insert(0, "original_row_index", pd.Series(valid_target.index, dtype=object))
+            trace_df = self._enrich_bet_trace_from_test_df(
+                trace_df, test_df, valid_target.index, betting_cfg
+            )
             out_path = self._get_model_path(cfg, "shadow") / "test_bet_trace.csv"
             trace_df.to_csv(out_path, index=False)
             bet_trace_csv_path = str(out_path.resolve())

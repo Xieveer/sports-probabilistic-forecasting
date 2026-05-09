@@ -322,6 +322,14 @@ class TestComputeBusinessMetrics:
                     str({"1": round(float(v), 2), "2": round(float(4 - v), 2)}) for v in odds_values
                 ],
                 "other": range(n),
+                "datetime": pd.date_range("2024-01-01", periods=n, freq="h"),
+                "pl": [f"H{i % 3}" for i in range(n)],
+                "opp": [f"A{i % 2}" for i in range(n)],
+                "side": ["h" if i % 2 == 0 else "a" for i in range(n)],
+                "is_home": [1 if i % 2 == 0 else 0 for i in range(n)],
+                "pl_goals_full": np.random.randint(0, 5, n),
+                "opp_goals_full": np.random.randint(0, 5, n),
+                "id": range(n),
             }
         )
 
@@ -364,6 +372,10 @@ class TestComputeBusinessMetrics:
         assert "sweep_df" in result
         assert result.get("bet_trace_csv_path") is not None
         assert Path(result["bet_trace_csv_path"]).is_file()
+        trace_read = pd.read_csv(result["bet_trace_csv_path"])
+        assert "pl" in trace_read.columns
+        assert "side_label" in trace_read.columns
+        assert "score_full_match" in trace_read.columns
 
     def test_skips_invalid_odds(self) -> None:
         """Пропускает строки с невалидными odds (NaN, <= 1.0)."""

@@ -24,6 +24,20 @@ min_edge_threshold: 0.05  # например 5 п.п. вероятности в 
 # в каталог модели и залогировать как MLflow-артефакт.
 save_test_bet_trace: true
 
+# Колонки из test_df (holdout), подмешиваемые в test_bet_trace.csv по индексу строки.
+# Long NHL: pl/opp — команды строки (ставка на pl), side=h|a, голы с ОТ — pl_goals_full / opp_goals_full.
+# Для wide или других турниров переопределите список в своём yaml или задайте [].
+test_bet_trace_extra_columns:
+  - datetime
+  - pl
+  - opp
+  - side
+  - is_home
+  - pl_goals_full
+  - opp_goals_full
+  - match_id
+  - id
+
 # Максимальная доля банка на одну ставку (защита от разорения)
 max_stake_fraction: 0.1  # 10% от текущего банка
 
