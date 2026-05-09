@@ -49,7 +49,7 @@ log_to_mlflow: true
 # Сохранять ли отобранные фичи в файл
 save_selected_features: true
 
-# После отбора: переобучить shadow/prod только на отобранных колонках и залогировать
-# метрики с префиксом test_fs_fit_* / shadow_fs_fit_* / betting_fs_fit_* для сравнения
-# с прогоном на полном наборе фичей (базовые test_* / shadow_* / betting_* остаются от полной модели).
+# После отбора: при true — полный повтор цикла shadow (TSCV, holdout, betting) на отобранных фичах;
+# в MLflow основные test_* / shadow_* / betting_* соответствуют этой модели, снимок «все фичи» — *_full_*.
+# У aggressive-профиля по умолчанию true; здесь false, пока FS выключен (enabled=false).
 apply_selected_to_fit: false

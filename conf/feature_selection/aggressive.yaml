@@ -23,5 +23,6 @@ shap_max_samples: 1000
 log_to_mlflow: true
 save_selected_features: true
 
-# Переобучение shadow/prod только на отобранных колонках + метрики *_fs_fit_* в MLflow
-apply_selected_to_fit: false
+# Переобучение shadow/prod на отобранных колонках; в MLflow основные test_*/shadow_*/betting_* = эта модель,
+# снимок полного набора фичей — метрики с суффиксом _full_* (см. docs/source/feature_selection_workflow.rst)
+apply_selected_to_fit: true

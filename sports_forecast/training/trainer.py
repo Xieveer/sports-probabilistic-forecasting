@@ -417,7 +417,7 @@ class SingleExperimentRunner:
                 else feature_importance
             )
 
-            metrics_fs_fit: dict[str, Any] | None = None
+            metrics_full: dict[str, Any] | None = None
             fs_cfg = cfg.get("feature_selection", {})
             if (
                 feature_selection_result is not None
@@ -441,6 +441,15 @@ class SingleExperimentRunner:
                             "apply_selected_to_fit: %d имён из отбора отсутствуют в данных",
                             dropped,
                         )
+                    metrics_full = {
+                        "test": dict(test_metrics_full),
+                        "business": dict(business_metrics_full) if business_metrics_full else {},
+                        "shadow": dict(shadow_metrics_full),
+                        "calibration": dict(calibration_metrics_full)
+                        if calibration_metrics_full
+                        else {},
+                        "feature_importance": feature_importance_full,
+                    }
                     logger.info(
                         f"{'=' * 60}\n"
                         f"ПЕРЕОБУЧЕНИЕ НА ОТОБРАННЫХ ФИЧАХ ({len(selected_cols)} колонок)\n"
@@ -491,24 +500,11 @@ class SingleExperimentRunner:
                     )
                     feature_importance = self._get_feature_importance(shadow_model)
 
-                    metrics_fs_fit = {
-                        "test": dict(test_ml_metrics),
-                        "business": dict(business_metrics) if business_metrics else {},
-                        "shadow": dict(shadow_metrics),
-                        "calibration": dict(calibration_metrics) if calibration_metrics else {},
-                        "feature_importance": feature_importance,
-                    }
-                    # Возвращаем «полный набор» метрик для основных MLflow-ключей
-                    test_ml_metrics = test_metrics_full
-                    business_metrics = business_metrics_full
-                    shadow_metrics = shadow_metrics_full
-                    calibration_metrics = calibration_metrics_full
-
                     logger.info(
                         "Сравнение holdout logloss: полный набор=%.4f, "
-                        "после отбора и переобучения=%.4f",
-                        test_metrics_full.get("logloss", float("nan")),
-                        metrics_fs_fit["test"].get("logloss", float("nan")),
+                        "модель на отобранных фичах (основные MLflow-метрики)=%.4f",
+                        metrics_full["test"].get("logloss", float("nan")),
+                        test_ml_metrics.get("logloss", float("nan")),
                     )
 
             # 13. Сохраняем Shadow модель
@@ -533,9 +529,8 @@ class SingleExperimentRunner:
             # 15.1. MLflow: логируем артефакты модели и регистрируем в Model Registry
             self._register_model_in_mlflow(prod_path, cfg)
 
-            # 16. Анализ стабильности (по shadow после отбора, если был переобучен prod на subset)
-            stability_shadow = metrics_fs_fit["shadow"] if metrics_fs_fit else shadow_metrics
-            stability_metrics = self._analyze_training_stability(stability_shadow)
+            # 16. Анализ стабильности по shadow (после отбора — TSCV на отобранных фичах)
+            stability_metrics = self._analyze_training_stability(shadow_metrics)
 
             # 17. MLflow логирование
             self._log_metrics_to_mlflow(
@@ -545,13 +540,11 @@ class SingleExperimentRunner:
                 business_metrics=business_metrics,
                 stability_metrics=stability_metrics,
                 optuna_metrics=optuna_metrics,
-                feature_importance=feature_importance_full
-                if metrics_fs_fit
-                else feature_importance,
+                feature_importance=feature_importance,
                 feature_selection_result=feature_selection_result,
                 cfg=cfg,
                 feature_names=feature_names,
-                metrics_fs_fit=metrics_fs_fit,
+                metrics_full=metrics_full,
             )
 
             logger.info("Обучение завершено успешно")
@@ -1535,23 +1528,25 @@ class SingleExperimentRunner:
         feature_selection_result: Any,
         cfg: DictConfig,
         feature_names: list[str],
-        metrics_fs_fit: dict[str, Any] | None = None,
+        metrics_full: dict[str, Any] | None = None,
     ) -> None:
         """Залогировать все метрики в MLflow.
 
         Args:
-            shadow_metrics: Метрики Shadow модели (TSCV).
-            test_metrics: ML-метрики на test set.
-            calibration_metrics: Метрики калибровки.
-            business_metrics: Бизнес-метрики (BettingSimulator).
+            shadow_metrics: Метрики Shadow модели (TSCV) — при ``apply_selected_to_fit``
+                это модель на отобранных фичах (основные ключи ``shadow_*``).
+            test_metrics: ML-метрики на holdout (основные ``test_*``).
+            calibration_metrics: Метрики калибровки основной (selected) модели.
+            business_metrics: Бизнес-метрики основной модели.
             stability_metrics: Анализ стабильности.
             optuna_metrics: Метрики Optuna оптимизации.
-            feature_importance: DataFrame с важностью фичей.
+            feature_importance: Важность фичей основной модели.
             feature_selection_result: Результат отбора фичей.
             cfg: Конфигурация.
-            feature_names: Список фичей.
-            metrics_fs_fit: Если задан (после ``apply_selected_to_fit``), дополнительно
-                логируются те же семейства метрик с префиксом ``*_fs_fit_*`` для сравнения.
+            feature_names: Список фичей основной модели.
+            metrics_full: Снимок метрик модели на **полном** наборе фичей (до переобучения
+                на подмножестве). Логируется как ``test_full_*``, ``shadow_full_*``,
+                ``full_betting_*``, ``cal_full_*``, артефакт ``feature_importance_full.csv``.
         """
         # ── Параметры ────────────────────────────────────────────────
         mlflow.log_param("algorithm", cfg.algorithm.name)
@@ -1559,6 +1554,19 @@ class SingleExperimentRunner:
         mlflow.log_param("featureset", cfg.features.name)
         mlflow.log_param("seed", cfg.seed)
         mlflow.log_param("n_features", len(feature_names))
+
+        if metrics_full is not None:
+            mlflow.set_tag("primary_feature_set", "selected")
+            mlflow.set_tag("fs_fit_applied", "true")
+            mlflow.set_tag("fs_round", "1")
+            if feature_selection_result is not None:
+                mlflow.log_param("n_features_full", int(feature_selection_result.n_total))
+                mlflow.log_param("n_features_primary", len(feature_names))
+        elif feature_selection_result is not None:
+            mlflow.set_tag("primary_feature_set", "full")
+            mlflow.set_tag("fs_fit_applied", "false")
+        else:
+            mlflow.set_tag("fs_fit_applied", "false")
 
         # Гиперпараметры модели
         if hasattr(cfg.algorithm, "params"):
@@ -1581,27 +1589,24 @@ class SingleExperimentRunner:
             mlflow.log_metric(f"test_{metric_name}", value)
         mlflow.set_tag("test_validated", "true")
 
-        if metrics_fs_fit:
-            mlflow.set_tag("fs_fit_applied", "true")
-            tfs = metrics_fs_fit["test"]
-            for metric_name, value in tfs.items():
-                mlflow.log_metric(f"test_fs_fit_{metric_name}", value)
-            sms = metrics_fs_fit["shadow"]
-            mlflow.log_metric("shadow_fs_fit_logloss", sms["logloss"])
-            mlflow.log_metric("shadow_fs_fit_logloss_std", sms["std_logloss"])
-            mlflow.log_metric("shadow_fs_fit_auc", sms["auc"])
-            mlflow.log_metric("shadow_fs_fit_auc_std", sms["std_auc"])
-            mlflow.log_metric("shadow_fs_fit_accuracy", sms["accuracy"])
-            mlflow.log_metric("shadow_fs_fit_brier", sms["brier"])
-            mlflow.log_metric("shadow_fs_fit_ece", sms["ece"])
-            mlflow.log_metric("shadow_fs_fit_ece_std", sms["std_ece"])
-            fold_details_sf = sms.get("fold_details", {})
-            if fold_details_sf:
-                for key, value in fold_details_sf.items():
+        if metrics_full is not None:
+            tfu = metrics_full["test"]
+            for metric_name, value in tfu.items():
+                mlflow.log_metric(f"test_full_{metric_name}", value)
+            smu = metrics_full["shadow"]
+            mlflow.log_metric("shadow_full_logloss", smu["logloss"])
+            mlflow.log_metric("shadow_full_logloss_std", smu["std_logloss"])
+            mlflow.log_metric("shadow_full_auc", smu["auc"])
+            mlflow.log_metric("shadow_full_auc_std", smu["std_auc"])
+            mlflow.log_metric("shadow_full_accuracy", smu["accuracy"])
+            mlflow.log_metric("shadow_full_brier", smu["brier"])
+            mlflow.log_metric("shadow_full_ece", smu["ece"])
+            mlflow.log_metric("shadow_full_ece_std", smu["std_ece"])
+            fold_full = smu.get("fold_details", {})
+            if fold_full:
+                for key, value in fold_full.items():
                     if key.startswith("fold_") and isinstance(value, (int, float)):
-                        mlflow.log_metric(f"tscv_fs_fit_{key}", float(value))
-        else:
-            mlflow.set_tag("fs_fit_applied", "false")
+                        mlflow.log_metric(f"tscv_full_{key}", float(value))
 
         # ── Калибровка ───────────────────────────────────────────────
         if calibration_metrics:
@@ -1612,12 +1617,12 @@ class SingleExperimentRunner:
             mlflow.set_tag("calibration_method", calibration_metrics["method"])
             mlflow.log_param("calibration_threshold", calibration_metrics["threshold"])
 
-        if metrics_fs_fit and metrics_fs_fit.get("calibration"):
-            cm2 = metrics_fs_fit["calibration"]
+        if metrics_full is not None and metrics_full.get("calibration"):
+            cm2 = metrics_full["calibration"]
             if cm2 and "ece_before" in cm2:
-                mlflow.log_metric("cal_fs_fit_ece_before", cm2["ece_before"])
+                mlflow.log_metric("cal_full_ece_before", cm2["ece_before"])
                 if cm2.get("ece_after") is not None:
-                    mlflow.log_metric("cal_fs_fit_ece_after", cm2["ece_after"])
+                    mlflow.log_metric("cal_full_ece_after", cm2["ece_after"])
 
         # ── Бизнес-метрики (BettingSimulator) ────────────────────────
         if business_metrics:
@@ -1625,10 +1630,10 @@ class SingleExperimentRunner:
         else:
             mlflow.set_tag("has_business_metrics", "false")
 
-        if metrics_fs_fit and metrics_fs_fit.get("business"):
-            bfs = metrics_fs_fit["business"]
-            if bfs:
-                self._log_business_metrics_to_mlflow(bfs, name_prefix="fs_fit_")
+        if metrics_full is not None and metrics_full.get("business"):
+            bfu = metrics_full["business"]
+            if bfu:
+                self._log_business_metrics_to_mlflow(bfu, name_prefix="full_")
 
         # ── Стабильность ─────────────────────────────────────────────
         mlflow.log_metric("stability_cv_logloss", stability_metrics["cv_logloss"])
@@ -1667,12 +1672,12 @@ class SingleExperimentRunner:
                 )
                 mlflow.set_tag(f"fi_top{idx + 1}_name", feat_name)
 
-        if metrics_fs_fit and metrics_fs_fit.get("feature_importance") is not None:
-            fi2 = metrics_fs_fit["feature_importance"]
-            if not fi2.empty:
+        if metrics_full is not None and metrics_full.get("feature_importance") is not None:
+            fi_full = metrics_full["feature_importance"]
+            if fi_full is not None and not fi_full.empty:
                 mlflow.log_text(
-                    fi2.to_csv(index=False),
-                    "feature_importance_fs_fit.csv",
+                    fi_full.to_csv(index=False),
+                    "feature_importance_full.csv",
                 )
 
         # ── Feature Selection ────────────────────────────────────────
@@ -1758,8 +1763,8 @@ class SingleExperimentRunner:
 
         Args:
             bm: Словарь бизнес-метрик из ``_compute_business_metrics``.
-            name_prefix: Префикс имён метрик/артефактов (например ``fs_fit_`` для сравнения
-                с прогоном на полном наборе фичей при ``apply_selected_to_fit``).
+            name_prefix: Префикс имён метрик/артефактов (например ``full_`` для снимка модели
+                на полном наборе фичей при ``apply_selected_to_fit``).
         """
         import json
 

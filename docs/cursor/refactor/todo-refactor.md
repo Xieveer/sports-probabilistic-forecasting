@@ -38,7 +38,9 @@
 | R27    | 🔴 High     | High      | ✅     | 27-й ✅ (NHL FE v2: goals/stats EWM, streaks, lineup continuity/seniority) |
 | R28    | 🟡 Medium   | Medium    | ✅     | 28-й ✅ (семантические алиасы колонок в rolling-контекстах; параллельно R27) |
 | R29    | 🔴 High     | Medium    | ✅     | 29-й ✅ (спорт-осознанная композиция feature pipeline: NHL/streak только для ice_hockey) |
-| R30    | 🔴 High     | Medium    | 🟡     | **срочно** — инвариант таргета winner_withOT vs голы + trace/Excel |
+| R30    | 🔴 High     | Medium    | ✅     | таргет после sort: `loc[sort_order]` + тест (`done_task/R30.md`) |
+| R31    | 🔴 High     | Medium    | ✅     | 31-й ✅ (Feature Selection UX: primary-метрики, `*_full_*`, runbook; `done_task/R31.md`) |
+| R32    | 🟢 Low      | High      | ⏸️     | 32-й (итеративный FS — отложено, реализация под вопросом; `backlog/R32.md`) |
 
 ---
 
@@ -134,6 +136,12 @@
   - [x] R29.5 — `dvc.yaml`/`dvc.lock` обновлены; Makefile-комментарий
   - [x] R29.6 — Тесты (uel_kz_1/lp_ru без NHL+streak; nhl с NHL+streak; opt-in через фикстуру)
   - [x] R29.7 — `HOW_TO_ADD_NEW_TOURNAMENT.md` — раздел о `feature_pipeline` и ссылка на ADR
+- [x] **R30** — Выравнивание таргета с `df` после сортировки по времени (winner_withOT / long); регрессия `test_trainer_target_sort_alignment` ✅ 2026-05-09; см. `done_task/R30.md` (R30.1–R30.4 — опционально в tech-debt)
+- [x] **R31** — Feature Selection UX: основные MLflow-метрики = модель на отобранных фичах; снимок полного набора — `*_full_*`; `aggressive` + runbook ✅ 2026-05-10; см. `done_task/R31.md`
+  - [x] R31.1 — `apply_selected_to_fit: true` в `aggressive.yaml`
+  - [x] R31.2 — Metric primacy в `trainer.py` + теги `primary_feature_set`, `fs_round`
+  - [x] R31.3 — `docs/source/feature_selection_workflow.rst`
+  - [x] R31.4 — Секция итеративного FS в runbook
 - [x] **R27** — NHL Feature Engineering v2: goals/stats EWM, streaks, lineup continuity/seniority ✅ 2026-05-04; см. `done_task/R27.md`
   - [x] R27.1 — Derived metric columns в `long_format.py` (goals_full_diff/total, sog/bs/hits/pim2/fow diff)
   - [x] R27.6 — Spans [5,25,100] → [5,15] в `standard.yaml`
@@ -155,11 +163,10 @@
 
 ### В работе / Backlog 🟡
 
-- [ ] **R30** — Инвариант таргета `winner_withOT` (long) vs счёт + защита `test_bet_trace` (детали: `backlog/R30.md`)
-  - [ ] **R30.1** — Колонка `target_from_goals` в trace + assert/флаг строгой проверки vs `y_true`
-  - [ ] **R30.2** — Регрессия: parquet sample / hydra cfg, `compute_target` == `(pl_goals_full > opp_goals_full)`
-  - [ ] **R30.3** — Интеграция: прочитанный CSV trace, совпадение колонок
-  - [ ] **R30.4** — Док: Excel и формат счёта `4-1` (даты)
+- [ ] **R32** — Итеративный / multi-round feature selection: **отложено**, целесообразность реализации не подтверждена; см. `backlog/R32.md`
+  - [ ] R32.1 — Переоценка ROI vs single-shot FS
+  - [ ] R32.2 — Дизайн без лика на holdout (если вернём задачу)
+  - [ ] R32.3 — Реализация (после решения по R32.1–R32.2)
 
 - [ ] **R4** — Реализовать рабочий monitoring DAG
   - [ ] R4.1 — Изучить модули мониторинга
