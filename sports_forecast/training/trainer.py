@@ -274,8 +274,9 @@ class SingleExperimentRunner:
                     )
 
             if time_col in df.columns:
-                df = df.sort_values(time_col).reset_index(drop=True)
-                target = target.iloc[df.index].reset_index(drop=True)
+                sort_order = df.sort_values(time_col).index
+                df = df.loc[sort_order].reset_index(drop=True)
+                target = target.loc[sort_order].reset_index(drop=True)
                 logger.info("Данные отсортированы по времени: %s", time_col)
 
             if uses_season_holdout_split(cfg):
