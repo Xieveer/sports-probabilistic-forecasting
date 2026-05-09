@@ -21,7 +21,7 @@ Examples:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -68,6 +68,7 @@ class BettingResult:
         equity_curve: История банкролла.
         bet_mask: Boolean-маска отобранных ставок (длина = n_total_events).
         per_bet_returns: Профит каждой ставки (длина = n_bets).
+        event_trace: Построчная таблица симуляции (если запрошено в ``simulate``).
     """
 
     # ── Volume ───────────────────────────────────────────────────────────
@@ -106,6 +107,7 @@ class BettingResult:
     equity_curve: list[float] = field(repr=False)
     bet_mask: np.ndarray = field(repr=False)
     per_bet_returns: list[float] = field(repr=False)
+    event_trace: pd.DataFrame | None = field(default=None, repr=False)
 
 
 # Backward-compatible alias
@@ -230,6 +232,8 @@ class BettingSimulator:
         y_true: np.ndarray | pd.Series,
         y_pred_proba: np.ndarray,
         odds: np.ndarray | pd.Series,
+        *,
+        return_event_trace: bool = False,
     ) -> BettingResult:
         """Симулировать ставки и вернуть полный набор метрик.
 
@@ -237,6 +241,8 @@ class BettingSimulator:
             y_true: Реальные исходы (0 или 1).
             y_pred_proba: Предсказанные вероятности [0.0-1.0].
             odds: Букмекерские коэффициенты.
+            return_event_trace: Если ``True``, заполнить ``BettingResult.event_trace``
+                построчной таблицей (y_true, p_prob, odds, edge, ставка, профит, …).
 
         Returns:
             :class:`BettingResult` с полным набором метрик.
@@ -264,43 +270,63 @@ class BettingSimulator:
         bets_ev_stakes: list[float] = []  # ev * stake (для ev_sum_units)
         total_staked = 0.0
         num_wins = 0
+        trace_rows: list[dict[str, Any]] | None = [] if return_event_trace else None
 
         for i in range(n_total):
             prob = y_pred_proba[i]
             odd = odds[i]
             outcome = y_true[i]
 
-            edge = self.calculate_edge(prob, odd)
-            if edge <= self.min_edge_threshold:
-                equity_curve.append(bankroll)
-                continue
-
             ev, _ = self.calculate_expected_value(prob, odd)
-            stake = self.calculate_stake(prob, odd, bankroll)
-            if stake <= 0:
-                equity_curve.append(bankroll)
-                continue
+            p_implied = float(1.0 / odd) if odd > 1.0 else float("nan")
+            edge = self.calculate_edge(prob, odd)
 
-            # Ставка принята
-            bet_mask[i] = True
-            total_staked += stake
+            placed = False
+            stake_used = 0.0
+            profit_amt = 0.0
 
-            bets_edges.append(edge)
-            bets_evs.append(ev)
-            bets_ev_stakes.append(ev * stake)
-            bets_odds.append(odd)
+            if edge > self.min_edge_threshold:
+                stake = self.calculate_stake(prob, odd, bankroll)
+                if stake > 0:
+                    bet_mask[i] = True
+                    placed = True
+                    stake_used = float(stake)
+                    total_staked += stake
 
-            # Результат
-            if outcome == 1:
-                bet_profit = stake * (odd - 1)
-                bankroll += bet_profit
-                num_wins += 1
-            else:
-                bet_profit = -stake
-                bankroll -= stake
+                    bets_edges.append(edge)
+                    bets_evs.append(ev)
+                    bets_ev_stakes.append(ev * stake)
+                    bets_odds.append(odd)
 
-            per_bet_returns.append(bet_profit)
+                    if outcome == 1:
+                        profit_amt = float(stake * (odd - 1))
+                        bankroll += profit_amt
+                        num_wins += 1
+                    else:
+                        profit_amt = float(-stake)
+                        bankroll -= stake
+
+                    per_bet_returns.append(profit_amt)
+
             equity_curve.append(bankroll)
+
+            if trace_rows is not None:
+                trace_rows.append(
+                    {
+                        "sim_step": i,
+                        "y_true": int(outcome),
+                        "p_prob": float(prob),
+                        "odds": float(odd),
+                        "p_implied": p_implied,
+                        "edge": float(edge),
+                        "ev": float(ev),
+                        "min_edge_threshold": float(self.min_edge_threshold),
+                        "bet_placed": placed,
+                        "stake": stake_used,
+                        "profit": profit_amt,
+                        "bankroll_after": float(bankroll),
+                    }
+                )
 
         # ── Aggregate metrics ────────────────────────────────────────────
         n_bets = int(bet_mask.sum())
@@ -343,6 +369,8 @@ class BettingSimulator:
         # Averages
         avg_odds = float(np.mean(bets_odds)) if bets_odds else 0.0
 
+        trace_df = pd.DataFrame(trace_rows) if trace_rows is not None else None
+
         result = BettingResult(
             n_total_events=n_total,
             n_bets=n_bets,
@@ -367,6 +395,7 @@ class BettingSimulator:
             equity_curve=equity_curve,
             bet_mask=bet_mask,
             per_bet_returns=per_bet_returns,
+            event_trace=trace_df,
         )
 
         logger.info("Симуляция завершена:")

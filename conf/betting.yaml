@@ -20,6 +20,10 @@ kelly_fraction: 0.25  # quarter Kelly (консервативная)
 # Минимальный порог edge для отбора ставки: edge = p_model - p_implied, p_implied = 1/odds
 min_edge_threshold: 0.05  # например 5 п.п. вероятности в пользу модели vs линия
 
+# Сохранить CSV построчного trace на test (p_prob, odds, edge, ставка, профит, …)
+# в каталог модели и залогировать как MLflow-артефакт.
+save_test_bet_trace: true
+
 # Максимальная доля банка на одну ставку (защита от разорения)
 max_stake_fraction: 0.1  # 10% от текущего банка
 

@@ -473,6 +473,7 @@ class SingleExperimentRunner:
                         test_target,
                         test_df,
                         cfg,
+                        save_bet_trace_file=False,
                     )
                     feature_importance = self._get_feature_importance(shadow_model)
 
@@ -987,6 +988,8 @@ class SingleExperimentRunner:
         test_target: pd.Series,
         test_df: pd.DataFrame,
         cfg: DictConfig,
+        *,
+        save_bet_trace_file: bool = True,
     ) -> dict[str, Any]:
         """Вычислить бизнес-метрики через BettingSimulator.
 
@@ -1005,6 +1008,7 @@ class SingleExperimentRunner:
             test_target: Тестовый таргет.
             test_df: Полный DataFrame test set (для odds).
             cfg: Конфигурация.
+            save_bet_trace_file: Писать ``test_bet_trace.csv`` (если включено в ``betting``).
 
         Returns:
             Словарь бизнес-метрик (пустой если odds не найдены).
@@ -1074,11 +1078,22 @@ class SingleExperimentRunner:
             max_stake_fraction=betting_cfg.get("max_stake_fraction", 0.1),
         )
 
+        trace_enabled = bool(betting_cfg.get("save_test_bet_trace", True)) and save_bet_trace_file
         result = simulator.simulate(
             y_true=y_true_arr,
             y_pred_proba=proba,
             odds=odds_arr,
+            return_event_trace=trace_enabled,
         )
+
+        bet_trace_csv_path: str | None = None
+        if trace_enabled and result.event_trace is not None and len(result.event_trace) > 0:
+            trace_df = result.event_trace.copy()
+            trace_df.insert(0, "original_row_index", pd.Series(valid_target.index, dtype=object))
+            out_path = self._get_model_path(cfg, "shadow") / "test_bet_trace.csv"
+            trace_df.to_csv(out_path, index=False)
+            bet_trace_csv_path = str(out_path.resolve())
+            logger.info("Сохранён построчный trace ставок на test: %s", bet_trace_csv_path)
 
         # ── 2. Calibration on selected bets ──────────────────────────────
         cal_selected = self._compute_calibration_on_selected(y_true_arr, proba, result.bet_mask)
@@ -1148,6 +1163,7 @@ class SingleExperimentRunner:
             # Meta
             "odds_column": f"odds_raw→{cfg.market_spec.name}",
             "valid_odds_count": valid_count,
+            "bet_trace_csv_path": bet_trace_csv_path,
         }
 
         return metrics
@@ -1720,6 +1736,13 @@ class SingleExperimentRunner:
             equity_df = pd.DataFrame({"step": range(len(equity_curve)), "bankroll": equity_curve})
             eq_name = f"{p}equity_curve.csv" if p else "equity_curve.csv"
             mlflow.log_text(equity_df.to_csv(index=False), eq_name)
+
+        # ── Per-event test betting trace (CSV on disk + artifact) ─────
+        bet_trace_csv = bm.get("bet_trace_csv_path")
+        if bet_trace_csv:
+            bt_path = Path(bet_trace_csv)
+            if bt_path.is_file():
+                mlflow.log_artifact(str(bt_path))
 
         # ── Calibration table (reliability diagram data) ─────────────
         cal_table: list[dict[str, float]] = bm.get("cal_table", [])

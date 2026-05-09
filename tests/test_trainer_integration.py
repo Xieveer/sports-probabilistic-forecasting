@@ -362,6 +362,8 @@ class TestComputeBusinessMetrics:
         # Artifacts
         assert "equity_curve" in result
         assert "sweep_df" in result
+        assert result.get("bet_trace_csv_path") is not None
+        assert Path(result["bet_trace_csv_path"]).is_file()
 
     def test_skips_invalid_odds(self) -> None:
         """Пропускает строки с невалидными odds (NaN, <= 1.0)."""

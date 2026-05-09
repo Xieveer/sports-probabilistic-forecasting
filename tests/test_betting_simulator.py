@@ -368,8 +368,28 @@ class TestNewMetrics:
         if result.n_bets > 1:
             assert result.std_return_per_bet > 0
 
+    def test_event_trace_matches_events(self, flat_simulator: BettingSimulator) -> None:
+        """return_event_trace даёт по одной строке на событие с нужными колонками."""
+        y_true = np.array([1, 0, 1])
+        y_pred = np.array([0.7, 0.55, 0.8])
+        odds = np.array([2.0, 2.0, 2.0])
 
-# ==================== Threshold Sweep Tests ====================
+        result = flat_simulator.simulate(y_true, y_pred, odds, return_event_trace=True)
+
+        assert result.event_trace is not None
+        assert len(result.event_trace) == 3
+        cols = set(result.event_trace.columns)
+        assert "y_true" in cols
+        assert "p_prob" in cols
+        assert "odds" in cols
+        assert "p_implied" in cols
+        assert "edge" in cols
+        assert "ev" in cols
+        assert "bet_placed" in cols
+        assert "stake" in cols
+        assert "profit" in cols
+        assert "bankroll_after" in cols
+        assert result.event_trace["bet_placed"].sum() == result.n_bets
 
 
 class TestSweepThresholds:
