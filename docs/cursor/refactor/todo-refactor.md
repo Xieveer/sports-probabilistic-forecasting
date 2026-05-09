@@ -38,6 +38,7 @@
 | R27    | 🔴 High     | High      | ✅     | 27-й ✅ (NHL FE v2: goals/stats EWM, streaks, lineup continuity/seniority) |
 | R28    | 🟡 Medium   | Medium    | ✅     | 28-й ✅ (семантические алиасы колонок в rolling-контекстах; параллельно R27) |
 | R29    | 🔴 High     | Medium    | ✅     | 29-й ✅ (спорт-осознанная композиция feature pipeline: NHL/streak только для ice_hockey) |
+| R30    | 🔴 High     | Medium    | 🟡     | **срочно** — инвариант таргета winner_withOT vs голы + trace/Excel |
 
 ---
 
@@ -153,6 +154,12 @@
   - [x] R23.8 — Scheduled data refresh: `cron_refresh.py` + shell wrapper + unit tests
 
 ### В работе / Backlog 🟡
+
+- [ ] **R30** — Инвариант таргета `winner_withOT` (long) vs счёт + защита `test_bet_trace` (детали: `backlog/R30.md`)
+  - [ ] **R30.1** — Колонка `target_from_goals` в trace + assert/флаг строгой проверки vs `y_true`
+  - [ ] **R30.2** — Регрессия: parquet sample / hydra cfg, `compute_target` == `(pl_goals_full > opp_goals_full)`
+  - [ ] **R30.3** — Интеграция: прочитанный CSV trace, совпадение колонок
+  - [ ] **R30.4** — Док: Excel и формат счёта `4-1` (даты)
 
 - [ ] **R4** — Реализовать рабочий monitoring DAG
   - [ ] R4.1 — Изучить модули мониторинга
