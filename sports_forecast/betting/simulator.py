@@ -10,10 +10,10 @@ Betting Simulator для валуйных ставок.
 - Risk: max_drawdown, sharpe_like, profit_factor, std_return
 - Calibration on selected: brier, logloss, ECE
 - Odds-bin breakdown
-- Multi-threshold sweep
+- Multi-threshold sweep (по edge)
 
 Examples:
-    >>> simulator = BettingSimulator(min_value_threshold=0.05)
+    >>> simulator = BettingSimulator(min_edge_threshold=0.05)
     >>> result = simulator.simulate(y_true, y_pred_proba, odds)
     >>> print(f"ROI: {result.roi:.2f}%, Bets: {result.n_bets}")
 """
@@ -120,19 +120,20 @@ BettingMetrics = BettingResult
 class BettingSimulator:
     """Симулятор ставок на валуйные события.
 
-    Вычисляет Expected Value (EV) для каждого события и делает ставки
-    только на события с EV > ``min_value_threshold``.
+    Отбор ставок по **edge** (model prob минус implied prob): ``p_model - 1/odds``.
+    Ставка принимается только если ``edge > min_edge_threshold`` и ``odds > 1``.
+    EV по-прежнему считается для Kelly и метрик ``avg_ev`` / ``ev_realization``.
 
     Args:
         initial_bankroll: Начальный размер банка.
         stake_strategy: Стратегия ставок (``'flat'`` / ``'kelly'``).
         flat_stake: Размер flat-ставки.
         kelly_fraction: Доля Kelly (quarter Kelly = 0.25).
-        min_value_threshold: Минимальный порог EV для ставки.
+        min_edge_threshold: Минимальный порог edge (в долях вероятности) для ставки.
         max_stake_fraction: Максимальная доля банка на одну ставку.
 
     Examples:
-        >>> sim = BettingSimulator(flat_stake=1.0, min_value_threshold=0.05)
+        >>> sim = BettingSimulator(flat_stake=1.0, min_edge_threshold=0.05)
         >>> result = sim.simulate(y_true, y_pred, odds)
         >>> print(f"ROI: {result.roi:.2f}%")
     """
@@ -143,21 +144,21 @@ class BettingSimulator:
         stake_strategy: Literal["flat", "kelly"] = "flat",
         flat_stake: float = 10.0,
         kelly_fraction: float = 0.25,
-        min_value_threshold: float = 0.05,
+        min_edge_threshold: float = 0.05,
         max_stake_fraction: float = 0.1,
     ):
         self.initial_bankroll = initial_bankroll
         self.stake_strategy = stake_strategy
         self.flat_stake = flat_stake
         self.kelly_fraction = kelly_fraction
-        self.min_value_threshold = min_value_threshold
+        self.min_edge_threshold = min_edge_threshold
         self.max_stake_fraction = max_stake_fraction
 
         logger.info(
-            "BettingSimulator инициализирован: bankroll=%.2f, strategy=%s, min_value=%.2f%%",
+            "BettingSimulator инициализирован: bankroll=%.2f, strategy=%s, min_edge=%.4f",
             initial_bankroll,
             stake_strategy,
-            min_value_threshold * 100,
+            min_edge_threshold,
         )
 
     # ─── EV / Kelly ──────────────────────────────────────────────────────
@@ -180,6 +181,24 @@ class BettingSimulator:
         ev = predicted_prob * (odds - 1) - (1 - predicted_prob)
         kelly = (predicted_prob * odds - 1) / (odds - 1)
         return ev, kelly
+
+    @staticmethod
+    def calculate_edge(predicted_prob: float, odds: float) -> float:
+        """Edge = p_model - p_implied, где p_implied = 1/odds.
+
+        Для ``odds <= 1`` возвращает ``predicted_prob - 1.0`` (неположительный при p∈[0,1]),
+        чтобы такие строки не проходили отбор по положительному порогу edge.
+
+        Args:
+            predicted_prob: Предсказанная вероятность [0.0–1.0].
+            odds: Коэффициент букмекера.
+
+        Returns:
+            Edge в долях вероятности.
+        """
+        if odds <= 1.0:
+            return predicted_prob - 1.0
+        return predicted_prob - 1.0 / odds
 
     def calculate_stake(self, predicted_prob: float, odds: float, current_bankroll: float) -> float:
         """Вычислить размер ставки.
@@ -251,12 +270,12 @@ class BettingSimulator:
             odd = odds[i]
             outcome = y_true[i]
 
-            ev, _ = self.calculate_expected_value(prob, odd)
-
-            if ev <= self.min_value_threshold:
+            edge = self.calculate_edge(prob, odd)
+            if edge <= self.min_edge_threshold:
                 equity_curve.append(bankroll)
                 continue
 
+            ev, _ = self.calculate_expected_value(prob, odd)
             stake = self.calculate_stake(prob, odd, bankroll)
             if stake <= 0:
                 equity_curve.append(bankroll)
@@ -266,9 +285,6 @@ class BettingSimulator:
             bet_mask[i] = True
             total_staked += stake
 
-            # Edge = p_model - p_implied
-            p_implied = 1.0 / odd if odd > 1.0 else 0.0
-            edge = prob - p_implied
             bets_edges.append(edge)
             bets_evs.append(ev)
             bets_ev_stakes.append(ev * stake)
@@ -371,16 +387,16 @@ class BettingSimulator:
         odds: np.ndarray | pd.Series,
         thresholds: list[float] | np.ndarray | None = None,
     ) -> pd.DataFrame:
-        """Прогнать симуляцию при разных порогах EV (unit-based, flat=1).
+        """Прогнать отбор по разным порогам edge (unit-based, flat=1).
 
-        Для каждого порога считает: n_bets, roi, profit, ev_realization.
-        Используется flat_stake=1 для сопоставимости.
+        Для каждого порога считает: n_bets, roi, profit, ev_realization
+        (``ev_realization`` по-прежнему относится к сумме EV отобранных событий).
 
         Args:
             y_true: Реальные исходы.
             y_pred_proba: Предсказанные вероятности.
             odds: Коэффициенты.
-            thresholds: Пороги EV. По умолчанию 0.00..0.30 с шагом 0.01.
+            thresholds: Пороги edge (доли вероятности). По умолчанию 0.00..0.30 с шагом 0.01.
 
         Returns:
             DataFrame с колонками ``threshold, n_bets, roi, profit_units,
@@ -395,14 +411,14 @@ class BettingSimulator:
 
         # Pre-compute EV, edge, unit return for every event
         evs = y_pred_proba * (odds - 1) - (1 - y_pred_proba)
-        p_implied = np.where(odds > 1.0, 1.0 / odds, 0.0)
+        p_implied = np.where(odds > 1.0, 1.0 / odds, 1.0)
         edges = y_pred_proba - p_implied
         # unit return: outcome*(odds-1) - (1-outcome) = outcome*odds - 1
         unit_returns = y_true * (odds - 1) - (1 - y_true)
 
         rows: list[dict[str, float]] = []
         for thr in thresholds:
-            mask = evs > thr
+            mask = edges > thr
             n_bets = int(mask.sum())
             if n_bets == 0:
                 rows.append(

@@ -30,7 +30,7 @@ def flat_simulator() -> BettingSimulator:
         initial_bankroll=1000.0,
         stake_strategy="flat",
         flat_stake=10.0,
-        min_value_threshold=0.05,
+        min_edge_threshold=0.05,
         max_stake_fraction=0.1,
     )
 
@@ -42,9 +42,24 @@ def kelly_simulator() -> BettingSimulator:
         initial_bankroll=1000.0,
         stake_strategy="kelly",
         kelly_fraction=0.25,
-        min_value_threshold=0.05,
+        min_edge_threshold=0.05,
         max_stake_fraction=0.1,
     )
+
+
+class TestEdgeCalculation:
+    """Тесты для calculate_edge."""
+
+    def test_edge_fair_odds(self) -> None:
+        assert abs(BettingSimulator.calculate_edge(0.5, 2.0)) < 1e-10
+
+    def test_edge_positive_value(self) -> None:
+        # p=0.6, implied=1/2.2
+        e = BettingSimulator.calculate_edge(0.6, 2.2)
+        assert e > 0
+
+    def test_odds_lte_one_non_positive(self) -> None:
+        assert BettingSimulator.calculate_edge(0.9, 1.0) <= 0.0
 
 
 # ==================== Expected Value Tests ====================
@@ -137,8 +152,8 @@ class TestStakeCalculation:
 class TestSimulate:
     """Тесты для полной симуляции (BettingResult v2)."""
 
-    def test_no_bets_low_ev(self, flat_simulator: BettingSimulator) -> None:
-        """Нет ставок если EV ниже порога."""
+    def test_no_bets_low_edge(self, flat_simulator: BettingSimulator) -> None:
+        """Нет ставок если edge не выше порога (p_model ≤ implied при odds=2)."""
         y_true = np.array([1, 0, 1])
         y_pred = np.array([0.45, 0.45, 0.45])
         odds = np.array([2.0, 2.0, 2.0])
@@ -314,7 +329,7 @@ class TestNewMetrics:
         sim = BettingSimulator(
             initial_bankroll=1000.0,
             flat_stake=10.0,
-            min_value_threshold=0.01,
+            min_edge_threshold=0.01,
         )
         y_true = np.array([1, 1, 1, 1, 1])
         y_pred = np.array([0.7, 0.7, 0.7, 0.7, 0.7])
@@ -330,7 +345,7 @@ class TestNewMetrics:
         sim = BettingSimulator(
             initial_bankroll=1000.0,
             flat_stake=10.0,
-            min_value_threshold=0.01,
+            min_edge_threshold=0.01,
         )
         y_true = np.array([1, 1, 1, 1])
         y_pred = np.array([0.7, 0.7, 0.7, 0.7])

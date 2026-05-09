@@ -997,7 +997,7 @@ class SingleExperimentRunner:
             - Risk: max_drawdown, sharpe, profit_factor
             - Calibration on selected: brier, logloss, ECE
             - Odds-bin breakdown
-            - Threshold sweep (артефакт)
+            - Threshold sweep по edge (артефакт)
 
         Args:
             model: Обученная модель.
@@ -1067,7 +1067,10 @@ class SingleExperimentRunner:
             stake_strategy=betting_cfg.get("stake_strategy", "flat"),
             flat_stake=betting_cfg.get("flat_stake", 10.0),
             kelly_fraction=betting_cfg.get("kelly_fraction", 0.25),
-            min_value_threshold=betting_cfg.get("min_value_threshold", 0.05),
+            min_edge_threshold=betting_cfg.get(
+                "min_edge_threshold",
+                betting_cfg.get("min_value_threshold", 0.05),
+            ),
             max_stake_fraction=betting_cfg.get("max_stake_fraction", 0.1),
         )
 

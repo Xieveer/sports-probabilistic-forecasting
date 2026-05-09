@@ -304,7 +304,7 @@ class TestComputeBusinessMetrics:
                 "initial_bankroll": 1000.0,
                 "stake_strategy": "flat",
                 "flat_stake": 10.0,
-                "min_value_threshold": 0.01,
+                "min_edge_threshold": 0.01,
                 "max_stake_fraction": 0.1,
             },
         )
@@ -376,7 +376,7 @@ class TestComputeBusinessMetrics:
             betting={
                 "enabled": True,
                 "initial_bankroll": 1000.0,
-                "min_value_threshold": 0.01,
+                "min_edge_threshold": 0.01,
             },
         )
         runner = SingleExperimentRunner(cfg, Path("/tmp"))
