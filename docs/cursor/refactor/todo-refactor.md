@@ -41,6 +41,7 @@
 | R30    | 🔴 High     | Medium    | ✅     | таргет после sort: `loc[sort_order]` + тест (`done_task/R30.md`) |
 | R31    | 🔴 High     | Medium    | ✅     | 31-й ✅ (Feature Selection UX: primary-метрики, `*_full_*`, runbook; `done_task/R31.md`) |
 | R32    | 🟢 Low      | High      | ⏸️     | 32-й (итеративный FS — отложено, реализация под вопросом; `backlog/R32.md`) |
+| R33    | 🟡 Medium   | Low       | 🟡     | ранний (согласование `market` / `market_spec`, до массовых sweeps) |
 
 ---
 
@@ -162,6 +163,12 @@
   - [x] R23.8 — Scheduled data refresh: `cron_refresh.py` + shell wrapper + unit tests
 
 ### В работе / Backlog 🟡
+
+- [ ] **R33** — Согласованность `market` и `market_spec`: валидация семейства, тесты, документация; см. `backlog/R33.md`
+  - [ ] R33.1 — `validate_experiment_config`: `market.family` == `market_spec.market_family` при наличии поля
+  - [ ] R33.2 — Pytest: допустимая / недопустимая пара конфигов
+  - [ ] R33.3 — Документация: правило выбора пары `market`/`market_spec` + пример NHL `winner_withOT`
+  - [ ] R33.4 — *(Опционально)* INFO-лог resolved families + имя MLflow-эксперимента в `train.py`
 
 - [ ] **R32** — Итеративный / multi-round feature selection: **отложено**, целесообразность реализации не подтверждена; см. `backlog/R32.md`
   - [ ] R32.1 — Переоценка ROI vs single-shot FS

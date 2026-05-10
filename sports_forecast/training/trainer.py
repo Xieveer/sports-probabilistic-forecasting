@@ -38,6 +38,7 @@ from sports_forecast.training.base import BaseModel
 from sports_forecast.training.calibration import ModelCalibrator
 from sports_forecast.training.model_factory import ModelFactory
 from sports_forecast.training.optimization.optuna_optimizer import OptunaHyperOptimizer
+from sports_forecast.training.optimization.optuna_study_name import build_optuna_study_name
 from sports_forecast.training.optimization.tscv import TimeSeriesCrossValidator
 from sports_forecast.training.train_eval_split import (
     normalize_season_token,
@@ -686,11 +687,19 @@ class SingleExperimentRunner:
             )
             return None, {}
 
-        # Формируем имя study
+        # Имя study: база + суффикс по сплиту/объёму inner train (иначе SQLite
+        # с load_if_exists накапливает trials с разных распределений данных).
         tournament = cfg.tournament.name
         market_spec = cfg.market_spec.name
         algorithm = cfg.algorithm.name
-        study_name = f"{tournament}__{market_spec}__{algorithm}"
+        study_name = build_optuna_study_name(
+            tournament,
+            market_spec,
+            algorithm,
+            cfg,
+            inner_train_rows=len(train_features),
+        )
+        logger.info("Optuna study name: %s", study_name)
 
         split_cfg = cfg.get("split", None)
 

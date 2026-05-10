@@ -6,6 +6,11 @@ description: "Optuna hyperparameter optimization (Bayesian)"
 
 # Параметры оптимизации
 enabled: true
+
+# Необязательный тег в имя SQLite-study (меняйте, чтобы начать новый study
+# при том же сплите; см. build_optuna_study_name).
+optuna_study_tag: null
+
 n_trials: 50
 timeout: 3600  # 1 час
 direction: minimize

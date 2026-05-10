@@ -504,3 +504,14 @@
   - Опциональный `selection_mode: edge | ev` в `conf/betting.yaml` для A/B без дублирования кода.
   - Deprecated-аргумент `min_value_threshold` в `BettingSimulator.__init__` с предупреждением в лог.
   - Переименовать sweep-метрики в MLflow при согласовании с потребителями дашбордов.
+
+### 2026-05-10 — Optuna: имя SQLite-study, Hydra `pruner`/`sampler` = null, user_attrs по trial
+
+- **Задача:** вне бэклога — накопление trials в одном study при смене train/holdout; падение на `hyper.pruner=null`; диагностика trial-level TSCV в MLflow.
+- **Ограничения и компромиссы:**
+  - Суффикс имени study строится из `train_eval_split`, `split`, `inner_train_rows`, `features.name`, `hyper.metric`, seed сэмплера и опционально `hyper.optuna_study_tag`. Если меняется только содержимое parquet при тех же сезонах и том же числе строк inner train, хэш не меняется — для принудительно нового study задать `hyper.optuna_study_tag` или изменить конфиг/объём выборки.
+  - `MedianPruner` без пошагового `trial.report` по фолдам остаётся слабым; `pruner=null` отключает обрезку полностью.
+  - Бизнес-метрики по-прежнему только на финальной модели, не на каждый Optuna trial.
+- **Возможные улучшения / техдолг:**
+  - В fingerprint опционально включать контрольную сумму/версию датасета (DVC `md5`, mtime), если нужно различать пересборку данных без смены `inner_train_rows`.
+  - Реальный pruning: `trial.report` + `HyperbandPruner` или отчёт по фолдам TSCV.

@@ -447,6 +447,29 @@ class TestOptunaHyperOptimizerSampler:
 
         assert isinstance(optimizer.sampler, optuna.samplers.TPESampler)
 
+    def test_pruner_explicit_null_disables_pruner(
+        self,
+        logreg_algorithm_cfg: DictConfig,
+    ) -> None:
+        """Hydra ``pruner=null`` → без pruner (Optuna ``pruner=None``)."""
+        hyper_cfg = OmegaConf.create(
+            {
+                "enabled": True,
+                "n_trials": 1,
+                "direction": "minimize",
+                "metric": "logloss",
+                "sampler": {"type": "RandomSampler", "seed": 42},
+                "pruner": None,
+            }
+        )
+
+        optimizer = OptunaHyperOptimizer(
+            algorithm_cfg=logreg_algorithm_cfg,
+            hyper_cfg=hyper_cfg,
+        )
+
+        assert optimizer.pruner is None
+
 
 class TestOptunaTrainerIntegration:
     """Тесты интеграции OptunaHyperOptimizer с trainer."""

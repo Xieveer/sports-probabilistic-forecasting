@@ -5,7 +5,7 @@ Optuna оптимизатор для подбора гиперпараметро
 - Построение пространства параметров из ``algorithm.optuna_space`` конфигов
 - Оптимизацию на TSCV (усреднённый log loss по фолдам)
 - Создание новых моделей через ``ModelFactory`` на каждый trial
-- Логирование в MLflow
+- Логирование в MLflow (артефакт ``optuna_trials.json``: ``params``, ``value``, ``user_attrs`` с ``mean_*``/``std_*`` из TSCV)
 - SQLite storage для персистентности
 
 Примеры::
@@ -165,8 +165,17 @@ class OptunaHyperOptimizer:
         # TSCV
         self.tscv = TimeSeriesCrossValidator(n_splits=self.n_splits)
 
-        # Sampler configuration
-        sampler_cfg = hyper_cfg.get("sampler", {})
+        # Sampler configuration (``sampler=null`` → дефолтный TPE; ключ отсутствует → тот же дефолт)
+        if "sampler" in hyper_cfg and hyper_cfg.get("sampler") is None:
+            sampler_cfg: dict[str, Any] = {}
+        else:
+            sampler_raw = hyper_cfg.get("sampler", {})
+            if OmegaConf.is_config(sampler_raw):
+                sampler_cfg = dict(OmegaConf.to_container(sampler_raw, resolve=True))  # type: ignore[arg-type]
+            elif isinstance(sampler_raw, dict):
+                sampler_cfg = sampler_raw
+            else:
+                sampler_cfg = {}
         sampler_type = sampler_cfg.get("type", "TPESampler")
         sampler_seed = sampler_cfg.get("seed", 42)
 
@@ -181,18 +190,26 @@ class OptunaHyperOptimizer:
         else:
             self.sampler = TPESampler(seed=sampler_seed)
 
-        # Pruner configuration
-        pruner_cfg = hyper_cfg.get("pruner", {})
-        pruner_type = pruner_cfg.get("type", "MedianPruner")
-
-        if pruner_type == "MedianPruner":
-            self.pruner = MedianPruner(
-                n_startup_trials=pruner_cfg.get("n_startup_trials", 5),
-                n_warmup_steps=pruner_cfg.get("n_warmup_steps", 10),
-                interval_steps=pruner_cfg.get("interval_steps", 1),
-            )
+        # Pruner: ``pruner=null`` → без обрезки; ключ отсутствует → MedianPruner из optuna.yaml / дефолт
+        if "pruner" in hyper_cfg and hyper_cfg.get("pruner") is None:
+            self.pruner = None
         else:
-            self.pruner = MedianPruner()
+            pruner_raw = hyper_cfg.get("pruner", {})
+            if OmegaConf.is_config(pruner_raw):
+                pruner_cfg = dict(OmegaConf.to_container(pruner_raw, resolve=True))  # type: ignore[arg-type]
+            elif isinstance(pruner_raw, dict):
+                pruner_cfg = pruner_raw
+            else:
+                pruner_cfg = {}
+            pruner_type = pruner_cfg.get("type", "MedianPruner")
+            if pruner_type == "MedianPruner":
+                self.pruner = MedianPruner(
+                    n_startup_trials=pruner_cfg.get("n_startup_trials", 5),
+                    n_warmup_steps=pruner_cfg.get("n_warmup_steps", 10),
+                    interval_steps=pruner_cfg.get("interval_steps", 1),
+                )
+            else:
+                self.pruner = MedianPruner()
 
         logger.info(
             "OptunaHyperOptimizer: study='%s', n_trials=%d, metric=%s, tscv_splits=%d",
@@ -276,7 +293,18 @@ class OptunaHyperOptimizer:
                     features=train_features,
                     target=train_target,
                 )
-                return float(results.get(f"mean_{self.metric}", 1e6))
+                objective_value = float(results.get(f"mean_{self.metric}", 1e6))
+                # Сохраняем агрегаты TSCV на trial — для отчётов / MLflow / study.trials_dataframe()
+                for key, raw in results.items():
+                    if not (key.startswith("mean_") or key.startswith("std_")):
+                        continue
+                    if raw is None:
+                        continue
+                    try:
+                        trial.set_user_attr(key, float(raw))
+                    except (TypeError, ValueError):
+                        trial.set_user_attr(key, raw)
+                return objective_value
 
             except Exception as e:
                 logger.warning("Trial %d failed: %s", trial.number, e)
@@ -359,6 +387,7 @@ class OptunaHyperOptimizer:
                         "number": trial.number,
                         "value": trial.value,
                         "params": trial.params,
+                        "user_attrs": dict(trial.user_attrs),
                     }
                 )
 

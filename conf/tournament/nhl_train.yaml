@@ -50,6 +50,8 @@ train_eval_split:
   kind: season_holdout
   season_column: season
   holdout_seasons:
+    - "20232024"
     - "20242025"
+    - "20252026"
   # Restrict train rows to these seasons only; null = all seasons except holdout.
   train_seasons: null
