@@ -20,6 +20,7 @@ defaults:
 
   - hyper: none               # По умолчанию без оптимизации
   - feature_selection: default  # Feature selection (по умолчанию отключён)
+  - walk_forward
 
   - _self_
 

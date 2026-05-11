@@ -42,6 +42,7 @@
 | R31    | 🔴 High     | Medium    | ✅     | 31-й ✅ (Feature Selection UX: primary-метрики, `*_full_*`, runbook; `done_task/R31.md`) |
 | R32    | 🟢 Low      | High      | ⏸️     | 32-й (итеративный FS — отложено, реализация под вопросом; `backlog/R32.md`) |
 | R33    | 🟡 Medium   | Low       | 🟡     | ранний (согласование `market` / `market_spec`, до массовых sweeps) |
+| R34    | 🔴 High     | High      | ✅     | 34-й ✅ (walk-forward simulation; `done_task/R34.md`) |
 
 ---
 
@@ -143,6 +144,14 @@
   - [x] R31.2 — Metric primacy в `trainer.py` + теги `primary_feature_set`, `fs_round`
   - [x] R31.3 — `docs/source/feature_selection_workflow.rst`
   - [x] R31.4 — Секция итеративного FS в runbook
+- [x] **R34** — Walk-forward simulation (конфиг при обучении); см. `done_task/R34.md` ✅ 2026-05-11
+  - [x] R34.1 — `conf/walk_forward.yaml` + `WalkForwardConfig` (документирующий dataclass), defaults в `conf/config.yaml`
+  - [x] R34.2 — `WalkForwardSlicer` + тесты
+  - [x] R34.3 — `WalkForwardRunner` + тесты
+  - [x] R34.4 — Интеграция в `SingleExperimentRunner` (`trainer.py`)
+  - [x] R34.5 — Агрегация беттинга по шагам, cumulative trace
+  - [x] R34.6 — MLflow: per-step и aggregate WF-метрики, теги, артефакты
+  - [x] R34.7 — `test_walk_forward_*.py`, `docs/source/walk_forward.rst`
 - [x] **R27** — NHL Feature Engineering v2: goals/stats EWM, streaks, lineup continuity/seniority ✅ 2026-05-04; см. `done_task/R27.md`
   - [x] R27.1 — Derived metric columns в `long_format.py` (goals_full_diff/total, sog/bs/hits/pim2/fow diff)
   - [x] R27.6 — Spans [5,25,100] → [5,15] в `standard.yaml`

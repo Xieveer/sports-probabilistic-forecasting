@@ -1,0 +1,17 @@
+# @package walk_forward
+# Walk-forward OOS simulation (R34). Default: disabled — no change to training flow.
+#
+# When enabled: after init (Optuna only on inner train as today), the holdout is split
+# into calendar-month steps (UTC boundaries); the model is refit each step with fixed
+# best_params and augmented training data.
+enabled: false
+
+# Calendar step size (only "month" implemented).
+frequency: month
+
+# Inclusive end of the initial training window in the combined train+test frame.
+# null → infer as max(datetime) over train split rows.
+init_train_end: null
+
+# Use hyperparameters from the init phase (Optuna / merged params) for all WF steps.
+reuse_optuna_params: true

@@ -55,3 +55,7 @@ train_eval_split:
     - "20252026"
   # Restrict train rows to these seasons only; null = all seasons except holdout.
   train_seasons: null
+
+# Опционально (R34): посезонный walk-forward на holdout по календарным месяцам
+# walk_forward:
+#   enabled: true

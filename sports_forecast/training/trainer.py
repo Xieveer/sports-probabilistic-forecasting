@@ -45,6 +45,7 @@ from sports_forecast.training.train_eval_split import (
     subset_frame_for_season_holdout,
     uses_season_holdout_split,
 )
+from sports_forecast.training.walk_forward import WalkForwardResult, WalkForwardRunner
 from sports_forecast.utils.log_config import get_logger
 from sports_forecast.utils.metrics import (
     compute_calibration_table,
@@ -290,6 +291,7 @@ class SingleExperimentRunner:
             logger.info("Фичи: %d колонок", len(feature_names))
 
             # 3. Train/Test split — trailing fraction or full-season holdout
+            wf_enabled = bool(OmegaConf.select(cfg, "walk_forward.enabled", default=False))
             test_size = cfg.get("split", {}).get("test_size", 0.1)
             if uses_season_holdout_split(cfg):
                 te_cfg = cfg.tournament.train_eval_split
@@ -302,6 +304,7 @@ class SingleExperimentRunner:
                 test_features = features.loc[test_mask].reset_index(drop=True)
                 train_target = target.loc[train_mask].reset_index(drop=True)
                 test_target = target.loc[test_mask].reset_index(drop=True)
+                train_df = df.loc[train_mask].reset_index(drop=True)
                 test_df = df.loc[test_mask].reset_index(drop=True)
                 logger.info(
                     "Split (season holdout): train=%d, test=%d (holdout seasons=%s)",
@@ -315,6 +318,7 @@ class SingleExperimentRunner:
                 test_features = features.iloc[split_idx:]
                 train_target = target.iloc[:split_idx]
                 test_target = target.iloc[split_idx:]
+                train_df = df.iloc[:split_idx]
                 test_df = df.iloc[split_idx:]
                 logger.info(
                     "Split: train=%d (%.1f%%), test=%d (%.1f%%)",
@@ -380,21 +384,23 @@ class SingleExperimentRunner:
                     cfg,
                 )
 
-            # 10. Оценка Shadow модели на test set
-            test_ml_metrics = self._evaluate_on_test(
-                shadow_model,
-                test_features,
-                test_target,
-            )
-
-            # 11. Бизнес-метрики на test set
-            business_metrics = self._compute_business_metrics(
-                shadow_model,
-                test_features,
-                test_target,
-                test_df,
-                cfg,
-            )
+            # 10–11. Holdout ML + betting (пропуск при walk-forward — см. фазу после отбора фичей)
+            if not wf_enabled:
+                test_ml_metrics = self._evaluate_on_test(
+                    shadow_model,
+                    test_features,
+                    test_target,
+                )
+                business_metrics = self._compute_business_metrics(
+                    shadow_model,
+                    test_features,
+                    test_target,
+                    test_df,
+                    cfg,
+                )
+            else:
+                test_ml_metrics = {}
+                business_metrics = {}
 
             # 12. Feature importance
             feature_importance = self._get_feature_importance(shadow_model)
@@ -419,6 +425,7 @@ class SingleExperimentRunner:
             )
 
             metrics_full: dict[str, Any] | None = None
+            apply_selected_column_refit = False
             fs_cfg = cfg.get("feature_selection", {})
             if (
                 feature_selection_result is not None
@@ -436,21 +443,31 @@ class SingleExperimentRunner:
                         "не найдена в train_features — пропуск переобучения"
                     )
                 else:
+                    apply_selected_column_refit = True
                     dropped = len(feature_selection_result.selected_features) - len(selected_cols)
                     if dropped:
                         logger.warning(
                             "apply_selected_to_fit: %d имён из отбора отсутствуют в данных",
                             dropped,
                         )
-                    metrics_full = {
-                        "test": dict(test_metrics_full),
-                        "business": dict(business_metrics_full) if business_metrics_full else {},
-                        "shadow": dict(shadow_metrics_full),
-                        "calibration": dict(calibration_metrics_full)
-                        if calibration_metrics_full
-                        else {},
-                        "feature_importance": feature_importance_full,
-                    }
+                    if wf_enabled:
+                        metrics_full = None
+                        logger.info(
+                            "Walk-forward: переобучение на отобранных фичах; "
+                            "metrics_full не сохраняется (до WF нет полноценного holdout-снимка).",
+                        )
+                    else:
+                        metrics_full = {
+                            "test": dict(test_metrics_full),
+                            "business": dict(business_metrics_full)
+                            if business_metrics_full
+                            else {},
+                            "shadow": dict(shadow_metrics_full),
+                            "calibration": dict(calibration_metrics_full)
+                            if calibration_metrics_full
+                            else {},
+                            "feature_importance": feature_importance_full,
+                        }
                     logger.info(
                         f"{'=' * 60}\n"
                         f"ПЕРЕОБУЧЕНИЕ НА ОТОБРАННЫХ ФИЧАХ ({len(selected_cols)} колонок)\n"
@@ -486,27 +503,53 @@ class SingleExperimentRunner:
                             cfg,
                         )
 
-                    test_ml_metrics = self._evaluate_on_test(
-                        shadow_model,
-                        test_features,
-                        test_target,
-                    )
-                    business_metrics = self._compute_business_metrics(
-                        shadow_model,
-                        test_features,
-                        test_target,
-                        test_df,
-                        cfg,
-                        save_bet_trace_file=False,
-                    )
+                    if not wf_enabled:
+                        test_ml_metrics = self._evaluate_on_test(
+                            shadow_model,
+                            test_features,
+                            test_target,
+                        )
+                        business_metrics = self._compute_business_metrics(
+                            shadow_model,
+                            test_features,
+                            test_target,
+                            test_df,
+                            cfg,
+                            save_bet_trace_file=False,
+                        )
                     feature_importance = self._get_feature_importance(shadow_model)
 
-                    logger.info(
-                        "Сравнение holdout logloss: полный набор=%.4f, "
-                        "модель на отобранных фичах (основные MLflow-метрики)=%.4f",
-                        metrics_full["test"].get("logloss", float("nan")),
-                        test_ml_metrics.get("logloss", float("nan")),
-                    )
+                    if not wf_enabled:
+                        logger.info(
+                            "Сравнение holdout logloss: полный набор=%.4f, "
+                            "модель на отобранных фичах (основные MLflow-метрики)=%.4f",
+                            metrics_full["test"].get("logloss", float("nan")),
+                            test_ml_metrics.get("logloss", float("nan")),
+                        )
+
+            walk_forward_result: WalkForwardResult | None = None
+            if wf_enabled:
+                shadow_path_pre = self._get_model_path(cfg, version="shadow")
+                walk_forward_result = self._run_walk_forward_phase(
+                    cfg=cfg,
+                    train_df=train_df,
+                    test_df=test_df,
+                    train_features=train_features,
+                    test_features=test_features,
+                    train_target=train_target,
+                    test_target=test_target,
+                    feature_names=feature_names,
+                    optimized_params=optimized_params,
+                    time_col=time_col,
+                    artifact_dir=shadow_path_pre,
+                )
+                shadow_model = walk_forward_result.final_model
+                test_ml_metrics = dict(walk_forward_result.aggregate_ml_metrics)
+                business_metrics = self._business_metrics_from_walk_forward(
+                    walk_forward_result,
+                    cfg,
+                )
+                feature_importance = self._get_feature_importance(shadow_model)
 
             # 13. Сохраняем Shadow модель
             shadow_path = self._get_model_path(cfg, version="shadow")
@@ -546,6 +589,9 @@ class SingleExperimentRunner:
                 cfg=cfg,
                 feature_names=feature_names,
                 metrics_full=metrics_full,
+                walk_forward_result=walk_forward_result,
+                walk_forward_enabled=wf_enabled,
+                apply_selected_column_refit=apply_selected_column_refit,
             )
 
             logger.info("Обучение завершено успешно")
@@ -555,6 +601,103 @@ class SingleExperimentRunner:
             logger.error("Ошибка обучения: %s", str(e), exc_info=True)
             mlflow.set_tag("error", str(e))
             return False
+
+    def _run_walk_forward_phase(
+        self,
+        *,
+        cfg: DictConfig,
+        train_df: pd.DataFrame,
+        test_df: pd.DataFrame,
+        train_features: pd.DataFrame,
+        test_features: pd.DataFrame,
+        train_target: pd.Series,
+        test_target: pd.Series,
+        feature_names: list[str],
+        optimized_params: dict[str, Any] | None,
+        time_col: str,
+        artifact_dir: Path,
+    ) -> WalkForwardResult:
+        """Собрать train+test, вычислить границу init_train_end и запустить :class:`WalkForwardRunner`."""
+        raw_override = OmegaConf.select(cfg, "walk_forward.init_train_end", default=None)
+        if raw_override is not None and str(raw_override).strip().lower() not in (
+            "null",
+            "none",
+            "",
+        ):
+            init_end = pd.Timestamp(raw_override)
+        else:
+            init_end = pd.Timestamp(pd.to_datetime(train_df[time_col], errors="coerce").max())
+
+        combined_df = pd.concat([train_df, test_df], ignore_index=True)
+        features = pd.concat([train_features, test_features], ignore_index=True)
+        target = pd.concat([train_target, test_target], ignore_index=True)
+
+        runner = WalkForwardRunner(
+            cfg,
+            create_model=lambda p: self._create_model(cfg.algorithm, p),
+        )
+        logger.info(
+            "Walk-forward: combined_rows=%d init_train_end=%s",
+            len(combined_df),
+            init_end,
+        )
+        return runner.run(
+            combined_df=combined_df,
+            features=features,
+            target=target,
+            feature_names=feature_names,
+            best_params=optimized_params,
+            init_train_end=init_end,
+            time_col=time_col,
+            artifact_dir=artifact_dir,
+        )
+
+    def _business_metrics_from_walk_forward(
+        self,
+        wf: WalkForwardResult,
+        cfg: DictConfig,
+    ) -> dict[str, Any]:
+        """Собрать словарь бизнес-метрик для :meth:`_log_business_metrics_to_mlflow` (агрегат WF)."""
+        cum = wf.cumulative_business_metrics
+        betting_enabled = bool(cfg.get("betting", {}).get("enabled", False))
+        if not betting_enabled or not cum:
+            return {}
+
+        n_bets = int(cum.get("n_bets", 0))
+        profit = float(cum.get("profit_units", 0.0))
+        trace_path = wf.cumulative_bet_trace_path
+        return {
+            "n_total_events": int(cum.get("n_total_events", 0)),
+            "n_bets": n_bets,
+            "turnover_units": float(cum.get("turnover_units", 0.0)),
+            "coverage": float(cum.get("coverage", 0.0)),
+            "profit_units": profit,
+            "roi": float(cum.get("roi", 0.0)),
+            "avg_profit_per_bet": profit / n_bets if n_bets else 0.0,
+            "avg_edge": 0.0,
+            "avg_ev": 0.0,
+            "ev_sum_units": 0.0,
+            "ev_realization": 0.0,
+            "hit_rate": float(cum.get("hit_rate", 0.0)),
+            "num_wins": int(cum.get("num_wins", 0)),
+            "max_drawdown_units": float(cum.get("max_drawdown_units", 0.0)),
+            "max_drawdown_pct": float(cum.get("max_drawdown_pct", 0.0)),
+            "std_return_per_bet": 0.0,
+            "sharpe_like": float(cum.get("sharpe_like", 0.0)),
+            "profit_factor": float(cum.get("profit_factor", 0.0)),
+            "avg_odds": 0.0,
+            "final_bankroll": 0.0,
+            "cal_selected_brier": 0.0,
+            "cal_selected_logloss": 0.0,
+            "cal_selected_ece": 0.0,
+            "odds_bin_metrics": {},
+            "equity_curve": [],
+            "sweep_df": None,
+            "cal_table": [],
+            "odds_column": "walk_forward_cumulative",
+            "valid_odds_count": int(cum.get("n_total_events", 0)),
+            "bet_trace_csv_path": str(trace_path.resolve()) if trace_path else None,
+        }
 
     def _select_features(self, df: pd.DataFrame, cfg: DictConfig) -> tuple[pd.DataFrame, list[str]]:
         """Выбрать фичи для модели (с leakage guard).
@@ -1538,6 +1681,9 @@ class SingleExperimentRunner:
         cfg: DictConfig,
         feature_names: list[str],
         metrics_full: dict[str, Any] | None = None,
+        walk_forward_result: WalkForwardResult | None = None,
+        walk_forward_enabled: bool = False,
+        apply_selected_column_refit: bool = False,
     ) -> None:
         """Залогировать все метрики в MLflow.
 
@@ -1556,6 +1702,11 @@ class SingleExperimentRunner:
             metrics_full: Снимок метрик модели на **полном** наборе фичей (до переобучения
                 на подмножестве). Логируется как ``test_full_*``, ``shadow_full_*``,
                 ``full_betting_*``, ``cal_full_*``, артефакт ``feature_importance_full.csv``.
+                При ``walk_forward_enabled`` и ``apply_selected_to_fit`` может быть ``None``.
+            walk_forward_result: Результат WF-цикла (если включён).
+            walk_forward_enabled: Флаг ``cfg.walk_forward.enabled``.
+            apply_selected_column_refit: Выполнено переобучение на подмножестве отобранных
+                колонок (в т.ч. при walk-forward, когда ``metrics_full`` нет).
         """
         # ── Параметры ────────────────────────────────────────────────
         mlflow.log_param("algorithm", cfg.algorithm.name)
@@ -1564,7 +1715,8 @@ class SingleExperimentRunner:
         mlflow.log_param("seed", cfg.seed)
         mlflow.log_param("n_features", len(feature_names))
 
-        if metrics_full is not None:
+        fs_primary_selected = metrics_full is not None or apply_selected_column_refit
+        if fs_primary_selected:
             mlflow.set_tag("primary_feature_set", "selected")
             mlflow.set_tag("fs_fit_applied", "true")
             mlflow.set_tag("fs_round", "1")
@@ -1757,6 +1909,63 @@ class SingleExperimentRunner:
             stability_metrics["stability_level"],
             stability_metrics["prod_confidence"],
         )
+
+        if walk_forward_enabled and walk_forward_result is not None:
+            self._log_walk_forward_to_mlflow(walk_forward_result, cfg)
+
+    def _log_walk_forward_to_mlflow(self, wf: WalkForwardResult, cfg: DictConfig) -> None:
+        """Пошаговые и агрегированные WF-метрики, теги и артефакты CSV."""
+        wf_cfg = cfg.walk_forward
+        n_steps = len(wf.per_step_metrics)
+        mlflow.set_tag("walk_forward", "true")
+        mlflow.set_tag("wf_n_steps", str(n_steps))
+        mlflow.set_tag("wf_frequency", str(wf_cfg.get("frequency", "month")))
+        raw_init = OmegaConf.select(cfg, "walk_forward.init_train_end", default="")
+        init_tag = str(raw_init) if raw_init not in (None, "", "null") else "inferred"
+        mlflow.set_tag("wf_init_train_end", init_tag)
+
+        key_map_ml = (
+            ("logloss", "wf_step_logloss"),
+            ("auc", "wf_step_auc"),
+            ("ece", "wf_step_ece"),
+        )
+        for row in wf.per_step_metrics:
+            step = int(row["wf_step"])
+            for src_suffix, metric_name in key_map_ml:
+                k = f"ml_{src_suffix}"
+                if k in row:
+                    mlflow.log_metric(metric_name, float(row[k]), step=step)
+            for bk in (
+                "betting_roi",
+                "betting_n_bets",
+                "betting_profit_units",
+                "betting_sharpe_like",
+            ):
+                if bk in row:
+                    short = bk.replace("betting_", "wf_step_betting_")
+                    mlflow.log_metric(short, float(row[bk]), step=step)
+
+        agg = wf.aggregate_ml_metrics
+        for name, val in agg.items():
+            mlflow.log_metric(f"wf_agg_{name}", float(val))
+
+        cum = wf.cumulative_business_metrics
+        if cum:
+            mlflow.log_metric("wf_agg_betting_roi", float(cum.get("roi", 0.0)))
+            mlflow.log_metric("wf_agg_betting_profit_units", float(cum.get("profit_units", 0.0)))
+            mlflow.log_metric("wf_agg_betting_n_bets", float(cum.get("n_bets", 0)))
+            mlflow.log_metric("wf_agg_betting_sharpe_like", float(cum.get("sharpe_like", 0.0)))
+            mlflow.log_metric(
+                "wf_agg_betting_max_dd_units", float(cum.get("max_drawdown_units", 0.0))
+            )
+            mlflow.log_metric("wf_agg_betting_max_dd_pct", float(cum.get("max_drawdown_pct", 0.0)))
+
+        if wf.per_step_metrics:
+            csv_txt = pd.DataFrame(wf.per_step_metrics).to_csv(index=False)
+            mlflow.log_text(csv_txt, "wf_per_step_metrics.csv")
+
+        if wf.cumulative_bet_trace_path and Path(wf.cumulative_bet_trace_path).is_file():
+            mlflow.log_artifact(str(wf.cumulative_bet_trace_path))
 
     # ─────────────────────────────────────────────────────────────────────
     # BUSINESS METRICS MLflow LOGGING
