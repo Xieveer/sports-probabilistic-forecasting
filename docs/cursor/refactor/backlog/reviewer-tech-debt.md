@@ -516,6 +516,22 @@
   - В fingerprint опционально включать контрольную сумму/версию датасета (DVC `md5`, mtime), если нужно различать пересборку данных без смены `inner_train_rows`.
   - Реальный pruning: `trial.report` + `HyperbandPruner` или отчёт по фолдам TSCV.
 
+### 2026-05-11 — R35: block bootstrap CI на bet trace
+
+- **Задача:** `backlog/R35.md` → `done_task/R35.md`
+- **Ограничения и компромиссы:**
+  - `BootstrapResult.summary_dataframe()` вместо `summary()` как в pseudocode spec — незначительное расхождение имени метода, обратно совместимо.
+  - Percentile bootstrap (не BCa): при малом числе ставок (<50) CI может быть смещён; BCa потребовал бы jack-knife pass (O(n·B) вместо O(B)).
+  - `_compute_metrics_for_resample` полностью пересчитывает drawdown per-resample с O(n) loop — при B=5000, n=2000 это 10M итераций Python; для CI drawdown достаточно, но при B>10k стоит перейти на векторизованный cumsum.
+  - Sharpe-like считается по прибыли в единицах стека (не в долях ROI) — соответствует spec, но не стандартному annualised Sharpe; сопоставимость с внешними источниками ограничена.
+  - `n_bets` в bootstrap — это всегда `n` (размер resample = размер оригинала), поэтому CI для `n_bets` всегда вырождается в точку; метрика сохранена ради полноты API.
+- **Возможные улучшения / техдолг:**
+  - Добавить метод `result.summary()` как алиас `summary_dataframe()` для соответствия pseudocode spec.
+  - BCa или студентизированный bootstrap для более корректных CI при малом n.
+  - Векторизовать расчёт max_drawdown (numpy cumsum + running max) для ускорения при B>5000.
+  - Опциональный `mode: parametric | block` в конфиге — параметрический бутстрап для конкретных распределений (Bernoulli win + Beta odds) как альтернатива.
+  - Аннотировать MLflow metrics `_se` (стандартная ошибка) для сравнения разброса между экспериментами.
+
 ### 2026-05-11 — R34: walk-forward simulation
 
 - **Задача:** `backlog/R34.md` → `done_task/R34.md`

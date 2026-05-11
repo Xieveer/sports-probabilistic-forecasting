@@ -43,6 +43,7 @@
 | R32    | 🟢 Low      | High      | ⏸️     | 32-й (итеративный FS — отложено, реализация под вопросом; `backlog/R32.md`) |
 | R33    | 🟡 Medium   | Low       | 🟡     | ранний (согласование `market` / `market_spec`, до массовых sweeps) |
 | R34    | 🔴 High     | High      | ✅     | 34-й ✅ (walk-forward simulation; `done_task/R34.md`) |
+| R35    | 🔴 High     | Medium    | ✅     | 35-й ✅ (block bootstrap CI на bet trace; `done_task/R35.md`) |
 
 ---
 
@@ -145,6 +146,12 @@
   - [x] R31.3 — `docs/source/feature_selection_workflow.rst`
   - [x] R31.4 — Секция итеративного FS в runbook
 - [x] **R34** — Walk-forward simulation (конфиг при обучении); см. `done_task/R34.md` ✅ 2026-05-11
+- [x] **R35** — Block bootstrap CI на финальном bet trace (circular block, Politis–Romano); см. `done_task/R35.md` ✅ 2026-05-11
+  - [x] R35.1 — `bootstrap.py`: `BlockBootstrap`, `BootstrapResult`, `MetricBootstrapStats`, circular block resampling, 6 метрик
+  - [x] R35.2 — `conf/betting.yaml`: секция `bootstrap:` (enabled: false по умолчанию)
+  - [x] R35.3 — Интеграция в `trainer.py`: `_log_block_bootstrap_if_enabled`, WF + static trace sources, graceful skip
+  - [x] R35.4 — MLflow: теги, метрики roi/profit_units/sharpe_like CI, артефакт `bootstrap_summary.csv`, stdout INFO
+  - [x] R35.5 — `tests/test_block_bootstrap.py`: 5 тестов по спецификации
   - [x] R34.1 — `conf/walk_forward.yaml` + `WalkForwardConfig` (документирующий dataclass), defaults в `conf/config.yaml`
   - [x] R34.2 — `WalkForwardSlicer` + тесты
   - [x] R34.3 — `WalkForwardRunner` + тесты
