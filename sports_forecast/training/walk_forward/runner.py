@@ -147,6 +147,9 @@ class WalkForwardRunner:
         betting_cfg = self._cfg.get("betting", {})
         bookmaker_cfg = self._cfg.get("bookmaker", {})
         market_spec = self._cfg.market_spec
+        coverage_rows_per_event = (
+            2 if OmegaConf.select(self._cfg, "features.requires_long", default=False) else 1
+        )
 
         cumulative_y: list[np.ndarray] = []
         cumulative_p: list[np.ndarray] = []
@@ -205,7 +208,13 @@ class WalkForwardRunner:
                         ),
                         max_stake_fraction=betting_cfg.get("max_stake_fraction", 0.1),
                     )
-                    res = simulator.simulate(yt, pr, od, return_event_trace=True)
+                    res = simulator.simulate(
+                        yt,
+                        pr,
+                        od,
+                        return_event_trace=True,
+                        coverage_rows_per_event=coverage_rows_per_event,
+                    )
                     row["betting_n_bets"] = res.n_bets
                     row["betting_roi"] = res.roi
                     row["betting_profit_units"] = res.profit_units
@@ -242,7 +251,13 @@ class WalkForwardRunner:
                 ),
                 max_stake_fraction=betting_cfg.get("max_stake_fraction", 0.1),
             )
-            agg = simulator.simulate(y_all, p_all, o_all, return_event_trace=False)
+            agg = simulator.simulate(
+                y_all,
+                p_all,
+                o_all,
+                return_event_trace=False,
+                coverage_rows_per_event=coverage_rows_per_event,
+            )
             cum_business = {
                 "n_bets": agg.n_bets,
                 "roi": agg.roi,

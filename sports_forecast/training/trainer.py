@@ -1328,11 +1328,15 @@ class SingleExperimentRunner:
         )
 
         trace_enabled = bool(betting_cfg.get("save_test_bet_trace", True)) and save_bet_trace_file
+        coverage_rows_per_event = (
+            2 if OmegaConf.select(cfg, "features.requires_long", default=False) else 1
+        )
         result = simulator.simulate(
             y_true=y_true_arr,
             y_pred_proba=proba,
             odds=odds_arr,
             return_event_trace=trace_enabled,
+            coverage_rows_per_event=coverage_rows_per_event,
         )
 
         bet_trace_csv_path: str | None = None

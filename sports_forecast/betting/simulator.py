@@ -4,7 +4,7 @@ Betting Simulator для валуйных ставок.
 Симулирует ставки на спортивные события на основе предсказанных вероятностей
 и реальных коэффициентов букмекеров. Возвращает полный набор метрик:
 
-- Volume: n_bets, turnover, coverage
+- Volume: n_bets, turnover, coverage (для long-format см. ``simulate(..., coverage_rows_per_event=...)``)
 - Profit: profit_units, ROI, avg_profit_per_bet
 - Edge/EV: avg_edge, avg_ev, ev_sum, ev_realization
 - Risk: max_drawdown, sharpe_like, profit_factor, std_return
@@ -48,7 +48,9 @@ class BettingResult:
         n_total_events: Общее кол-во событий с валидными odds.
         n_bets: Кол-во отобранных ставок.
         turnover_units: Оборот (сумма ставок).
-        coverage: Доля матчей со ставкой (n_bets / n_total_events).
+        coverage: Доля «единиц покрытия» со ставкой: при ``coverage_rows_per_event=1``
+            это ``n_bets / n_total_events`` (строки); при большем делителе —
+            аппроксимация доли событий (матчей), см. :meth:`BettingSimulator.simulate`.
         profit_units: Чистая прибыль.
         roi: ROI = profit / turnover * 100 (%).
         avg_profit_per_bet: Средний профит на ставку.
@@ -234,6 +236,7 @@ class BettingSimulator:
         odds: np.ndarray | pd.Series,
         *,
         return_event_trace: bool = False,
+        coverage_rows_per_event: int = 1,
     ) -> BettingResult:
         """Симулировать ставки и вернуть полный набор метрик.
 
@@ -243,12 +246,19 @@ class BettingSimulator:
             odds: Букмекерские коэффициенты.
             return_event_trace: Если ``True``, заполнить ``BettingResult.event_trace``
                 построчной таблицей (y_true, p_prob, odds, edge, ставка, профит, …).
+            coverage_rows_per_event: Сколько строк long-format приходится на одно событие
+                (например, 2 для H2H winner: pl/opp). При ``1`` (по умолчанию) метрика
+                ``coverage`` = ``n_bets / n_rows`` (как для wide / не-long пайплайнов).
+                При ``> 1``: ``denom = n_rows / coverage_rows_per_event``, затем
+                ``coverage = min(1.0, n_bets / denom)`` если ``denom > 0``, иначе ``0.0`` —
+                аппроксимация доли матчей (событий), в которых была хотя бы одна ставка,
+                если на событие фиксированное число строк.
 
         Returns:
             :class:`BettingResult` с полным набором метрик.
 
         Raises:
-            ValueError: Если массивы разной длины.
+            ValueError: Если массивы разной длины или ``coverage_rows_per_event < 1``.
         """
         y_true = np.asarray(y_true, dtype=float)
         y_pred_proba = np.asarray(y_pred_proba, dtype=float)
@@ -256,6 +266,8 @@ class BettingSimulator:
 
         if len(y_true) != len(y_pred_proba) or len(y_true) != len(odds):
             raise ValueError("y_true, y_pred_proba, odds должны быть одинаковой длины")
+        if coverage_rows_per_event < 1:
+            raise ValueError("coverage_rows_per_event должен быть >= 1")
 
         n_total = len(y_true)
         bankroll = self.initial_bankroll
@@ -333,7 +345,11 @@ class BettingSimulator:
 
         # Volume
         turnover = total_staked
-        coverage = n_bets / n_total if n_total > 0 else 0.0
+        if coverage_rows_per_event > 1:
+            denom = n_total / float(coverage_rows_per_event)
+            coverage = min(1.0, n_bets / denom) if denom > 0 else 0.0
+        else:
+            coverage = n_bets / n_total if n_total > 0 else 0.0
 
         # Profit
         profit = bankroll - self.initial_bankroll

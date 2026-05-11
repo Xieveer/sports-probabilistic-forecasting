@@ -241,6 +241,32 @@ class TestSimulate:
         with pytest.raises(ValueError, match="одинаковой длины"):
             flat_simulator.simulate(y_true, y_pred, odds)
 
+    def test_coverage_long_format_divisor(self, flat_simulator: BettingSimulator) -> None:
+        """Long-format: при 4 строках и 2 ставках row-coverage=0.5; event-coverage≈1.0 при делителе 2."""
+        y_true = np.array([1, 0, 1, 0])
+        y_pred = np.array([0.6, 0.6, 0.45, 0.45])
+        odds = np.array([2.0, 2.0, 2.0, 2.0])
+
+        row_level = flat_simulator.simulate(y_true, y_pred, odds)
+        assert row_level.n_bets == 2
+        assert row_level.n_total_events == 4
+        assert abs(row_level.coverage - 0.5) < 1e-9
+
+        event_level = flat_simulator.simulate(y_true, y_pred, odds, coverage_rows_per_event=2)
+        assert event_level.n_bets == 2
+        denom = 4 / 2
+        assert abs(event_level.coverage - min(1.0, 2.0 / denom)) < 1e-9
+        assert abs(event_level.coverage - 1.0) < 1e-9
+
+    def test_coverage_rows_per_event_invalid_raises(self, flat_simulator: BettingSimulator) -> None:
+        """coverage_rows_per_event < 1 запрещён."""
+        y_true = np.array([1])
+        y_pred = np.array([0.8])
+        odds = np.array([2.0])
+
+        with pytest.raises(ValueError, match="coverage_rows_per_event"):
+            flat_simulator.simulate(y_true, y_pred, odds, coverage_rows_per_event=0)
+
     def test_roi_calculation(self, flat_simulator: BettingSimulator) -> None:
         """ROI = (profit / turnover) * 100."""
         y_true = np.array([1, 1])
