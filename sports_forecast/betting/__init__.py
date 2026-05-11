@@ -2,6 +2,7 @@
 Betting module — симуляция ставок и утилиты для работы с коэффициентами.
 """
 
+from sports_forecast.betting.bootstrap import BlockBootstrap, BootstrapResult, MetricBootstrapStats
 from sports_forecast.betting.odds import (
     extract_betting_odds,
     extract_odds_from_raw,
@@ -15,6 +16,9 @@ __all__ = [
     "BettingMetrics",
     "BettingResult",
     "BettingSimulator",
+    "BlockBootstrap",
+    "BootstrapResult",
+    "MetricBootstrapStats",
     "extract_betting_odds",
     "extract_odds_from_raw",
     "find_odds_column",

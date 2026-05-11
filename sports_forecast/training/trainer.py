@@ -29,6 +29,7 @@ import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
 
+from sports_forecast.betting.bootstrap import BlockBootstrap
 from sports_forecast.betting.odds import extract_betting_odds
 from sports_forecast.betting.simulator import BettingSimulator
 from sports_forecast.config import get_data_path
@@ -1912,6 +1913,123 @@ class SingleExperimentRunner:
 
         if walk_forward_enabled and walk_forward_result is not None:
             self._log_walk_forward_to_mlflow(walk_forward_result, cfg)
+
+        self._log_block_bootstrap_if_enabled(
+            cfg,
+            walk_forward_enabled=walk_forward_enabled,
+            walk_forward_result=walk_forward_result,
+            business_metrics=business_metrics,
+        )
+
+    def _log_block_bootstrap_if_enabled(
+        self,
+        cfg: DictConfig,
+        *,
+        walk_forward_enabled: bool,
+        walk_forward_result: WalkForwardResult | None,
+        business_metrics: dict[str, Any],
+    ) -> None:
+        """При ``betting.bootstrap.enabled`` — circular block bootstrap по финальному trace и MLflow."""
+        betting_cfg = cfg.get("betting") or {}
+        boot_cfg = betting_cfg.get("bootstrap") or {}
+        if not bool(boot_cfg.get("enabled", False)):
+            return
+        if not bool(betting_cfg.get("enabled", False)):
+            logger.info("Block bootstrap: betting отключён — пропуск")
+            return
+
+        trace_path: Path | None = None
+        if walk_forward_enabled:
+            if walk_forward_result is None:
+                logger.warning(
+                    "Block bootstrap: walk_forward включён, но WalkForwardResult отсутствует — пропуск",
+                )
+                return
+            raw_path = walk_forward_result.cumulative_bet_trace_path
+            if raw_path is None or not Path(raw_path).is_file():
+                logger.warning(
+                    "Block bootstrap: нет cumulative_bet_trace для агрегата WF (path=%s) — пропуск",
+                    raw_path,
+                )
+                return
+            trace_path = Path(raw_path)
+        else:
+            csv_s = business_metrics.get("bet_trace_csv_path") if business_metrics else None
+            if not csv_s:
+                logger.warning("Block bootstrap: bet_trace_csv_path отсутствует — пропуск")
+                return
+            trace_path = Path(csv_s)
+            if not trace_path.is_file():
+                logger.warning(
+                    "Block bootstrap: файл trace не найден (%s) — пропуск",
+                    trace_path,
+                )
+                return
+
+        try:
+            trace_df = pd.read_csv(trace_path)
+        except (OSError, ValueError, pd.errors.EmptyDataError, pd.errors.ParserError) as exc:
+            logger.warning(
+                "Block bootstrap: не удалось прочитать %s: %s — пропуск",
+                trace_path,
+                exc,
+            )
+            return
+
+        n_resamples = int(boot_cfg.get("n_resamples", 5000))
+        min_bl = int(boot_cfg.get("min_block_length", 10))
+        max_bl = int(boot_cfg.get("max_block_length", 30))
+        conf_level = float(boot_cfg.get("confidence_level", 0.95))
+        raw_seed = boot_cfg.get("seed")
+        seed: int | None
+        if raw_seed is None or str(raw_seed).strip().lower() in ("null", "none", ""):
+            seed = None
+        else:
+            seed = int(raw_seed)
+
+        bankroll = float(betting_cfg.get("initial_bankroll", 1000.0))
+
+        bb = BlockBootstrap(
+            trace_df,
+            n_resamples=n_resamples,
+            min_block_length=min_bl,
+            max_block_length=max_bl,
+            seed=seed,
+            confidence_level=conf_level,
+            initial_bankroll=bankroll,
+        )
+        result = bb.run()
+        if not result.metrics:
+            logger.warning(
+                "Block bootstrap: нет размещённых ставок в trace — пропуск логирования bootstrap",
+            )
+            return
+
+        bl_range = f"{min_bl}-{max_bl}"
+        mlflow.set_tag("bootstrap_enabled", "true")
+        mlflow.set_tag("bootstrap_n_resamples", str(n_resamples))
+        mlflow.set_tag("bootstrap_block_length_range", bl_range)
+
+        for base in ("roi", "profit_units", "sharpe_like"):
+            st = result.metrics[base]
+            mlflow.log_metric(f"bootstrap_{base}_mean", st.mean)
+            mlflow.log_metric(f"bootstrap_{base}_ci_lower", st.ci_lower)
+            mlflow.log_metric(f"bootstrap_{base}_ci_upper", st.ci_upper)
+
+        summary_df = result.summary_dataframe()
+        shadow_dir = self._get_model_path(cfg, "shadow")
+        shadow_dir.mkdir(parents=True, exist_ok=True)
+        csv_out = shadow_dir / "bootstrap_summary.csv"
+        summary_df.to_csv(csv_out, index=False)
+        mlflow.log_artifact(str(csv_out.resolve()))
+
+        logger.info(
+            "Block bootstrap (B=%d, block_length=[%s], CI=%.0f%%):\n%s",
+            n_resamples,
+            bl_range,
+            conf_level * 100,
+            summary_df.to_string(index=False),
+        )
 
     def _log_walk_forward_to_mlflow(self, wf: WalkForwardResult, cfg: DictConfig) -> None:
         """Пошаговые и агрегированные WF-метрики, теги и артефакты CSV."""
