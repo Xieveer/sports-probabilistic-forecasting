@@ -44,6 +44,7 @@
 | R33    | 🟡 Medium   | Low       | 🟡     | ранний (согласование `market` / `market_spec`, до массовых sweeps) |
 | R34    | 🔴 High     | High      | ✅     | 34-й ✅ (walk-forward simulation; `done_task/R34.md`) |
 | R35    | 🔴 High     | Medium    | ✅     | 35-й ✅ (block bootstrap CI на bet trace; `done_task/R35.md`) |
+| R36    | 🟡 Medium   | Low       | ✅     | 36-й ✅ (experiment matrix: CLI-команды для всех турниров × 2 схемы; `done_task/R36.md`) |
 
 ---
 
@@ -147,6 +148,9 @@
   - [x] R31.4 — Секция итеративного FS в runbook
 - [x] **R34** — Walk-forward simulation (конфиг при обучении); см. `done_task/R34.md` ✅ 2026-05-11
 - [x] **R35** — Block bootstrap CI на финальном bet trace (circular block, Politis–Romano); см. `done_task/R35.md` ✅ 2026-05-11
+- [x] **R36** — Experiment matrix: CLI-команды Hydra для всех турниров × Scheme A/B; верификация overrides (R36.1) + command grid (R36.2); см. `done_task/R36.md` ✅ 2026-05-11
+  - [x] R36.1 — Верификация Hydra overrides (smoke NHL): `walk_forward.*`, `betting.bootstrap.*` без `+`, таблица результатов
+  - [x] R36.2 — Command grid: Scheme A (catboost/lgbm/logreg/dummy) + Scheme B (catboost_reg/lgbm_reg/dummy) для 8 турниров
   - [x] R35.1 — `bootstrap.py`: `BlockBootstrap`, `BootstrapResult`, `MetricBootstrapStats`, circular block resampling, 6 метрик
   - [x] R35.2 — `conf/betting.yaml`: секция `bootstrap:` (enabled: false по умолчанию)
   - [x] R35.3 — Интеграция в `trainer.py`: `_log_block_bootstrap_if_enabled`, WF + static trace sources, graceful skip
