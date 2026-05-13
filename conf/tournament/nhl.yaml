@@ -7,6 +7,17 @@ name: nhl
 region: north_america
 description: "National Hockey League (источник: nhl_web_api)"
 
+# R26: при дефолтном ``bookmaker=fonbet`` из корня ``apply_tournament_default_bookmaker`` подменяет на ``the_odds_api``.
+# R22.8 OT-рынки: ``winner_withOT``, ``total_*_withOT`` — см. HOW_TO_ADD_NEW_MARKET (NHL).
+# Примеры train::
+#   uv run python -m sports_forecast.train tournament=nhl market=winner_withOT market_spec=winner_withOT \\
+#       algorithm=catboost features=advanced
+#   make train-sweep-nhl-ot-winner
+# Promote / MLflow (после сравнения)::
+#   make promote EXP=nhl__winner_withOT METRIC=test_logloss DIR=minimize
+# Materialize::
+#   make materialize TOURNAMENT=nhl MARKET=winner_withOT SPEC=winner_withOT
+
 data:
   processed_dir: data/processed/nhl
   formats:
@@ -95,3 +106,18 @@ stats:
 time_range:
   start: "1999-10-01"
   end: null
+
+# Сезонный holdout для обучения (раньше только в ``nhl_train``; R38 — один slug ``nhl``).
+# SEASON_ID как в источнике NHL (строка 8 цифр или int в parquet).
+train_eval_split:
+  kind: season_holdout
+  season_column: season
+  holdout_seasons:
+    - "20232024"
+    - "20242025"
+    - "20252026"
+  train_seasons: null
+
+# Опционально (R34): walk-forward на holdout по календарным месяцам
+# walk_forward:
+#   enabled: true

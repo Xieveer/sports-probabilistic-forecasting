@@ -204,9 +204,9 @@ data_format: long   # или wide
 Обучение (отдельные прогоны):
 
 ```bash
-uv run python -m sports_forecast.train tournament=nhl_train market=winner_withOT \
+uv run python -m sports_forecast.train tournament=nhl market=winner_withOT \
   market_spec=winner_withOT algorithm=catboost features=advanced
-uv run python -m sports_forecast.train tournament=nhl_train market=total_withOT \
+uv run python -m sports_forecast.train tournament=nhl market=total_withOT \
   market_spec=total_over_withOT market_spec.line=6.5 algorithm=catboost features=advanced
 ```
 

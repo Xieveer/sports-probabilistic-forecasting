@@ -101,7 +101,7 @@ Airflow
 ``0 9 * * *`` в часовом поясе планировщика Airflow по умолчанию (**UTC**), то есть **09:00 UTC**
 = **12:00 по Москве** (MSK, UTC+3). Пайплайн: ``source`` (при ``odds.enabled`` в ``conf/source/nhl.yaml``
 — инкрементальный odds post-step внутри ``source_refresh``) → ingest → clean → features →
-materialize для ``winner_withOT`` / ``nhl_train`` по умолчанию; затем ``validate``. Пул и ``flock``
+materialize для ``winner_withOT`` / ``nhl`` по умолчанию; затем ``validate``. Пул и ``flock``
 совпадают с ``data_refresh`` (переменные ``SF_REFRESH_POOL``, ``SF_REFRESH_LOCK_FILE``, …).
 
 Переопределения через Airflow Variables: ``SF_NHL_MORNING_TOURNAMENT``, ``SF_NHL_MORNING_FEATURES``,
@@ -111,7 +111,7 @@ materialize для ``winner_withOT`` / ``nhl_train`` по умолчанию; з
 
     CRON_TZ=Europe/Moscow
     0 12 * * * cd /path/to/repo && SF_PROJECT_DIR=/path/to/repo uv run python -m sports_forecast.orchestration.cron_refresh \
-      --tournaments nhl_train --features advanced --market winner_withOT --market-spec winner_withOT \
+      --tournaments nhl --features advanced --market winner_withOT --market-spec winner_withOT \
       >> /var/log/sf_nhl_morning.log 2>&1
 
 **Ручной запуск (эквивалент команды DAG / cron, только печать shell):** ``make nhl-morning-refresh-dry-run``.
@@ -161,7 +161,7 @@ Smoke-проверки API
    * - ``make nhl-morning-refresh-dry-run``
      - Печать shell-команды утреннего NHL-refresh (как DAG ``nhl_morning_refresh``), без выполнения.
    * - ``make nhl-morning-refresh``
-     - Выполнить полный утренний ``cron_refresh`` для ``nhl_train`` / ``winner_withOT`` + ``run_validation`` (без Telegram).
+     - Выполнить полный утренний ``cron_refresh`` для ``nhl`` / ``winner_withOT`` + ``run_validation`` (без Telegram).
    * - ``make nhl-morning-test-notify``
      - Пауза до ближайшей минуты МСК + offset, затем тот же refresh + validate и сводка ``/predict/upcoming/nhl`` в Telegram.
 

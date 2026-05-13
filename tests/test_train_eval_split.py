@@ -92,7 +92,7 @@ def test_uses_season_holdout_split_detects_config() -> None:
     cfg = OmegaConf.create(
         {
             "tournament": {
-                "name": "nhl_train",
+                "name": "nhl",
                 "train_eval_split": {"kind": "season_holdout", "holdout_seasons": ["20242025"]},
             }
         }

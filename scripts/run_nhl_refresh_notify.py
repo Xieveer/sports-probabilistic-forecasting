@@ -3,7 +3,7 @@
 
 По умолчанию ждёт до **следующей целой минуты по Europe/Moscow** + ``--offset-seconds`` (чтобы
 имитировать «запуск на метке времени»), затем выполняет тот же контур, что ``cron_refresh``
-без ``--dry-run`` для ``nhl_train`` / ``winner_withOT`` / ``advanced``, затем
+без ``--dry-run`` для ``nhl`` / ``winner_withOT`` / ``advanced``, затем
 ``python -m sports_forecast.validation.run_validation`` (как второй task в DAG).
 
 Секреты: ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS`` (первый id — чат для лички), опционально
@@ -107,7 +107,7 @@ def _run_refresh(project_dir: Path) -> None:
         "-m",
         "sports_forecast.orchestration.cron_refresh",
         "--tournaments",
-        "nhl_train",
+        "nhl",
         "--features",
         "advanced",
         "--market",

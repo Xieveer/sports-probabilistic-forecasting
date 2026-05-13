@@ -7,8 +7,8 @@
 ``source`` (включая инкрементальный odds-refresh при ``odds.enabled`` в ``conf/source/nhl.yaml``)
 → ``ingest`` → ``clean`` → ``features`` → ``materialize``.
 
-По умолчанию один турнир ``nhl_train``, рынок ``winner_withOT`` / ``winner_withOT``, фичи ``advanced``
-(см. ``conf/tournament/nhl_train.yaml``). Переопределение через Airflow Variables / ``dag_run.conf``.
+По умолчанию один турнир ``nhl``, рынок ``winner_withOT`` / ``winner_withOT``, фичи ``advanced``
+(см. ``conf/tournament/nhl.yaml``). Переопределение через Airflow Variables / ``dag_run.conf``.
 
 Пул и ``flock`` — те же, что у ``data_refresh``, чтобы не нарушать контракт конкуренции refresh.
 """
@@ -30,7 +30,7 @@ from sports_forecast.orchestration.refresh_command import (
 PROJECT_DIR = Variable.get("SF_PROJECT_DIR", default_var="/app")
 UV_RUN = Variable.get("SF_UV_RUN", default_var="uv run")
 
-NHL_MORNING_TOURNAMENT = Variable.get("SF_NHL_MORNING_TOURNAMENT", default_var="nhl_train")
+NHL_MORNING_TOURNAMENT = Variable.get("SF_NHL_MORNING_TOURNAMENT", default_var="nhl")
 NHL_MORNING_FEATURES = Variable.get("SF_NHL_MORNING_FEATURES", default_var="advanced")
 NHL_MORNING_MARKET = Variable.get("SF_NHL_MORNING_MARKET", default_var="winner_withOT")
 NHL_MORNING_SPEC = Variable.get("SF_NHL_MORNING_SPEC", default_var="winner_withOT")

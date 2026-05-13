@@ -1,4 +1,4 @@
-"""Smoke: Hydra ``nhl_train`` + walk_forward.enabled."""
+"""Smoke: Hydra ``nhl`` + walk_forward.enabled."""
 
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ def wf_nhl_cfg() -> Any:
         return compose(
             config_name="config",
             overrides=[
-                "tournament=nhl_train",
+                "tournament=nhl",
                 "market=winner_withOT",
                 "market_spec=winner_withOT",
                 "algorithm=dummy",

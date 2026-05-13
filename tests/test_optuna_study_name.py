@@ -14,7 +14,7 @@ def _base_cfg() -> OmegaConf:
     return OmegaConf.create(
         {
             "tournament": {
-                "name": "nhl_train",
+                "name": "nhl",
                 "train_eval_split": {
                     "kind": "season_holdout",
                     "season_column": "season",
@@ -64,6 +64,6 @@ def test_optuna_study_tag_changes_suffix() -> None:
 
 def test_build_optuna_study_name_format() -> None:
     cfg = _base_cfg()
-    name = build_optuna_study_name("nhl_train", "winner_withOT", "catboost_reg", cfg, 1000)
-    assert name.startswith("nhl_train__winner_withOT__catboost_reg__d")
+    name = build_optuna_study_name("nhl", "winner_withOT", "catboost_reg", cfg, 1000)
+    assert name.startswith("nhl__winner_withOT__catboost_reg__d")
     assert len(name.split("__")) == 4

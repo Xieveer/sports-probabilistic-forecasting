@@ -47,7 +47,7 @@ help:
 	@echo "Пайплайн:"
 	@echo "  make train        - запустить training-пайплайн (одиночный эксперимент)"
 	@echo "  make train-sweep  - запустить sweep через Hydra --multirun"
-	@echo "  make train-sweep-nhl - NHL baseline (tournament=nhl_train, catboost+lgbm, advanced)"
+	@echo "  make train-sweep-nhl - NHL baseline (tournament=nhl, catboost+lgbm, advanced)"
 	@echo "  make train-sweep-nhl-ot-winner - NHL winner_withOT (R22.8), catboost+lgbm+dummy, advanced"
 	@echo "  make train-sweep-nhl-ot-total  - NHL total_over_withOT line=6.5 (R22.8)"
 	@echo "  make promote      - сравнить модели и выбрать лучшую для продакшена"
@@ -57,7 +57,7 @@ help:
 	@echo "  make api-dev       - запустить FastAPI локально (dev, SQLite)"
 	@echo "  make bot-dev       - Telegram-бот (нужны BOT_TOKEN, BOT_ALLOWED_USER_IDS)"
 	@echo "  make bot-up        - бот в docker compose (с сервисом api)"
-	@echo "  make materialize   - материализовать предсказания в DB (NHL: TOURNAMENT=nhl_train после promote)"
+	@echo "  make materialize   - материализовать предсказания в DB (NHL: TOURNAMENT=nhl после promote)"
 	@echo "  make nhl-morning-refresh-dry-run - вывести shell-команду утреннего NHL (как DAG nhl_morning_refresh)"
 	@echo "  make nhl-morning-refresh       - выполнить полный NHL refresh + validate (без Telegram)"
 	@echo "  make nhl-morning-test-notify   - пауза до ближайшей минуты МСК + offset, refresh + validate + сводка в TG"
@@ -234,10 +234,10 @@ train-sweep:
 		algorithm=catboost,lgbm,logreg \
 		features=basic
 
-# NHL baseline (R22): regulation winner, advanced features, season holdout — см. conf/tournament/nhl_train.yaml
+# NHL baseline (R22): regulation winner, advanced features, season holdout — см. conf/tournament/nhl.yaml
 train-sweep-nhl:
 	uv run python -m sports_forecast.train --multirun \
-		tournament=nhl_train \
+		tournament=nhl \
 		market=winner \
 		market_spec=winner \
 		algorithm=catboost,lgbm \
@@ -247,7 +247,7 @@ train-sweep-nhl:
 # dummy — prior baseline для сравнения log-loss в MLflow (тот же features=advanced в конфиге).
 train-sweep-nhl-ot-winner:
 	uv run python -m sports_forecast.train --multirun \
-		tournament=nhl_train \
+		tournament=nhl \
 		market=winner_withOT \
 		market_spec=winner_withOT \
 		algorithm=catboost,lgbm,dummy \
@@ -256,7 +256,7 @@ train-sweep-nhl-ot-winner:
 # R22.8: total over full match; одна линия 6.5 (другие линии — через market_spec.line=...).
 train-sweep-nhl-ot-total:
 	uv run python -m sports_forecast.train --multirun \
-		tournament=nhl_train \
+		tournament=nhl \
 		market=total_withOT \
 		market_spec=total_over_withOT \
 		market_spec.line=6.5 \
@@ -272,7 +272,7 @@ train-sweep-full:
 		algorithm=catboost,lgbm,logreg \
 		features=basic,advanced
 
-# NHL baseline: см. train-sweep-nhl (tournament=nhl_train, MLflow experiment nhl_train__winner)
+# NHL baseline: см. train-sweep-nhl (tournament=nhl, MLflow experiment nhl__winner)
 nhl-train-baseline: train-sweep-nhl
 
 # Выбор лучшей модели (compare)
@@ -364,7 +364,7 @@ db-init:
 	@echo "🗄️  Инициализация Prediction Store..."
 	uv run python -c "from sports_forecast.service.db.engine import init_db; init_db(); print('✅ Таблицы созданы')"
 
-# Материализация предсказаний (NHL promoted: TOURNAMENT=nhl_train MARKET=winner SPEC=winner)
+# Материализация предсказаний (NHL promoted: TOURNAMENT=nhl MARKET=winner SPEC=winner)
 materialize:
 	@echo "🔮 Материализация предсказаний..."
 	uv run python -m sports_forecast.materialize \
@@ -377,7 +377,7 @@ materialize:
 # Сухой просмотр команды ежедневного утреннего NHL (12:00 MSK ≈ DAG Airflow 09:00 UTC; см. docs/source/nhl_local_operations.rst)
 nhl-morning-refresh-dry-run:
 	uv run python -m sports_forecast.orchestration.cron_refresh \
-		--tournaments nhl_train \
+		--tournaments nhl \
 		--features advanced \
 		--market winner_withOT \
 		--market-spec winner_withOT \
@@ -386,7 +386,7 @@ nhl-morning-refresh-dry-run:
 # Полный утренний NHL refresh (как DAG без --dry-run), затем validate — вручную; для TG см. nhl-morning-test-notify
 nhl-morning-refresh:
 	uv run python -m sports_forecast.orchestration.cron_refresh \
-		--tournaments nhl_train \
+		--tournaments nhl \
 		--features advanced \
 		--market winner_withOT \
 		--market-spec winner_withOT

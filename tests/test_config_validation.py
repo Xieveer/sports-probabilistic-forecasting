@@ -240,14 +240,14 @@ class TestValidateExperimentConfig:
 class TestApplyTournamentDefaultBookmaker:
     """R26: NHL → the_odds_api при дефолтном fonbet из корня config."""
 
-    def test_nhl_train_replaces_fonbet(self) -> None:
+    def test_nhl_replaces_fonbet(self) -> None:
         from omegaconf import OmegaConf
 
         from sports_forecast.config.validation import apply_tournament_default_bookmaker
 
         cfg = OmegaConf.create(
             {
-                "tournament": {"name": "nhl_train"},
+                "tournament": {"name": "nhl"},
                 "bookmaker": {
                     "name": "fonbet",
                     "market_keys": {"winner_home": "1"},
@@ -266,7 +266,7 @@ class TestApplyTournamentDefaultBookmaker:
 
         cfg = OmegaConf.create(
             {
-                "tournament": {"name": "nhl_train"},
+                "tournament": {"name": "nhl"},
                 "bookmaker": {"name": "custom", "market_keys": {}},
             }
         )

@@ -37,7 +37,7 @@ def _kb_tournaments(cfg: DictConfig, prefix: str):
 
 
 def _is_nhl_tournament(tournament: str) -> bool:
-    """Турниры NHL: основной слот и производные (``nhl_train``, ``nhl_*``)."""
+    """Турнир NHL: slug ``nhl``; ``nhl_train``/``nhl_*`` — только совместимость со старыми данными."""
     t = tournament.strip().lower()
     return t == "nhl" or t.startswith("nhl_")
 

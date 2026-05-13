@@ -370,23 +370,23 @@ uv run python -m sports_forecast.features.features_build \
 
 ## NHL: baseline-обучение, promote и API (оператору)
 
-Конфиг ``conf/tournament/nhl_train.yaml`` задаёт тот же ``data/processed/nhl``, что и ``tournament=nhl``,
-но имя турнира ``nhl_train`` используется для MLflow и каталогов ``models/nhl_train/…`` (baseline R22).
-
-> **На будущее:** отдельный файл `nhl_train.yaml` — осознанный trade-off (данные = `nhl`, артефакты обучения = `nhl_train`); при расширении числа турниров или training-профилей стоит **пересмотреть** единый договор: только NHL, паттерн `*_train` для всех promoted-турниров, или один YAML + overrides. Пометка в журнале: `docs/cursor/refactor/backlog/reviewer-tech-debt.md` (блок R22 Phase A).
+Канонический slug турнира — **`nhl`**: ``conf/tournament/nhl.yaml`` (в т.ч. ``train_eval_split`` для holdout),
+``data/source/nhl/``, ``models/nhl/…``, MLflow-префикс ``nhl__<market>``. Файл ``conf/tournament/nhl_train.yaml``
+deprecated: только ``defaults: [nhl]`` — старые команды ``tournament=nhl_train`` эквивалентны ``nhl``.
+Подробности миграции: ``docs/cursor/context/nhl_single_tournament_slug.md`` (R38).
 
 ```bash
 # Sweep обучения (CatBoost + LightGBM, advanced фичи, season holdout — см. YAML)
 make train-sweep-nhl
 
 # Лучшая модель в MLflow UI, затем promote (эксперимент = имя турнира + рынок)
-make promote EXP=nhl_train__winner METRIC=test_logloss DIR=minimize
+make promote EXP=nhl__winner METRIC=test_logloss DIR=minimize
 
-# Материализация из promoted ``models/nhl_train/winner/best/deploy.yaml``
-make materialize TOURNAMENT=nhl_train MARKET=winner SPEC=winner
+# Материализация из promoted ``models/nhl/winner/best/deploy.yaml``
+make materialize TOURNAMENT=nhl MARKET=winner SPEC=winner
 
 # Smoke API (после ``make api-dev``): предстоящие матчи и конкретный game_id
-curl -s "http://127.0.0.1:8000/predict/upcoming/nhl_train?market=winner"
+curl -s "http://127.0.0.1:8000/predict/upcoming/nhl?market=winner"
 curl -s "http://127.0.0.1:8000/predict/<GAME_ID>?market=winner"
 ```
 

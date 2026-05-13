@@ -3,7 +3,7 @@
 # Стратегия разделения данных для обучения и тестирования
 #
 # После фильтрации по сезонам (см. ``tournament.train_eval_split`` в e.g.
-# ``conf/tournament/nhl_train.yaml``) внутренний train/test по-прежнему задаётся
+# ``conf/tournament/nhl.yaml``) внутренний train/test по-прежнему задаётся
 # долей ``test_size``, если не активен ``kind: season_holdout`` (тогда test = целиком holdout-сезоны).
 
 # Стратегия split

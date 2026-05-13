@@ -94,7 +94,7 @@ def build_optuna_study_name(
         inner_train_rows: Размер выборки для Optuna.
 
     Returns:
-        Строка вида ``nhl_train__winner_withOT__catboost_reg__dabc123def456``.
+        Строка вида ``nhl__winner_withOT__catboost_reg__dabc123def456``.
     """
     suffix = build_optuna_study_suffix(cfg, inner_train_rows)
     return f"{tournament}__{market_spec}__{algorithm}__{suffix}"
