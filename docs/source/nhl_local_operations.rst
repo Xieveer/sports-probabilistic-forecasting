@@ -122,6 +122,167 @@ materialize для ``winner_withOT`` / ``nhl`` по умолчанию; зате
 **Тест с паузой до ближайшей целой минуты по МСК + offset и уведомлением в Telegram:** ``make nhl-morning-test-notify``
 (скрипт ``scripts/run_nhl_refresh_notify.py``; в ``.env`` — ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS``; API должен отвечать на ``BOT_API_BASE_URL`` или ``http://127.0.0.1:8000``).
 
+.. note::
+
+   Сценарий ``make nhl-morning-test-notify`` / ``run_nhl_refresh_notify.py`` — **временный**
+   операционный обходной путь (отдельный процесс вне DAG). **Целевой prod-like контракт**
+   эпика **R39** — один триггер Airflow ``nhl_morning_refresh``, который после ``validate``
+   завершается шагом **digest** в том же стеке (см. подраздел ниже). Описание Variables/окружения
+   ниже рассчитано на этот контракт; детали реализации — в ``docs/cursor/refactor/backlog/R39.md``
+   (задачи R39.4–R39.5).
+
+Prod-like E2E (R39)
+~~~~~~~~~~~~~~~~~~~
+
+**Цель:** зафиксировать ту же **упорядоченную** цепочку, что ожидается в production: после
+обновления данных и материализации (promoted-модель) оператор получает **одно** согласованное
+Telegram-сообщение (сводка / edge vs live Pinnacle), не наращивая параллельный refresh и не
+обходя **pool** и **flock** на контуре refresh.
+
+Целевой порядок стадий (контракт)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Для DAG ``nhl_morning_refresh`` (и аналогично для обобщения на ``data_refresh``):
+
+1. **Триггер** — расписание или ручной запуск в UI Airflow (DAG не ставится на паузу).
+2. **refresh** (задача ``refresh_nhl_morning`` / ``refresh_per_tournament``) —
+   ``source`` (при ``odds.enabled`` в ``conf/source/nhl.yaml`` — инкрементальный Odds post-step
+   внутри ``source_refresh``) → ``ingest`` → ``clean`` → ``features`` → ``materialize`` для
+   параметров турнира/рынка (в утреннем DAG по умолчанию NHL / ``winner_withOT``, фичи
+   ``advanced``; promoted-модель — как в контуре ``build_refresh_per_tournament_command``).
+3. **validate** — ``python -m sports_forecast.validation.run_validation`` в каталоге проекта.
+4. **digest** *(планируется, R39.4–R39.5)* — финальный шаг в DAG после ``validate``: чтение из **той же**
+   БД prediction store, при необходимости Odds API, сборка одного сообщения и отправка в Telegram.
+   На момент документа R39.1 задача digest **в коде DAG ещё не подключена**; оператору нужно
+   помнить, что **канонический хвост** пайплайна — именно digest в Airflow, а не отдельный adhoc-скрипт
+   как единственный путь.
+
+Используется **LocalExecutor**: команды Bash выполняются в процессе **scheduler**, поэтому
+переменные окружения для Odds и Telegram должны быть доступны **контейнеру Airflow** (см. блок
+env ниже), а не только сервису ``api``.
+
+Чеклист: от триггера DAG до сообщения (целевой)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+После появления шага digest в DAG (R39.5) ориентируйтесь на последовательность:
+
+#. Локально: ``make docker-up``, при необходимости ``make airflow-init`` (один раз), затем
+   ``make airflow-up``; в ``.env`` заданы пароль БД, при необходимости — ``ODDS_API_KEY``,
+   ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS`` (и проброс в сервисы Airflow — см. ниже).
+#. В Airflow UI создан пул слотов с именем по умолчанию ``sf_refresh_pool`` (или измените Variable
+   ``SF_REFRESH_POOL`` и создайте пул с новым именем); иначе задачи зависнут в очереди.
+#. Заданы **Airflow Variables** (или эквивалент через префикс ``AIRFLOW_VAR_`` в Compose), как
+   минимум ``SF_PROJECT_DIR`` / ``SF_UV_RUN``; при отличии от дефолтов — lock/pool (таблица ниже).
+#. DAG ``nhl_morning_refresh`` включён (unpaused); при тесте — **Trigger DAG**.
+#. Дождаться успешного ``refresh_nhl_morning`` и ``validate``; затем задачи **digest** (имя ``task_id``
+   появится в R39.5) — успех и одно сообщение в Telegram / или осмысленный текст при отсутствии ключа Odds.
+
+**Сейчас (до R39.5):** шаг 5 заканчивается на ``validate``; для проверки уведомления без Airflow
+можно использовать ``make nhl-morning-test-notify`` — это **не** заменяет целевой DAG-хвост.
+
+Airflow Variables: ``nhl_morning_refresh`` и ``data_refresh``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Значения задаются в **Admin → Variables** или через окружение вида ``AIRFLOW_VAR_<KEY>`` (см.
+``airflow/docker-compose.airflow.yml``). Дефолты в коде — в скобках.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 38 62
+
+   * - Variable
+     - Назначение
+   * - ``SF_PROJECT_DIR``
+     - Корень репозитория внутри контейнера (``/app``).
+   * - ``SF_UV_RUN``
+     - Префикс запуска Python (``uv run``).
+   * - ``SF_SOURCE_REFRESH_CMD``
+     - Шаблон команды source-stage; ``{tournament}`` подставляется в команду refresh.
+   * - ``SF_REFRESH_POOL``
+     - Имя **pool** для тяжёлых Bash-задач (по умолчанию ``sf_refresh_pool``).
+   * - ``SF_REFRESH_LOCK_FILE``
+     - Путь к lock ``flock`` (по умолчанию ``/tmp/sf_refresh_pipeline.lock``).
+   * - ``SF_REFRESH_LOCK_WAIT_SECONDS``
+     - Таймаут ожидания lock, секунды (целое; по умолчанию ``300``).
+
+**Только ``data_refresh``**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 38 62
+
+   * - Variable
+     - Назначение
+   * - ``SF_REFRESH_TOURNAMENTS``
+     - Список турниров через запятую.
+   * - ``SF_FEATURES_CONFIG``
+     - Конфиг фич (по умолчанию ``basic``).
+   * - ``SF_MATERIALIZE_MARKET`` / ``SF_MATERIALIZE_SPEC``
+     - Рынок и спека материализации.
+
+**Только ``nhl_morning_refresh``**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 38 62
+
+   * - Variable
+     - Назначение
+   * - ``SF_NHL_MORNING_TOURNAMENT``, ``SF_NHL_MORNING_FEATURES``, ``SF_NHL_MORNING_MARKET``, ``SF_NHL_MORNING_SPEC``
+     - Параметры утреннего NHL-контура (дефолты: ``nhl``, ``advanced``, ``winner_withOT``).
+   * - ``SF_NHL_MORNING_MAX_ACTIVE_RUNS`` / ``SF_NHL_MORNING_MAX_ACTIVE_TASKS``
+     - Лимиты параллелизма самого DAG (по умолчанию ``1`` / ``1``).
+
+**Примечание:** у ``data_refresh`` свои имена для лимитов DAG — ``SF_REFRESH_MAX_ACTIVE_RUNS`` /
+``SF_REFRESH_MAX_ACTIVE_TASKS`` (дефолт ``1``); при тюнинге не путать с ``SF_NHL_MORNING_*``.
+
+Переменные окружения (Compose, API, бот, воркеры Airflow)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Имена без значений — см. ``.env.example`` и ``docs/deploy/secrets.md``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 32 68
+
+   * - Переменная
+     - Где нужна
+   * - ``DATABASE_URL``
+     - **Prediction store:** в ``docker-compose.yml`` задана для ``api``, ``worker``; в
+       ``airflow/docker-compose.airflow.yml`` — для сервисов Airflow (та же БД, что у API).
+       Для хостового CLI можно задать в ``.env`` (см. комментарий в шаблоне).
+   * - ``POSTGRES_PASSWORD`` (и косвенно строка подключения)
+     - Сборка URL БД в Compose.
+   * - ``ODDS_API_KEY``
+     - The Odds API: **ingest/source_refresh** на соответствующих турнирах; обогащение live Pinnacle
+       в **API** (``GET /predict/...`` с ``live_pinnacle``). Для **digest** (R39) тот же ключ должен
+       быть доступен процессу, выполняющему шаг digest (контейнер Airflow при LocalExecutor).
+   * - ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS``, ``BOT_ADMIN_USER_IDS``, ``BOT_API_BASE_URL``
+     - Сервис ``telegram-bot`` (профиль ``bot``); **digest** (R39) будет использовать те же секреты
+       для отправки операционного сообщения (получатели — как минимум из ``BOT_ALLOWED_USER_IDS``,
+       точный контракт — R39.3).
+   * - ``MLFLOW_TRACKING_URI``
+     - Worker / Airflow-контур (в compose — ``http://mlflow:5000``).
+
+В шаблоне ``airflow/docker-compose.airflow.yml`` сейчас **не** пробрасываются ``ODDS_API_KEY`` и
+``BOT_*`` из хостового ``.env``. После внедрения digest (R39.5/R39.6) для полного parity добавьте
+их в ``environment`` блока ``x-airflow-common`` (или подключите ``env_file``), не логируя значения.
+
+Планируемый контракт digest (R39.4–R39.5)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+В коде репозитория на этапе R39.1 **нет** обязательной реализации этих имён; ниже — **договорённости**
+из backlog R39 для согласования с эксплуатацией:
+
+* **Airflow Variable** ``SF_TELEGRAM_DIGEST_ENABLE`` — включить/выключить финальный шаг (при
+  ``false`` ожидается skip/no-op задачи digest — R39.5).
+* **Airflow Variable** ``SF_POST_REFRESH_DIGEST_CMD`` *(рабочее имя из эпика)* — опциональный override
+  команды digest (иначе фиксированный ``UV_RUN`` + модуль CLI из R39.4).
+* Переменные окружения уровня **бота** (``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS``, …) — для отправки
+  сообщения из задачи digest.
+
+Точные значения по умолчанию и ``task_id`` появятся в PR задач **R39.4** и **R39.5**.
+
 Smoke-проверки API
 ------------------
 

@@ -32,6 +32,7 @@ Workflow **Deploy** после успешного **Docker** на `main` зап�
 1. Клон репозитория и файл `.env` по шаблону [.env.example](../../.env.example).
 2. Значения `SF_*_IMAGE` должны совпадать с пакетами, которые публикует `.github/workflows/docker.yml` (owner и имя пакета в нижнем регистре, как правило).
 3. `POSTGRES_PASSWORD`, `GRAFANA_PASSWORD`, `BOT_TOKEN`, `ODDS_API_KEY` задаются **только** в серверном `.env` (или в менеджере секретов), не в GitHub, если это не нужно для CI.
+4. Эпик **R39** (post-refresh Telegram **digest** в Airflow): для отправки сводки и вызова Odds API из задачи digest те же значения `BOT_TOKEN`, `BOT_ALLOWED_USER_IDS` (и при необходимости `ODDS_API_KEY`) должны быть доступны **процессу Airflow** (не только контейнеру `api` / `telegram-bot`). Проброс — в `environment` сервисов Airflow в compose или эквивалент на VPS; подробности — `docs/source/nhl_local_operations.rst` (раздел Prod-like E2E).
 
 ## Basic auth за Caddy (Grafana / MLflow)
 
