@@ -117,6 +117,11 @@ materialize для ``winner_withOT`` / ``nhl_train`` по умолчанию; з
 **Ручной запуск (эквивалент команды DAG / cron, только печать shell):** ``make nhl-morning-refresh-dry-run``.
 Для реального выполнения уберите ``--dry-run`` из выведенной команды или вызовите ``cron_refresh`` с теми же аргументами.
 
+**Полный пайплайн без Telegram:** ``make nhl-morning-refresh`` (``cron_refresh`` + ``run_validation``).
+
+**Тест с паузой до ближайшей целой минуты по МСК + offset и уведомлением в Telegram:** ``make nhl-morning-test-notify``
+(скрипт ``scripts/run_nhl_refresh_notify.py``; в ``.env`` — ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS``; API должен отвечать на ``BOT_API_BASE_URL`` или ``http://127.0.0.1:8000``).
+
 Smoke-проверки API
 ------------------
 
@@ -155,6 +160,10 @@ Smoke-проверки API
      - Фоновый запуск Airflow webserver и scheduler поверх общего ``docker-compose.yml``.
    * - ``make nhl-morning-refresh-dry-run``
      - Печать shell-команды утреннего NHL-refresh (как DAG ``nhl_morning_refresh``), без выполнения.
+   * - ``make nhl-morning-refresh``
+     - Выполнить полный утренний ``cron_refresh`` для ``nhl_train`` / ``winner_withOT`` + ``run_validation`` (без Telegram).
+   * - ``make nhl-morning-test-notify``
+     - Пауза до ближайшей минуты МСК + offset, затем тот же refresh + validate и сводка ``/predict/upcoming/nhl`` в Telegram.
 
 Дополнительные замечания
 ~~~~~~~~~~~~~~~~~~~~~~~~
