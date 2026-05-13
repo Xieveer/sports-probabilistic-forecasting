@@ -15,6 +15,12 @@ MLOps-система вероятностного прогнозирования
 
 .. toctree::
    :maxdepth: 2
+   :caption: Операции:
+
+   nhl_local_operations
+
+.. toctree::
+   :maxdepth: 2
    :caption: API Reference:
 
    api/index
