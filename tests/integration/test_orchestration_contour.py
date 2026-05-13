@@ -113,6 +113,12 @@ def test_main_promote_compare_help_succeeds() -> None:
                 "decide>>[trigger_retrain,skip_retrain]",
             ),
         ),
+        (
+            "dag_nhl_morning_refresh.py",
+            "nhl_morning_refresh",
+            ("refresh_nhl_morning", "validate", "post_refresh_digest"),
+            ("refresh_nhl>>validate>>post_refresh_digest",),
+        ),
     ],
 )
 def test_dag_source_contract(
@@ -134,6 +140,11 @@ def test_dag_source_contract(
     compact = normalized_source_lines(path)
     for frag in edge_substrings:
         assert frag in compact, f"{filename}: expected `{frag}` in normalized source"
+
+    if filename == "dag_nhl_morning_refresh.py":
+        text_cmd = path.read_text(encoding="utf-8")
+        assert "sports_forecast.orchestration.post_refresh_digest" in text_cmd
+        assert "var.value.get('SF_TELEGRAM_DIGEST_ENABLE', 'true')" in text_cmd
 
     _assert_dag_cli_contract(filename, path, info)
 
@@ -174,3 +185,7 @@ def _assert_dag_cli_contract(filename: str, path: Path, info: DagSourceInfo) -> 
         assert "sports_forecast.validation.run_validation" in text
     if filename == "dag_monitoring.py":
         assert "check_data_freshness" in info.task_ids
+    if filename == "dag_nhl_morning_refresh.py":
+        assert "build_refresh_per_tournament_command" in text
+        assert "sports_forecast.validation.run_validation" in text
+        assert "sports_forecast.orchestration.post_refresh_digest" in text

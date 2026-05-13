@@ -7,6 +7,19 @@
 ``source`` (включая инкрементальный odds-refresh при ``odds.enabled`` в ``conf/source/nhl.yaml``)
 → ``ingest`` → ``clean`` → ``features`` → ``materialize``.
 
+После refresh и шага ``validate`` выполняется задача ``post_refresh_digest`` (тот же пул
+``SF_REFRESH_POOL``, слот 1 — digest стартует только после освобождения flock refresh):
+сводка витрины / live Pinnacle и одно Telegram-сообщение через
+:mod:`sports_forecast.orchestration.post_refresh_digest`, если не отключено.
+
+Airflow Variables (см. также ``docs/source/nhl_local_operations.rst``):
+
+* ``SF_TELEGRAM_DIGEST_ENABLE`` (по умолчанию ``true``) — при значениях ``0``, ``false``, ``no``,
+  ``off`` (без учёта регистра) задача **runtime** завершается успешно без вызова CLI/Telegram.
+* ``SF_POST_REFRESH_DIGEST_CMD`` — непустая строка (после trim): выполняется
+  ``cd <SF_PROJECT_DIR> && bash -lc "<cmd>"``; оператор должен сам включать ``uv run`` / активацию
+  venv при необходимости. Иначе — встроенная команда ``<SF_UV_RUN> python -m ...post_refresh_digest``.
+
 По умолчанию один турнир ``nhl``, рынок ``winner_withOT`` / ``winner_withOT``, фичи ``advanced``
 (см. ``conf/tournament/nhl.yaml``). Переопределение через Airflow Variables / ``dag_run.conf``.
 
@@ -15,7 +28,9 @@
 
 from __future__ import annotations
 
+import shlex
 from datetime import datetime, timedelta
+from textwrap import dedent
 
 from airflow.models import Variable
 from airflow.operators.bash import BashOperator
@@ -24,6 +39,41 @@ from airflow import DAG
 from sports_forecast.orchestration.refresh_command import (
     build_refresh_per_tournament_command,
 )
+
+
+def _build_post_refresh_digest_bash_command(*, project_dir: str, uv_run: str) -> str:
+    """Собрать ``bash_command`` с Jinja (Airflow 2 ``var.value``, ``dag_run``, ``params``).
+
+    Литералы ``project_dir`` / ``uv_run`` подставляются при парсинге DAG; условный skip и override
+    команды читаются из Variables **на каждый запуск** через шаблонизацию.
+    """
+    tmpl = dedent(
+        """
+        {% set _en = (var.value.get('SF_TELEGRAM_DIGEST_ENABLE', 'true') | lower | trim) %}
+        {% if _en in ['0', 'false', 'no', 'off'] %}
+        echo "post_refresh_digest skipped (SF_TELEGRAM_DIGEST_ENABLE)" && exit 0
+        {% else %}
+        {% set _cmd = (var.value.get('SF_POST_REFRESH_DIGEST_CMD', '') | default('', true) | trim) %}
+        set -euo pipefail
+        cd __PROJECT_DIR__ && \
+        {% if _cmd %}
+        bash -lc {{ _cmd | tojson }}
+        {% else %}
+        __UV_RUN__ python -m sports_forecast.orchestration.post_refresh_digest \
+          --tournament {{ dag_run.conf.get("tournament", params.tournament) | tojson }} \
+          --market {{ dag_run.conf.get("market", params.market) | tojson }} \
+          --market-spec {{ dag_run.conf.get("market_spec", params.market_spec) | tojson }} \
+          --project-root __PROJECT_ROOT__
+        {% endif %}
+        {% endif %}
+        """
+    ).strip()
+    qdir = shlex.quote(project_dir)
+    return (
+        tmpl.replace("__PROJECT_DIR__", qdir)
+        .replace("__PROJECT_ROOT__", qdir)
+        .replace("__UV_RUN__", uv_run)
+    )
 
 
 # ── Конфигурация (совместимо с dag_data_refresh) ─────────────────
@@ -102,4 +152,14 @@ with DAG(
         pool_slots=1,
     )
 
-    refresh_nhl >> validate
+    post_refresh_digest = BashOperator(
+        task_id="post_refresh_digest",
+        bash_command=_build_post_refresh_digest_bash_command(
+            project_dir=PROJECT_DIR,
+            uv_run=UV_RUN,
+        ),
+        pool=REFRESH_POOL,
+        pool_slots=1,
+    )
+
+    refresh_nhl >> validate >> post_refresh_digest

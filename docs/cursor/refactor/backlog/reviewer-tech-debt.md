@@ -660,5 +660,18 @@
   - Ветка `odds_warning=fetch_failed` в CLI не выставляется явно (только `none` / `missing_api_key` по ключу); поведение enrichment всё же отражается в строках через `live_odds_status`.
   - Интеграционных тестов на реальный Telegram API нет (ожидаемо для CI).
 - **Возможные улучшения / техдолг:**
-  - R39.5: вызов модуля из DAG; опционально `SF_POST_REFRESH_DIGEST_CMD` / единообразие с ботом (`parse_mode`, retry).
+  - Вызов модуля из DAG и `SF_POST_REFRESH_DIGEST_CMD` реализованы в R39.5; единообразие с ботом (`parse_mode`, retry) — по желанию.
   - Явная передача `fetch_failed` в digest при агрегированных сбоях batch (если понадобится один блок предупреждения сверху).
+
+### 2026-05-14 — R39.5: `post_refresh_digest` в `dag_nhl_morning_refresh`
+
+- **Задача:** `backlog/R39.md` (подзадача **R39.5**) → `done_task/R39.5.md` (эпик R39 остаётся 🟡 в `todo-refactor.md`).
+- **Ограничения и компромиссы:**
+  - Skip по `SF_TELEGRAM_DIGEST_ENABLE` — **runtime** в shell (echo + exit 0), не `AirflowSkipException`: в UI задача считается успешной, а не skipped; семантика «no-op» совпадает с критерием приёмки.
+  - `SF_POST_REFRESH_DIGEST_CMD` передаётся в `bash -lc` как один JSON-литерал через Jinja `tojson` (корректное экранирование кавычек/переносов); оператор обязан задать полную однострочную или корректно экранированную команду под `-lc`.
+  - `SF_UV_RUN` подставляется в шаблон без `shlex.quote` (как у соседней задачи `validate`); значения с пробелами («`uv run`») ожидаются и работают как в существующем DAG, нестандартные shell-метасимволы в Variable — риск для оператора.
+  - Повторные Telegram при retry Airflow не дедуплицируются (см. риски эпика R39 / будущая R39.7).
+- **Возможные улучшения / техдолг:**
+  - Явный `ShortCircuitOperator` или `AirflowSkipException` при отключённом digest, если нужна метрика «skipped» в UI.
+  - Квотирование/`shlex.split` для кастомного `uv run` или документированный список безопасных значений `SF_UV_RUN`.
+  - Dedup/markер по `run_id`+`task_id` при ретраях (R39.7).
