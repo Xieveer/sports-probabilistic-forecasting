@@ -59,12 +59,16 @@ def test_format_live_lines_ok_with_edge() -> None:
         "pinnacle_home_decimal": 2.0,
         "pinnacle_away_decimal": 2.2,
         "edge_home": 0.05,
+        "edge_away": -0.02,
         "bet_decision_home": "bet",
+        "bet_decision_away": "no_bet",
     }
     lines = _format_live_lines(item)
     assert any("Pinnacle" in x for x in lines)
     assert any("Edge home" in x for x in lines)
+    assert any("Edge away" in x for x in lines)
     assert any("ставка" in x for x in lines)
+    assert any("away ML" in x for x in lines)
 
 
 def test_format_prediction_card_includes_live() -> None:
@@ -78,11 +82,15 @@ def test_format_prediction_card_includes_live() -> None:
         "pinnacle_home_decimal": 2.0,
         "pinnacle_away_decimal": 2.0,
         "edge_home": 0.1,
+        "edge_away": -0.05,
         "bet_decision_home": "no_bet",
+        "bet_decision_away": "bet",
     }
     text = _format_prediction_card(item)
     assert "Edge home" in text
+    assert "Edge away" in text
     assert "нет ставки" in text
+    assert "ставка" in text
 
 
 def test_format_upcoming_line_indents_live() -> None:

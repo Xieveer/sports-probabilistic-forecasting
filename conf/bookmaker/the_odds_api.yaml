@@ -35,7 +35,10 @@ bookmakers:
 live_inference:
   # Лимит реальных HTTP GET за жизненный цикл клиента (как max_real_http_requests в OddsApiClient).
   max_real_http_requests: 2
-  regions: us
+  # По умолчанию false: live NHL odds идут в сеть, без чтения устаревшего JSON из data/cache.
+  allow_disk_cache_for_live_odds: false
+  # eu: в ответе часто есть Pinnacle; regions=us для многих NHL-матчей Pinnacle не отдаёт.
+  regions: eu
   commence_tolerance_minutes: 360
   # Явное сопоставление id события The Odds API → match_id витрины (NHL id из processed).
   event_id_to_match_id: {}

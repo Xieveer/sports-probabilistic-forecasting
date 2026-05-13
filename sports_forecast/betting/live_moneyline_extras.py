@@ -1,7 +1,8 @@
 """
 Чистая логика полей live Pinnacle moneyline для ответа API и оркестрации (R39).
 
-Собирает словарь ``pinnacle_*``, ``edge_home``, ``bet_decision_home``, ``live_odds_status``
+Собирает словарь ``pinnacle_*``, ``edge_home`` / ``edge_away``, ``bet_decision_home`` /
+``bet_decision_away``, ``live_odds_status``
 из вероятности дома, котировки :class:`~sports_forecast.data.providers.odds.live_nhl_pinnacle.PinnacleH2HQuote`
 и порогов :class:`~sports_forecast.betting.edge_decision.EdgeDecisionParams``. HTTP, БД и батч-fetch
 остаются в :mod:`sports_forecast.service.live_odds_enrichment`; оркестрация может импортировать
@@ -104,10 +105,10 @@ def build_live_moneyline_extras(
     params: EdgeDecisionParams,
     status: str,
 ) -> dict[str, Any]:
-    """Построить словарь опциональных полей ответа API для live moneyline (дом).
+    """Построить словарь опциональных полей ответа API для live moneyline (дом и гость).
 
-    Логика совпадает с прежним вычислением в ``live_odds_enrichment`` (ветки для отсутствующей
-    котировки, частичной линии, ``compute_edge`` / ``decide_bet``, финальный ``live_odds_status``).
+    Для каждой стороны: ``edge = p_model − 1/k``, ``bet`` через :func:`decide_bet` с тем же
+    порогом ``edge_threshold`` (дом: ``p_home`` и ``k_home``; гость: ``1 − p_home`` и ``k_away``).
 
     Args:
         proba_home: Модельная вероятность дома или ``None``.
@@ -116,15 +117,17 @@ def build_live_moneyline_extras(
         status: Внешний статус (``ok``, ``no_quote``, ``missing_api_key``, …).
 
     Returns:
-        Ключи: ``pinnacle_home_decimal``, ``pinnacle_away_decimal``, ``edge_home``,
-        ``bet_decision_home``, ``live_odds_status``.
+        Ключи: ``pinnacle_home_decimal``, ``pinnacle_away_decimal``, ``edge_home``, ``edge_away``,
+        ``bet_decision_home``, ``bet_decision_away``, ``live_odds_status``.
     """
     if quote is None:
         return {
             "pinnacle_home_decimal": None,
             "pinnacle_away_decimal": None,
             "edge_home": None,
+            "edge_away": None,
             "bet_decision_home": None,
+            "bet_decision_away": None,
             "live_odds_status": status,
         }
 
@@ -134,19 +137,33 @@ def build_live_moneyline_extras(
 
     p_h = proba_home
     edge_home: float | None = None
+    edge_away: float | None = None
     if p_h is not None and ph is not None:
         try:
             edge_home = float(compute_edge(p_h, float(ph)))
         except ValueError:
             edge_home = None
             line_st = "partial_quote"
+    if p_h is not None and pa is not None:
+        p_a = 1.0 - float(p_h)
+        try:
+            edge_away = float(compute_edge(p_a, float(pa)))
+        except ValueError:
+            edge_away = None
+            line_st = "partial_quote"
 
     if p_h is None:
-        decision = BetDecision.INSUFFICIENT_DATA
+        decision_home = BetDecision.INSUFFICIENT_DATA
+        decision_away = BetDecision.INSUFFICIENT_DATA
     else:
-        decision, _ = decide_bet(p_h, ph, params)
+        decision_home, _ = decide_bet(p_h, ph, params)
+        p_a = 1.0 - float(p_h)
+        decision_away, _ = decide_bet(p_a, pa, params)
 
-    if decision is BetDecision.INSUFFICIENT_DATA and line_st == "ok":
+    if line_st == "ok" and (
+        decision_home is BetDecision.INSUFFICIENT_DATA
+        or decision_away is BetDecision.INSUFFICIENT_DATA
+    ):
         line_st = "partial_quote"
 
     final_status = status if status != "ok" else line_st
@@ -155,7 +172,9 @@ def build_live_moneyline_extras(
         "pinnacle_home_decimal": ph,
         "pinnacle_away_decimal": pa,
         "edge_home": edge_home,
-        "bet_decision_home": decision.value,
+        "edge_away": edge_away,
+        "bet_decision_home": decision_home.value,
+        "bet_decision_away": decision_away.value,
         "live_odds_status": final_status,
     }
 

@@ -216,9 +216,7 @@ def validate_pinnacle_odds_float_columns(
     validate_odds_float_columns(df, context=context)
 
 
-# ============================================================================
 # RAW SCHEMA: после ingest (source CSV → parquet)
-# ============================================================================
 # Минимальный контракт: столбцы существуют и не пустые.
 # На этапе raw все типы — object (строки из CSV).
 
@@ -250,9 +248,7 @@ RawSchema = DataFrameSchema(
 )
 
 
-# ============================================================================
 # INTERIM SCHEMA: после clean (raw → interim)
-# ============================================================================
 # После clean данные типизированы и стандартизированы.
 
 InterimSchema = DataFrameSchema(
@@ -405,9 +401,7 @@ InterimSchema = DataFrameSchema(
 )
 
 
-# ============================================================================
 # PROCESSED LONG SCHEMA: после features (interim → processed)
-# ============================================================================
 # Long format: одна строка = один игрок в одном матче.
 
 ProcessedLongSchema = DataFrameSchema(
@@ -469,9 +463,7 @@ ProcessedLongSchema = DataFrameSchema(
 )
 
 
-# ============================================================================
 # PROCESSED WIDE SCHEMA: после features (для тоталов)
-# ============================================================================
 
 ProcessedWideSchema = DataFrameSchema(
     columns={
@@ -507,9 +499,7 @@ ProcessedWideSchema = DataFrameSchema(
 )
 
 
-# ============================================================================
 # INFERENCE SCHEMA: дополнительные проверки для inference-данных
-# ============================================================================
 
 InferenceLongSchema = ProcessedLongSchema.update_column(
     "pl_points",
@@ -522,9 +512,7 @@ InferenceWideSchema = ProcessedWideSchema.update_column(
 )
 
 
-# ============================================================================
 # PREDICTION SCHEMA: данные в Prediction Store
-# ============================================================================
 
 PredictionSchema = DataFrameSchema(
     columns={

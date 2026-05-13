@@ -88,8 +88,8 @@ def batch_live_response_extras(
         live_pinnacle: ``False`` — не вызывать The Odds API (статус ``disabled``).
 
     Returns:
-        ``pred.id`` → словарь полей ``pinnacle_*``, ``edge_home``, ``bet_decision_home``,
-        ``live_odds_status``.
+        ``pred.id`` → словарь полей ``pinnacle_*``, ``edge_home`` / ``edge_away``,
+        ``bet_decision_home`` / ``bet_decision_away``, ``live_odds_status``.
     """
     out: dict[int, dict[str, Any]] = {}
     if not preds:
@@ -99,7 +99,9 @@ def batch_live_response_extras(
         "pinnacle_home_decimal": None,
         "pinnacle_away_decimal": None,
         "edge_home": None,
+        "edge_away": None,
         "bet_decision_home": None,
+        "bet_decision_away": None,
         "live_odds_status": "disabled",
     }
     if not live_pinnacle:
@@ -111,7 +113,9 @@ def batch_live_response_extras(
         "pinnacle_home_decimal": None,
         "pinnacle_away_decimal": None,
         "edge_home": None,
+        "edge_away": None,
         "bet_decision_home": None,
+        "bet_decision_away": None,
         "live_odds_status": None,
     }
 

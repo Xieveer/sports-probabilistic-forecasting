@@ -73,7 +73,9 @@ def _to_response(
                 "pinnacle_home_decimal": None,
                 "pinnacle_away_decimal": None,
                 "edge_home": None,
+                "edge_away": None,
                 "bet_decision_home": None,
+                "bet_decision_away": None,
                 "live_odds_status": None,
             }
         )
@@ -95,8 +97,8 @@ def get_prediction(
     live_pinnacle: bool = Query(
         True,
         description=(
-            "Для NHL moneyline: один запрос The Odds API и поля pinnacle_*/edge_home/"
-            "bet_decision_home. ``false`` — без внешнего HTTP (поля пустые, статус ``disabled``)."
+            "Для NHL moneyline: один запрос The Odds API и поля pinnacle_*, edge_home/edge_away, "
+            "bet_decision_home/bet_decision_away. ``false`` — без внешнего HTTP (поля пустые, статус ``disabled``)."
         ),
     ),
 ) -> PredictionResponse:
@@ -204,7 +206,7 @@ def get_upcoming(
         True,
         description=(
             "Для турнира NHL и moneyline: один батч-запрос The Odds API на весь список; "
-            "поля ``pinnacle_*``, ``edge_home``, ``bet_decision_home`` на строку. ``false`` — без HTTP."
+            "поля ``pinnacle_*``, ``edge_*``, ``bet_decision_*`` на строку. ``false`` — без HTTP."
         ),
     ),
 ) -> PredictionListResponse:
@@ -238,9 +240,7 @@ def get_upcoming(
     )
 
 
-# ============================================================================
 # CACHE: In-memory LRU для горячих предсказаний
-# ============================================================================
 
 # Время жизни кеша (секунды). После этого кеш инвалидируется.
 _CACHE_TTL_SECONDS = 300  # 5 минут
@@ -360,7 +360,9 @@ def get_prediction_cached(
         pinnacle_home_decimal=None,
         pinnacle_away_decimal=None,
         edge_home=None,
+        edge_away=None,
         bet_decision_home=None,
+        bet_decision_away=None,
         live_odds_status=None,
     )
 
@@ -407,9 +409,7 @@ def cache_stats() -> dict[str, object]:
     }
 
 
-# ============================================================================
 # STALE PREDICTIONS: для batch scheduling
-# ============================================================================
 
 
 @operations_router.get(

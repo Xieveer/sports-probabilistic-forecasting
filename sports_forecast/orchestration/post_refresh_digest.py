@@ -47,6 +47,7 @@ from typing import Any
 
 import yaml
 
+from sports_forecast.betting.live_moneyline_extras import proba_home_from_prediction
 from sports_forecast.orchestration.digest_message import (
     DigestMatchLine,
     OddsWarning,
@@ -58,6 +59,7 @@ from sports_forecast.service.db.engine import get_engine, get_session, init_db
 from sports_forecast.service.db.models import Prediction
 from sports_forecast.service.db.repository import PredictionRepository
 from sports_forecast.service.live_odds_enrichment import batch_live_response_extras
+from sports_forecast.service.service_api_settings import load_edge_decision_params
 from sports_forecast.utils.log_config import get_logger
 
 
@@ -115,14 +117,6 @@ def _summarize_live_odds_status_counts(
     return f"{head},...(+{omitted}_more_distinct_keys,sum_remaining={tail})"
 
 
-def _format_match_datetime_utc(pred_dt: datetime | None) -> str:
-    if pred_dt is None:
-        return "?"
-    if pred_dt.tzinfo is None:
-        return pred_dt.strftime("%Y-%m-%d %H:%M UTC")
-    return pred_dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-
-
 def _deploy_yaml_path(project_root: Path, tournament: str, market_spec: str) -> Path:
     return project_root / "models" / tournament / market_spec / "best" / "deploy.yaml"
 
@@ -165,20 +159,38 @@ def _predictions_to_match_lines(
     out: list[DigestMatchLine] = []
     for p in preds:
         ex = extras_map.get(int(p.id)) or {}
-        eh = ex.get("edge_home")
-        edge_home = float(eh) if eh is not None else None
+        eh_raw = ex.get("edge_home")
+        edge_home = float(eh_raw) if eh_raw is not None else None
+        ea_raw = ex.get("edge_away")
+        edge_away = float(ea_raw) if ea_raw is not None else None
         bet = ex.get("bet_decision_home")
         bet_s = str(bet) if bet else None
-        st = ex.get("live_odds_status")
-        st_s = str(st) if st is not None else None
+        bet_a = ex.get("bet_decision_away")
+        bet_away_s = str(bet_a) if bet_a else None
+        ph = proba_home_from_prediction(p)
+        kh = ex.get("pinnacle_home_decimal")
+        ka = ex.get("pinnacle_away_decimal")
+        k_home = float(kh) if kh is not None else None
+        k_away = float(ka) if ka is not None else None
+
+        commence = p.match_datetime
+        if commence is not None and commence.tzinfo is None:
+            commence = commence.replace(tzinfo=timezone.utc)
+        elif commence is not None:
+            commence = commence.astimezone(timezone.utc)
+
         out.append(
             DigestMatchLine(
                 home_player=str(p.home_player or "?"),
                 away_player=str(p.away_player or "?"),
-                match_datetime=_format_match_datetime_utc(p.match_datetime),
+                commence_utc=commence,
+                proba_home=ph,
+                pinnacle_home_decimal=k_home,
+                pinnacle_away_decimal=k_away,
                 edge_home=edge_home,
+                edge_away=edge_away,
                 bet_decision_home=bet_s,
-                live_odds_status=st_s,
+                bet_decision_away=bet_away_s,
             )
         )
     return out
@@ -230,13 +242,6 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="Печать текста в stdout, без Telegram.",
     )
-    p.add_argument(
-        "--top-n-edges",
-        type=int,
-        default=None,
-        metavar="N",
-        help="Лимит строк в блоке «Топ по |edge|» (по умолчанию 8).",
-    )
     return p.parse_args(argv)
 
 
@@ -286,16 +291,13 @@ def main(argv: list[str] | None = None) -> int:
 
     match_lines = _predictions_to_match_lines(preds, extras_map)
     odds_w = _pipeline_odds_warning(live_pinnacle=bool(args.live_pinnacle))
-
-    digest_kwargs: dict[str, Any] = {}
-    if args.top_n_edges is not None:
-        digest_kwargs["top_n_edges"] = int(args.top_n_edges)
+    edge_params = load_edge_decision_params()
 
     text = build_post_refresh_digest_text(
         matches=match_lines,
         provenance_line=provenance_line,
         odds_warning=odds_w,
-        **digest_kwargs,
+        edge_threshold=edge_params.edge_threshold,
     )
 
     if args.dry_run:

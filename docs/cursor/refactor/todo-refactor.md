@@ -48,6 +48,7 @@
 | R37    | 🔴 High     | High      | ✅     | NHL operational: локальный стек, 48h, Pinnacle+edge, 12:00 MSK → Telegram (`done_task/R37.*.md`) |
 | R38    | 🔴 High     | Medium    | ✅     | NHL: единый slug `nhl` (`done_task/R38.md`) |
 | R39    | 🔴 High     | High      | ✅     | prod-like e2e: Airflow → БД → live Pinnacle → один TG digest (`done_task/R39.md`; R39.1–R39.8 ✅) |
+| R40    | 🟡 Medium   | Low       | ✅     | codebase housekeeping: логи, комментарии, gates stub, lint (`done_task/R40.md`) |
 
 ---
 
@@ -190,6 +191,15 @@
   - [x] R39.6 — Локальный compose / parity (`done_task/R39.6.md`)
   - [x] R39.7 — Идемпотентность retries + observability (`done_task/R39.7.md`)
   - [x] R39.8 — `run_nhl_refresh_notify.py` → `post_refresh_digest` по умолчанию (`done_task/R39.8.md`)
+
+- [x] **R40** — Codebase housekeeping (логи, комментарии, docstrings, lint) ✅ 2026-05-13; см. `done_task/R40.md`
+  - [x] R40.1 — Удалить stale .log из рабочего дерева, проверить .gitignore
+  - [x] R40.2 — AI-артефакты: целевой grep — совпадений по строгим паттернам нет
+  - [x] R40.3 — `monitoring/` оставлены: только тесты + Sphinx; зафиксировано в `monitoring/__init__.py`
+  - [x] R40.4 — `check_model_quality` stub + `tests/__init__.py`
+  - [x] R40.5 — Docstrings: `gates.check_model_quality`, `tests/__init__.py`, пакет `monitoring`
+  - [x] R40.6 — Свернуты тройные `# ====` / `# ----` разделители в ряде модулей и `test_validation.py`
+  - [x] R40.7 — `make lint` + `make test`; мелкий fix `digest_message.py` (ruff)
 - [x] **R27** — NHL Feature Engineering v2: goals/stats EWM, streaks, lineup continuity/seniority ✅ 2026-05-04; см. `done_task/R27.md`
   - [x] R27.1 — Derived metric columns в `long_format.py` (goals_full_diff/total, sog/bs/hits/pim2/fow diff)
   - [x] R27.6 — Spans [5,25,100] → [5,15] в `standard.yaml`

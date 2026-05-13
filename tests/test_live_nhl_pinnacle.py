@@ -190,3 +190,4 @@ def test_fetch_with_injected_client_no_network() -> None:
     call_kw = mock_client.fetch_odds_for_sport.call_args
     assert call_kw[0][0] == "icehockey_nhl"
     assert call_kw[1]["markets"] == ["h2h"]
+    assert call_kw[1].get("use_cache") is False

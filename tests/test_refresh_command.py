@@ -29,6 +29,8 @@ def test_refresh_command_contains_required_stage_sequence() -> None:
     assert "sports_forecast.data.clean" in command
     assert "sports_forecast.features.features_build" in command
     assert "sports_forecast.materialize" in command
+    assert "algorithm=catboost" in command
+    assert "features={{ params.features }}" in command
 
 
 def test_refresh_command_sets_tournament_filter_for_ingest_and_clean() -> None:
@@ -52,6 +54,28 @@ def test_refresh_command_sets_tournament_filter_for_ingest_and_clean() -> None:
         'SF_TOURNAMENT_FILTER="$tournament" uv run python -m sports_forecast.data.clean' in command
     )
     assert '[ "$valid_count" -gt 0 ]' in command
+    assert "materialize tournament=" in command
+    assert "algorithm=catboost" in command
+    assert "features=basic" in command
+
+
+def test_refresh_command_accepts_custom_algorithm_for_materialize() -> None:
+    """Materialize stage receives algorithm_config for Hydra."""
+    command = build_refresh_per_tournament_command(
+        project_dir="/app",
+        uv_run="uv run",
+        tournaments_expr="nhl",
+        features_config="advanced",
+        market="winner_withOT",
+        market_spec="winner_withOT",
+        source_cmd='echo "source"',
+        lock_file="/tmp/sf_refresh_pipeline.lock",
+        lock_wait_seconds=120,
+        algorithm_config="catboost_reg",
+    )
+
+    assert "algorithm=catboost_reg" in command
+    assert "features=advanced" in command
 
 
 def test_refresh_command_supports_legacy_positional_source_contract() -> None:

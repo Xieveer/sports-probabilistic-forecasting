@@ -136,6 +136,31 @@ def _load_algorithm_config(
     return fallback
 
 
+def _long_row_participant_display_name(row: pd.Series) -> str:
+    """Отображаемое имя участника из одной строки long-format inference.
+
+    ``wide_to_long`` кладёт идентификатор в ``pl`` (команда NHL и т.п.); для
+    индивидуальных рынков может быть ``pl_short_name_en``. Материализация
+    должна поддерживать оба варианта.
+
+    Args:
+        row: Строка inference DataFrame (long).
+
+    Returns:
+        Непустая строка или ``""``, если подходящего поля нет.
+    """
+    for col in ("pl_short_name_en", "pl"):
+        if col not in row.index:
+            continue
+        val = row[col]
+        if pd.isna(val):
+            continue
+        text = str(val).strip()
+        if text and text.lower() != "nan":
+            return text
+    return ""
+
+
 def _aggregate_long_predictions(
     df: pd.DataFrame,
     proba: np.ndarray,
@@ -146,10 +171,12 @@ def _aggregate_long_predictions(
     Вероятность класса 1 для home row = P(home wins),
     для away row = P(away wins).
 
+    Имена для БД/digest: ``pl_short_name_en`` или fallback на ``pl`` (см.
+    :func:`_long_row_participant_display_name`).
+
     Args:
         df: Inference DataFrame (long format).
         proba: Матрица вероятностей (N x 2 для бинарной).
-        market_spec_name: Название market_spec.
 
     Returns:
         DataFrame с одной строкой на матч и колонками:
@@ -202,8 +229,8 @@ def _aggregate_long_predictions(
             {
                 "match_id": str(match_id),
                 "match_datetime": pd.to_datetime(home["datetime"]),
-                "home_player": str(home.get("pl_short_name_en", "")),
-                "away_player": str(away.get("pl_short_name_en", "")),
+                "home_player": _long_row_participant_display_name(home),
+                "away_player": _long_row_participant_display_name(away),
                 "proba_home": round(p_home_norm, 6),
                 "proba_away": round(p_away_norm, 6),
                 "predictions_json": json.dumps(predictions, ensure_ascii=False),

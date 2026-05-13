@@ -31,11 +31,16 @@ def build_refresh_per_tournament_command(
     source_cmd: str,
     lock_file: str,
     lock_wait_seconds: int,
+    algorithm_config: str = "catboost",
 ) -> str:
     """Build a fail-fast shell command for tournament refresh pipeline.
 
     Pipeline for each tournament:
     ``source -> ingest -> clean -> features -> materialize``.
+
+    Для ``materialize`` в CLI передаются ``algorithm`` и ``features`` (требование
+    корневого Hydra ``conf/config.yaml``). При ``model_version=prod`` фактическая
+    модель берётся из ``models/.../best/deploy.yaml`` (promoted contract), если он есть.
     """
     return (
         "set -e && "
@@ -51,7 +56,9 @@ def build_refresh_per_tournament_command(
         f'SF_TOURNAMENT_FILTER="$tournament" {uv_run} python -m sports_forecast.data.ingest && '
         f'SF_TOURNAMENT_FILTER="$tournament" {uv_run} python -m sports_forecast.data.clean && '
         f'{uv_run} python -m sports_forecast.features.features_build tournament="$tournament" features={features_config} && '
-        f'{uv_run} python -m sports_forecast.materialize tournament="$tournament" market={market} market_spec={market_spec} || exit 1; '
+        f'{uv_run} python -m sports_forecast.materialize tournament="$tournament" '
+        f"market={market} market_spec={market_spec} algorithm={algorithm_config} "
+        f"features={features_config} || exit 1; "
         "done; "
         '[ "$valid_count" -gt 0 ]'
         "'"

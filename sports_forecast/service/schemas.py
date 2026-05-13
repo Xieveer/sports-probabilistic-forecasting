@@ -60,9 +60,17 @@ class PredictionResponse(BaseModel):
         None,
         description="Edge домашней стороны: P(home) − 1 / pinnacle_home_decimal",
     )
+    edge_away: float | None = Field(
+        None,
+        description="Edge гостевой стороны: P(away) − 1 / pinnacle_away_decimal",
+    )
     bet_decision_home: str | None = Field(
         None,
-        description="Решение по порогу из conf/service_api.yaml: bet | no_bet | insufficient_data",
+        description="Решение по порогу (дом): bet | no_bet | insufficient_data (conf/service_api.yaml)",
+    )
+    bet_decision_away: str | None = Field(
+        None,
+        description="Решение по порогу (гость): bet | no_bet | insufficient_data",
     )
     live_odds_status: str | None = Field(
         None,

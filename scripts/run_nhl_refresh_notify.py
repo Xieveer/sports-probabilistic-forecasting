@@ -104,11 +104,17 @@ def _fetch_upcoming_summary(api_base: str) -> str:
         st = item.get("live_odds_status", "")
         edge = item.get("edge_home")
         bet = item.get("bet_decision_home")
+        edge_a = item.get("edge_away")
+        bet_a = item.get("bet_decision_away")
         tail = f" live={st}" if st else ""
         if edge is not None:
             tail += f" edge={float(edge):+.3f}"
         if bet:
             tail += f" bet={bet}"
+        if edge_a is not None:
+            tail += f" edge_a={float(edge_a):+.3f}"
+        if bet_a:
+            tail += f" bet_a={bet_a}"
         lines.append(f"• {hp} — {ap} @ {dt}{tail}")
     if n > 8:
         lines.append(f"… ещё {n - 8} матч(ей)")

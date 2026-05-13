@@ -171,9 +171,7 @@ def find_odds_column(df: pd.DataFrame, market_spec: DictConfig) -> str | None:
     return None
 
 
-# ============================================================================
 # ПАРСИНГ ODDS_RAW → ЧИСЛОВЫЕ КОЭФФИЦИЕНТЫ
-# ============================================================================
 
 
 def _parse_odds_dict(raw_value: object) -> dict | None:

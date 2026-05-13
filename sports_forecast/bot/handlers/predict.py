@@ -109,7 +109,15 @@ def _format_live_lines(item: dict[str, Any]) -> list[str]:
     else:
         out.append("Edge home: —")
 
+    edge_a = item.get("edge_away")
+    if edge_a is not None:
+        out.append(f"Edge away: {float(edge_a):+.4f}")
+    else:
+        out.append("Edge away: —")
+
+    bet_a = item.get("bet_decision_away")
     out.append(f"Решение (home ML): {_bet_decision_ru(bet if isinstance(bet, str) else None)}")
+    out.append(f"Решение (away ML): {_bet_decision_ru(bet_a if isinstance(bet_a, str) else None)}")
     if status == "partial_quote":
         out.append("(частичная котировка)")
     return out

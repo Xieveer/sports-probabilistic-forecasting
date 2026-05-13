@@ -27,9 +27,7 @@ from sports_forecast.validation.schemas import (
 )
 
 
-# ============================================================================
 # Fixtures
-# ============================================================================
 
 
 @pytest.fixture()
@@ -82,9 +80,7 @@ def processed_long_df() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-# ============================================================================
 # Tests — Odds store (Pandera V1/V2, R20/R21)
-# ============================================================================
 
 
 class TestValidateOddsFloatColumnsV2:
@@ -178,9 +174,7 @@ class TestValidateOddsFloatColumnsV3:
         validate_odds_float_columns(df, context="test_v3_ok")
 
 
-# ============================================================================
 # Tests — Raw Schema
-# ============================================================================
 
 
 class TestRawSchema:
@@ -209,9 +203,7 @@ class TestRawSchema:
         assert not result.is_valid
 
 
-# ============================================================================
 # Tests — Interim Schema
-# ============================================================================
 
 
 class TestInterimSchema:
@@ -249,9 +241,7 @@ class TestInterimSchema:
         assert len(result.warnings) > 0
 
 
-# ============================================================================
 # Tests — Processed Long Schema
-# ============================================================================
 
 
 class TestProcessedLongSchema:
@@ -294,9 +284,7 @@ class TestProcessedLongSchema:
         assert any("f_" in w for w in result.warnings)
 
 
-# ============================================================================
 # Tests — ValidationResult
-# ============================================================================
 
 
 class TestValidationResult:
@@ -319,9 +307,7 @@ class TestValidationResult:
         assert len(result.errors) == 2
 
 
-# ============================================================================
 # Tests — Quality Gate functions
-# ============================================================================
 
 
 class TestQualityGates:
@@ -340,9 +326,7 @@ class TestQualityGates:
         assert not result.is_valid
 
 
-# ============================================================================
 # Tests — Schema Drift Detection
-# ============================================================================
 
 
 class TestSchemaDrift:
@@ -400,9 +384,7 @@ class TestSchemaDrift:
         assert result.type_changes == {}
 
 
-# ============================================================================
 # Tests — Duplicate ID Reporting
-# ============================================================================
 
 
 class TestDuplicateIds:

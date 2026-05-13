@@ -8,13 +8,10 @@ ModelPromoter — модуль для выбора лучшей модели и�
     2. Сравнение: вывести топ-N моделей по метрикам для ручного решения.
     3. Деплой-конфиг: сгенерировать ``deploy.yaml`` с выбранным run_id.
 
-Запуск::
+Запуск (через ``main.py promote``)::
 
-    uv run python -m sports_forecast.deploy.promoter \\
-        --experiment "uel_kz_1__total__over_6.5" \\
-        --metric test_logloss \\
-        --direction minimize \\
-        --top-n 5
+    uv run python main.py promote compare -e "uel_kz_1__total__over_6.5"
+    uv run python main.py promote deploy --run-id <uuid> -t models/nhl/winner_withOT/best
 """
 
 from __future__ import annotations
@@ -57,6 +54,63 @@ class CandidateModel:
     metrics: dict[str, float] = field(default_factory=dict)
     tags: dict[str, str] = field(default_factory=dict)
     artifact_uri: str = ""
+
+
+def promoter_and_candidate_from_run_id(
+    run_id: str,
+    *,
+    metric: str = "test_logloss",
+    direction: str = "minimize",
+) -> tuple[ModelPromoter, CandidateModel]:
+    """Построить ``ModelPromoter`` и ``CandidateModel`` по фиксированному MLflow run_id.
+
+    Имя эксперимента берётся из run-а (для ``deploy.yaml``). Фильтр ``required_tags``
+    отключён: run выбран явно.
+
+    Args:
+        run_id: Идентификатор run-а в MLflow.
+        metric: Ключ метрики для блока ``selection`` в ``deploy.yaml``.
+        direction: ``minimize`` или ``maximize`` (для ``deploy.yaml``).
+
+    Returns:
+        Пара ``(promoter, candidate)``.
+
+    Raises:
+        ValueError: Если run или эксперимент не найдены, статус не FINISHED
+            или метрика отсутствует.
+    """
+    run = mlflow.get_run(run_id)
+    if run.info.status != "FINISHED":
+        raise ValueError(f"Run '{run_id}' имеет статус {run.info.status!r}, ожидался 'FINISHED'.")
+    experiment = mlflow.get_experiment(run.info.experiment_id)
+    if experiment is None:
+        raise ValueError(f"Эксперимент для run '{run_id}' не найден в MLflow.")
+
+    tags = dict(run.data.tags)
+    metrics = dict(run.data.metrics)
+    if metric not in metrics:
+        raise ValueError(
+            f"В run '{run_id}' нет метрики {metric!r}. Укажите другую через promote -m / --metric."
+        )
+
+    candidate = CandidateModel(
+        run_id=run.info.run_id,
+        run_name=tags.get("mlflow.runName", run_id[:8]),
+        algorithm=tags.get("algorithm", "unknown"),
+        featureset=tags.get("featureset", "unknown"),
+        primary_metric=float(metrics[metric]),
+        metrics=metrics,
+        tags=tags,
+        artifact_uri=run.info.artifact_uri or "",
+    )
+    promoter = ModelPromoter(
+        experiment_name=experiment.name,
+        metric=metric,
+        direction=direction,
+        min_bets=0,
+        required_tags={},
+    )
+    return promoter, candidate
 
 
 class ModelPromoter:
@@ -208,8 +262,20 @@ class ModelPromoter:
         candidates = self.get_candidates(top_n=top_n)
         if not candidates:
             return "Нет подходящих кандидатов."
+        return self.render_compare_table(candidates)
 
-        # Заголовки
+    def render_compare_table(self, candidates: list[CandidateModel]) -> str:
+        """Отформатировать список кандидатов в таблицу (как ``compare``).
+
+        Args:
+            candidates: Уже отобранные кандидаты (в т.ч. один run по ``run_id``).
+
+        Returns:
+            Многострочная таблица для печати.
+        """
+        if not candidates:
+            return "Нет подходящих кандидатов."
+
         header = (
             f"{'#':<3} {'Run Name':<25} {'Algorithm':<12} "
             f"{'Features':<12} {self.metric:<15} "
@@ -233,7 +299,6 @@ class ModelPromoter:
 
         lines.append(sep)
 
-        # Бизнес-метрики (если есть)
         has_business = any(c.metrics.get("betting_roi") is not None for c in candidates)
         if has_business:
             lines.append("")

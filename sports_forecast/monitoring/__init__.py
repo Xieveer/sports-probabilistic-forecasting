@@ -2,6 +2,7 @@
 
 Компоненты:
     - metrics: Prometheus custom gauges для ML метрик.
-    - drift: Обнаружение data/prediction drift.
-    - performance: Отслеживание перформанса модели на новых данных.
+    - drift / performance / ab_testing: реализованы и покрыты unit-тестами;
+      в production Airflow DAG пока не подключены (см. ``dag_monitoring`` — gates в ``validation.gates``).
+
 """

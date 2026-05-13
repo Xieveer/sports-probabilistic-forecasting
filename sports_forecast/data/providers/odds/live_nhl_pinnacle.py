@@ -5,6 +5,9 @@
 :class:`~sports_forecast.data.providers.odds.client.OddsApiClient` задаётся из
 ``conf/bookmaker/the_odds_api.yaml`` → ``live_inference.max_real_http_requests``.
 
+По умолчанию **не** используется дисковый кэш ответа (``allow_disk_cache_for_live_odds:
+false``), чтобы витрина и digest получали актуальные линии, а не снимок из ``data/cache``.
+
 Сопоставление ``match_id`` витрины (NHL ``id`` из processed) с событиями API:
 
 1. Явные пары ``live_inference.event_id_to_match_id`` (ключ — ``id`` события в JSON).
@@ -251,8 +254,12 @@ def fetch_nhl_pinnacle_quotes_for_refs(
     live = OmegaConf.select(cfg, "bookmaker.live_inference") or {}
     sport_key = str(OmegaConf.select(cfg, "bookmaker.sport_keys.nhl") or "icehockey_nhl")
     bookmaker_key = str(OmegaConf.select(cfg, "bookmaker.bookmakers.primary") or "pinnacle")
-    regions = str(live.get("regions", "us"))
+    regions = str(live.get("regions", "eu"))
     tol = int(live.get("commence_tolerance_minutes", 360))
+    # Для витрины нужны актуальные линии; дисковый кэш клиента иначе может отдать
+    # устаревший снимок → no_quote по всем матчам. Включайте allow_disk_cache_for_live_odds
+    # только для локальной отладки без сети.
+    use_disk_cache = bool(live.get("allow_disk_cache_for_live_odds", False))
     overrides_any = live.get("event_id_to_match_id")
     overrides: dict[str, str] = {}
     if isinstance(overrides_any, dict):
@@ -263,7 +270,7 @@ def fetch_nhl_pinnacle_quotes_for_refs(
         sport_key,
         regions=regions,
         markets=["h2h"],
-        use_cache=True,
+        use_cache=use_disk_cache,
     )
     quotes = parse_pinnacle_h2h_quotes_from_payload(
         payload,

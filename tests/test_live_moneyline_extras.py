@@ -26,7 +26,9 @@ _API_KEYS = (
     "pinnacle_home_decimal",
     "pinnacle_away_decimal",
     "edge_home",
+    "edge_away",
     "bet_decision_home",
+    "bet_decision_away",
     "live_odds_status",
 )
 
@@ -66,7 +68,9 @@ def test_build_extras_quote_none_preserves_status(status: str) -> None:
     assert got["pinnacle_home_decimal"] is None
     assert got["pinnacle_away_decimal"] is None
     assert got["edge_home"] is None
+    assert got["edge_away"] is None
     assert got["bet_decision_home"] is None
+    assert got["bet_decision_away"] is None
     assert got["live_odds_status"] == status
 
 
@@ -83,8 +87,11 @@ def test_build_extras_ok_quote_matches_edge_decision() -> None:
     assert got["pinnacle_home_decimal"] == 2.0
     assert got["pinnacle_away_decimal"] == 1.9
     assert got["edge_home"] == pytest.approx(float(compute_edge(proba, 2.0)))
-    decision, _ = decide_bet(proba, 2.0, params)
-    assert got["bet_decision_home"] == decision.value
+    assert got["edge_away"] == pytest.approx(float(compute_edge(1.0 - proba, 1.9)))
+    dec_h, _ = decide_bet(proba, 2.0, params)
+    assert got["bet_decision_home"] == dec_h.value
+    d_away, _ = decide_bet(1.0 - proba, 1.9, params)
+    assert got["bet_decision_away"] == d_away.value
     assert got["live_odds_status"] == "ok"
 
 
@@ -97,8 +104,10 @@ def test_build_extras_proba_none_partial_quote_when_line_ok() -> None:
         status="ok",
     )
     assert got["bet_decision_home"] == BetDecision.INSUFFICIENT_DATA.value
+    assert got["bet_decision_away"] == BetDecision.INSUFFICIENT_DATA.value
     assert got["live_odds_status"] == "partial_quote"
     assert got["edge_home"] is None
+    assert got["edge_away"] is None
 
 
 @pytest.mark.parametrize(
@@ -123,6 +132,8 @@ def test_build_extras_bet_vs_no_bet_threshold(
     d, _ = decide_bet(proba, 2.0, params)
     assert d is want_decision
     assert got["bet_decision_home"] == want_decision.value
+    d_away, _ = decide_bet(1.0 - proba, 2.0, params)
+    assert got["bet_decision_away"] == d_away.value
 
 
 def test_build_extras_partial_line_home_missing() -> None:
@@ -135,9 +146,9 @@ def test_build_extras_partial_line_home_missing() -> None:
     )
     assert got["live_odds_status"] == "partial_quote"
     assert got["edge_home"] is None
-
-
-def test_match_dt_utc() -> None:
+    assert got["edge_away"] == pytest.approx(float(compute_edge(0.5, 2.0)))
+    assert got["bet_decision_home"] == BetDecision.INSUFFICIENT_DATA.value
+    assert got["bet_decision_away"] == decide_bet(0.5, 2.0, params)[0].value
     naive = datetime(2024, 1, 15, 18, 30, 0)
     u = match_dt_utc(naive)
     assert u is not None
@@ -209,3 +220,4 @@ def test_end_to_end_same_as_direct_build() -> None:
     )
     assert direct["pinnacle_home_decimal"] == q.decimal_home
     assert direct["bet_decision_home"] == BetDecision.BET.value
+    assert direct["bet_decision_away"] == decide_bet(0.45, q.decimal_away, params)[0].value

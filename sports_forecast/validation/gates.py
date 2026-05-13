@@ -340,31 +340,27 @@ def check_model_quality(
     min_accuracy: float = 0.50,
     max_ece: float = 0.10,
 ) -> bool:
-    """Проверить качество модели по последним MLflow метрикам (заглушка).
+    """Хук Airflow: заглушка до подключения чтения метрик из MLflow (или аналога).
 
-    В текущей версии — placeholder для будущей реализации
-    с полноценной интеграцией Evidently / MLflow.
+    Аргументы совпадают с контрактом DAG; пороги не применяются, пока нет backend метрик.
 
     Args:
-        min_accuracy: Минимальный порог accuracy.
-        max_ece: Максимальный допустимый ECE.
+        min_accuracy: Нижняя граница accuracy (планируется после реализации).
+        max_ece: Верхняя граница ECE (планируется после реализации).
 
     Returns:
-        True если качество в норме.
+        Всегда ``True``, чтобы DAG мониторинга не падал на незаполненной проверке.
     """
     logger.info(
-        "check_model_quality: min_accuracy=%.2f, max_ece=%.2f",
+        "check_model_quality (stub): min_accuracy=%.2f, max_ece=%.2f",
         min_accuracy,
         max_ece,
     )
-    logger.info("⚠ Полноценная проверка качества модели — TODO (требует Evidently/MLflow)")
-    logger.info("✓ Качество модели: OK (placeholder)")
+    logger.info("Проверки MLflow/Evidently не реализованы; возвращаю OK")
     return True
 
 
-# ============================================================================
-# SCHEMA DRIFT DETECTION
-# ============================================================================
+# Schema drift detection
 
 _SNAPSHOT_DIR = Path("data/.schema_snapshots")
 

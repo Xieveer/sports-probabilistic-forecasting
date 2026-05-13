@@ -73,6 +73,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Спецификация рынка (env SF_MATERIALIZE_SPEC)",
     )
     parser.add_argument(
+        "--algorithm",
+        default=os.environ.get("SF_MATERIALIZE_ALGORITHM", "catboost"),
+        help=(
+            "Аргумент algorithm для materialize (env SF_MATERIALIZE_ALGORITHM); "
+            "при prod-модели из best/deploy.yaml служит только для сборки Hydra."
+        ),
+    )
+    parser.add_argument(
         "--lock-file",
         default=os.environ.get("SF_REFRESH_LOCK_FILE", "/tmp/sf_refresh_pipeline.lock"),
         help="Файл блокировки flock (env SF_REFRESH_LOCK_FILE)",
@@ -115,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
         source_cmd=source_cmd,
         lock_file=args.lock_file,
         lock_wait_seconds=args.lock_wait_seconds,
+        algorithm_config=args.algorithm,
     )
     if args.dry_run:
         print(command)

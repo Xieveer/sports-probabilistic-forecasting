@@ -13,7 +13,8 @@ Usage::
     python main.py predict tournament=uel_kz_1 ...
 
     # Выбор лучшей модели
-    python main.py promote --experiment uel_kz_1__total__over_6.5
+    python main.py promote compare -e uel_kz_1__total__over_6.5
+    python main.py promote deploy --run-id <mlflow_run_id> -t models/nhl/winner_withOT/best
 
     # Справка
     python main.py --help
@@ -80,22 +81,53 @@ def cmd_promote(args: argparse.Namespace) -> int:
     Returns:
         Exit code.
     """
-    from sports_forecast.deploy.promoter import ModelPromoter
+    from mlflow.exceptions import MlflowException
 
-    promoter = ModelPromoter(
-        experiment_name=args.experiment,
-        metric=args.metric,
-        direction=args.direction,
-        min_bets=args.min_bets,
-    )
+    from sports_forecast.deploy.promoter import ModelPromoter, promoter_and_candidate_from_run_id
+
+    run_id = getattr(args, "run_id", None)
+    if run_id and args.experiment:
+        print(
+            "Укажите либо --run-id, либо --experiment, но не оба одновременно.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if run_id:
+        try:
+            promoter, fixed_candidate = promoter_and_candidate_from_run_id(
+                run_id,
+                metric=args.metric,
+                direction=args.direction,
+            )
+        except (ValueError, MlflowException) as exc:
+            print(f"Ошибка MLflow run {run_id!r}: {exc}", file=sys.stderr)
+            return 1
+    else:
+        if not args.experiment:
+            print(
+                "Нужен --experiment или --run-id (см. main.py promote --help).",
+                file=sys.stderr,
+            )
+            return 1
+        promoter = ModelPromoter(
+            experiment_name=args.experiment,
+            metric=args.metric,
+            direction=args.direction,
+            min_bets=args.min_bets,
+        )
+        fixed_candidate = None
 
     if args.action == "compare":
-        table = promoter.compare(top_n=args.top_n)
-        print(table)
+        if run_id:
+            assert fixed_candidate is not None
+            print(promoter.render_compare_table([fixed_candidate]))
+        else:
+            print(promoter.compare(top_n=args.top_n))
         return 0
 
     if args.action == "best":
-        best = promoter.get_best_candidate()
+        best = fixed_candidate if run_id else promoter.get_best_candidate()
         if best is None:
             print("Нет подходящих кандидатов для промоушна.")
             return 1
@@ -107,15 +139,21 @@ def cmd_promote(args: argparse.Namespace) -> int:
         return 0
 
     if args.action == "deploy":
-        best = promoter.get_best_candidate()
+        best = fixed_candidate if run_id else promoter.get_best_candidate()
         if best is None:
             print("Нет подходящих кандидатов для деплоя.")
             return 1
-        target = (
-            Path(args.target_dir)
-            if args.target_dir
-            else (PROJECT_ROOT / "models" / "deployed" / args.experiment)
-        )
+        if args.target_dir:
+            target = Path(args.target_dir)
+        elif run_id:
+            print(
+                "Для deploy по --run-id укажите цель явно: --target-dir "
+                "(например models/nhl/winner_withOT/best).",
+                file=sys.stderr,
+            )
+            return 1
+        else:
+            target = PROJECT_ROOT / "models" / "deployed" / args.experiment
         promoter.promote(best, target)
         print(f"Модель задеплоена в: {target}")
         return 0
@@ -172,8 +210,14 @@ def main() -> int:
     promote_parser.add_argument(
         "--experiment",
         "-e",
-        required=True,
-        help="Имя MLflow эксперимента (e.g. uel_kz_1__total__over_6.5)",
+        default=None,
+        help="Имя MLflow эксперимента (не нужен, если задан --run-id)",
+    )
+    promote_parser.add_argument(
+        "--run-id",
+        default=None,
+        metavar="RUN_ID",
+        help="Зафиксированный MLflow run_id (compare/best/deploy без поиска в эксперименте)",
     )
     promote_parser.add_argument(
         "--metric",

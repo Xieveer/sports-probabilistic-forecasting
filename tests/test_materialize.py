@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from omegaconf import OmegaConf
 
-from sports_forecast.materialize import materialize_predictions
+from sports_forecast.materialize import _aggregate_long_predictions, materialize_predictions
 
 
 def _build_cfg() -> dict:
@@ -105,3 +105,39 @@ class TestMaterializePromotedContract:
             ok = materialize_predictions(cfg, version="prod")
 
         assert ok is False
+
+
+def test_aggregate_long_uses_pl_when_pl_short_name_en_absent() -> None:
+    """NHL long inference: идентификатор в ``pl``, без ``pl_short_name_en``."""
+    df = pd.DataFrame(
+        {
+            "id": ["m1", "m1"],
+            "side": ["h", "a"],
+            "datetime": ["2026-05-14T00:00:00Z", "2026-05-14T00:00:00Z"],
+            "pl": ["TOR", "OTT"],
+            "f_x": [1.0, 2.0],
+        }
+    )
+    proba = np.array([[0.3, 0.7], [0.55, 0.45]])
+    out = _aggregate_long_predictions(df, proba)
+    assert len(out) == 1
+    assert out.iloc[0]["home_player"] == "TOR"
+    assert out.iloc[0]["away_player"] == "OTT"
+
+
+def test_aggregate_long_prefers_pl_short_name_en_over_pl() -> None:
+    """Если задано короткое имя игрока, оно важнее аббревиатуры ``pl``."""
+    df = pd.DataFrame(
+        {
+            "id": ["m1", "m1"],
+            "side": ["h", "a"],
+            "datetime": ["2026-01-01T12:00:00", "2026-01-01T12:00:00"],
+            "pl": ["H_CODE", "A_CODE"],
+            "pl_short_name_en": ["Home Star", "Away Star"],
+            "f_a": [1.0, 2.0],
+        }
+    )
+    proba = np.array([[0.2, 0.8], [0.6, 0.4]])
+    out = _aggregate_long_predictions(df, proba)
+    assert out.iloc[0]["home_player"] == "Home Star"
+    assert out.iloc[0]["away_player"] == "Away Star"

@@ -171,5 +171,7 @@ def test_fetch_maps_quote_and_edge(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert out["pinnacle_home_decimal"] == pytest.approx(2.0)
     assert out["edge_home"] == pytest.approx(0.05)
+    assert out["edge_away"] == pytest.approx(-0.05)
     assert out["bet_decision_home"] == "bet"
+    assert out["bet_decision_away"] == "no_bet"
     assert out["live_odds_status"] == "ok"

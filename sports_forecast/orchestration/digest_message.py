@@ -1,29 +1,10 @@
 """Контракт текста post-refresh Telegram digest (одно сообщение, без HTTP/Telegram).
 
-Контракт сообщения (порядок блоков, сверху вниз):
-
-1. **Предупреждение пайплайна** — только если ``odds_warning`` не ``\"none\"``:
-   ``missing_api_key`` или ``fetch_failed``; 2–4 строки на русском, без секретов.
-2. **Заголовок** — если передан непустой ``header``, одна строка (как есть).
-3. **Сводка по матчам** — строка вида «Всего матчей: N»; N = ``len(matches)``
-   (включая строки без ``edge_home``).
-4. **Модель (provenance)** — блок из одной строки ``provenance_line`` (задаёт
-   вызывающий код; типично run_name / run_id / algorithm из ``deploy.yaml``).
-5. **Топ по |edge|** — до ``top_n_edges`` строк; участвуют **только** матчи, у
-   которых ``edge_home is not None``; сортировка по убыванию ``abs(edge_home)``;
-   при равном |edge| сохраняется относительный порядок как в отфильтрованном
-   списке (тот же порядок, что среди матчей с edge в исходном ``matches``).
-   Матчи без edge в этот список **не** попадают, но учитываются в N.
-6. **Все матчи (кратко)** — все матчи в **исходном** порядке ``matches``;
-   для каждой строки: дата/время, команды, короткий хвост (``live=`` / ``edge=`` /
-   ``bet=``) в том же стиле, что ``scripts/run_nhl_refresh_notify.py`` (сначала
-   ``live``, затем ``edge``, затем ``bet``). Если матчей больше **5**, показываются
-   только **первые 5** строк этого блока и отдельная строка «… ещё K матч(ей)»
-   (K = всего − 5), чтобы уложиться в лимит Telegram.
-
-**Обрезка:** если длина текста превышает ``max_chars``, тело обрезается и в конец
-добавляется одна строка ``… [обрезано до N символов]``, где N = ``max_chars``;
-итоговая длина не превышает ``max_chars``.
+Формат: plain text (без Markdown-звёздочек — в ``sendMessage`` без ``parse_mode`` они
+не дают жирный шрифт). Блоки: предупреждение по Odds API (при необходимости),
+заголовок, число матчей, модель + критерий bet (порог edge из ``service_api``),
+расписание по времени (MSK), для каждого матча prob / kf / edge по сторонам и
+две строки итога по ставке (дом и гость, симметрично :func:`decide_bet`).
 
 Модуль **только** собирает строку; отправка и сетевые вызовы вне ответственности.
 """
@@ -32,7 +13,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from math import isfinite
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
+
+from sports_forecast.betting.edge_decision import compute_edge
 
 
 __all__ = [
@@ -44,21 +30,27 @@ __all__ = [
 
 OddsWarning = Literal["none", "missing_api_key", "fetch_failed"]
 
+_MSK = ZoneInfo("Europe/Moscow")
+
 
 @dataclass(frozen=True, slots=True)
 class DigestMatchLine:
-    """Одна строка сводки по матчу для digest (без сырья API/BД)."""
+    """Одна строка сводки по матчу для digest."""
 
     home_player: str
     away_player: str
-    match_datetime: str
-    edge_home: float | None
-    bet_decision_home: str | None
-    live_odds_status: str | None
+    commence_utc: datetime | None
+    proba_home: float | None = None
+    pinnacle_home_decimal: float | None = None
+    pinnacle_away_decimal: float | None = None
+    edge_home: float | None = None
+    edge_away: float | None = None
+    bet_decision_home: str | None = None
+    bet_decision_away: str | None = None
 
 
 def format_provenance_from_deploy_dict(model: dict[str, Any]) -> str:
-    """Собрать одну строку provenance из словаря ``model`` (например из YAML).
+    """Собрать одну строку provenance из словаря ``model`` (например из YAML.
 
     Берутся непустые значения ключей ``run_name``, ``run_id``, ``algorithm``
     в этом порядке, склеенные через ``; ``.
@@ -80,32 +72,95 @@ def format_provenance_from_deploy_dict(model: dict[str, Any]) -> str:
     return "; ".join(parts)
 
 
-def _match_tail(
-    edge_home: float | None,
-    bet_decision_home: str | None,
-    live_odds_status: str | None,
+def _to_utc_aware(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _format_msk_line(dt_utc: datetime | None) -> str:
+    if dt_utc is None:
+        return "время: ?"
+    aware = _to_utc_aware(dt_utc)
+    if aware is None:
+        return "время: ?"
+    return aware.astimezone(_MSK).strftime("%Y-%m-%d %H:%M MSK")
+
+
+def _fmt_pair(
+    left: float | None,
+    right: float | None,
+    *,
+    fmt: str,
+    na: str = "—",
 ) -> str:
-    tail = ""
-    st = (live_odds_status or "").strip()
-    if st:
-        tail += f" live={st}"
-    if edge_home is not None:
-        tail += f" edge={float(edge_home):+.3f}"
-    if bet_decision_home:
-        tail += f" bet={bet_decision_home}"
-    return tail
+    def one(v: float | None) -> str:
+        if v is None or not isfinite(v):
+            return na
+        return format(v, fmt)
+
+    return f"{one(left)}/{one(right)}"
+
+
+def _edges_from_probs(
+    ph: float | None,
+    kh: float | None,
+    ka: float | None,
+) -> tuple[float | None, float | None]:
+    """Edge дома и гостя: ``p − 1/k`` для каждой стороны при валидных входах."""
+    if ph is None or not isfinite(ph):
+        return None, None
+    pa = 1.0 - float(ph)
+    eh: float | None = None
+    ea: float | None = None
+    if kh is not None:
+        try:
+            eh = float(compute_edge(float(ph), float(kh)))
+        except ValueError:
+            eh = None
+    if ka is not None:
+        try:
+            ea = float(compute_edge(float(pa), float(ka)))
+        except ValueError:
+            ea = None
+    return eh, ea
+
+
+def _side_bet_outcome_line(
+    *,
+    side_label: str,
+    player: str,
+    proba_side: float | None,
+    k_side: float | None,
+    bet: str | None,
+    edge_threshold: float,
+) -> str:
+    """Одна строка итога по moneyline одной стороны (согласовано с ``decide_bet``)."""
+    if bet == "bet" and proba_side is not None and k_side is not None:
+        try:
+            ev_pct = (float(proba_side) * float(k_side) - 1.0) * 100.0
+        except (TypeError, ValueError):
+            return f"  Итог {side_label}: (ошибка расчёта EV)"
+        return f"  Итог {side_label} ({player}): ставка @ {float(k_side):.2f}, EV={ev_pct:+.1f}%"
+    if bet == "no_bet":
+        return f"  Итог {side_label} ({player}): без ставки (edge < {edge_threshold:g})"
+    if bet == "insufficient_data" or bet is None:
+        return f"  Итог {side_label} ({player}): нет линии или данных для bet"
+    return f"  Итог {side_label} ({player}): {bet}"
 
 
 def _lines_for_odds_warning(warning: OddsWarning) -> list[str]:
     if warning == "missing_api_key":
         return [
-            "⚠️ **Предупреждение:** не задан ключ Odds API (`missing_api_key`).",
-            "Live-котировки Pinnacle и расчёт edge в этом прогоне могут отсутствовать.",
+            "⚠️ Предупреждение: не задан ключ Odds API (missing_api_key).",
+            "Котировки и edge в этом прогоне могут отсутствовать.",
         ]
     if warning == "fetch_failed":
         return [
-            "⚠️ **Предупреждение:** не удалось получить котировки (`fetch_failed`).",
-            "Сводка ниже может быть без актуальных коэффициентов и edge.",
+            "⚠️ Предупреждение: не удалось получить котировки (fetch_failed).",
+            "Ниже — без актуальных kf и edge.",
         ]
     return []
 
@@ -120,24 +175,68 @@ def _truncate(text: str, max_chars: int) -> str:
     return text[:keep] + suffix
 
 
+def _sort_key_commence(m: DigestMatchLine) -> datetime:
+    u = _to_utc_aware(m.commence_utc)
+    if u is None:
+        return datetime.max.replace(tzinfo=timezone.utc)
+    return u
+
+
+def _format_match_block(m: DigestMatchLine, *, edge_threshold: float) -> list[str]:
+    ph, pa = m.proba_home, None
+    if ph is not None and isfinite(ph):
+        pa = 1.0 - float(ph)
+
+    kh, ka = m.pinnacle_home_decimal, m.pinnacle_away_decimal
+    eh, ea = m.edge_home, m.edge_away
+    if eh is None and ea is None and (kh is not None or ka is not None):
+        eh, ea = _edges_from_probs(ph, kh, ka)
+
+    prob_s = _fmt_pair(ph, pa, fmt=".3f")
+    kf_s = _fmt_pair(kh, ka, fmt=".2f")
+    edge_s = _fmt_pair(eh, ea, fmt="+.3f")
+
+    return [
+        f"• {m.home_player} — {m.away_player}",
+        f"  {_format_msk_line(m.commence_utc)}",
+        f"  prob={prob_s}  kf={kf_s}  edge={edge_s}",
+        _side_bet_outcome_line(
+            side_label="дом",
+            player=m.home_player,
+            proba_side=ph,
+            k_side=kh,
+            bet=m.bet_decision_home,
+            edge_threshold=edge_threshold,
+        ),
+        _side_bet_outcome_line(
+            side_label="гость",
+            player=m.away_player,
+            proba_side=pa,
+            k_side=ka,
+            bet=m.bet_decision_away,
+            edge_threshold=edge_threshold,
+        ),
+    ]
+
+
 def build_post_refresh_digest_text(
     *,
     matches: Sequence[DigestMatchLine],
     provenance_line: str,
     odds_warning: OddsWarning = "none",
-    top_n_edges: int = 8,
+    edge_threshold: float | None = None,
     max_chars: int = 4096,
     header: str | None = None,
 ) -> str:
     """Собрать одно русскоязычное сообщение для Telegram (лимит ``max_chars``).
 
     Args:
-        matches: Список матчей в порядке «краткого» перечисления.
-        provenance_line: Одна строка про модель/прогон (caller-defined).
-        odds_warning: Уровень предупреждения по котировкам на уровне пайплайна.
-        top_n_edges: Сколько строк максимум в блоке топа по |edge|.
-        max_chars: Жёсткий потолок длины (типично 4096 для Telegram).
-        header: Опциональная первая строка контента после предупреждений.
+        matches: Матчи (порядок будет заменён на сортировку по ``commence_utc``).
+        provenance_line: Строка про модель/прогон.
+        odds_warning: Предупреждение по Odds API.
+        edge_threshold: Порог edge для bet (дом); если ``None``, строка критерия не выводится.
+        max_chars: Жёсткий потолок длины.
+        header: Опциональная первая строка после предупреждений.
 
     Returns:
         Готовый текст одного сообщения.
@@ -153,29 +252,24 @@ def build_post_refresh_digest_text(
     n_total = len(matches)
     chunks.append(f"Всего матчей: {n_total}")
     chunks.append("")
-    chunks.append("**Модель (provenance):**")
+    chunks.append("Модель (provenance):")
     chunks.append(provenance_line.strip() if provenance_line else "—")
+    if edge_threshold is not None and isfinite(edge_threshold):
+        chunks.append(
+            f"Критерий bet (каждая сторона): edge = p_model − 1/k ≥ {edge_threshold:g} "
+            f"(conf/service_api.yaml, env SERVICE_API_EDGE_THRESHOLD)"
+        )
     chunks.append("")
 
-    rankable = [m for m in matches if m.edge_home is not None]
-    ranked = sorted(rankable, key=lambda m: abs(m.edge_home or 0.0), reverse=True)[
-        : max(0, top_n_edges)
-    ]
-    chunks.append(f"**Топ по |edge|** (до {top_n_edges}):")
-    if ranked:
-        for m in ranked:
-            tail = _match_tail(m.edge_home, m.bet_decision_home, m.live_odds_status)
-            chunks.append(f"• {m.home_player} — {m.away_player} @ {m.match_datetime}{tail}")
-    else:
-        chunks.append("— (нет строк с рассчитанным edge)")
-    chunks.append("")
+    thr = float(edge_threshold) if edge_threshold is not None and isfinite(edge_threshold) else 0.03
 
-    chunks.append("**Все матчи (кратко):**")
-    brief_limit = 5
-    brief_matches = list(matches[:brief_limit])
-    for m in brief_matches:
-        tail = _match_tail(m.edge_home, m.bet_decision_home, m.live_odds_status)
-        chunks.append(f"• {m.home_player} — {m.away_player} @ {m.match_datetime}{tail}")
+    chunks.append("Расписание:")
+    sorted_matches = sorted(matches, key=_sort_key_commence)
+    brief_limit = 15
+    shown = sorted_matches[:brief_limit]
+    for m in shown:
+        chunks.extend(_format_match_block(m, edge_threshold=thr))
+        chunks.append("")
     if n_total > brief_limit:
         chunks.append(f"… ещё {n_total - brief_limit} матч(ей)")
 
