@@ -18,6 +18,7 @@ flat_stake: 10.0
 kelly_fraction: 0.25  # quarter Kelly (консервативная)
 
 # Минимальный порог edge для отбора ставки: edge = p_model - p_implied, p_implied = 1/odds
+# (та же формула implied, что в ``conf/service_api.yaml`` для live API / R37.3.)
 min_edge_threshold: 0.05  # например 5 п.п. вероятности в пользу модели vs линия
 
 # Сохранить CSV построчного trace на test (p_prob, odds, edge, ставка, профит, …)
