@@ -1,0 +1,17 @@
+# Источник для пайплайна при ``--tournament nhl_train`` (утренний DAG, cron_refresh).
+#
+# ``conf/tournament/nhl_train`` — это **имя эксперимента / каталога моделей** (``models/nhl_train/…``,
+# split, promote); сырые CSV и Web API по смыслу те же, что у ``conf/source/nhl.yaml``.
+#
+# Без этого файла ``source_refresh --tournament nhl_train`` не находил ``conf/source/nhl_train.yaml``
+# и падал на file-провайдере (ожидание ``data/source/nhl_train/source.csv``).
+#
+# Если данные уже лежат только в ``data/source/nhl/``, варианты:
+# * symlink: ``ln -sfn nhl data/source/nhl_train`` (один каталог на диске);
+# * или запускать refresh с ``--tournaments nhl`` и отдельно материализовать под ``nournament=nhl_train``
+#   (потребует согласования цепочки; см. ``build_refresh_per_tournament_command``).
+defaults:
+  - nhl
+  - _self_
+
+name: nhl_train

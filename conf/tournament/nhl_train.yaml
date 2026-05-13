@@ -5,6 +5,10 @@
 # ``models/nhl_train/<market_spec>/…`` — keep ``tournament=nhl`` for ingest/features-only workflows.
 #
 # ------------------------------------------------------------------------------
+# Источник данных: ``conf/source/nhl_train.yaml`` (defaults → ``nhl``) — тот же NHL Web API,
+# каталог CSV на диске: ``data/source/nhl_train/``. Если данные только в ``data/source/nhl/``,
+# см. комментарий в ``conf/source/nhl_train.yaml`` (symlink или отдельный refresh).
+# ------------------------------------------------------------------------------
 # R26: дефолтный профиль коэффициентов для train — ``the_odds_api`` (не fonbet из корня).
 # Подмена: ``apply_tournament_default_bookmaker`` (train / SingleExperimentRunner).
 # Явно: ``bookmaker=fonbet`` оставит fonbet (если нужен эксперимент).
