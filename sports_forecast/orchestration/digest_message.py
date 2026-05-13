@@ -37,6 +37,7 @@ from typing import Any, Literal
 
 __all__ = [
     "DigestMatchLine",
+    "OddsWarning",
     "build_post_refresh_digest_text",
     "format_provenance_from_deploy_dict",
 ]

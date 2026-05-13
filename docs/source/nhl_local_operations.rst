@@ -151,10 +151,10 @@ Telegram-сообщение (сводка / edge vs live Pinnacle), не нар�
    параметров турнира/рынка (в утреннем DAG по умолчанию NHL / ``winner_withOT``, фичи
    ``advanced``; promoted-модель — как в контуре ``build_refresh_per_tournament_command``).
 3. **validate** — ``python -m sports_forecast.validation.run_validation`` в каталоге проекта.
-4. **digest** *(планируется, R39.4–R39.5)* — финальный шаг в DAG после ``validate``: чтение из **той же**
+4. **digest** *(R39.4 CLI; шаг в DAG — R39.5)* — финальный шаг в DAG после ``validate``: чтение из **той же**
    БД prediction store, при необходимости Odds API, сборка одного сообщения и отправка в Telegram.
-   На момент документа R39.1 задача digest **в коде DAG ещё не подключена**; оператору нужно
-   помнить, что **канонический хвост** пайплайна — именно digest в Airflow, а не отдельный adhoc-скрипт
+   Ручной эквивалент шага — модуль :mod:`sports_forecast.orchestration.post_refresh_digest` (см. подраздел ниже).
+   Задача digest **в коде DAG** пока не подключена; **канонический хвост** пайплайна — digest в Airflow, а не отдельный adhoc-скрипт
    как единственный путь.
 
 Используется **LocalExecutor**: команды Bash выполняются в процессе **scheduler**, поэтому
@@ -179,6 +179,34 @@ env ниже), а не только сервису ``api``.
 
 **Сейчас (до R39.5):** шаг 5 заканчивается на ``validate``; для проверки уведомления без Airflow
 можно использовать ``make nhl-morning-test-notify`` — это **не** заменяет целевой DAG-хвост.
+
+Post-refresh digest CLI (R39.4)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Модуль ``sports_forecast.orchestration.post_refresh_digest`` читает предстоящие матчи из той же витрины,
+что и ``GET /predict/upcoming/{tournament}`` (через ``PredictionRepository.get_upcoming_predictions``),
+обогащает batch'ем live Pinnacle (как HTTP-слой при ``live_pinnacle=true``), собирает **одно** сообщение
+и либо печатает его (``--dry-run``), либо отправляет в Telegram через ``sendMessage`` (без aiogram).
+
+**Проверка текста без Telegram** (нужны доступ к БД и файл ``models/<tournament>/<market_spec>/best/deploy.yaml``)::
+
+   uv run python -m sports_forecast.orchestration.post_refresh_digest --dry-run
+
+С явным корнем репозитория и окном 72 ч::
+
+   uv run python -m sports_forecast.orchestration.post_refresh_digest --dry-run \
+     --project-root /path/to/SportsProbabilisticForecasting --hours 72
+
+**Отправка в Telegram** (в ``.env`` или окружении: ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS`` — берётся **первый**
+id из списка через запятую; для live Pinnacle — ``ODDS_API_KEY``)::
+
+   uv run python -m sports_forecast.orchestration.post_refresh_digest \
+     --project-root /path/to/SportsProbabilisticForecasting
+
+Переменная ``SF_TELEGRAM_DIGEST_ENABLE`` со значениями ``0``, ``false``, ``no`` (без учёта регистра) отключает
+запуск **без** ``--dry-run`` (выход ``0``, БД не трогается). C ``--dry-run`` отключение **не** действует:
+можно отладить текст и витрину, не отправляя сообщение. Если ``deploy.yaml`` отсутствует, при **отправке**
+команда завершится с кодом ``1``; при ``--dry-run`` в теле будет предупреждение, код ``0``.
 
 Airflow Variables: ``nhl_morning_refresh`` и ``data_refresh``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
