@@ -686,3 +686,13 @@
 - **Возможные улучшения / техдолг:**
   - Централизованный dedup (запись в БД/redis) или `task_instance`-aware hook Airflow для мульти-воркерных установок.
   - Политика ротации/очистки `.cache/digest_telegram_sent` (cron, retention по дате в маркере).
+
+### 2026-05-14 — R39.8 / закрытие эпика R39: `run_nhl_refresh_notify` → `post_refresh_digest`
+
+- **Задача:** `backlog/R39.md` → `done_task/R39.md`; подзадача **R39.8** → `done_task/R39.8.md`.
+- **Ограничения и компромиссы:**
+  - **`--legacy-api-summary`** сохраняет отдельный путь через HTTP `/predict/upcoming/nhl` (httpx) и прежнее форматирование; канонический путь по умолчанию — subprocess к CLI digest (дублирование транспорта Telegram остаётся только в legacy-ветке).
+  - Subprocess **захватывает** stdout/stderr digest; очень длинный вывод в лог может обрезаться при INFO-truncate в успешной ветке (по дизайну для секретов/шума).
+- **Возможные улучшения / техдолг:**
+  - Удалить legacy-ветку после периода стабилизации или оставить только `--dry-run` сравнение с API в отдельном диагностическом скрипте.
+  - Расширить тесты: сценарий с падением `cron_refresh` / mock `post_refresh_digest` returncode; ветка `--legacy-api-summary`.

@@ -60,7 +60,7 @@ help:
 	@echo "  make materialize   - материализовать предсказания в DB (NHL: TOURNAMENT=nhl после promote)"
 	@echo "  make nhl-morning-refresh-dry-run - вывести shell-команду утреннего NHL (как DAG nhl_morning_refresh)"
 	@echo "  make nhl-morning-refresh       - выполнить полный NHL refresh + validate (без Telegram)"
-	@echo "  make nhl-morning-test-notify   - пауза до ближайшей минуты МСК + offset, refresh + validate + сводка в TG"
+	@echo "  make nhl-morning-test-notify   - пауза МСК + offset, refresh + validate; TG через post_refresh_digest (R39.8)"
 	@echo "  make db-init       - инициализировать таблицы DB (SQLite)"
 	@echo ""
 	@echo "Docker:"
@@ -392,7 +392,7 @@ nhl-morning-refresh:
 		--market-spec winner_withOT
 	uv run python -m sports_forecast.validation.run_validation
 
-# Тест: пауза до ближайшей целой минуты МСК + offset (см. scripts/run_nhl_refresh_notify.py), полный refresh → validate → сводка в Telegram
+# Тест: пауза МСК + offset; refresh → validate → python -m sports_forecast.orchestration.post_refresh_digest (legacy: scripts/run_nhl_refresh_notify.py, R39.8)
 nhl-morning-test-notify:
 	uv run python scripts/run_nhl_refresh_notify.py
 

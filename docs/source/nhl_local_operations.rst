@@ -139,7 +139,11 @@ materialize для ``winner_withOT`` / ``nhl`` по умолчанию; зате
 **Полный пайплайн без Telegram:** ``make nhl-morning-refresh`` (``cron_refresh`` + ``run_validation``).
 
 **Тест с паузой до ближайшей целой минуты по МСК + offset и уведомлением в Telegram:** ``make nhl-morning-test-notify``
-(скрипт ``scripts/run_nhl_refresh_notify.py``; в ``.env`` — ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS``; API должен отвечать на ``BOT_API_BASE_URL`` или ``http://127.0.0.1:8000``).
+запускает ``scripts/run_nhl_refresh_notify.py``: после refresh и validate по умолчанию вызывается
+``python -m sports_forecast.orchestration.post_refresh_digest`` для того же digest, что и задача Airflow
+``post_refresh_digest`` (секреты ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS``, БД как у CLI). Флаг
+``--legacy-api-summary`` оставлен для старого тела сообщения через HTTP ``/predict/upcoming/nhl``.
+Канонический production-путь по-прежнему — DAG ``nhl_morning_refresh``, а не этот скрипт.
 
 .. note::
 
@@ -374,7 +378,7 @@ Smoke-проверки API
    * - ``make nhl-morning-refresh``
      - Выполнить полный утренний ``cron_refresh`` для ``nhl`` / ``winner_withOT`` + ``run_validation`` (без Telegram).
    * - ``make nhl-morning-test-notify``
-     - Пауза до ближайшей минуты МСК + offset, затем тот же refresh + validate и сводка ``/predict/upcoming/nhl`` в Telegram.
+     - Пауза до ближайшей минуты МСК + offset, затем refresh + validate и digest (модуль ``post_refresh_digest``) в Telegram; без ``--legacy-api-summary`` не через HTTP.
 
 Дополнительные замечания
 ~~~~~~~~~~~~~~~~~~~~~~~~

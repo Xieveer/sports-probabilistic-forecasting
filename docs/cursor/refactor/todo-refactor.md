@@ -47,7 +47,7 @@
 | R36    | 🟡 Medium   | Low       | ✅     | 36-й ✅ (experiment matrix: CLI-команды для всех турниров × 2 схемы; `done_task/R36.md`) |
 | R37    | 🔴 High     | High      | ✅     | NHL operational: локальный стек, 48h, Pinnacle+edge, 12:00 MSK → Telegram (`done_task/R37.*.md`) |
 | R38    | 🔴 High     | Medium    | ✅     | NHL: единый slug `nhl` (`done_task/R38.md`) |
-| R39    | 🔴 High     | High      | 🟡     | после R38 (prod-like e2e: Airflow → БД → live Pinnacle → один TG digest); подзадачи R39.1 ✅, R39.2 ✅, R39.3 ✅, R39.4 ✅ (`done_task/R39.4.md`), R39.5 ✅ (`done_task/R39.5.md`), R39.6 ✅ (`done_task/R39.6.md`), R39.7 ✅ (`done_task/R39.7.md`) |
+| R39    | 🔴 High     | High      | ✅     | prod-like e2e: Airflow → БД → live Pinnacle → один TG digest (`done_task/R39.md`; R39.1–R39.8 ✅) |
 
 ---
 
@@ -181,6 +181,15 @@
   - [x] **R38.4** — DAG, Makefile, `run_nhl_refresh_notify.py`, `nhl_local_operations.rst`
   - [x] **R38.5** — бот, live odds (совместимость БД), Optuna docstring
   - [x] **R38.6** — тесты, HOW_TO, `reviewer-tech-debt`
+- [x] **R39** — Prod-like e2e: digest после validate, CLI `post_refresh_digest`, консолидация `run_nhl_refresh_notify` ✅ 2026-05-14; см. `done_task/R39.md`
+  - [x] R39.1 — Операционный контракт e2e (`done_task/R39.1.md`)
+  - [x] R39.2 — Общий модуль pred vs live Pinnacle (`done_task/R39.2.md`)
+  - [x] R39.3 — Контракт текста Telegram digest (`done_task/R39.3.md`)
+  - [x] R39.4 — CLI `post_refresh_digest` (`done_task/R39.4.md`)
+  - [x] R39.5 — Финальный task в `dag_nhl_morning_refresh` (`done_task/R39.5.md`)
+  - [x] R39.6 — Локальный compose / parity (`done_task/R39.6.md`)
+  - [x] R39.7 — Идемпотентность retries + observability (`done_task/R39.7.md`)
+  - [x] R39.8 — `run_nhl_refresh_notify.py` → `post_refresh_digest` по умолчанию (`done_task/R39.8.md`)
 - [x] **R27** — NHL Feature Engineering v2: goals/stats EWM, streaks, lineup continuity/seniority ✅ 2026-05-04; см. `done_task/R27.md`
   - [x] R27.1 — Derived metric columns в `long_format.py` (goals_full_diff/total, sog/bs/hits/pim2/fow diff)
   - [x] R27.6 — Spans [5,25,100] → [5,15] в `standard.yaml`
@@ -201,16 +210,6 @@
   - [x] R23.8 — Scheduled data refresh: `cron_refresh.py` + shell wrapper + unit tests
 
 ### В работе / Backlog 🟡
-
-- [ ] **R39** — Prod-like e2e: Airflow → данные/odds → фичи → promoted model → БД → сравнение с live Pinnacle → один Telegram digest; см. `backlog/R39.md`
-  - [x] R39.1 — Операционный контракт e2e: runbook + Airflow Variables / env (`ODDS_API_KEY`, `BOT_*`, флаги digest); см. `done_task/R39.1.md`
-  - [x] R39.2 — Общий модуль pred vs live Pinnacle (reuse Odds API + edge); паритет с `live_odds_enrichment`; см. `done_task/R39.2.md`
-  - [x] R39.3 — Контракт текста одного Telegram-сообщения (лимит, graceful при нет ключа/API); см. `done_task/R39.3.md`
-  - [x] R39.4 — CLI `post_refresh_digest` (`--dry-run`, БД → digest → Telegram HTTP); см. `done_task/R39.4.md`
-  - [x] R39.5 — Финальный task в `dag_nhl_morning_refresh` (pool/flag, без гонок с flock refresh); см. `done_task/R39.5.md`
-  - [x] R39.6 — Локальный compose / parity с prod для worker + секретов (`done_task/R39.6.md`)
-  - [x] R39.7 — Идемпотентность retries + observability (логи; опц. dedup маркер; `SF_TELEGRAM_DIGEST_ENABLE=off`; см. `done_task/R39.7.md`)
-  - [ ] R39.8 — `run_nhl_refresh_notify.py`: wrapper/deprecated → один канонический путь
 
 - [ ] **R33** — Согласованность `market` и `market_spec`: валидация семейства, тесты, документация; см. `backlog/R33.md`
   - [ ] R33.1 — `validate_experiment_config`: `market.family` == `market_spec.market_family` при наличии поля

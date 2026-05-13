@@ -1,19 +1,33 @@
 #!/usr/bin/env python3
-"""Тестовый прогон: полный NHL refresh (как утренний DAG) → validate → сводка в Telegram.
+"""Legacy dev-smoke: пауза по МСК → NHL refresh (как утренний DAG) → validate → digest.
 
-По умолчанию ждёт до **следующей целой минуты по Europe/Moscow** + ``--offset-seconds`` (чтобы
-имитировать «запуск на метке времени»), затем выполняет тот же контур, что ``cron_refresh``
-без ``--dry-run`` для ``nhl`` / ``winner_withOT`` / ``advanced``, затем
-``python -m sports_forecast.validation.run_validation`` (как второй task в DAG).
+**Канонический prod/ops путь:** DAG Airflow ``nhl_morning_refresh``, задача ``post_refresh_digest``
+(после ``validate``), плюс ручной CLI ``python -m sports_forecast.orchestration.post_refresh_digest``
+(R39.4). Этот скрипт **не** единственный способ получить Telegram digest: он остаётся
+legacy-смоуком для локальной проверки тайминга (MSK), контура ``cron_refresh`` + ``validate``
+и вызова того же digest-модуля, что и в проде.
+
+По умолчанию ждёт до **следующей целой минуты по Europe/Moscow** + ``--offset-seconds``, затем
+выполняет тот же контур, что ``cron_refresh`` без ``--dry-run`` для ``nhl`` / ``winner_withOT``
+/ ``advanced``, затем ``python -m sports_forecast.validation.run_validation`` (как во втором task
+DAG). Сводка в Telegram — через **``post_refresh_digest``** (как DAG), а не через HTTP
+``/predict/upcoming`` (кроме флага ``--legacy-api-summary``).
 
 Секреты: ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS`` (первый id — чат для лички), опционально
-``BOT_API_BASE_URL`` или ``--api-base`` (по умолчанию ``http://127.0.0.1:8000``).
+``BOT_API_BASE_URL`` или ``--api-base`` (для ``--legacy-api-summary`` только; по умолчанию
+``http://127.0.0.1:8000``).
 
 Пример::
 
     uv run python scripts/run_nhl_refresh_notify.py
     uv run python scripts/run_nhl_refresh_notify.py --delay-seconds 30 --skip-validate
-    uv run python scripts/run_nhl_refresh_notify.py --skip-pipeline
+    uv run python scripts/run_nhl_refresh_notify.py --skip-pipeline --skip-telegram
+
+**Коды выхода (ветка по умолчанию, без ``--legacy-api-summary``):** при ``--skip-telegram``
+используется код процесса digest с ``--dry-run``, но если ``cron_refresh`` упал — всегда
+``1``. Если запрошена отправка в Telegram и пайплайн/validate в порядке — код **только** из
+digest без ``--dry-run``. Если digest не отправляли из-за упавшего refresh/validate — ``1``,
+при этом для отладки печатается digest с ``--dry-run`` в stdout.
 """
 
 from __future__ import annotations
@@ -101,6 +115,41 @@ def _fetch_upcoming_summary(api_base: str) -> str:
     return "\n".join(lines)
 
 
+def _digest_argv(*, project_root: Path, dry_run: bool) -> list[str]:
+    """Полная argv для ``subprocess.run``: interpreter + ``-m post_refresh_digest`` + флаги."""
+    cmd = [
+        sys.executable,
+        "-m",
+        "sports_forecast.orchestration.post_refresh_digest",
+        "--project-root",
+        str(project_root),
+        "--tournament",
+        "nhl",
+        "--market",
+        "winner_withOT",
+        "--market-spec",
+        "winner_withOT",
+    ]
+    if dry_run:
+        cmd.append("--dry-run")
+    return cmd
+
+
+def _run_post_refresh_digest(
+    *, project_root: Path, dry_run: bool
+) -> subprocess.CompletedProcess[str]:
+    """Запускает digest CLI; stdout/stderr захватываются для печати/логов."""
+    cmd = _digest_argv(project_root=project_root, dry_run=dry_run)
+    logger.info("Запуск post_refresh_digest: %s %s", cmd[0], " ".join(cmd[1:]))
+    return subprocess.run(
+        cmd,
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 def _run_refresh(project_dir: Path) -> None:
     cmd = [
         sys.executable,
@@ -127,6 +176,76 @@ def _run_validate(project_dir: Path) -> None:
     subprocess.run(cmd, cwd=project_dir, check=True)
 
 
+def _val_line(
+    *,
+    skip_validate: bool,
+    skip_pipeline: bool,
+    validate_ok: bool | None,
+    validate_err: str,
+) -> str:
+    if skip_validate:
+        return "validate: skipped"
+    if skip_pipeline:
+        return "validate: skipped (no pipeline)"
+    if validate_ok is True:
+        return "validate: OK"
+    if validate_ok is False:
+        return "validate: FAIL " + validate_err
+    return "validate: skipped (refresh failed)"
+
+
+def _run_legacy_api_telegram_flow(
+    *,
+    args: argparse.Namespace,
+    pipeline_ok: bool,
+    pipeline_err: str,
+    validate_ok: bool | None,
+    validate_err: str,
+) -> int:
+    """Прежнее поведение: тело сообщения из HTTP ``/predict/upcoming/nhl`` + Telegram."""
+    api_base = (
+        args.api_base or os.getenv("BOT_API_BASE_URL") or ""
+    ).strip() or "http://127.0.0.1:8000"
+    summary = _fetch_upcoming_summary(api_base)
+
+    val_line = _val_line(
+        skip_validate=bool(args.skip_validate),
+        skip_pipeline=bool(args.skip_pipeline),
+        validate_ok=validate_ok,
+        validate_err=validate_err,
+    )
+    header = (
+        "NHL тест-пайплайн\n"
+        f"refresh: {'OK' if pipeline_ok else 'FAIL ' + pipeline_err}\n"
+        f"{val_line}\n"
+    )
+    body = header + "\n" + summary
+
+    if args.skip_telegram:
+        print(body)
+        return 0 if pipeline_ok else 1
+
+    token = (os.getenv("BOT_TOKEN") or "").strip()
+    raw_ids = (os.getenv("BOT_ALLOWED_USER_IDS") or "").strip()
+    chat = raw_ids.split(",")[0].strip() if raw_ids else ""
+    if not token or not chat:
+        logger.error("Нет BOT_TOKEN или BOT_ALLOWED_USER_IDS — печатаю сводку в stdout")
+        print(body)
+        return 1 if not pipeline_ok else 0
+
+    try:
+        resp = _telegram_send(token=token, chat_id=chat, text=body)
+        ok = bool(resp.get("ok"))
+        logger.info("Telegram sendMessage ok=%s", ok)
+    except urllib.error.HTTPError:
+        logger.exception("Telegram HTTP error")
+        print(body)
+        return 1
+
+    overall_ok = pipeline_ok and (validate_ok is not False)
+    return 0 if overall_ok else 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -144,7 +263,7 @@ def main() -> int:
     parser.add_argument(
         "--api-base",
         default="",
-        help="Базовый URL API (иначе BOT_API_BASE_URL или http://127.0.0.1:8000).",
+        help="Базовый URL API для --legacy-api-summary (иначе BOT_API_BASE_URL или http://127.0.0.1:8000).",
     )
     parser.add_argument(
         "--skip-validate",
@@ -154,12 +273,21 @@ def main() -> int:
     parser.add_argument(
         "--skip-pipeline",
         action="store_true",
-        help="Пропустить cron_refresh (только сводка API + Telegram).",
+        help="Пропустить cron_refresh (digest / legacy-сводка без refresh).",
     )
     parser.add_argument(
         "--skip-telegram",
         action="store_true",
-        help="Не отправлять сообщение в Telegram.",
+        help="Не отправлять сообщение в Telegram (digest с --dry-run).",
+    )
+    parser.add_argument(
+        "--legacy-api-summary",
+        action="store_true",
+        help=(
+            "[deprecated] Собрать тело сообщения через GET /predict/upcoming/nhl (httpx) "
+            "вместо post_refresh_digest. Сохранено для отладки старого пути; по умолчанию "
+            "используйте digest CLI (R39.8)."
+        ),
     )
     args = parser.parse_args()
     logging.basicConfig(
@@ -202,52 +330,54 @@ def main() -> int:
                     validate_ok = False
                     validate_err = f"{type(exc).__name__} returncode={exc.returncode}"
 
-    api_base = (
-        args.api_base or os.getenv("BOT_API_BASE_URL") or ""
-    ).strip() or "http://127.0.0.1:8000"
-    summary = _fetch_upcoming_summary(api_base)
+    if args.legacy_api_summary:
+        return _run_legacy_api_telegram_flow(
+            args=args,
+            pipeline_ok=pipeline_ok,
+            pipeline_err=pipeline_err,
+            validate_ok=validate_ok,
+            validate_err=validate_err,
+        )
 
-    if args.skip_validate:
-        val_line = "validate: skipped"
-    elif args.skip_pipeline:
-        val_line = "validate: skipped (no pipeline)"
-    elif validate_ok is True:
-        val_line = "validate: OK"
-    elif validate_ok is False:
-        val_line = "validate: FAIL " + validate_err
-    else:
-        val_line = "validate: skipped (refresh failed)"
-
-    header = (
+    val_line = _val_line(
+        skip_validate=bool(args.skip_validate),
+        skip_pipeline=bool(args.skip_pipeline),
+        validate_ok=validate_ok,
+        validate_err=validate_err,
+    )
+    header_text = (
         "NHL тест-пайплайн\n"
         f"refresh: {'OK' if pipeline_ok else 'FAIL ' + pipeline_err}\n"
         f"{val_line}\n"
     )
-    body = header + "\n" + summary
 
     if args.skip_telegram:
-        print(body)
-        return 0 if pipeline_ok else 1
+        proc = _run_post_refresh_digest(project_root=PROJECT_ROOT, dry_run=True)
+        if proc.stderr:
+            logger.info("post_refresh_digest stderr: %s", proc.stderr.strip())
+        print(header_text, end="")
+        sys.stdout.write(proc.stdout)
+        digest_rc = int(proc.returncode)
+        return digest_rc if pipeline_ok else 1
 
-    token = (os.getenv("BOT_TOKEN") or "").strip()
-    raw_ids = (os.getenv("BOT_ALLOWED_USER_IDS") or "").strip()
-    chat = raw_ids.split(",")[0].strip() if raw_ids else ""
-    if not token or not chat:
-        logger.error("Нет BOT_TOKEN или BOT_ALLOWED_USER_IDS — печатаю сводку в stdout")
-        print(body)
-        return 1 if not pipeline_ok else 0
-
-    try:
-        resp = _telegram_send(token=token, chat_id=chat, text=body)
-        ok = bool(resp.get("ok"))
-        logger.info("Telegram sendMessage ok=%s", ok)
-    except urllib.error.HTTPError:
-        logger.exception("Telegram HTTP error")
-        print(body)
+    safe_to_send_digest = pipeline_ok and (validate_ok is not False)
+    if not safe_to_send_digest:
+        logger.error(
+            "post_refresh_digest (Telegram) пропущен: refresh/validate не успешны — см. dry-run ниже"
+        )
+        print(header_text, end="")
+        proc = _run_post_refresh_digest(project_root=PROJECT_ROOT, dry_run=True)
+        if proc.stderr:
+            logger.info("post_refresh_digest stderr: %s", proc.stderr.strip())
+        sys.stdout.write(proc.stdout)
         return 1
 
-    overall_ok = pipeline_ok and (validate_ok is not False)
-    return 0 if overall_ok else 1
+    proc = _run_post_refresh_digest(project_root=PROJECT_ROOT, dry_run=False)
+    if proc.stdout:
+        logger.info("post_refresh_digest stdout: %s", proc.stdout.strip()[:2000])
+    if proc.stderr:
+        logger.info("post_refresh_digest stderr: %s", proc.stderr.strip())
+    return int(proc.returncode)
 
 
 if __name__ == "__main__":
