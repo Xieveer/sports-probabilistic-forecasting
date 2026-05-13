@@ -46,6 +46,7 @@
 | R35    | 🔴 High     | Medium    | ✅     | 35-й ✅ (block bootstrap CI на bet trace; `done_task/R35.md`) |
 | R36    | 🟡 Medium   | Low       | ✅     | 36-й ✅ (experiment matrix: CLI-команды для всех турниров × 2 схемы; `done_task/R36.md`) |
 | R37    | 🔴 High     | High      | ✅     | NHL operational: локальный стек, 48h, Pinnacle+edge, 12:00 MSK → Telegram (`done_task/R37.*.md`) |
+| R38    | 🔴 High     | Medium    | 🟡     | NHL: единый slug `nhl` — данные, пайплайн, модели, TG (`backlog/R38.md`) |
 
 ---
 
@@ -192,6 +193,14 @@
   - [x] R23.8 — Scheduled data refresh: `cron_refresh.py` + shell wrapper + unit tests
 
 ### В работе / Backlog 🟡
+
+- [ ] **R38** — NHL: единый slug турнира `nhl` (данные, cron/Airflow, материализация, TG); убрать раздвоение с `nhl_train`; см. `backlog/R38.md`
+  - [ ] **R38.1** — ADR / чеклист миграции: `docs/cursor/context/nhl_single_tournament_slug.md`
+  - [ ] **R38.2** — Слить `nhl_train` → `nhl` в `conf/tournament/`; deprecation или удаление `nhl_train.yaml`
+  - [ ] **R38.3** — Один `conf/source/nhl.yaml`; удалить `conf/source/nhl_train.yaml`
+  - [ ] **R38.4** — DAG, Makefile, `run_nhl_refresh_notify.py`, runbook — default `nhl`
+  - [ ] **R38.5** — Код (`live_odds_enrichment`, бот, при необходимости БД) + путь `models/nhl/`
+  - [ ] **R38.6** — Тесты, HOW_TO_*, `reviewer-tech-debt`
 
 - [ ] **R33** — Согласованность `market` и `market_spec`: валидация семейства, тесты, документация; см. `backlog/R33.md`
   - [ ] R33.1 — `validate_experiment_config`: `market.family` == `market_spec.market_family` при наличии поля
