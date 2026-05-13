@@ -35,6 +35,11 @@ x-airflow-common: &airflow-common
     # БД предсказаний (PostgreSQL)
     DATABASE_URL: "postgresql://sf_user:${POSTGRES_PASSWORD:-sf_dev_password}@db:5432/sports_forecast"
     MLFLOW_TRACKING_URI: "http://mlflow:5000"
+    # post_refresh_digest: The Odds API (обогащение live Pinnacle), как в prod.
+    ODDS_API_KEY: ${ODDS_API_KEY:-}
+    # post_refresh_digest: Telegram (sendMessage), те же секреты, что у telegram-bot.
+    BOT_TOKEN: ${BOT_TOKEN:-}
+    BOT_ALLOWED_USER_IDS: ${BOT_ALLOWED_USER_IDS:-}
   volumes:
     - ../airflow/dags:/opt/airflow/dags:ro
     - ../data:/app/data

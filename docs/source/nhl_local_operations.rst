@@ -94,6 +94,25 @@ Airflow
 Сервисы Airflow: ``airflow-init`` (профиль ``init``, одноразовый запуск), ``airflow-webserver``
 (UI на порту ``8080``), ``airflow-scheduler``.
 
+Локальный триггер ``nhl_morning_refresh`` и digest (R39.6)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+После R39.6 переменные из корневого ``.env`` (перечисленные ниже) подставляются в контейнеры
+Airflow через ``airflow/docker-compose.airflow.yml`` — тот же контракт, что нужен шагу
+``post_refresh_digest`` (БД уже задаётся ``DATABASE_URL`` в якоре ``airflow-env``).
+
+#. Из корня репозитория поднимите БД: ``docker compose up -d db`` (или полный стек ``make docker-up``).
+#. Один раз: ``make airflow-init``.
+#. Запуск Airflow: ``make airflow-up`` (webserver + scheduler поверх общего compose).
+#. В корневом ``.env`` задайте ``POSTGRES_PASSWORD``; для digest — ``ODDS_API_KEY``,
+   ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS``. Runtime-skip digest — ``SF_TELEGRAM_DIGEST_ENABLE``
+   как Airflow Variable или через UI; как задавать Variables vs ``AIRFLOW_VAR_*`` в compose —
+   см. подраздел «Airflow Variables» ниже, без дублирования здесь.
+#. В Airflow UI: снимите паузу с DAG ``nhl_morning_refresh``; при необходимости создайте pool
+   ``sf_refresh_pool`` (или имя из Variable ``SF_REFRESH_POOL``); **Trigger DAG** и дождитесь
+   успешного ``post_refresh_digest``.
+#. Логи задачи: Airflow UI → DAG Run → Task Instance → **Logs**.
+
 Утренний NHL (12:00 MSK / 09:00 UTC, R37.6)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -294,9 +313,10 @@ Airflow Variables: ``nhl_morning_refresh`` и ``data_refresh``
    * - ``MLFLOW_TRACKING_URI``
      - Worker / Airflow-контур (в compose — ``http://mlflow:5000``).
 
-В шаблоне ``airflow/docker-compose.airflow.yml`` сейчас **не** пробрасываются ``ODDS_API_KEY`` и
-``BOT_*`` из хостового ``.env``. После внедрения digest (R39.5/R39.6) для полного parity добавьте
-их в ``environment`` блока ``x-airflow-common`` (или подключите ``env_file``), не логируя значения.
+В ``airflow/docker-compose.airflow.yml`` (R39.6) в ``environment`` якоря ``x-airflow-common``
+явно пробрасываются ``ODDS_API_KEY``, ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS`` из окружения хоста
+(пустые по умолчанию — ``docker compose config`` не требует обязательного бота). Значения не
+логируйте; секреты — только в ``.env`` / secret store.
 
 Контракт digest в Airflow (R39.4–R39.5)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
