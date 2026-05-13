@@ -29,6 +29,17 @@ sport_keys:
 bookmakers:
   primary: pinnacle
 
+# ---------------------------------------------------------------------------
+# R37.4 — live Pinnacle для inference / API (один GET на батч, маппинг → match_id)
+# ---------------------------------------------------------------------------
+live_inference:
+  # Лимит реальных HTTP GET за жизненный цикл клиента (как max_real_http_requests в OddsApiClient).
+  max_real_http_requests: 2
+  regions: us
+  commence_tolerance_minutes: 360
+  # Явное сопоставление id события The Odds API → match_id витрины (NHL id из processed).
+  event_id_to_match_id: {}
+
 # Профили букмекеров (R21): семантика имён для OddsStore V3 / enrichment.
 # Контракт: winner / total = regulation; winner_withOT / total_withOT = полный матч (вкл. ОТ/буллиты).
 bookmaker_profiles:
