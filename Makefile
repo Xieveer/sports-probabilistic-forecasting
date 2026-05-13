@@ -10,7 +10,7 @@ DOCS_BUILD := docs/build
 
 .PHONY: help init install lint format fix test test-unit test-cov test-watch test-file pre-commit train train-sweep train-sweep-nhl train-sweep-nhl-ot-winner train-sweep-nhl-ot-total promote clean dvc-repro
 .PHONY: docs docs-serve docs-clean docs-open docs-coverage docs-linkcheck tree
-.PHONY: api api-dev bot-dev bot-up materialize docker-up docker-down docker-build docker-logs db-init
+.PHONY: api api-dev bot-dev bot-up materialize nhl-morning-refresh-dry-run docker-up docker-down docker-build docker-logs db-init
 .PHONY: airflow-init airflow-up airflow-down airflow-logs
 .PHONY: monitoring-up monitoring-down
 
@@ -58,6 +58,7 @@ help:
 	@echo "  make bot-dev       - Telegram-бот (нужны BOT_TOKEN, BOT_ALLOWED_USER_IDS)"
 	@echo "  make bot-up        - бот в docker compose (с сервисом api)"
 	@echo "  make materialize   - материализовать предсказания в DB (NHL: TOURNAMENT=nhl_train после promote)"
+	@echo "  make nhl-morning-refresh-dry-run - вывести shell-команду утреннего NHL (как DAG nhl_morning_refresh)"
 	@echo "  make db-init       - инициализировать таблицы DB (SQLite)"
 	@echo ""
 	@echo "Docker:"
@@ -370,6 +371,15 @@ materialize:
 		market_spec=$(or $(SPEC),winner) \
 		algorithm=$(or $(ALG),catboost) \
 		features=$(or $(FEAT),basic)
+
+# Сухой просмотр команды ежедневного утреннего NHL (12:00 MSK ≈ DAG Airflow 09:00 UTC; см. docs/source/nhl_local_operations.rst)
+nhl-morning-refresh-dry-run:
+	uv run python -m sports_forecast.orchestration.cron_refresh \
+		--tournaments nhl_train \
+		--features advanced \
+		--market winner_withOT \
+		--market-spec winner_withOT \
+		--dry-run
 
 # ---------- Docker ----------
 

@@ -4,6 +4,10 @@
 Блокировка и аргументы по умолчанию совместимы с DAG Airflow
 ``airflow/dags/dag_data_refresh.py``.
 
+Утренний NHL (12:00 MSK): см. ``airflow/dags/dag_nhl_morning_refresh.py`` и
+``docs/source/nhl_local_operations.rst`` (R37.6); ручной эквивалент — ``make nhl-morning-refresh-dry-run``
+(без ``--dry-run`` для выполнения).
+
 Пример (NHL, advanced фичи)::
 
     uv run python -m sports_forecast.orchestration.cron_refresh --tournaments nhl

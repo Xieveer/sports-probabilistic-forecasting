@@ -94,6 +94,29 @@ Airflow
 Сервисы Airflow: ``airflow-init`` (профиль ``init``, одноразовый запуск), ``airflow-webserver``
 (UI на порту ``8080``), ``airflow-scheduler``.
 
+Утренний NHL (12:00 MSK / 09:00 UTC, R37.6)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Airflow:** DAG ``nhl_morning_refresh`` (``airflow/dags/dag_nhl_morning_refresh.py``) — расписание
+``0 9 * * *`` в часовом поясе планировщика Airflow по умолчанию (**UTC**), то есть **09:00 UTC**
+= **12:00 по Москве** (MSK, UTC+3). Пайплайн: ``source`` (при ``odds.enabled`` в ``conf/source/nhl.yaml``
+— инкрементальный odds post-step внутри ``source_refresh``) → ingest → clean → features →
+materialize для ``winner_withOT`` / ``nhl_train`` по умолчанию; затем ``validate``. Пул и ``flock``
+совпадают с ``data_refresh`` (переменные ``SF_REFRESH_POOL``, ``SF_REFRESH_LOCK_FILE``, …).
+
+Переопределения через Airflow Variables: ``SF_NHL_MORNING_TOURNAMENT``, ``SF_NHL_MORNING_FEATURES``,
+``SF_NHL_MORNING_MARKET``, ``SF_NHL_MORNING_SPEC``, ``SF_NHL_MORNING_MAX_ACTIVE_RUNS`` (и др., см. DAG).
+
+**Хостовый cron (без Airflow)** — тот же смысл, что у DAG, в локальном часовом поясе Москвы::
+
+    CRON_TZ=Europe/Moscow
+    0 12 * * * cd /path/to/repo && SF_PROJECT_DIR=/path/to/repo uv run python -m sports_forecast.orchestration.cron_refresh \
+      --tournaments nhl_train --features advanced --market winner_withOT --market-spec winner_withOT \
+      >> /var/log/sf_nhl_morning.log 2>&1
+
+**Ручной запуск (эквивалент команды DAG / cron, только печать shell):** ``make nhl-morning-refresh-dry-run``.
+Для реального выполнения уберите ``--dry-run`` из выведенной команды или вызовите ``cron_refresh`` с теми же аргументами.
+
 Smoke-проверки API
 ------------------
 
@@ -130,6 +153,8 @@ Smoke-проверки API
      - Одноразовая инициализация БД Airflow и создание admin-пользователя (Compose-профиль ``init``).
    * - ``make airflow-up``
      - Фоновый запуск Airflow webserver и scheduler поверх общего ``docker-compose.yml``.
+   * - ``make nhl-morning-refresh-dry-run``
+     - Печать shell-команды утреннего NHL-refresh (как DAG ``nhl_morning_refresh``), без выполнения.
 
 Дополнительные замечания
 ~~~~~~~~~~~~~~~~~~~~~~~~

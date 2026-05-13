@@ -191,7 +191,7 @@
   - [x] **R37.3** — Конфиг `edge_threshold` + функция bet/no-bet + тесты (`done_task/R37.3.md`)
   - [x] **R37.4** — Live Pinnacle NHL: `live_nhl_pinnacle` + `live_inference` в YAML (`done_task/R37.4.md`)
   - [x] **R37.5** — Публичный payload: схемы + live Pinnacle (батч GET), edge/bet_decision_home, документация odds (`done_task/R37.5.md`)
-  - [ ] **R37.6** — Расписание 12:00 MSK: DAG или `CRON_TZ` + цепочка refresh/materialize
+  - [x] **R37.6** — Расписание 12:00 MSK: DAG `nhl_morning_refresh` + cron-шаблон + `make nhl-morning-refresh-dry-run` (`done_task/R37.6.md`)
   - [ ] **R37.7** — Telegram: потребление обогащённого payload
 
 - [ ] **R33** — Согласованность `market` и `market_spec`: валидация семейства, тесты, документация; см. `backlog/R33.md`
