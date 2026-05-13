@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -44,6 +44,18 @@ def _sample_prediction() -> Prediction:
 
 def test_digest_disabled_skips_without_touching_engine(monkeypatch) -> None:
     monkeypatch.setenv("SF_TELEGRAM_DIGEST_ENABLE", "false")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    def _should_not_run() -> None:
+        raise AssertionError("get_engine must not be called when digest is disabled")
+
+    monkeypatch.setattr(prd, "get_engine", _should_not_run)
+
+    assert prd.main([]) == 0
+
+
+def test_digest_disabled_off_skips_without_touching_engine(monkeypatch) -> None:
+    monkeypatch.setenv("SF_TELEGRAM_DIGEST_ENABLE", "OFF")
     monkeypatch.delenv("DATABASE_URL", raising=False)
 
     def _should_not_run() -> None:
@@ -155,3 +167,56 @@ def test_disabled_allows_dry_run_with_db_mock(monkeypatch, deploy_tree, capsys) 
 
     assert prd.main(["--dry-run", "--project-root", str(deploy_tree)]) == 0
     assert "Home" in capsys.readouterr().out
+
+
+def test_dedup_marker_skips_telegram(monkeypatch, deploy_tree) -> None:
+    """При SF_TELEGRAM_DIGEST_DEDUP и маркере Airflow задача возвращает 0 без sendMessage."""
+    monkeypatch.delenv("SF_TELEGRAM_DIGEST_ENABLE", raising=False)
+    monkeypatch.setenv("SF_TELEGRAM_DIGEST_DEDUP", "1")
+    monkeypatch.setenv("AIRFLOW_CTX_DAG_RUN_ID", "manual__dedup-run")
+    monkeypatch.setenv("AIRFLOW_CTX_TASK_ID", "post_refresh_digest")
+    monkeypatch.setenv("BOT_TOKEN", "test-token-placeholder")
+    monkeypatch.setenv("BOT_ALLOWED_USER_IDS", "999")
+    monkeypatch.delenv("ODDS_API_KEY", raising=False)
+
+    marker = (
+        deploy_tree
+        / ".cache"
+        / "digest_telegram_sent"
+        / "manual__dedup-run_post_refresh_digest.lock"
+    )
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("", encoding="utf-8")
+
+    pred = _sample_prediction()
+
+    class _FakeRepo:
+        def __init__(self, _session: object) -> None:
+            pass
+
+        def get_upcoming_predictions(self, **kwargs: object) -> list[Prediction]:
+            return [pred]
+
+    @contextmanager
+    def _fake_session(engine: object | None = None):
+        yield MagicMock()
+
+    monkeypatch.setattr(prd, "get_engine", MagicMock())
+    monkeypatch.setattr(prd, "init_db", lambda *a, **k: None)
+    monkeypatch.setattr(prd, "get_session", _fake_session)
+    monkeypatch.setattr(prd, "PredictionRepository", _FakeRepo)
+    monkeypatch.setattr(
+        prd,
+        "batch_live_response_extras",
+        lambda p, **k: {
+            1: {
+                "edge_home": 0.02,
+                "bet_decision_home": "neutral",
+                "live_odds_status": "ok",
+            }
+        },
+    )
+
+    with patch.object(prd, "telegram_send_message") as mock_send:
+        assert prd.main(["--project-root", str(deploy_tree), "--no-live-pinnacle"]) == 0
+        mock_send.assert_not_called()

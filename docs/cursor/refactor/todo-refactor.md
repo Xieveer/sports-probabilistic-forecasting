@@ -47,7 +47,7 @@
 | R36    | 🟡 Medium   | Low       | ✅     | 36-й ✅ (experiment matrix: CLI-команды для всех турниров × 2 схемы; `done_task/R36.md`) |
 | R37    | 🔴 High     | High      | ✅     | NHL operational: локальный стек, 48h, Pinnacle+edge, 12:00 MSK → Telegram (`done_task/R37.*.md`) |
 | R38    | 🔴 High     | Medium    | ✅     | NHL: единый slug `nhl` (`done_task/R38.md`) |
-| R39    | 🔴 High     | High      | 🟡     | после R38 (prod-like e2e: Airflow → БД → live Pinnacle → один TG digest); подзадачи R39.1 ✅, R39.2 ✅, R39.3 ✅, R39.4 ✅ (`done_task/R39.4.md`), R39.5 ✅ (`done_task/R39.5.md`), R39.6 ✅ (`done_task/R39.6.md`) |
+| R39    | 🔴 High     | High      | 🟡     | после R38 (prod-like e2e: Airflow → БД → live Pinnacle → один TG digest); подзадачи R39.1 ✅, R39.2 ✅, R39.3 ✅, R39.4 ✅ (`done_task/R39.4.md`), R39.5 ✅ (`done_task/R39.5.md`), R39.6 ✅ (`done_task/R39.6.md`), R39.7 ✅ (`done_task/R39.7.md`) |
 
 ---
 
@@ -209,7 +209,7 @@
   - [x] R39.4 — CLI `post_refresh_digest` (`--dry-run`, БД → digest → Telegram HTTP); см. `done_task/R39.4.md`
   - [x] R39.5 — Финальный task в `dag_nhl_morning_refresh` (pool/flag, без гонок с flock refresh); см. `done_task/R39.5.md`
   - [x] R39.6 — Локальный compose / parity с prod для worker + секретов (`done_task/R39.6.md`)
-  - [ ] R39.7 — Идемпотентность retries + observability (логи; опц. dedup)
+  - [x] R39.7 — Идемпотентность retries + observability (логи; опц. dedup маркер; `SF_TELEGRAM_DIGEST_ENABLE=off`; см. `done_task/R39.7.md`)
   - [ ] R39.8 — `run_nhl_refresh_notify.py`: wrapper/deprecated → один канонический путь
 
 - [ ] **R33** — Согласованность `market` и `market_spec`: валидация семейства, тесты, документация; см. `backlog/R33.md`

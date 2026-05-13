@@ -224,10 +224,11 @@ id из списка через запятую; для live Pinnacle — ``ODDS_
    uv run python -m sports_forecast.orchestration.post_refresh_digest \
      --project-root /path/to/SportsProbabilisticForecasting
 
-Переменная ``SF_TELEGRAM_DIGEST_ENABLE`` со значениями ``0``, ``false``, ``no`` (без учёта регистра) отключает
+Переменная ``SF_TELEGRAM_DIGEST_ENABLE`` со значениями ``0``, ``false``, ``no``, ``off`` (без учёта регистра) отключает
 запуск **без** ``--dry-run`` (выход ``0``, БД не трогается). C ``--dry-run`` отключение **не** действует:
 можно отладить текст и витрину, не отправляя сообщение. Если ``deploy.yaml`` отсутствует, при **отправке**
 команда завершится с кодом ``1``; при ``--dry-run`` в теле будет предупреждение, код ``0``.
+Опционально в окружении digest-задачи: ``SF_TELEGRAM_DIGEST_DEDUP=1`` вместе с ``AIRFLOW_CTX_*`` — пропуск повторной отправки по файлу-маркеру (см. docstring :mod:`sports_forecast.orchestration.post_refresh_digest`).
 
 Airflow Variables: ``nhl_morning_refresh`` и ``data_refresh``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -6,15 +6,27 @@
 
 Переменные окружения:
 
-* ``SF_TELEGRAM_DIGEST_ENABLE`` — значения ``0``, ``false``, ``no`` (регистр не важен)
-  отключают **отправку** и любую работу с БД, если **не** передан ``--dry-run``
-  (в лог пишется INFO, код выхода ``0``). С ``--dry-run`` отключение **не**
+* ``SF_TELEGRAM_DIGEST_ENABLE`` — значения ``0``, ``false``, ``no``, ``off``
+  (регистр не важен) отключают **отправку** и любую работу с БД, если **не** передан
+  ``--dry-run`` (в лог пишется INFO, код выхода ``0``). С ``--dry-run`` отключение **не**
   применяется: выполняется чтение БД и печать текста в stdout — удобно проверять
   витрину без Telegram.
 * ``ODDS_API_KEY`` — при включённом ``--live-pinnacle`` и пустом ключе в текст
   добавляется предупреждение ``missing_api_key`` (как в HTTP-слое).
 * ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS`` — для реальной отправки (берётся первый
   id из списка через запятую).
+
+**Airflow и повторные запуски:** в DAG ``nhl_morning_refresh`` в ``default_args`` задано
+``retries=2``. Если задача digest упала **после** успешной отправки в Telegram, повторный
+запуск пришлёт **второе** сообщение, пока не включена защита ниже. Опционально:
+
+* ``SF_TELEGRAM_DIGEST_DEDUP`` — при истинных значениях ``1``, ``true``, ``yes`` (регистр
+  не важен) **и** одновременно заданных ``AIRFLOW_CTX_DAG_RUN_ID`` и
+  ``AIRFLOW_CTX_TASK_ID`` (как у Airflow в task-процессе): перед ``sendMessage`` проверяется
+  маркер ``<project_root>/.cache/digest_telegram_sent/<dag_run_id>_<task_id>.lock``; если файл
+  есть — в лог пишется пропуск дубликата, код ``0``. После успешной отправки создаётся
+  каталог и записывается маркер (одна строка UTC ISO). Значения токенов и ключей в лог **не**
+  попадают.
 
 Коды выхода: ``0`` — успех; при отключённом digest без ``--dry-run`` — тоже ``0``.
 ``1`` — ошибка БД, недоступный или битый ``deploy.yaml`` при отправке, нет секретов
@@ -28,6 +40,7 @@ import json
 import os
 import sys
 import urllib.error
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -50,12 +63,56 @@ from sports_forecast.utils.log_config import get_logger
 
 logger = get_logger(__name__)
 
+_MAX_LIVE_ODDS_STATUS_KEYS_IN_LOG = 16
+
 
 def _digest_sending_suppressed() -> bool:
     raw = os.environ.get("SF_TELEGRAM_DIGEST_ENABLE")
     if raw is None:
         return False
-    return raw.strip().lower() in ("0", "false", "no")
+    return raw.strip().lower() in ("0", "false", "no", "off")
+
+
+def _digest_dedup_env_truthy() -> bool:
+    raw = os.environ.get("SF_TELEGRAM_DIGEST_DEDUP")
+    if raw is None:
+        return False
+    return raw.strip().lower() in ("1", "true", "yes")
+
+
+def _digest_telegram_marker_path(project_root: Path) -> Path | None:
+    """Путь к маркеру «digest уже отправлен» для пары Airflow run/task, или ``None``."""
+    if not _digest_dedup_env_truthy():
+        return None
+    dag_run_id = (os.environ.get("AIRFLOW_CTX_DAG_RUN_ID") or "").strip()
+    task_id = (os.environ.get("AIRFLOW_CTX_TASK_ID") or "").strip()
+    if not dag_run_id or not task_id:
+        return None
+    name = f"{dag_run_id}_{task_id}.lock"
+    return project_root / ".cache" / "digest_telegram_sent" / name
+
+
+def _summarize_live_odds_status_counts(
+    extras_map: dict[int, dict[str, Any]],
+    *,
+    max_distinct_keys: int = _MAX_LIVE_ODDS_STATUS_KEYS_IN_LOG,
+) -> str:
+    """Компактная сводка числа предиктов по строке ``live_odds_status`` (для INFO-логов)."""
+    counts: Counter[str] = Counter()
+    for payload in extras_map.values():
+        st = payload.get("live_odds_status")
+        label = "(none)" if st is None else str(st)
+        counts[label] += 1
+    if not counts:
+        return "empty"
+    items = counts.most_common()
+    if len(items) <= max_distinct_keys:
+        return ",".join(f"{k}={v}" for k, v in items)
+    shown = items[:max_distinct_keys]
+    tail = sum(v for _, v in items[max_distinct_keys:])
+    omitted = len(items) - max_distinct_keys
+    head = ",".join(f"{k}={v}" for k, v in shown)
+    return f"{head},...(+{omitted}_more_distinct_keys,sum_remaining={tail})"
 
 
 def _format_match_datetime_utc(pred_dt: datetime | None) -> str:
@@ -215,6 +272,18 @@ def main(argv: list[str] | None = None) -> int:
         logger.exception("Ошибка при чтении БД или обогащении live odds")
         return 1
 
+    status_summary = _summarize_live_odds_status_counts(extras_map)
+    logger.info(
+        "post_refresh_digest: DB and live odds enrich done "
+        "tournament=%s market=%s market_spec=%s hours=%s pred_count=%s live_odds_status=%s",
+        args.tournament,
+        args.market,
+        args.market_spec,
+        int(args.hours),
+        len(preds),
+        status_summary,
+    )
+
     match_lines = _predictions_to_match_lines(preds, extras_map)
     odds_w = _pipeline_odds_warning(live_pinnacle=bool(args.live_pinnacle))
 
@@ -240,6 +309,23 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("Нет BOT_TOKEN или BOT_ALLOWED_USER_IDS — отправка невозможна")
         return 1
 
+    marker_path = _digest_telegram_marker_path(root)
+    logger.info(
+        "post_refresh_digest: telegram send attempt live_pinnacle=%s odds_warning=%s text_len=%s live_odds_status=%s",
+        bool(args.live_pinnacle),
+        odds_w,
+        len(text),
+        status_summary,
+    )
+    if marker_path is not None and marker_path.is_file():
+        logger.info(
+            "post_refresh_digest: skip duplicate telegram (dedup marker present) "
+            "AIRFLOW_CTX_DAG_RUN_ID=%s AIRFLOW_CTX_TASK_ID=%s",
+            os.environ.get("AIRFLOW_CTX_DAG_RUN_ID"),
+            os.environ.get("AIRFLOW_CTX_TASK_ID"),
+        )
+        return 0
+
     try:
         resp = telegram_send_message(token=token, chat_id=chat_id, text=text)
     except json.JSONDecodeError:
@@ -256,10 +342,32 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("Telegram sendMessage ok=false: %s", resp)
         return 1
 
+    if marker_path is not None:
+        try:
+            marker_path.parent.mkdir(parents=True, exist_ok=True)
+            marker_path.write_text(
+                datetime.now(timezone.utc).isoformat(timespec="seconds") + "\n",
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            logger.warning(
+                "post_refresh_digest: sent OK but dedup marker not written (%s)",
+                exc,
+            )
+
     logger.info(
-        "Digest отправлен (matches=%s, chars=%s).",
+        "Digest отправлен (matches=%s, chars=%s, tournament=%s, market=%s, market_spec=%s, "
+        "hours=%s, pred_count=%s, live_odds_status=%s, live_pinnacle=%s, odds_warning=%s).",
         len(match_lines),
         len(text),
+        args.tournament,
+        args.market,
+        args.market_spec,
+        int(args.hours),
+        len(preds),
+        status_summary,
+        bool(args.live_pinnacle),
+        odds_w,
     )
     return 0
 

@@ -101,6 +101,9 @@ MAX_ACTIVE_RUNS = int(Variable.get("SF_NHL_MORNING_MAX_ACTIVE_RUNS", default_var
 MAX_ACTIVE_TASKS = int(Variable.get("SF_NHL_MORNING_MAX_ACTIVE_TASKS", default_var="1"))
 
 # ── DAG ───────────────────────────────────────────────────────────
+# default_args содержит retries=2: при падении digest после успешного send возможен повтор —
+# см. модуль sports_forecast.orchestration.post_refresh_digest (дубликаты Telegram) и опцию
+# SF_TELEGRAM_DIGEST_DEDUP + маркер в .cache/digest_telegram_sent/.
 default_args = {
     "owner": "ml-team",
     "depends_on_past": False,
@@ -152,6 +155,8 @@ with DAG(
         pool_slots=1,
     )
 
+    # BashOperator без собственных retries наследует default_args["retries"]; при ошибке между
+    # отправкой Telegram и кодом возврата возможен второй успешный send — см. post_refresh_digest + SF_TELEGRAM_DIGEST_DEDUP.
     post_refresh_digest = BashOperator(
         task_id="post_refresh_digest",
         bash_command=_build_post_refresh_digest_bash_command(
