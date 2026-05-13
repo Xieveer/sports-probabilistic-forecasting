@@ -11,23 +11,19 @@ Live Pinnacle (The Odds API) для ответов публичного predicti
 
 from __future__ import annotations
 
-import json
 import os
-from datetime import datetime, timezone
 from typing import Any
 
 import requests
 
-from sports_forecast.betting.edge_decision import (
-    BetDecision,
-    EdgeDecisionParams,
-    compute_edge,
-    decide_bet,
+from sports_forecast.betting.live_moneyline_extras import (
+    build_live_moneyline_extras,
+    nhl_live_match_ref_from_prediction,
+    proba_home_from_prediction,
 )
 from sports_forecast.config.loaders import load_bookmaker_config
 from sports_forecast.data.providers.odds.client import QuotaBudgetError
 from sports_forecast.data.providers.odds.live_nhl_pinnacle import (
-    NHLLiveMatchRef,
     PinnacleH2HQuote,
     build_odds_client_for_live,
     fetch_nhl_pinnacle_quotes_for_refs,
@@ -57,88 +53,6 @@ def _is_nhl_moneyline(pred: Prediction) -> bool:
     return _is_nhl_tournament(pred.tournament) and _is_moneyline_market(pred.market)
 
 
-def _match_dt_utc(dt: datetime | None) -> datetime | None:
-    if dt is None:
-        return None
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
-
-
-def _pred_to_ref(pred: Prediction) -> NHLLiveMatchRef:
-    return NHLLiveMatchRef(
-        match_id=str(pred.match_id),
-        home_team=str(pred.home_player or ""),
-        away_team=str(pred.away_player or ""),
-        commence_utc=_match_dt_utc(pred.match_datetime),
-    )
-
-
-def _proba_home(pred: Prediction) -> float | None:
-    if pred.proba_home is not None:
-        try:
-            return float(pred.proba_home)
-        except (TypeError, ValueError):
-            pass
-    try:
-        d = json.loads(pred.predictions_json)
-        v = d.get("home_win")
-        if v is None:
-            return None
-        return float(v)
-    except (json.JSONDecodeError, TypeError, ValueError):
-        return None
-
-
-def _compute_extras_for_pred(
-    pred: Prediction,
-    quote: PinnacleH2HQuote | None,
-    *,
-    params: EdgeDecisionParams,
-    status: str,
-) -> dict[str, Any]:
-    """Собрать поля live odds + edge для домашней стороны (moneyline)."""
-    if quote is None:
-        return {
-            "pinnacle_home_decimal": None,
-            "pinnacle_away_decimal": None,
-            "edge_home": None,
-            "bet_decision_home": None,
-            "live_odds_status": status,
-        }
-
-    ph, pa = quote.decimal_home, quote.decimal_away
-    line_ok = ph is not None and pa is not None
-    line_st = "ok" if line_ok else "partial_quote"
-
-    p_h = _proba_home(pred)
-    edge_home: float | None = None
-    if p_h is not None and ph is not None:
-        try:
-            edge_home = float(compute_edge(p_h, float(ph)))
-        except ValueError:
-            edge_home = None
-            line_st = "partial_quote"
-
-    if p_h is None:
-        decision = BetDecision.INSUFFICIENT_DATA
-    else:
-        decision, _ = decide_bet(p_h, ph, params)
-
-    if decision is BetDecision.INSUFFICIENT_DATA and line_st == "ok":
-        line_st = "partial_quote"
-
-    final_status = status if status != "ok" else line_st
-
-    return {
-        "pinnacle_home_decimal": ph,
-        "pinnacle_away_decimal": pa,
-        "edge_home": edge_home,
-        "bet_decision_home": decision.value,
-        "live_odds_status": final_status,
-    }
-
-
 def _registry() -> TeamNameRegistry:
     return load_nhl_team_name_registry()
 
@@ -149,7 +63,7 @@ def _fetch_quotes_map(preds: list[Prediction]) -> dict[str, PinnacleH2HQuote | N
         mid = str(p.match_id)
         if mid not in by_mid:
             by_mid[mid] = p
-    refs = [_pred_to_ref(by_mid[mid]) for mid in sorted(by_mid)]
+    refs = [nhl_live_match_ref_from_prediction(by_mid[mid]) for mid in sorted(by_mid)]
     book_cfg = load_bookmaker_config("the_odds_api")
     if book_cfg is None:
         raise RuntimeError("the_odds_api bookmaker config missing")
@@ -237,16 +151,31 @@ def batch_live_response_extras(
             continue
 
         if fetch_error == "missing_api_key":
-            out[pid] = _compute_extras_for_pred(p, None, params=params, status="missing_api_key")
+            out[pid] = build_live_moneyline_extras(
+                proba_home=proba_home_from_prediction(p),
+                quote=None,
+                params=params,
+                status="missing_api_key",
+            )
             continue
         if fetch_error == "fetch_failed":
-            out[pid] = _compute_extras_for_pred(p, None, params=params, status="fetch_failed")
+            out[pid] = build_live_moneyline_extras(
+                proba_home=proba_home_from_prediction(p),
+                quote=None,
+                params=params,
+                status="fetch_failed",
+            )
             continue
 
         assert quotes_by_match is not None  # при наличии NHL ML и успешном fetch
         q = quotes_by_match.get(str(p.match_id))
         st = "ok" if q is not None else "no_quote"
-        out[pid] = _compute_extras_for_pred(p, q, params=params, status=st)
+        out[pid] = build_live_moneyline_extras(
+            proba_home=proba_home_from_prediction(p),
+            quote=q,
+            params=params,
+            status=st,
+        )
 
     return out
 

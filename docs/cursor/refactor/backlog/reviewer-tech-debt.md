@@ -631,3 +631,12 @@
   - В `airflow/docker-compose.airflow.yml` переменные `ODDS_API_KEY` и `BOT_*` из хостового `.env` по умолчанию **не** проброшены в сервисы Airflow — для полной parity оператору понадобится ручное добавление (ожидается в R39.5/R39.6).
 - **Возможные улучшения / техдолг:**
   - После появления digest: добавить `environment`/`env_file` для Airflow-сервисов (как в runbook), без логирования значений секретов.
+
+### 2026-05-13 — R39.2: модуль live moneyline extras (betting vs FastAPI)
+
+- **Задача:** `backlog/R39.md` (подзадача **R39.2**) → `done_task/R39.2.md` (эпик R39 остаётся 🟡 в `todo-refactor.md`).
+- **Ограничения и компромиссы:**
+  - `LiveMoneylinePredictionInput` задан как structural `Protocol`; статическая проверка совпадения с ORM `Prediction` отсутствует (duck typing).
+  - Паритет с enrichment проверен unit-тестами на синтетических объектах и существующими тестами `live_odds_enrichment`, без отдельного golden-снимка полного HTTP-ответа.
+- **Возможные улучшения / техдолг:**
+  - При росте числа потребителей контракта — явный type alias `PredictionLike` рядом с ORM или runtime-валидатор минимального набора полей.
