@@ -190,7 +190,7 @@
   - [x] **R37.2** — `PredictionRepository` + `/predict/upcoming/*`: фильтр 48h, NHL `winner_withOT` (`done_task/R37.2.md`)
   - [x] **R37.3** — Конфиг `edge_threshold` + функция bet/no-bet + тесты (`done_task/R37.3.md`)
   - [x] **R37.4** — Live Pinnacle NHL: `live_nhl_pinnacle` + `live_inference` в YAML (`done_task/R37.4.md`)
-  - [ ] **R37.5** — Расширение API-схемы и persistence (миграция при необходимости), политика live vs train odds
+  - [x] **R37.5** — Публичный payload: схемы + live Pinnacle (батч GET), edge/bet_decision_home, документация odds (`done_task/R37.5.md`)
   - [ ] **R37.6** — Расписание 12:00 MSK: DAG или `CRON_TZ` + цепочка refresh/materialize
   - [ ] **R37.7** — Telegram: потребление обогащённого payload
 

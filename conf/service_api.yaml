@@ -1,5 +1,6 @@
 # Параметры value-edge для inference / API (R37.3).
 # Загрузка: ``sports_forecast.service.service_api_settings.load_edge_decision_params``.
+# Используются при live Pinnacle в ответах ``/predict/*`` (R37.5, query ``live_pinnacle``).
 # Переопределение через env: ``SERVICE_API_EDGE_THRESHOLD``, ``SERVICE_API_MIN_ODDS`` (опционально).
 
 edge_threshold: 0.03

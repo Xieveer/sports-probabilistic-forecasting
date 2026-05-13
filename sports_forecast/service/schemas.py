@@ -47,6 +47,31 @@ class PredictionResponse(BaseModel):
     prediction_ts: datetime = Field(..., description="Время расчёта")
     status: str = Field(..., description="Статус: ok, stale, not_ready, error")
 
+    # Live Pinnacle (The Odds API) + value edge — только NHL moneyline при live_pinnacle=true (R37.5)
+    pinnacle_home_decimal: float | None = Field(
+        None,
+        description="Текущий decimal Pinnacle на домашнюю сторону (h2h), если доступен",
+    )
+    pinnacle_away_decimal: float | None = Field(
+        None,
+        description="Текущий decimal Pinnacle на гостевую сторону (h2h), если доступен",
+    )
+    edge_home: float | None = Field(
+        None,
+        description="Edge домашней стороны: P(home) − 1 / pinnacle_home_decimal",
+    )
+    bet_decision_home: str | None = Field(
+        None,
+        description="Решение по порогу из conf/service_api.yaml: bet | no_bet | insufficient_data",
+    )
+    live_odds_status: str | None = Field(
+        None,
+        description=(
+            "Состояние live-обогащения: ok, partial_quote, no_quote, missing_api_key, fetch_failed, "
+            "disabled, skipped_not_nhl, skipped_unsupported_market"
+        ),
+    )
+
     class Config:
         from_attributes = True
 

@@ -602,3 +602,14 @@
   - Вынести разбор Pinnacle h2h в публичную функцию слоя `enrichment` или общий util, чтобы не импортировать `_`-символы.
   - Добавить в `test_odds_config.py` явную валидацию схемы `live_inference` (типы ключей, неотрицательный tolerance).
   - Метрики/логирование unmatched `match_id` на уровне INFO при операционном использовании (без утечки секретов).
+
+### 2026-05-13 — R37.5: публичный prediction payload + live enrichment в GET
+
+- **Задача:** `backlog/R37.md` (подзадача **R37.5**) → `done_task/R37.5.md` (эпик R37 остаётся 🟡 в `todo-refactor.md`).
+- **Ограничения и компромиссы:**
+  - Обогащение завязано на `pred.market` в `("winner", "winner_withOT")`; если в витрине когда-либо окажется только `market_spec` с moneyline при другом `market`, строка может получить `skipped_unsupported_market`.
+  - Внутренний кэшируемый путь `get_prediction_cached` не подмешивает live-поля (всегда `null`) — контракт типов совпадает, продуктовое обогащение только на публичных GET без кэша.
+  - Покрытие тестами — уровень `live_odds_enrichment` и регрессия репозитория; отдельного ASGI-теста на OpenAPI query `live_pinnacle` нет.
+- **Возможные улучшения / техдолг:**
+  - Опциональная колонка БД / миграция для снапшота live-котировок на момент materialize (audit, отключение внешнего вызова на горячем GET).
+  - E2E или роутер-тест с `TestClient` для smoke цепочки `/predict/...` + mock `batch_live_response_extras`.

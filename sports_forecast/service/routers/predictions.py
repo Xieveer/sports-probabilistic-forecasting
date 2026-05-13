@@ -15,12 +15,14 @@ import json
 import time
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
 from sports_forecast.service.db.engine import get_session
 from sports_forecast.service.db.models import Prediction
 from sports_forecast.service.db.repository import PredictionRepository
+from sports_forecast.service.live_odds_enrichment import batch_live_response_extras
 from sports_forecast.service.schemas import (
     ModelInfo,
     PredictionListResponse,
@@ -36,26 +38,46 @@ operations_router = APIRouter(
 )
 
 
-def _to_response(pred: Prediction) -> PredictionResponse:
-    """Конвертировать ORM-объект в Pydantic-ответ."""
+def _to_response(
+    pred: Prediction, *, live_extras: dict[str, Any] | None = None
+) -> PredictionResponse:
+    """Конвертировать ORM-объект в Pydantic-ответ.
+
+    Args:
+        pred: Строка витрины.
+        live_extras: Опциональные поля live Pinnacle / edge (см. :func:`batch_live_response_extras`).
+    """
     predictions = json.loads(pred.predictions_json)
-    return PredictionResponse(
-        match_id=pred.match_id,
-        tournament=pred.tournament,
-        market=pred.market,
-        market_spec=pred.market_spec,
-        home_player=pred.home_player,
-        away_player=pred.away_player,
-        match_datetime=pred.match_datetime,
-        predictions=predictions,
-        model=ModelInfo(
+    base: dict[str, Any] = {
+        "match_id": pred.match_id,
+        "tournament": pred.tournament,
+        "market": pred.market,
+        "market_spec": pred.market_spec,
+        "home_player": pred.home_player,
+        "away_player": pred.away_player,
+        "match_datetime": pred.match_datetime,
+        "predictions": predictions,
+        "model": ModelInfo(
             version=pred.model_version,
             algorithm=pred.algorithm,
             featureset=pred.featureset,
         ),
-        prediction_ts=pred.prediction_ts,
-        status=pred.status,
-    )
+        "prediction_ts": pred.prediction_ts,
+        "status": pred.status,
+    }
+    if live_extras is not None:
+        base.update(live_extras)
+    else:
+        base.update(
+            {
+                "pinnacle_home_decimal": None,
+                "pinnacle_away_decimal": None,
+                "edge_home": None,
+                "bet_decision_home": None,
+                "live_odds_status": None,
+            }
+        )
+    return PredictionResponse(**base)
 
 
 @public_router.get(
@@ -70,6 +92,13 @@ def get_prediction(
     match_id: str,
     market: str = Query("winner", description="Тип рынка"),
     market_spec: str | None = Query(None, description="Спецификация рынка"),
+    live_pinnacle: bool = Query(
+        True,
+        description=(
+            "Для NHL moneyline: один запрос The Odds API и поля pinnacle_*/edge_home/"
+            "bet_decision_home. ``false`` — без внешнего HTTP (поля пустые, статус ``disabled``)."
+        ),
+    ),
 ) -> PredictionResponse:
     """Получить последнее актуальное предсказание для матча.
 
@@ -98,7 +127,8 @@ def get_prediction(
             detail=f"Предсказание для match_id={match_id}, market={market} не найдено",
         )
 
-    return _to_response(pred)
+    extras = batch_live_response_extras([pred], live_pinnacle=live_pinnacle).get(int(pred.id))
+    return _to_response(pred, live_extras=extras)
 
 
 @public_router.get(
@@ -106,7 +136,13 @@ def get_prediction(
     response_model=PredictionListResponse,
     summary="Все предсказания для матча (все рынки)",
 )
-def get_all_predictions_for_match(match_id: str) -> PredictionListResponse:
+def get_all_predictions_for_match(
+    match_id: str,
+    live_pinnacle: bool = Query(
+        True,
+        description="См. ``/predict/{match_id}`` — батч live Pinnacle для NHL moneyline в списке.",
+    ),
+) -> PredictionListResponse:
     """Получить все предсказания для матча (по всем рынкам).
 
     Args:
@@ -125,9 +161,10 @@ def get_all_predictions_for_match(match_id: str) -> PredictionListResponse:
             detail=f"Предсказания для match_id={match_id} не найдены",
         )
 
+    extras_map = batch_live_response_extras(preds, live_pinnacle=live_pinnacle)
     return PredictionListResponse(
         count=len(preds),
-        predictions=[_to_response(p) for p in preds],
+        predictions=[_to_response(p, live_extras=extras_map.get(int(p.id))) for p in preds],
     )
 
 
@@ -163,6 +200,13 @@ def get_upcoming(
             "нужен горизонт дольше 48 ч."
         ),
     ),
+    live_pinnacle: bool = Query(
+        True,
+        description=(
+            "Для турнира NHL и moneyline: один батч-запрос The Odds API на весь список; "
+            "поля ``pinnacle_*``, ``edge_home``, ``bet_decision_home`` на строку. ``false`` — без HTTP."
+        ),
+    ),
 ) -> PredictionListResponse:
     """Получить актуальные предсказания для предстоящих матчей.
 
@@ -187,9 +231,10 @@ def get_upcoming(
             hours=hours,
         )
 
+    extras_map = batch_live_response_extras(preds, live_pinnacle=live_pinnacle)
     return PredictionListResponse(
         count=len(preds),
-        predictions=[_to_response(p) for p in preds],
+        predictions=[_to_response(p, live_extras=extras_map.get(int(p.id))) for p in preds],
     )
 
 
@@ -312,6 +357,11 @@ def get_prediction_cached(
             else datetime.now(tz=timezone.utc)
         ),
         status=result["status"],
+        pinnacle_home_decimal=None,
+        pinnacle_away_decimal=None,
+        edge_home=None,
+        bet_decision_home=None,
+        live_odds_status=None,
     )
 
 

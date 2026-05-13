@@ -70,7 +70,7 @@ ML-сервис прогнозирования с низкой latency API и в
 
 ### Runtime-границы
 
-- **API runtime**: только чтение materialized-предиктов из БД; вызовы DVC и feature/training-модулей запрещены.
+- **API runtime**: чтение materialized-предиктов из БД; вызовы DVC и feature/training-модулей запрещены. Допускается **лёгкий** внешний HTTP: батч-запрос текущих decimal Pinnacle (The Odds API) для NHL moneyline при `live_pinnacle=true` на `GET /predict/*` — без пересчёта фич и без загрузки тренировочных датасетов (R37.5).
 - **Airflow runtime (prod)**: допускаются прямые вызовы доменных модулей (`ingest/clean/features/materialize`) через CLI/модули DAG.
 - **Offline runtime (dev/CI)**: подготовка датасетов и обучение выполняются через `dvc repro` для воспроизводимости состояния.
 
@@ -116,6 +116,8 @@ ML-сервис прогнозирования с низкой latency API и в
 - предсказуемая latency API;
 - отсутствие тяжелых вычислений в запросе;
 - отдельное масштабирование API и batch-контуров.
+
+**Train-time odds vs live-котировки в API (политика R37.5):** колонка `odds_raw` в строках витрины (и в processed при обучении) отражает **снимок коэффициентов из data-пайплайна** (в т.ч. synthetic из wide Pinnacle на clean) для тренировки и бэктеста. Поля ответа `pinnacle_home_decimal` / `pinnacle_away_decimal`, `edge_home`, `bet_decision_home`, `live_odds_status` — это **текущие** h2h-децимали и производные от них на момент HTTP-запроса к публичному API (при включённом live-обогащении); они **не** подменяют и не смешиваются с `odds_raw` в БД. Отдельная колонка снапшота live в БД и миграция под неё остаются опциональными (например, для строгого audit trail без вызова провайдера на каждый GET).
 
 ---
 
