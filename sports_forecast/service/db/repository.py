@@ -17,13 +17,23 @@ CRUD операции над таблицей ``predictions``.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from sports_forecast.service.db.models import Prediction
+
+
+def _utc_naive_for_query(dt: datetime) -> datetime:
+    """Привести момент времени к naive UTC для сравнения с ``DateTime`` в БД.
+
+    В dev чаще SQLite без таймзоны; витрина хранит ``match_datetime`` как UTC wall time.
+    """
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 class PredictionRepository:
@@ -92,27 +102,48 @@ class PredictionRepository:
         self,
         tournament: str | None = None,
         market: str = "winner",
+        market_spec: str | None = None,
         status: str = "ok",
+        hours: int = 48,
+        *,
+        now_utc: datetime | None = None,
     ) -> list[Prediction]:
         """Получить актуальные предсказания для предстоящих матчей.
+
+        Учитываются только строки с непустым ``match_datetime`` в окне
+        ``[now_utc, now_utc + hours]`` (границы в UTC). Строки без времени матча
+        в выборку не попадают.
 
         Args:
             tournament: Фильтр по турниру (опционально).
             market: Тип рынка.
+            market_spec: Спецификация рынка (опционально; если задана — точное совпадение).
             status: Статус предсказания.
+            hours: Длина окна в часах от ``now_utc`` вперёд (по умолчанию 48).
+            now_utc: Опорный момент «сейчас» в UTC (для тестов); иначе ``datetime.now(UTC)``.
 
         Returns:
             Список Prediction, отсортированных по match_datetime.
         """
+        now = now_utc if now_utc is not None else datetime.now(tz=timezone.utc)
+        start = _utc_naive_for_query(now)
+        end = _utc_naive_for_query(now + timedelta(hours=hours))
+
         query = self.session.query(Prediction).filter(
             and_(
                 Prediction.market == market,
                 Prediction.status == status,
+                Prediction.match_datetime.isnot(None),  # type: ignore[attr-defined]
+                Prediction.match_datetime >= start,  # type: ignore[operator]
+                Prediction.match_datetime <= end,  # type: ignore[operator]
             )
         )
 
         if tournament is not None:
             query = query.filter(Prediction.tournament == tournament)
+
+        if market_spec is not None:
+            query = query.filter(Prediction.market_spec == market_spec)
 
         rows: list[Prediction] = query.order_by(
             Prediction.match_datetime.asc()  # type: ignore[attr-defined]

@@ -187,7 +187,7 @@
 
 - [ ] **R37** — NHL operational: локальный стек, выдача на 48h, Pinnacle + edge (конфиг), пайплайн 12:00 MSK, Telegram; см. `backlog/R37.md`
   - [x] **R37.1** — Локальный runbook (Makefile/compose/Airflow/env), smoke `/health` (`done_task/R37.1.md`)
-  - [ ] **R37.2** — `PredictionRepository` + `/predict/upcoming/*`: фильтр 48h, NHL `winner_withOT`
+  - [x] **R37.2** — `PredictionRepository` + `/predict/upcoming/*`: фильтр 48h, NHL `winner_withOT` (`done_task/R37.2.md`)
   - [ ] **R37.3** — Конфиг `edge_threshold` + функция bet/no-bet + тесты
   - [ ] **R37.4** — Снимок текущих Pinnacle через `OddsApiClient` + маппинг NHL
   - [ ] **R37.5** — Расширение API-схемы и persistence (миграция при необходимости), политика live vs train odds

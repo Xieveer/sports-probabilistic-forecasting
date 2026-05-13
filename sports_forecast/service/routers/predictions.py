@@ -138,13 +138,42 @@ def get_all_predictions_for_match(match_id: str) -> PredictionListResponse:
 )
 def get_upcoming(
     tournament: str,
-    market: str = Query("winner", description="Тип рынка"),
+    market: str = Query(
+        "winner",
+        description=(
+            "Тип рынка. Для NHL полного матча (вкл. ОТ/буллиты) используйте ``winner_withOT``; "
+            "базовый регламентный исход — ``winner`` (см. ``conf/market`` / ``HOW_TO_ADD_NEW_MARKET``)."
+        ),
+    ),
+    market_spec: str | None = Query(
+        None,
+        description=(
+            "Спецификация рынка (точное совпадение с витриной). Примеры NHL: ``winner`` или "
+            "``winner_withOT`` в паре с ``market=winner`` / ``market=winner_withOT`` согласно "
+            "обученному артефакту (часто ``market_spec`` совпадает с ``market``)."
+        ),
+    ),
+    hours: int = Query(
+        48,
+        ge=1,
+        le=8760,
+        description=(
+            "Окно в часах от текущего момента UTC вперёд: попадают только матчи с известным "
+            "``match_datetime`` в интервале [сейчас, сейчас + hours]. Увеличьте значение, если "
+            "нужен горизонт дольше 48 ч."
+        ),
+    ),
 ) -> PredictionListResponse:
     """Получить актуальные предсказания для предстоящих матчей.
 
+    В выборку входят только записи со статусом ``ok``, непустым временем матча и
+    ``match_datetime`` в пределах указанного окна от текущего UTC.
+
     Args:
-        tournament: Название турнира.
+        tournament: Название турнира (например ``nhl``, ``uel_kz_1``).
         market: Тип рынка.
+        market_spec: Опциональный фильтр по спецификации (NHL OT — см. описание параметра).
+        hours: Горизонт в часах (по умолчанию 48).
 
     Returns:
         Список предсказаний.
@@ -154,6 +183,8 @@ def get_upcoming(
         preds = repo.get_upcoming_predictions(
             tournament=tournament,
             market=market,
+            market_spec=market_spec,
+            hours=hours,
         )
 
     return PredictionListResponse(
