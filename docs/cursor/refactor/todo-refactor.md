@@ -45,7 +45,7 @@
 | R34    | 🔴 High     | High      | ✅     | 34-й ✅ (walk-forward simulation; `done_task/R34.md`) |
 | R35    | 🔴 High     | Medium    | ✅     | 35-й ✅ (block bootstrap CI на bet trace; `done_task/R35.md`) |
 | R36    | 🟡 Medium   | Low       | ✅     | 36-й ✅ (experiment matrix: CLI-команды для всех турниров × 2 схемы; `done_task/R36.md`) |
-| R37    | 🔴 High     | High      | 🟡     | после R36 / параллельно R33 (NHL operational: локальный стек, 48h, Pinnacle+edge, 12:00 MSK → Telegram) |
+| R37    | 🔴 High     | High      | ✅     | NHL operational: локальный стек, 48h, Pinnacle+edge, 12:00 MSK → Telegram (`done_task/R37.*.md`) |
 
 ---
 
@@ -164,6 +164,14 @@
   - [x] R34.5 — Агрегация беттинга по шагам, cumulative trace
   - [x] R34.6 — MLflow: per-step и aggregate WF-метрики, теги, артефакты
   - [x] R34.7 — `test_walk_forward_*.py`, `docs/source/walk_forward.rst`
+- [x] **R37** — NHL operational: локальный стек, 48h, Pinnacle + edge, пайплайн 12:00 MSK, Telegram ✅ 2026-05-13; см. `backlog/R37.md`, `done_task/R37.*.md`
+  - [x] **R37.1** — Локальный runbook (`done_task/R37.1.md`)
+  - [x] **R37.2** — `PredictionRepository` + `/predict/upcoming/*`: 48h, NHL `winner_withOT` (`done_task/R37.2.md`)
+  - [x] **R37.3** — `edge_threshold` + bet/no-bet (`done_task/R37.3.md`)
+  - [x] **R37.4** — Live Pinnacle NHL (`done_task/R37.4.md`)
+  - [x] **R37.5** — Публичный payload API (`done_task/R37.5.md`)
+  - [x] **R37.6** — DAG `nhl_morning_refresh` + cron (`done_task/R37.6.md`)
+  - [x] **R37.7** — Telegram: обогащённый payload (`done_task/R37.7.md`)
 - [x] **R27** — NHL Feature Engineering v2: goals/stats EWM, streaks, lineup continuity/seniority ✅ 2026-05-04; см. `done_task/R27.md`
   - [x] R27.1 — Derived metric columns в `long_format.py` (goals_full_diff/total, sog/bs/hits/pim2/fow diff)
   - [x] R27.6 — Spans [5,25,100] → [5,15] в `standard.yaml`
@@ -184,15 +192,6 @@
   - [x] R23.8 — Scheduled data refresh: `cron_refresh.py` + shell wrapper + unit tests
 
 ### В работе / Backlog 🟡
-
-- [ ] **R37** — NHL operational: локальный стек, выдача на 48h, Pinnacle + edge (конфиг), пайплайн 12:00 MSK, Telegram; см. `backlog/R37.md`
-  - [x] **R37.1** — Локальный runbook (Makefile/compose/Airflow/env), smoke `/health` (`done_task/R37.1.md`)
-  - [x] **R37.2** — `PredictionRepository` + `/predict/upcoming/*`: фильтр 48h, NHL `winner_withOT` (`done_task/R37.2.md`)
-  - [x] **R37.3** — Конфиг `edge_threshold` + функция bet/no-bet + тесты (`done_task/R37.3.md`)
-  - [x] **R37.4** — Live Pinnacle NHL: `live_nhl_pinnacle` + `live_inference` в YAML (`done_task/R37.4.md`)
-  - [x] **R37.5** — Публичный payload: схемы + live Pinnacle (батч GET), edge/bet_decision_home, документация odds (`done_task/R37.5.md`)
-  - [x] **R37.6** — Расписание 12:00 MSK: DAG `nhl_morning_refresh` + cron-шаблон + `make nhl-morning-refresh-dry-run` (`done_task/R37.6.md`)
-  - [ ] **R37.7** — Telegram: потребление обогащённого payload
 
 - [ ] **R33** — Согласованность `market` и `market_spec`: валидация семейства, тесты, документация; см. `backlog/R33.md`
   - [ ] R33.1 — `validate_experiment_config`: `market.family` == `market_spec.market_family` при наличии поля

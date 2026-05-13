@@ -2,6 +2,9 @@
 #
 # Запуск: python -m sports_forecast.bot
 # make bot-dev  |  make bot-up (docker compose)
+#
+# R37.7: для NHL бот дергает GET /predict/upcoming с live_pinnacle (нужен ODDS_API_KEY на **API**,
+# не в боте). Отключить live: ``bot.live_pinnacle: false`` или убрать обогащение на стороне API.
 
 defaults:
   - paths
@@ -22,6 +25,8 @@ bot:
   airflow_username: ""
   airflow_password: ""
   airflow_dag_id: "data_refresh"
+  # R37.7: запрашивать у API live Pinnacle + edge / bet (см. PredictionResponse); на стороне API нужен ODDS_API_KEY.
+  live_pinnacle: true
 
 logging:
   level: INFO
