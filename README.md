@@ -1,4 +1,4 @@
-![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
+![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![DVC](https://img.shields.io/badge/DVC-3.0+-orange.svg)
 ![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
@@ -43,6 +43,8 @@ MLOps-система промышленного уровня для вероят
 ## Quick Start
 
 ### 1. Установка зависимостей
+
+Требуется [uv](https://docs.astral.sh/uv/) (менеджер окружения и зависимостей по `pyproject.toml`). Команда `make install` выполняет `uv sync`.
 
 ```bash
 make install
@@ -113,8 +115,9 @@ make docker-up
 | Database | PostgreSQL / SQLite |
 | Мониторинг | Prometheus + Grafana |
 | Контейнеризация | Docker + Docker Compose |
+| Окружение и зависимости | uv (`pyproject.toml`) |
 | Оптимизация | Optuna |
-| Качество кода | ruff, mypy, pre-commit, pytest |
+| Качество кода | ruff, pre-commit, pytest |
 
 ---
 
@@ -169,6 +172,7 @@ SportsProbabilisticForecasting/
 │   │   ├── drift.py                   # PSI + KS drift detection
 │   │   ├── performance.py             # ML performance tracking
 │   │   └── ab_testing.py              # A/B model comparison
+│   ├── orchestration/                 # Refresh/cron, post-refresh digest (Airflow hooks)
 │   ├── validation/                    # Data validation (Pandera)
 │   │   ├── schemas.py                 # Raw/Interim/Processed schemas
 │   │   └── gates.py                   # Quality gates
@@ -179,7 +183,7 @@ SportsProbabilisticForecasting/
 │   └── materialize.py                 # Batch prediction → DB
 │
 ├── airflow/                           # Airflow DAGs
-│   ├── dags/                          # 5 DAGs (data, train, materialize, monitor)
+│   ├── dags/                          # 5 DAGs (data, train, materialize, monitor, NHL refresh)
 │   ├── Dockerfile                     # Airflow worker image
 │   └── docker-compose.airflow.yml     # Airflow services
 │
@@ -194,7 +198,7 @@ SportsProbabilisticForecasting/
 │   └── processed/                     # С фичами
 │
 ├── models/                            # Обученные модели
-├── tests/                             # 358+ unit-тестов
+├── tests/                             # ~700 pytest-тестов
 ├── docs/                              # Документация
 │
 ├── dvc.yaml                           # DVC pipeline
@@ -307,6 +311,7 @@ make materialize TOURNAMENT=uel_kz_1
 | dag_training | Training sweep + promotion | Еженедельно |
 | dag_materialize | Batch prediction | Каждые 2 часа |
 | dag_monitoring | Drift detection + retraining | Ежедневно |
+| dag_nhl_morning_refresh | NHL: source/odds → ingest → clean → features → materialize; опционально Telegram-digest после validate | 09:00 UTC (см. docstring DAG) |
 
 ---
 
@@ -321,7 +326,7 @@ make init             # + pre-commit hooks
 make lint             # ruff check
 make format           # ruff format
 make pre-commit       # Все хуки
-make test             # pytest (358+ тестов)
+make test             # pytest (~700 тестов)
 make test-cov         # С coverage
 
 # Data pipeline
@@ -356,15 +361,28 @@ make airflow-down     # Остановить
 
 ## Документация
 
-| Документ | Описание |
-|----------|----------|
-| [HOW_TO_ADD_NEW_TOURNAMENT.md](docs/HOW_TO_ADD_NEW_TOURNAMENT.md) | Добавление нового турнира |
-| [HOW_TO_ADD_NEW_MARKET.md](docs/HOW_TO_ADD_NEW_MARKET.md) | Добавление нового маркета |
-| [CURRENT_TRAINING_STATUS.md](docs/CURRENT_TRAINING_STATUS.md) | Статус обучения моделей |
-| [SYSTEM_ARCHITECTURE.md](docs/SYSTEM_ARCHITECTURE.md) | Архитектура системы |
-| [service_orchestration_architecture.md](docs/service_orchestration_architecture.md) | Сервисная архитектура |
-| [FEATURE_GENERATION_ARCHITECTURE.md](docs/FEATURE_GENERATION_ARCHITECTURE.md) | Система генерации фичей |
-| [DATA_PIPELINE.md](docs/DATA_PIPELINE.md) | Data pipeline |
+### Пользовательская (Sphinx)
+
+Сборка из `docs/source/`: `make docs`, локальный просмотр — `make docs-serve` (см. `make help`).
+
+### Дополнительная документация (`docs/cursor/`)
+
+Материалы для разработки и сопровождения (архитектура, домен, расширение системы):
+
+| Назначение | Путь |
+|------------|------|
+| Бизнес-контекст и функциональность | [project_info.md](docs/cursor/context/project_info.md) |
+| Структура репозитория и entry points | [repo-index.md](docs/cursor/context/repo-index.md) |
+| Сервис, оркестрация, данные, API | [service_orchestration_architecture.md](docs/cursor/context/service_orchestration_architecture.md) |
+| Контекст фичей | [context_feature.md](docs/cursor/context/context_feature.md) |
+| Композиция feature pipeline | [feature_pipeline_composition.md](docs/cursor/context/feature_pipeline_composition.md) |
+| Как добавить турнир | [HOW_TO_ADD_NEW_TOURNAMENT.md](docs/cursor/context/HOW_TO_ADD_NEW_TOURNAMENT.md) |
+| Как добавить рынок | [HOW_TO_ADD_NEW_MARKET.md](docs/cursor/context/HOW_TO_ADD_NEW_MARKET.md) |
+| Колонки и контракты источников | [docs/cursor/source_data/](docs/cursor/source_data/) |
+
+### Единый CLI
+
+Точка входа [main.py](main.py): подкоманды `train`, `predict`, `promote` (тонкая обёртка над модулями `sports_forecast.*` — подробнее в [repo-index.md](docs/cursor/context/repo-index.md)).
 
 ---
 
