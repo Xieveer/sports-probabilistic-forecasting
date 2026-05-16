@@ -369,7 +369,7 @@
   - Добавить интеграционный smoke-тест: загрузить маленький NHL parquet-срез и проверить полный pipeline split → features → train на корректность (сейчас только unit-тесты на `train_eval_split.py`).
   - Рассмотреть вынос двойного вызова `subset_frame_for_season_holdout` в trainer в единую точку (до feature selection), убрав дублирование маскировки на этапе split.
   - При добавлении Phase C (R22.8, `winner_withOT`): валидировать, что `season_column` присутствует в NHL parquet с OT-данными.
-  - **~~Паттерн конфигов (вернуться позже):~~** закрыто в **R38**: канонический slug `nhl`; `conf/tournament/nhl_train.yaml` — deprecated-алиас (`defaults: [nhl]`); см. `docs/cursor/context/nhl_single_tournament_slug.md`.
+  - **~~Паттерн конфигов (вернуться позже):~~** канонический slug `nhl` (**R38**); отдельный `conf/tournament/nhl_train.yaml` сначала deprecated, затем удалён (**R41**); см. `docs/cursor/context/nhl_single_tournament_slug.md`.
 
 ### 2026-05-03 — R22.4: расширенные NHL roster-фичи
 
@@ -708,3 +708,17 @@
   - Реализовать чтение последних метрик из MLflow в `check_model_quality` и ветвление XCom в `dag_monitoring`.
   - Опционально: `DeprecationWarning` при импорте scaffold-модулей `monitoring` до интеграции в DAG.
   - Единообразно свернуть оставшиеся section-markers в тестах скриптом при отдельном косметическом PR.
+
+### 2026-05-17 — R41 Predict→Telegram: light/heavy, Airflow bash reuse, SSA tournament YAML
+
+- **Задача:** `backlog/R41.md` → `done_task/R41.md`
+- **Ограничения и компромиссы:**
+  - **R41.3:** общий модуль `sf_scheduled_refresh_ops` / Jinja для `post_refresh_digest` снимает копипасту между «утренними» DAG; **не** реализована генерация нескольких лиг из одной Airflow Variable / одного файла DAG — новые лиги по-прежнему добавляются отдельным DAG-файлом с другим `dag_id`/schedule и префиксом `SF_*`.
+  - **`dag_data_refresh`** не переведён на те же фабрики (scope эпика — scheduled refresh + digest).
+  - **R41.5:** fingerprint и условный skip стадии `features` — только дизайн в доке и комментарии; MVP без feature-flag и без контракта на набор входных артефактов не внедрялся (риск EWM/истории).
+  - **`/edge` vs `/predict`/`/upcoming`:** частичное дублирование UX; лёгкий путь явно подписан в ответах, но единого «главного» сценария в меню (R24.1) пока нет.
+- **Возможные улучшения / техдолг:**
+  - Data-driven список турниров `(tournament, features, market, market_spec, cron)` в Variable + один DAG factory (с тестами загрузки и миграцией существующих `dag_id`).
+  - Реализация R41.5: fingerprint после source refresh, строгий allowlist файлов, лог `SKIP features` с причиной, rollout под флагом.
+  - Свести операторский light/heavy в общий `docs/source/operations.rst` при появлении **R15**.
+  - В **R24**: кнопка «Обновить edge» в главном меню, ссылающаяся на тот же контракт, что `/edge`.

@@ -43,7 +43,7 @@ async def cmd_status(message: Message, cfg: DictConfig) -> None:
 
 @router.message(Command("refresh"))
 async def cmd_refresh(message: Message, cfg: DictConfig) -> None:
-    """Триггер DAG data_refresh через Airflow REST (если задан airflow_base_url)."""
+    """Триггер тяжёлого пайплайна через Airflow REST (DAG ``data_refresh`` по умолчанию). Лёгкий путь для пользователя — ``/edge`` (только GET к API); этот метод не использовать для котировок."""
     uid = message.from_user.id if message.from_user else 0
     admins = {int(x) for x in (cfg.bot.get("admin_user_ids") or []) if x is not None}
     if not _is_admin(uid, admins):
@@ -71,7 +71,11 @@ async def cmd_refresh(message: Message, cfg: DictConfig) -> None:
             logger.exception("airflow trigger failed")
             await message.answer(f"Airflow: {e}")
             return
-    await message.answer(f"DAG {dag_id} запущен (conf tournaments={tournament or 'default'})")
+    await message.answer(
+        "[Тяжёлый контур · админ Airflow]\n"
+        f"DAG <code>{dag_id}</code> запущен; source→features→materialize (conf tournaments="
+        f"{tournament or 'default'}). Для котировок без пайплайна пользователи используют /edge."
+    )
 
 
 @router.message(Command("models"))

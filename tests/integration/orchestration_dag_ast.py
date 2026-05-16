@@ -44,6 +44,7 @@ def parse_dag_source_info(path: Path) -> DagSourceInfo:
 
     Note:
         Intended for smoke tests only; does not execute the DAG or import Airflow.
+        Recognises ``bash_*`` task factories from ``sf_scheduled_refresh_ops`` (R41.3).
     """
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source)
@@ -70,7 +71,16 @@ def parse_dag_source_info(path: Path) -> DagSourceInfo:
                 op_name = func.id
             elif isinstance(func, ast.Attribute):
                 op_name = func.attr
-            if op_name in frozenset({"BashOperator", "BranchPythonOperator"}):
+            factory_ops = frozenset(
+                {
+                    "bash_refresh_per_tournament",
+                    "bash_run_validation",
+                    "bash_post_refresh_digest",
+                    "BashOperator",
+                    "BranchPythonOperator",
+                }
+            )
+            if op_name in factory_ops:
                 keywords = _dag_call_keywords(node)
                 tid = keywords.get("task_id")
                 if tid is not None:

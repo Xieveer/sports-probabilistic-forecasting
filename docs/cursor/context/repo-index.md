@@ -7,7 +7,7 @@
 ## Структура директорий
 
 ### Конфигурация (`conf/`)
-- `tournament/` — конфиги турниров (7 шт.: uel_*, lp_*)
+- `tournament/` — конфиги турниров (**8 файлов**, по одному slug на файл: ``uel_*``, ``lp_*``, ``nhl``; см. правило один YAML на турнир в `HOW_TO_ADD_NEW_TOURNAMENT.md`)
 - `sport/` — спорты (cyberhockey, table_tennis)
 - `source/` — источники данных (uel, lp_eu, lp_ru_by)
 - `market/` — семейства рынков (winner, total)
@@ -38,7 +38,7 @@
 - `processed/` — данные с фичами
 
 ### Инфраструктура
-- `airflow/dags/` — 4 DAG (data_refresh, training, materialize, monitoring)
+- `airflow/dags/` — DAG оркестрации: например ``data_refresh``, ``nhl_morning_refresh`` (утренний турнир + digest), ``training_sweep``, ``prediction_materialize``, ``model_monitoring`` (фактический набор см. каталог ``airflow/dags/``)
 - `monitoring/` — Prometheus + Grafana конфиги
 - `models/` — обученные модели (по турнирам)
 - `tests/` — unit-тесты (358+)

@@ -49,6 +49,7 @@
 | R38    | 🔴 High     | Medium    | ✅     | NHL: единый slug `nhl` (`done_task/R38.md`) |
 | R39    | 🔴 High     | High      | ✅     | prod-like e2e: Airflow → БД → live Pinnacle → один TG digest (`done_task/R39.md`; R39.1–R39.8 ✅) |
 | R40    | 🟡 Medium   | Low       | ✅     | codebase housekeeping: логи, комментарии, gates stub, lint (`done_task/R40.md`) |
+| R41    | 🔴 High     | High      | ✅     | predict→Telegram light/heavy, SSA турнира, Airflow bash reuse (`done_task/R41.md`) |
 
 ---
 
@@ -200,6 +201,13 @@
   - [x] R40.5 — Docstrings: `gates.check_model_quality`, `tests/__init__.py`, пакет `monitoring`
   - [x] R40.6 — Свернуты тройные `# ====` / `# ----` разделители в ряде модулей и `test_validation.py`
   - [x] R40.7 — `make lint` + `make test`; мелкий fix `digest_message.py` (ruff)
+- [x] **R41** — Predict→Telegram: light/heavy, SSA `nhl`, общие Airflow bash-ops, `/edge` без Airflow ✅ 2026-05-17; см. `done_task/R41.md`
+  - [x] R41.1 — Матрица триггеров в `service_orchestration_architecture.md` + `nhl_local_operations.rst`
+  - [x] R41.2 — Команда/колбэк `/edge` → только GET `/predict/upcoming/*` + `live_pinnacle`; админ `/refresh` — heavy
+  - [x] R41.3 — `sf_scheduled_refresh_ops` + `airflow_post_refresh_digest_bash`; NHL DAG — тонкая обёртка
+  - [x] R41.4 — Удалён `conf/tournament/nhl_train.yaml`; HOW_TO, repo-index, `nhl_single_tournament_slug.md`
+  - [x] R41.5 — Дизайн fingerprint / skip `features` (дока + комментарий в `refresh_command.py`, без MVP-кода)
+  - [x] R41.6 — `tests/test_bot_light_refresh_path.py`; критерий приёмки в runbook
 - [x] **R27** — NHL Feature Engineering v2: goals/stats EWM, streaks, lineup continuity/seniority ✅ 2026-05-04; см. `done_task/R27.md`
   - [x] R27.1 — Derived metric columns в `long_format.py` (goals_full_diff/total, sog/bs/hits/pim2/fow diff)
   - [x] R27.6 — Spans [5,25,100] → [5,15] в `standard.yaml`

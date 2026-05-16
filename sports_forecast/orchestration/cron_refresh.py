@@ -1,6 +1,8 @@
 """Cron/systemd entrypoint: полный refresh-пайплайн с ``flock`` (как Airflow DAG).
 
 Пайплайн на турнир: source → ingest → clean → features → materialize.
+Это **тяжёлый** контур; лёгкое обновление котировок/edge для пользователей без пайплайна —
+HTTP ``GET /predict/upcoming/{t}?live_pinnacle=…`` или Telegram-команда ``/edge`` (R41).
 Блокировка и аргументы по умолчанию совместимы с DAG Airflow
 ``airflow/dags/dag_data_refresh.py``.
 

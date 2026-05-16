@@ -370,10 +370,10 @@ uv run python -m sports_forecast.features.features_build \
 
 ## NHL: baseline-обучение, promote и API (оператору)
 
-Канонический slug турнира — **`nhl`**: ``conf/tournament/nhl.yaml`` (в т.ч. ``train_eval_split`` для holdout),
-``data/source/nhl/``, ``models/nhl/…``, MLflow-префикс ``nhl__<market>``. Файл ``conf/tournament/nhl_train.yaml``
-deprecated: только ``defaults: [nhl]`` — старые команды ``tournament=nhl_train`` эквивалентны ``nhl``.
-Подробности миграции: ``docs/cursor/context/nhl_single_tournament_slug.md`` (R38).
+Канонический slug турнира — **`nhl`**: единственный файл ``conf/tournament/nhl.yaml`` (в т.ч.
+``train_eval_split`` для holdout), ``data/source/nhl/``, ``models/nhl/…``, MLflow-префикс ``nhl__<market>``.
+Deprecated-алиас ``conf/tournament/nhl_train.yaml`` удалён (R41): везде ``tournament=nhl``.
+Подробности миграции: ``docs/cursor/context/nhl_single_tournament_slug.md``.
 
 ```bash
 # Sweep обучения (CatBoost + LightGBM, advanced фичи, season holdout — см. YAML)
@@ -416,8 +416,8 @@ make mlflow-ui
 
 - [ ] Спорт определён (существующий или новый `conf/sport/<name>.yaml`)
 - [ ] Source конфиг создан: `conf/source/<name>.yaml`
+- [ ] **Один файл турнира**: `conf/tournament/<slug>.yaml` — defaults из source/sport через Hydra `@packaging`, без отдельного `*_train` YAML для того же slug (правило R38/R41, см. `nhl_single_tournament_slug.md`)
 - [ ] Данные размещены: `data/source/<name>/source.csv`
-- [ ] Tournament конфиг создан: `conf/tournament/<name>.yaml`
 - [ ] Турнир добавлен в `dvc.yaml`
 - [ ] `make dvc-repro` — pipeline отработал без ошибок
 - [ ] `make validate-data` — данные прошли валидацию

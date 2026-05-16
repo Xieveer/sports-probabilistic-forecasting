@@ -143,8 +143,14 @@ def test_dag_source_contract(
 
     if filename == "dag_nhl_morning_refresh.py":
         text_cmd = path.read_text(encoding="utf-8")
-        assert "sports_forecast.orchestration.post_refresh_digest" in text_cmd
-        assert "var.value.get('SF_TELEGRAM_DIGEST_ENABLE', 'true')" in text_cmd
+        assert "bash_post_refresh_digest" in text_cmd
+        bash_digest = (
+            REPO_ROOT / "sports_forecast" / "orchestration" / "airflow_post_refresh_digest_bash.py"
+        )
+        assert bash_digest.is_file()
+        digest_src = bash_digest.read_text(encoding="utf-8")
+        assert "sports_forecast.orchestration.post_refresh_digest" in digest_src
+        assert "var.value.get('SF_TELEGRAM_DIGEST_ENABLE', 'true')" in digest_src
 
     _assert_dag_cli_contract(filename, path, info)
 
@@ -186,6 +192,14 @@ def _assert_dag_cli_contract(filename: str, path: Path, info: DagSourceInfo) -> 
     if filename == "dag_monitoring.py":
         assert "check_data_freshness" in info.task_ids
     if filename == "dag_nhl_morning_refresh.py":
-        assert "build_refresh_per_tournament_command" in text
-        assert "sports_forecast.validation.run_validation" in text
-        assert "sports_forecast.orchestration.post_refresh_digest" in text
+        assert "bash_refresh_per_tournament" in text
+        assert "sf_scheduled_refresh_ops" in text
+        ops_mod = DAG_DIR / "sf_scheduled_refresh_ops.py"
+        ops_text = ops_mod.read_text(encoding="utf-8")
+        assert "build_refresh_per_tournament_command" in ops_text
+        assert "sports_forecast.validation.run_validation" in ops_text
+        bash_digest = (
+            REPO_ROOT / "sports_forecast" / "orchestration" / "airflow_post_refresh_digest_bash.py"
+        )
+        digest_src = bash_digest.read_text(encoding="utf-8")
+        assert "sports_forecast.orchestration.post_refresh_digest" in digest_src

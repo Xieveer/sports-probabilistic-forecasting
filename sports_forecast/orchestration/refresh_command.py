@@ -1,5 +1,22 @@
 """Builders for tournament-scoped refresh orchestration commands."""
 
+# R41.5 — optional skip of ``features_build`` (not implemented): design notes
+# ---------------------------------------------------------------------------
+# A fingerprint could short-circuit heavy feature generation when inputs are
+# bitwise unchanged (hashes or mtimes of tracked raw/interim artefacts + odds merge
+# manifests). Decision point belongs *before* emitting the ``features_build`` CLI chunk
+# in :func:`build_refresh_per_tournament_command` or in a wrapper used by Airflow/Makefile.
+#
+# Edge cases requiring **forced** rebuild:
+# - NHL API retrospective boxscore/stats corrections (historical rows change silently).
+# - Odds incremental merge that alters parquet without bumping naive file mtimes you track.
+# - Any manual edit under ``data/source/<tournament>/`` not covered by the fingerprint set.
+#
+# Relation to DVC: the repo ``dvc.yaml`` still models ``features`` as a multirun across
+# tournaments; tournament-scoped skips are an **operational** optimisation, not a substitute
+# for ``dvc repro`` in dev/CI. See ``docs/cursor/context/service_orchestration_architecture.md``
+# («Матрица operational-контракта DVC» и ограничение multirun).
+
 from __future__ import annotations
 
 

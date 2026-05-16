@@ -18,9 +18,10 @@ bot:
   # Базовый URL FastAPI (тот же хост, что видит пользователь сервиса)
   api_base_url: "http://127.0.0.1:8000"
   # Whitelist: список Telegram user_id (int). Пустой список = доступ запрещён всем.
+  # R41: пользователям доступен только /edge,/predict,/upcoming (GET к FastAPI); /refresh только admin_ids.
   allowed_user_ids: []
   admin_user_ids: []
-  # Опционально: триггер DAG refresh (если заданы — POST к Airflow REST)
+  # Опционально: тяжёлый пайплайн — POST к Airflow REST (админ-команда /refresh)
   airflow_base_url: ""
   airflow_username: ""
   airflow_password: ""

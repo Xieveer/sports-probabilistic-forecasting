@@ -15,7 +15,20 @@
 
 Подробности контракта и разделения слоёв см. в репозитории:
 
-* :download:`service_orchestration_architecture.md <../cursor/context/service_orchestration_architecture.md>` — архитектура сервисов и оркестрации (Markdown).
+* :download:`service_orchestration_architecture.md <../cursor/context/service_orchestration_architecture.md>` — архитектура сервисов и оркестрации (Markdown), в т. ч. таблица **лёгкий vs тяжёлый контур** (R41).
+
+Лёгкий путь для пользователя (котировки / edge после деплоя)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Критерий приёмки R41:** пользователь из whitelist может обновить **только актуальные котировки и edge**
+командой Telegram ``/edge`` или клавиатурой после этой команды: бот вызывает **только GET** своего FastAPI
+(``/predict/upcoming/{tournament}`` с ``live_pinnacle`` там, где включено в конфиге API).
+
+* **Не** триггерит Airflow REST и **не** запускает ``source_refresh`` / ingest / features / materialize.
+
+* Отличается от админ-команды ``/refresh``, которая при работающих настройках Airflow запускает **тяжёлый DAG**
+  (обычно ``data_refresh``): полное обновление данных и пересчёт витрины.
+
 
 Перед первым запуском
 ---------------------

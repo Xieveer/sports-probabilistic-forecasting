@@ -20,6 +20,35 @@ logger = get_logger(__name__)
 
 router = Router(name="predict")
 
+# Лёгкий операционный путь (R41): только HTTP GET к витрине + ``live_pinnacle`` на стороне API.
+# Никаких вызовов Airflow/source_refresh/features.
+LIGHT_PATH_EDGE_HTML = (
+    "🔄 <b>Лёгкий путь · котировки/edge</b>\n"
+    "Актуальные коэффициенты через API (<code>/predict/upcoming</code>, "
+    "<code>live_pinnacle</code>); вероятности из витрины <b>без пересчёта</b>.\n"
+    "Не путать с админским <code>/refresh</code> — полный пайплайн данных.\n\n"
+)
+
+
+def _predict_upcoming_url(base_api: str, tournament: str) -> str:
+    """Публичный URL ``GET /predict/upcoming/{tournament}`` (лёгкий путь без Airflow)."""
+    root = base_api.rstrip("/")
+    return f"{root}/predict/upcoming/{tournament.strip()}"
+
+
+async def fetch_predict_upcoming(
+    client: httpx.AsyncClient,
+    *,
+    cfg: DictConfig,
+    tournament: str,
+) -> dict[str, Any]:
+    """Загрузить предстоящие матчи через тот же контракт, что и Telegram/digest enrichment (GET)."""
+    base = str(cfg.bot.api_base_url).rstrip("/")
+    url = _predict_upcoming_url(base, tournament)
+    params = _upcoming_query_params(tournament, cfg)
+    data = await _fetch_json(client, url, params=params)
+    return data if isinstance(data, dict) else {"predictions": []}
+
 
 def _tournament_choices(_cfg: DictConfig) -> list[str]:
     raw = os.getenv("BOT_TOURNAMENTS", "").strip()
@@ -165,12 +194,9 @@ async def cb_predict(cq: CallbackQuery, cfg: DictConfig) -> None:
     if cq.data is None or cq.message is None:
         return
     tournament = cq.data.split(":", 1)[1]
-    base = str(cfg.bot.api_base_url).rstrip("/")
-    url = f"{base}/predict/upcoming/{tournament}"
-    params = _upcoming_query_params(tournament, cfg)
     async with httpx.AsyncClient() as client:
         try:
-            data = await _fetch_json(client, url, params=params)
+            data = await fetch_predict_upcoming(client, cfg=cfg, tournament=tournament)
         except Exception as e:
             logger.exception("predict fetch failed")
             await cq.message.answer(f"Ошибка API: {e}")
@@ -191,12 +217,9 @@ async def cb_upcoming(cq: CallbackQuery, cfg: DictConfig) -> None:
     if cq.data is None or cq.message is None:
         return
     tournament = cq.data.split(":", 1)[1]
-    base = str(cfg.bot.api_base_url).rstrip("/")
-    url = f"{base}/predict/upcoming/{tournament}"
-    params = _upcoming_query_params(tournament, cfg)
     async with httpx.AsyncClient() as client:
         try:
-            data = await _fetch_json(client, url, params=params)
+            data = await fetch_predict_upcoming(client, cfg=cfg, tournament=tournament)
         except Exception as e:
             logger.exception("upcoming fetch failed")
             await cq.message.answer(f"Ошибка API: {e}")
@@ -214,12 +237,9 @@ async def cmd_upcoming(message: Message, cfg: DictConfig) -> None:
     parts = (message.text or "").split(maxsplit=1)
     if len(parts) > 1 and parts[1].strip():
         tournament = parts[1].strip()
-        base = str(cfg.bot.api_base_url).rstrip("/")
-        url = f"{base}/predict/upcoming/{tournament}"
-        params = _upcoming_query_params(tournament, cfg)
         async with httpx.AsyncClient() as client:
             try:
-                data = await _fetch_json(client, url, params=params)
+                data = await fetch_predict_upcoming(client, cfg=cfg, tournament=tournament)
             except Exception as e:
                 logger.exception("upcoming command fetch failed")
                 await message.answer(f"Ошибка API: {e}")
@@ -232,3 +252,53 @@ async def cmd_upcoming(message: Message, cfg: DictConfig) -> None:
         await message.answer(text[:4000])
         return
     await message.answer("Выберите турнир:", reply_markup=_kb_tournaments(cfg, "up"))
+
+
+@router.message(Command("edge"))
+async def cmd_edge(message: Message, cfg: DictConfig) -> None:
+    """Повторно запросить live-котировки/edge через API без Airflow (R41 лёгкий путь)."""
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) > 1 and parts[1].strip():
+        tournament = parts[1].strip()
+        async with httpx.AsyncClient() as client:
+            try:
+                data = await fetch_predict_upcoming(client, cfg=cfg, tournament=tournament)
+            except Exception as e:
+                logger.exception("edge command fetch failed")
+                await message.answer(f"Ошибка API: {e}")
+                return
+        items = data.get("predictions") or []
+        if not items:
+            await message.answer(LIGHT_PATH_EDGE_HTML + "Пусто")
+            return
+        text = "\n\n".join(_format_prediction_card(x) for x in items[:10])
+        await message.answer(LIGHT_PATH_EDGE_HTML + text[:3800])
+        return
+    await message.answer(
+        LIGHT_PATH_EDGE_HTML + "Выберите турнир:",
+        reply_markup=_kb_tournaments(cfg, "edge"),
+    )
+
+
+@router.callback_query(F.data.startswith("edge:"))
+async def cb_edge(cq: CallbackQuery, cfg: DictConfig) -> None:
+    """Кнопка «обновить edge» для whitelist-пользователя (только GET /predict/upcoming/*)."""
+    if cq.data is None or cq.message is None:
+        return
+    tournament = cq.data.split(":", 1)[1]
+    async with httpx.AsyncClient() as client:
+        try:
+            data = await fetch_predict_upcoming(client, cfg=cfg, tournament=tournament)
+        except Exception as e:
+            logger.exception("edge callback fetch failed")
+            await cq.message.answer(f"Ошибка API: {e}")
+            await cq.answer()
+            return
+    items = data.get("predictions") or []
+    if not items:
+        await cq.message.answer(LIGHT_PATH_EDGE_HTML + f"Нет предсказаний для {tournament}")
+        await cq.answer()
+        return
+    chunk = "\n\n---\n\n".join(_format_prediction_card(x) for x in items[:10])
+    await cq.message.answer(LIGHT_PATH_EDGE_HTML + chunk[:3800])
+    await cq.answer()

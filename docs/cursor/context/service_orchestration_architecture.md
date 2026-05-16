@@ -86,6 +86,29 @@ ML-сервис прогнозирования с низкой latency API и в
 
 **Важно про текущий граф:** в текущем `dvc.yaml` стадия `features` задана как один multirun по нескольким турнирам. Это ограничивает инкрементальность на уровне DVC при сценарии "обновился один турнир".
 
+**R41 — пропуск `features` только как спайк:** точка решения перед `features_build`, fingerprint по согласованному набору артефактов; см. блок комментариев в `sports_forecast/orchestration/refresh_command.py` (edge cases: ретроспективные правки NHL API, odds merge без смены ожидаемых путей). Не заменяет `dvc repro` в инженерном контуре.
+
+---
+
+## Контур «лёгкий» vs «тяжёлый»: матрица триггеров (R41)
+
+**Лёгкий путь («refresh predictions state» для котировок):** чтение уже материализованной витрины + живые децимали Pinnacle (The Odds API) и производные (`edge_*`, решения ставки) **в рамках HTTP-запроса** или эквивалентного GET из бота; **без** `source_refresh`, ingest, фичей, materialize и **без** Airflow. Вероятности модели остаются теми же, что в БД.
+
+**Тяжёлый путь:** полное обновление данных и витрины — `source` → ingest → clean → features → materialize (и опционально validate / digest Telegram).
+
+| Триггер / вход | Контур | Airflow REST | Изменение витрины (прогнозы) | Live котировки / edge |
+|---|---|---|---|---|
+| Airflow DAG `data_refresh` | Тяжёлый | (сам является оркестратором) | Да, после materialize | Косвенно в следующих GET |
+| Airflow DAG `nhl_morning_refresh` (+ `post_refresh_digest`) | Тяжёлый + ops digest | ditto | Да | digest читает витрину + Odds API; не пересчитывает фичи |
+| `cron_refresh` (хост Cron / утренний NHL) | Тяжёлый | Нет | Да при успешном materialize | — |
+| CLI `post_refresh_digest` | Лёгкий digest (сообщение) | Нет | Нет | Да Odds batch в процессе digest |
+| FastAPI `GET /predict/upcoming/{t}?live_pinnacle=true` | Лёгкий | Нет | Нет | Да на каждый запрос |
+| Telegram `/edge`, callback `edge:*` | Лёгкий | **Нет** (только HTTP к API) | Нет | Да |
+| Telegram admin `/refresh` | Тяжёлый | **Да** (триггер DAG) | Да после полного пайплайна | — |
+| `GET /predict/...` без `live_pinnacle` | Витрина-only | Нет | Нет | Нет |
+
+Политика whitelist: любые действия пользователя проходят `bot.allowed_user_ids`; **только** `bot.admin_user_ids` могут вызывать `/refresh`.
+
 ---
 
 ## Оркестрация (Airflow)

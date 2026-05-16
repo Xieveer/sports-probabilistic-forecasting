@@ -4,7 +4,7 @@
 
 Канонический идентификатор турнира для данных, пайплайна, моделей, API и Telegram — **`nhl`**.
 
-Исторический Hydra-групп `tournament=nhl_train` больше не задаёт отдельное `name`: файл `conf/tournament/nhl_train.yaml` только подключает `nhl` (deprecated-алиас). Новые команды и расписание используют **`nhl`**.
+Исторический Hydra-групп `tournament=nhl_train` **больше не поддерживается отдельным YAML** (алиас удалён после R41.4 — используйте `tournament=nhl`). Строки `nhl_train` в Prediction Store см. ниже для миграции БД.
 
 ## Миграция уже развёрнутого окружения
 
@@ -47,6 +47,5 @@ UPDATE predictions SET tournament = 'nhl' WHERE tournament = 'nhl_train';
 
 ## Связанные файлы
 
-- `conf/tournament/nhl.yaml` — `train_eval_split` и комментарии для обучения OT.
-- `conf/tournament/nhl_train.yaml` — только `defaults: [nhl]` (deprecated).
+- `conf/tournament/nhl.yaml` — `train_eval_split` и комментарии для обучения OT (**единый файл турнира**).
 - `docs/cursor/refactor/done_task/R38.md` — итог эпика и критерии.

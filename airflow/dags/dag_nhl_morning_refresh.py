@@ -12,6 +12,10 @@
 сводка витрины / live Pinnacle и одно Telegram-сообщение через
 :mod:`sports_forecast.orchestration.post_refresh_digest`, если не отключено.
 
+**R41.3:** общие Bash-операторы вынесены в :mod:`sf_scheduled_refresh_ops` — для новой лиги
+скопируйте этот DAG, поменяйте ``dag_id``/Cron/переменные Airflow или задайте
+``dag_run.conf`` без дублирования Jinja в bash.
+
 Airflow Variables (см. также ``docs/source/nhl_local_operations.rst``):
 
 * ``SF_TELEGRAM_DIGEST_ENABLE`` (по умолчанию ``true``) — при значениях ``0``, ``false``, ``no``,
@@ -28,52 +32,16 @@ Airflow Variables (см. также ``docs/source/nhl_local_operations.rst``):
 
 from __future__ import annotations
 
-import shlex
 from datetime import datetime, timedelta
-from textwrap import dedent
 
 from airflow.models import Variable
-from airflow.operators.bash import BashOperator
-
-from airflow import DAG
-from sports_forecast.orchestration.refresh_command import (
-    build_refresh_per_tournament_command,
+from sf_scheduled_refresh_ops import (
+    bash_post_refresh_digest,
+    bash_refresh_per_tournament,
+    bash_run_validation,
 )
 
-
-def _build_post_refresh_digest_bash_command(*, project_dir: str, uv_run: str) -> str:
-    """Собрать ``bash_command`` с Jinja (Airflow 2 ``var.value``, ``dag_run``, ``params``).
-
-    Литералы ``project_dir`` / ``uv_run`` подставляются при парсинге DAG; условный skip и override
-    команды читаются из Variables **на каждый запуск** через шаблонизацию.
-    """
-    tmpl = dedent(
-        """
-        {% set _en = (var.value.get('SF_TELEGRAM_DIGEST_ENABLE', 'true') | lower | trim) %}
-        {% if _en in ['0', 'false', 'no', 'off'] %}
-        echo "post_refresh_digest skipped (SF_TELEGRAM_DIGEST_ENABLE)" && exit 0
-        {% else %}
-        {% set _cmd = (var.value.get('SF_POST_REFRESH_DIGEST_CMD', '') | default('', true) | trim) %}
-        set -euo pipefail
-        cd __PROJECT_DIR__ && \
-        {% if _cmd %}
-        bash -lc {{ _cmd | tojson }}
-        {% else %}
-        __UV_RUN__ python -m sports_forecast.orchestration.post_refresh_digest \
-          --tournament {{ dag_run.conf.get("tournament", params.tournament) | tojson }} \
-          --market {{ dag_run.conf.get("market", params.market) | tojson }} \
-          --market-spec {{ dag_run.conf.get("market_spec", params.market_spec) | tojson }} \
-          --project-root __PROJECT_ROOT__
-        {% endif %}
-        {% endif %}
-        """
-    ).strip()
-    qdir = shlex.quote(project_dir)
-    return (
-        tmpl.replace("__PROJECT_DIR__", qdir)
-        .replace("__PROJECT_ROOT__", qdir)
-        .replace("__UV_RUN__", uv_run)
-    )
+from airflow import DAG
 
 
 # ── Конфигурация (совместимо с dag_data_refresh) ─────────────────
@@ -112,6 +80,7 @@ default_args = {
     "execution_timeout": timedelta(hours=2),
 }
 
+
 with DAG(
     dag_id="nhl_morning_refresh",
     description="NHL: ежедневное утро MSK (09 UTC) — full refresh + materialize winner_withOT",
@@ -130,41 +99,35 @@ with DAG(
         "market_spec": NHL_MORNING_SPEC,
     },
 ) as dag:
-    refresh_nhl = BashOperator(
+    refresh_nhl = bash_refresh_per_tournament(
+        dag,
         task_id="refresh_nhl_morning",
-        bash_command=build_refresh_per_tournament_command(
-            project_dir=PROJECT_DIR,
-            uv_run=UV_RUN,
-            tournaments_expr='{{ dag_run.conf.get("tournaments", params.tournament) }}',
-            features_config='{{ dag_run.conf.get("features", params.features) }}',
-            market='{{ dag_run.conf.get("market", params.market) }}',
-            market_spec='{{ dag_run.conf.get("market_spec", params.market_spec) }}',
-            source_cmd=SOURCE_REFRESH_CMD,
-            lock_file=LOCK_FILE,
-            lock_wait_seconds=LOCK_WAIT_SECONDS,
-        ),
-        execution_timeout=timedelta(hours=6),
-        pool=REFRESH_POOL,
-        pool_slots=1,
+        project_dir=PROJECT_DIR,
+        uv_run=UV_RUN,
+        tournaments_expr='{{ dag_run.conf.get("tournaments", params.tournament) }}',
+        features_config='{{ dag_run.conf.get("features", params.features) }}',
+        market='{{ dag_run.conf.get("market", params.market) }}',
+        market_spec='{{ dag_run.conf.get("market_spec", params.market_spec) }}',
+        source_cmd=SOURCE_REFRESH_CMD,
+        lock_file=LOCK_FILE,
+        lock_wait_seconds=LOCK_WAIT_SECONDS,
+        refresh_pool=REFRESH_POOL,
     )
 
-    validate = BashOperator(
+    validate = bash_run_validation(
+        dag,
         task_id="validate",
-        bash_command=f"cd {PROJECT_DIR} && {UV_RUN} python -m sports_forecast.validation.run_validation",
-        pool=REFRESH_POOL,
-        pool_slots=1,
+        project_dir=PROJECT_DIR,
+        uv_run=UV_RUN,
+        refresh_pool=REFRESH_POOL,
     )
 
-    # BashOperator без собственных retries наследует default_args["retries"]; при ошибке между
-    # отправкой Telegram и кодом возврата возможен второй успешный send — см. post_refresh_digest + SF_TELEGRAM_DIGEST_DEDUP.
-    post_refresh_digest = BashOperator(
+    post_refresh_digest = bash_post_refresh_digest(
+        dag,
         task_id="post_refresh_digest",
-        bash_command=_build_post_refresh_digest_bash_command(
-            project_dir=PROJECT_DIR,
-            uv_run=UV_RUN,
-        ),
-        pool=REFRESH_POOL,
-        pool_slots=1,
+        project_dir=PROJECT_DIR,
+        uv_run=UV_RUN,
+        refresh_pool=REFRESH_POOL,
     )
 
     refresh_nhl >> validate >> post_refresh_digest

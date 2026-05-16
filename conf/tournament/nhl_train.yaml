@@ -1,5 +1,0 @@
-# Deprecated (R38): используйте ``tournament=nhl``. Этот файл будет удалён в следующем релизе.
-# Конфигурация полностью совпадает с ``conf/tournament/nhl.yaml`` (включая ``train_eval_split``).
-defaults:
-  - nhl
-  - _self_

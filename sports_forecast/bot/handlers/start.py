@@ -18,8 +18,9 @@ async def cmd_start(message: Message) -> None:
         "Команды:\n"
         "/predict — ближайшие матчи с вероятностями\n"
         "/upcoming [турнир] — расписание из API\n"
+        "/edge [турнир] — обновить live-котировки/edge (лёгкий путь; без пайплайна данных)\n"
         "/help — справка\n"
-        "Админ: /status, /refresh, /models"
+        "Админ: /status, /refresh (полный refresh через Airflow), /models"
     )
 
 
