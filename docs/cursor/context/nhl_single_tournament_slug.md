@@ -49,4 +49,4 @@ UPDATE predictions SET tournament = 'nhl' WHERE tournament = 'nhl_train';
 
 - `conf/tournament/nhl.yaml` — `train_eval_split` и комментарии для обучения OT.
 - `conf/tournament/nhl_train.yaml` — только `defaults: [nhl]` (deprecated).
-- `docs/cursor/refactor/backlog/R38.md` — эпик и критерии.
+- `docs/cursor/refactor/done_task/R38.md` — итог эпика и критерии.

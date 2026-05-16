@@ -167,7 +167,7 @@
   - [x] R34.5 — Агрегация беттинга по шагам, cumulative trace
   - [x] R34.6 — MLflow: per-step и aggregate WF-метрики, теги, артефакты
   - [x] R34.7 — `test_walk_forward_*.py`, `docs/source/walk_forward.rst`
-- [x] **R37** — NHL operational: локальный стек, 48h, Pinnacle + edge, пайплайн 12:00 MSK, Telegram ✅ 2026-05-13; см. `backlog/R37.md`, `done_task/R37.*.md`
+- [x] **R37** — NHL operational: локальный стек, 48h, Pinnacle + edge, пайплайн 12:00 MSK, Telegram ✅ 2026-05-13; см. `done_task/R37.*.md`
   - [x] **R37.1** — Локальный runbook (`done_task/R37.1.md`)
   - [x] **R37.2** — `PredictionRepository` + `/predict/upcoming/*`: 48h, NHL `winner_withOT` (`done_task/R37.2.md`)
   - [x] **R37.3** — `edge_threshold` + bet/no-bet (`done_task/R37.3.md`)
