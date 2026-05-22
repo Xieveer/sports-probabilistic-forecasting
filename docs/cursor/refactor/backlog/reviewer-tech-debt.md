@@ -722,3 +722,15 @@
   - Реализация R41.5: fingerprint после source refresh, строгий allowlist файлов, лог `SKIP features` с причиной, rollout под флагом.
   - Свести операторский light/heavy в общий `docs/source/operations.rst` при появлении **R15**.
   - В **R24**: кнопка «Обновить edge» в главном меню, ссылающаяся на тот же контракт, что `/edge`.
+
+### 2026-05-23 — ops: refresh-lock-status / flock troubleshooting docs (вне бэклога)
+
+- **Задача:** вне бэклога — one-off operational fix после инцидента с Ctrl+Z + flock
+- **Ограничения и компромиссы:**
+  - `ps` grep в `refresh-lock-status` покрывает три паттерна (`run_nhl_refresh_notify.py`, `flock -w`, `-m cron_refresh`), но не покрывает Airflow-обёртки типа `bash -c "flock …"` без этих строк в CMD; в контейнерном окружении вывод может быть пустым.
+  - `fuser` — утилита из `psmisc`; на минимальных Docker/CI образах недоступна. Таргет деградирует gracefully, но пользователь видит только сообщение об отсутствии `fuser`.
+  - `lsof` на Linux показывает только open file descriptors; flock на вышедшем из ``ps`` зомби-процессе может не отображаться.
+- **Возможные улучшения / техдолг:**
+  - Добавить `make refresh-lock-kill` — операция `fuser -k -9 "$LOCK"` с подтверждением, чтобы избежать ручного grep→kill.
+  - При наличии systemd/journald: добавить вывод последних строк `journalctl -u sf-refresh` в диагностику.
+  - Рассмотреть `--timeout 0` вместо `flock -w $seconds` для принудительного провала без ожидания в CI/cron при уже занятом lock.
