@@ -218,6 +218,53 @@ env ниже), а не только сервису ``api``.
 Для проверки уведомления **вне** Airflow по-прежнему можно ``make nhl-morning-test-notify`` — это
 обходной путь, а не замена задачи ``post_refresh_digest`` в DAG.
 
+Troubleshooting: пайплайн не стартует после Ctrl+Z или сбоя сети
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Симптомы:** после ``make nhl-morning-test-notify`` / ``cron_refresh`` / задачи DAG refresh новый
+запуск «висит» до нескольких минут без прогресса; возможны ошибки HTTP к ``api-web.nhle.com``
+(``ReadTimeoutError``, ``NameResolutionError`` и т. п.), после чего выполнение прерывают через терминал.
+
+**Причина 1 — ``flock`` на refresh.** Оболочная команда refresh оборачивается в эксклюзивную
+блокировку ``flock`` на файле ``SF_REFRESH_LOCK_FILE`` (по умолчанию ``/tmp/sf_refresh_pipeline.lock``,
+см. ``cron_refresh``, ``refresh_command``, Airflow Variables). Пока **любой** процесс держит lock,
+следующий запуск ждёт освобождения до ``SF_REFRESH_LOCK_WAIT_SECONDS`` (часто ``300`` с).
+
+**Причина 2 — процессы в состоянии *stopped*** (в ``ps`` колонка ``STAT`` содержит ``T`` **после
+нескольких Ctrl+Z**). Остановленный shell может продолжать удерживать ``flock``; новые запуски блокируются.
+
+**Что делать (операционно):**
+
+#. Диагностика::
+
+    make refresh-lock-status
+
+   Либо вручную::
+
+    export SF_REFRESH_LOCK_FILE="${SF_REFRESH_LOCK_FILE:-/tmp/sf_refresh_pipeline.lock}"
+    fuser -v "$SF_REFRESH_LOCK_FILE"
+    ps -eo pid,tty,stat,cmd | grep -E 'flock|cron_refresh|run_nhl_refresh_notify'
+
+#. Найдите PID процесса, который держит lock (**часто** это shell с вызовом ``flock -w …``).
+   Убедитесь, что это ваши локальные процессы, а не нужный cron/systemd или чужая сессия на сервере.
+#. Завершите держателя (и при необходимости «залипшие» дочерние процессы), например ``kill -9 <pid>``
+   после неудачного мягкого ``kill``.
+#. По выводу ``fuser -v`` можно одним действием отправить всем процессам, держащим lock-файл,
+   сигнал **SIGKILL** (осторожно: только если это точно ваши локальные тесты, а не нужный systemd/cron)::
+
+    fuser -k -9 "$SF_REFRESH_LOCK_FILE"
+
+   Эквивалент без ``fuser`` — вручную ``kill -9`` по PID из ``lsof`` / ``make refresh-lock-status``.
+#. На остановленных задачах **в активном терминале** можно: ``jobs -l``, затем ``kill -9 %N`` для
+   нужного номера задания.
+#. Повторите запуск (например ``make nhl-morning-refresh`` или ``make nhl-morning-test-notify``).
+
+**Не полагайтесь на удаление lock-файла:** пока жив процесс держатель, advisory lock может оставаться
+на открытом inode; надёжно освобождает ресурс завершение процесса.
+
+**Сеть:** checkpoint NHL под ``data/source/nhl/`` (``.nhl_checkpoint.txt``, ``.nhl_schedule_progress.json``)
+обычно не ломается из‑за таймаута; симптом «новый запуск не идёт» в этом сценарии чаще связан с flock, а не с checkpoint.
+
 Post-refresh digest CLI (R39.4)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -392,6 +439,8 @@ Smoke-проверки API
      - Выполнить полный утренний ``cron_refresh`` для ``nhl`` / ``winner_withOT`` + ``run_validation`` (без Telegram).
    * - ``make nhl-morning-test-notify``
      - Пауза до ближайшей минуты МСК + offset, затем refresh + validate и digest (модуль ``post_refresh_digest``) в Telegram; без ``--legacy-api-summary`` не через HTTP.
+   * - ``make refresh-lock-status``
+     - Вывести путь flock lock (``SF_REFRESH_LOCK_FILE``), ``fuser``/``lsof`` и строки из ``ps``, связанные с refresh/flock — если пайплайн «завис» после Ctrl+Z или блокировки, см. подраздел Troubleshooting выше.
 
 Дополнительные замечания
 ~~~~~~~~~~~~~~~~~~~~~~~~

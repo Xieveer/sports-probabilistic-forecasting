@@ -10,7 +10,7 @@ DOCS_BUILD := docs/build
 
 .PHONY: help init install lint format fix test test-unit test-cov test-watch test-file pre-commit train train-sweep train-sweep-nhl train-sweep-nhl-ot-winner train-sweep-nhl-ot-total promote clean dvc-repro
 .PHONY: docs docs-serve docs-clean docs-open docs-coverage docs-linkcheck tree
-.PHONY: api api-dev bot-dev bot-up materialize nhl-morning-refresh-dry-run nhl-morning-refresh nhl-morning-test-notify docker-up docker-down docker-build docker-logs db-init
+.PHONY: api api-dev bot-dev bot-up materialize nhl-morning-refresh-dry-run nhl-morning-refresh nhl-morning-test-notify refresh-lock-status docker-up docker-down docker-build docker-logs db-init
 .PHONY: airflow-init airflow-up airflow-down airflow-logs
 .PHONY: monitoring-up monitoring-down
 
@@ -61,6 +61,7 @@ help:
 	@echo "  make nhl-morning-refresh-dry-run - вывести shell-команду утреннего NHL (как DAG nhl_morning_refresh)"
 	@echo "  make nhl-morning-refresh       - выполнить полный NHL refresh + validate (без Telegram)"
 	@echo "  make nhl-morning-test-notify   - пауза МСК + offset, refresh + validate; TG через post_refresh_digest (R39.8)"
+	@echo "  make refresh-lock-status     - диагностика flock на refresh (SF_REFRESH_LOCK_FILE): кто держит файл, см. доки NHL ops"
 	@echo "  make db-init       - инициализировать таблицы DB (SQLite)"
 	@echo ""
 	@echo "Docker:"
@@ -395,6 +396,31 @@ nhl-morning-refresh:
 # Тест: пауза МСК + offset; refresh → validate → python -m sports_forecast.orchestration.post_refresh_digest (legacy: scripts/run_nhl_refresh_notify.py, R39.8)
 nhl-morning-test-notify:
 	uv run python scripts/run_nhl_refresh_notify.py
+
+# Диагностика эксклюзивной блокировки refresh (flock на SF_REFRESH_LOCK_FILE, см. cron_refresh / Airflow Variables)
+refresh-lock-status:
+	@LOCK="$${SF_REFRESH_LOCK_FILE:-/tmp/sf_refresh_pipeline.lock}"; \
+	echo "SF refresh flock — lock file: $$LOCK"; \
+	echo ""; \
+	if command -v fuser >/dev/null 2>&1; then \
+		echo "--- fuser (PIDs держащих файл; может быть пусто, см. ps ниже) ---"; \
+		(fuser -v "$$LOCK" 2>&1) || echo "(нет процессов по fuser — lock свободен или инструмент не видит держателя)"; \
+	else \
+		echo "(fuser не найден — пакет psmisc; или lsof см. ниже)"; \
+	fi; \
+	echo ""; \
+	if command -v lsof >/dev/null 2>&1; then \
+		echo "--- lsof ---"; \
+		(lsof "$$LOCK" 2>&1) || echo "(lsof: ничего)"; \
+		echo ""; \
+	fi; \
+	echo "--- возможные процессы refresh/flock (ищите STAT=T после Ctrl+Z) ---"; \
+	ps -eo pid,tty,stat,cmd 2>/dev/null | grep -v 'SF_REFRESH_LOCK_FILE:-/tmp/sf_refresh_pipeline.lock' | grep -E 'run_nhl_refresh_notify\.py|\\bflock[[:space:]]+-w[[:space:]]|-m sports_forecast\.orchestration\.cron_refresh' | grep -v '[g]rep -E' || true; \
+	echo ""; \
+	echo "Освобождение: завершите PID держателя lock (обычно shell с flock), например: kill -9 <pid>"; \
+	echo "Подробнее: docs/source/nhl_local_operations.rst (Troubleshooting flock / Ctrl+Z)."; \
+	wait_seconds="$${SF_REFRESH_LOCK_WAIT_SECONDS:-300}"; \
+	echo "(Ожидание lock новым запуском: SF_REFRESH_LOCK_WAIT_SECONDS=$${wait_seconds})"
 
 # ---------- Docker ----------
 
