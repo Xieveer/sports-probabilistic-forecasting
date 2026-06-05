@@ -1,0 +1,18 @@
+{
+  "success": true,
+  "data": {
+    "stat": [
+      {"code": "goals", "home": 2, "away": 2},
+      {"code": "xg", "home": 1.77, "away": 1.09},
+      {"code": "corners", "home": 4, "away": 3},
+      {"code": "yellowcards", "home": 2, "away": 2},
+      {"code": "offsides", "home": 3, "away": 2},
+      {"code": "shotstarget", "home": 7, "away": 3},
+      {"code": "possession", "home": 54, "away": 46},
+      {"code": "redcards", "home": 0, "away": 0},
+      {"code": "yellowcards_bet365", "home": 2, "away": 2},
+      {"code": "attacks", "home": null, "away": null},
+      {"code": "dattacks", "home": null, "away": null}
+    ]
+  }
+}

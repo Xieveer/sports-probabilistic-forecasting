@@ -62,6 +62,7 @@ feature_pipeline_overrides:
 | Ice hockey | `conf/sport/ice_hockey.yaml` | `home_team` / `away_team` |
 | Cyberhockey | `conf/sport/cyberhockey.yaml` | `home_team` / `away_team` |
 | Table Tennis | `conf/sport/table_tennis.yaml` | `home_team` / `away_team` |
+| Football (nationals) | `conf/sport/football.yaml` | `home_team` / `away_team` |
 
 > **Стандартизация:** Имена участников всегда приводятся к `home_team` / `away_team`
 > на clean-стадии (через `column_mapping`). В long format: `pl` / `opp`.
@@ -214,6 +215,20 @@ provider:
 ```
 
 NHL Web API (`NhlWebApiSourceProvider`, пакет `sports_forecast/data/providers/nhl/`): многократные запросы к `api-web.nhle.com`, сбор `source.csv` по полям из `docs/cursor/source_data/nhl.md`. См. `conf/source/nhl.yaml` (`provider.type: nhl_web_api`): при `finished_only: false` в файл попадают и предстоящие матчи (`match_is_end=0`), завершённые обогащаются boxscore/PBP (`match_is_end=1`). Коэффициенты БК в этом API отсутствуют — для линий букмекеров используется отдельный источник (The Odds API); политика: сбор кэфов для валидации/бенчмарка, **не** как признаки для обучения — см. `docs/cursor/source_data/the_odds_api.md`.
+
+Smart Tables API (`SmartTablesSourceProvider`, пакет `sports_forecast/data/providers/smart_tables/`): футбол / **сборные** через `backend.smart-tables.ru`. См. `conf/source/smart_tables.yaml` (`provider.type: smart_tables_api`), ingest-slug `football_nationals` (`conf/source/football_nationals.yaml` → defaults на smart_tables). Bronze и `source.csv` лежат в **`data/source/smart_tables/`** (поле `name` в yaml), не в каталоге турнира.
+
+**Отличия от NHL:**
+
+| Аспект | NHL | Football (Smart Tables) |
+|--------|-----|-------------------------|
+| Ничья | Нет | `winner` = 1X2 (home / draw / away); таргет Phase 2 — 3-class |
+| Тоталы | линии 3.5–9.5 | линии **1.5, 2.5, 3.5, 4.5** (`conf/sport/football.yaml`) |
+| Турниры | один `nhl` | один pool `football_nationals`, фильтр `competition_code` / `match_importance` |
+| Источник odds | The Odds API (merge) | ST card 1X2 best-effort; исторические кэфы — отдельный epic |
+| Backfill | ~26 ч, checkpoint | ~93k запросов, rate limit 1 req/s, raw JSON cache |
+
+Ops: `make football-catalog-refresh`, `make football-backfill`, `make football-ingest-debug` (env `SF_SMART_TABLES_MAX_MATCHES`, `SF_SMART_TABLES_COMPETITION_CODES`). Документация колонок: `docs/cursor/source_data/football.md`.
 
 Контракт всех адаптеров — абстрактный класс `SourceProvider` в `sports_forecast/data/providers/base.py` (метод `fetch(source_name) -> Path`).
 

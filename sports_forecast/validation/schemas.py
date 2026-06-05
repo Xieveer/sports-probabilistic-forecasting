@@ -388,6 +388,67 @@ InterimSchema = DataFrameSchema(
             required=False,
             description="Место в конференции (гости)",
         ),
+        # --- Football / smart_tables (опционально) ---
+        "match_importance": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            description="Football: важность матча 1–4 (friendly … flagship)",
+        ),
+        "is_friendly": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            description="Football: 1 если competition_code == FRII",
+        ),
+        "competition_code": Column(
+            dtype="object",
+            nullable=True,
+            required=False,
+            description="Football: код турнира ST (WC, EURO, …)",
+        ),
+        "home_goals_all": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            description="Football: голы дома (period=all)",
+        ),
+        "away_goals_all": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            description="Football: голы гостей (period=all)",
+        ),
+        "home_xg_all": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            description="Football: xG дома (period=all)",
+        ),
+        "away_xg_all": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            description="Football: xG гостей (period=all)",
+        ),
+        "odd_home": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            description="Football: prematch 1X2 home (best-effort)",
+        ),
+        "odd_draw": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            description="Football: prematch 1X2 draw",
+        ),
+        "odd_away": Column(
+            dtype="float64",
+            nullable=True,
+            required=False,
+            description="Football: prematch 1X2 away",
+        ),
     },
     # Разрешаем дополнительные столбцы (player names, tour_num, odds_raw, etc.)
     strict=False,

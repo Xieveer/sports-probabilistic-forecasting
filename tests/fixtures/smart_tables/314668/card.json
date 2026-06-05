@@ -1,0 +1,51 @@
+{
+  "success": true,
+  "data": {
+    "item": {
+      "id": 314668,
+      "match_center_id": 123535,
+      "competition_id": 27,
+      "season_id": 15,
+      "begin_at": "2022-12-18T18:00:00+00:00",
+      "status": "finished",
+      "home_team_id": 387,
+      "away_team_id": 388,
+      "home_goals": 3,
+      "away_goals": 3,
+      "odd_home": 2.45,
+      "odd_x": 3.1,
+      "odd_away": 2.9,
+      "referee_id": 426,
+      "stage": "Final",
+      "round": "",
+      "group": "",
+      "competition": {
+        "id": 27,
+        "code": "WC",
+        "title": "World Cup",
+        "for_national_teams": 1,
+        "is_cup": 1,
+        "is_top": 1
+      },
+      "home_team_with_coach": {
+        "id": 387,
+        "common_title": "Argentina",
+        "title": "Argentina",
+        "is_national": 1,
+        "coaches": [
+          {"id": 1, "name": "Lionel Scaloni", "is_current": true}
+        ]
+      },
+      "away_team_with_coach": {
+        "id": 388,
+        "common_title": "France",
+        "title": "France",
+        "is_national": 1,
+        "coaches": [
+          {"id": 2, "name": "Didier Deschamps", "is_current": true}
+        ]
+      },
+      "referee": {"id": 426, "name": "Szczesny Sim"}
+    }
+  }
+}

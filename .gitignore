@@ -43,6 +43,9 @@ htmlcov/
 # Jupyter
 .ipynb_checkpoints
 
+# Smart Tables reconnaissance (cookies inside HAR — never commit)
+*.har
+
 # Environment
 .env
 .env.local

@@ -1,0 +1,5 @@
+# Ingest slug для турнира football_nationals.
+# Провайдер и пути данных — из smart_tables (data/source/smart_tables/).
+
+defaults:
+  - smart_tables

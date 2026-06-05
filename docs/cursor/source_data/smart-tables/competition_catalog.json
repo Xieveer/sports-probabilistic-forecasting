@@ -1,0 +1,1039 @@
+[
+  {
+    "country_slug": "Africa",
+    "competition_slug": "African_Nations_Championship",
+    "competition_id": 305,
+    "code": "AFCNC",
+    "title": "African Nations Championship",
+    "for_national_teams": 1,
+    "match_count": 172
+  },
+  {
+    "country_slug": "Africa",
+    "competition_slug": "CECAFA_Championship",
+    "competition_id": 210,
+    "code": "CECAFA",
+    "title": "CECAFA Championship",
+    "for_national_teams": 1,
+    "match_count": 57
+  },
+  {
+    "country_slug": "Africa",
+    "competition_slug": "Champions_League",
+    "competition_id": 207,
+    "code": "AFCL",
+    "title": "Champions League",
+    "for_national_teams": 0,
+    "match_count": 719
+  },
+  {
+    "country_slug": "Africa",
+    "competition_slug": "Confederations_Cup",
+    "competition_id": 208,
+    "code": "AFCC",
+    "title": "Confederations Cup",
+    "for_national_teams": 0,
+    "match_count": 719
+  },
+  {
+    "country_slug": "Africa",
+    "competition_slug": "Cup_of_Nations",
+    "competition_id": 78,
+    "code": "AFCN",
+    "title": "Cup of Nations",
+    "for_national_teams": 1,
+    "match_count": 240
+  },
+  {
+    "country_slug": "Africa",
+    "competition_slug": "World_Cup_Qualification",
+    "competition_id": 209,
+    "code": "WCQAF",
+    "title": "World Cup Qualification",
+    "for_national_teams": 1,
+    "match_count": 462
+  },
+  {
+    "country_slug": "Africa",
+    "competition_slug": "cosafa-cup",
+    "competition_id": 520,
+    "code": "COSAFA",
+    "title": "COSAFA Cup",
+    "for_national_teams": 1,
+    "match_count": 22
+  },
+  {
+    "country_slug": "Africa",
+    "competition_slug": "cosafa-women-s-cup",
+    "competition_id": 521,
+    "code": "COSAFW",
+    "title": "COSAFA Women's Cup",
+    "for_national_teams": 1,
+    "match_count": 19
+  },
+  {
+    "country_slug": "Africa",
+    "competition_slug": "cup-of-nations-qualification",
+    "competition_id": 366,
+    "code": "AFCNQ",
+    "title": "Cup Of Nations Qualification",
+    "for_national_teams": 1,
+    "match_count": 458
+  },
+  {
+    "country_slug": "Argentina",
+    "competition_slug": "Copa_Diego_Maradona",
+    "error": "HTTP Error 404: Not Found"
+  },
+  {
+    "country_slug": "Argentina",
+    "competition_slug": "Cup",
+    "competition_id": 136,
+    "code": "ARGC",
+    "title": "Cup",
+    "for_national_teams": 0,
+    "match_count": 547
+  },
+  {
+    "country_slug": "Argentina",
+    "competition_slug": "Nacional-B",
+    "competition_id": 137,
+    "code": "ARG2",
+    "title": "Primera Nacional",
+    "for_national_teams": 0,
+    "match_count": 4742
+  },
+  {
+    "country_slug": "Argentina",
+    "competition_slug": "Superliga",
+    "competition_id": 21,
+    "code": "ARG1",
+    "title": "Superliga",
+    "for_national_teams": 0,
+    "match_count": 4124
+  },
+  {
+    "country_slug": "Asia",
+    "competition_slug": "AFC_Asian_Cup",
+    "competition_id": 212,
+    "code": "AFCAC",
+    "title": "AFC Asian Cup",
+    "for_national_teams": 1,
+    "match_count": 102
+  },
+  {
+    "country_slug": "Asia",
+    "competition_slug": "AFC_Champions_League",
+    "competition_id": 130,
+    "code": "AFCCL",
+    "title": "AFC Champions League",
+    "for_national_teams": 0,
+    "match_count": 678
+  },
+  {
+    "country_slug": "Asia",
+    "competition_slug": "AFC_Cup",
+    "competition_id": 213,
+    "code": "AFCC",
+    "title": "AFC Champions League 2",
+    "for_national_teams": 0,
+    "match_count": 489
+  },
+  {
+    "country_slug": "Asia",
+    "competition_slug": "World_Cup_Qualification",
+    "competition_id": 214,
+    "code": "WCQA",
+    "title": "World Cup Qualification",
+    "for_national_teams": 1,
+    "match_count": 488
+  },
+  {
+    "country_slug": "Asia",
+    "competition_slug": "afc-u23-asian-cup",
+    "competition_id": 522,
+    "code": "AFCU23",
+    "title": "AFC U23 Asian Cup",
+    "for_national_teams": 1,
+    "match_count": 32
+  },
+  {
+    "country_slug": "Asia",
+    "competition_slug": "asian-cup-qualification",
+    "competition_id": 367,
+    "code": "ACCQ",
+    "title": "Asian Cup Qualification",
+    "for_national_teams": 1,
+    "match_count": 206
+  },
+  {
+    "country_slug": "Australia",
+    "competition_slug": "A-League",
+    "competition_id": 40,
+    "code": "AUS1",
+    "title": "A-League",
+    "for_national_teams": 0,
+    "match_count": 1423
+  },
+  {
+    "country_slug": "Australia",
+    "competition_slug": "NPL_Brisbane",
+    "competition_id": 161,
+    "code": "AUS-FQ",
+    "title": "FQPL 3 Metro",
+    "for_national_teams": 0,
+    "match_count": 1141
+  },
+  {
+    "country_slug": "Australia",
+    "competition_slug": "NPL_Queensland",
+    "competition_id": 163,
+    "code": "AUS-QL",
+    "title": "NPL Queensland",
+    "for_national_teams": 0,
+    "match_count": 965
+  },
+  {
+    "country_slug": "Australia",
+    "competition_slug": "NPL_South_Australia",
+    "competition_id": 162,
+    "code": "AUS-SA",
+    "title": "NPL South Australia",
+    "for_national_teams": 0,
+    "match_count": 908
+  },
+  {
+    "country_slug": "Australia",
+    "competition_slug": "NPL_Victoria",
+    "competition_id": 160,
+    "code": "AUS-VI",
+    "title": "NPL Victoria",
+    "for_national_teams": 0,
+    "match_count": 1211
+  },
+  {
+    "country_slug": "Austria",
+    "competition_slug": "Bundesliga",
+    "competition_id": 46,
+    "code": "AUT1",
+    "title": "Bundesliga",
+    "for_national_teams": 0,
+    "match_count": 1740
+  },
+  {
+    "country_slug": "Bolivia",
+    "competition_slug": "Division_Profesional",
+    "competition_id": 174,
+    "code": "BOL1",
+    "title": "Division Profesional",
+    "for_national_teams": 0,
+    "match_count": 2582
+  },
+  {
+    "country_slug": "Brazil",
+    "competition_slug": "Copa_de_Brasil",
+    "competition_id": 139,
+    "code": "BRAC",
+    "title": "Copa de Brasil",
+    "for_national_teams": 0,
+    "match_count": 1217
+  },
+  {
+    "country_slug": "Brazil",
+    "competition_slug": "Serie_A",
+    "competition_id": 11,
+    "code": "BRA1",
+    "title": "Serie A",
+    "for_national_teams": 0,
+    "match_count": 4356
+  },
+  {
+    "country_slug": "Brazil",
+    "competition_slug": "Serie_B",
+    "competition_id": 138,
+    "code": "BRA2",
+    "title": "Serie B",
+    "for_national_teams": 0,
+    "match_count": 3530
+  },
+  {
+    "country_slug": "Brazil",
+    "competition_slug": "Serie_C",
+    "competition_id": 167,
+    "code": "BRA3",
+    "title": "Serie C",
+    "for_national_teams": 0,
+    "match_count": 1948
+  },
+  {
+    "country_slug": "CONCACAF",
+    "competition_slug": "Champions_League",
+    "competition_id": 211,
+    "code": "CNCFCL",
+    "title": "Champions League",
+    "for_national_teams": 0,
+    "match_count": 340
+  },
+  {
+    "country_slug": "CONCACAF",
+    "competition_slug": "concacaf-nations-league",
+    "competition_id": 471,
+    "code": "CNCNL",
+    "title": "Nations League",
+    "for_national_teams": 1,
+    "match_count": 213
+  },
+  {
+    "country_slug": "Central_America",
+    "competition_slug": "Gold_Cup",
+    "competition_id": 308,
+    "code": "CAGC",
+    "title": "Gold Cup",
+    "for_national_teams": 1,
+    "match_count": 93
+  },
+  {
+    "country_slug": "Central_America",
+    "competition_slug": "World_Cup_Qualification",
+    "competition_id": 216,
+    "code": "WCCA",
+    "title": "World Cup Qualification",
+    "for_national_teams": 1,
+    "match_count": 242
+  },
+  {
+    "country_slug": "Chile",
+    "competition_slug": "Cup",
+    "competition_id": 140,
+    "code": "CHIC",
+    "title": "Cup",
+    "for_national_teams": 0,
+    "match_count": 739
+  },
+  {
+    "country_slug": "Chile",
+    "competition_slug": "Primera_Division",
+    "competition_id": 73,
+    "code": "CHI1",
+    "title": "Primera Division",
+    "for_national_teams": 0,
+    "match_count": 2083
+  },
+  {
+    "country_slug": "China",
+    "competition_slug": "Cup",
+    "competition_id": 145,
+    "code": "CHNC",
+    "title": "Cup",
+    "for_national_teams": 0,
+    "match_count": 620
+  },
+  {
+    "country_slug": "China",
+    "competition_slug": "Division_1",
+    "competition_id": 144,
+    "code": "CHN2",
+    "title": "Division 1",
+    "for_national_teams": 0,
+    "match_count": 1790
+  },
+  {
+    "country_slug": "China",
+    "competition_slug": "Super_league",
+    "competition_id": 10,
+    "code": "CHN1",
+    "title": "Super league",
+    "for_national_teams": 0,
+    "match_count": 2444
+  },
+  {
+    "country_slug": "Colombia",
+    "competition_slug": "Primera_A",
+    "competition_id": 54,
+    "code": "COL1",
+    "title": "Primera A",
+    "for_national_teams": 0,
+    "match_count": 3921
+  },
+  {
+    "country_slug": "Costa_Rica",
+    "competition_slug": "Primera_Division",
+    "competition_id": 169,
+    "code": "COR1",
+    "title": "Primera Division",
+    "for_national_teams": 0,
+    "match_count": 2363
+  },
+  {
+    "country_slug": "Czech_Republic",
+    "competition_slug": "1",
+    "error": "HTTP Error 404: Not Found"
+  },
+  {
+    "country_slug": "Denmark",
+    "competition_slug": "Superligaen",
+    "competition_id": 47,
+    "code": "DEN1",
+    "title": "Superligaen",
+    "for_national_teams": 0,
+    "match_count": 1914
+  },
+  {
+    "country_slug": "Egypt",
+    "competition_slug": "Division_1",
+    "competition_id": 127,
+    "code": "EGY1",
+    "title": "Division 1",
+    "for_national_teams": 0,
+    "match_count": 2383
+  },
+  {
+    "country_slug": "England",
+    "competition_slug": "Championship",
+    "competition_id": 6,
+    "code": "ENG2",
+    "title": "Championship",
+    "for_national_teams": 0,
+    "match_count": 6127
+  },
+  {
+    "country_slug": "England",
+    "competition_slug": "League_One",
+    "competition_id": 49,
+    "code": "ENG3",
+    "title": "League One",
+    "for_national_teams": 0,
+    "match_count": 4861
+  },
+  {
+    "country_slug": "England",
+    "competition_slug": "League_Two",
+    "competition_id": 50,
+    "code": "ENG4",
+    "title": "League Two",
+    "for_national_teams": 0,
+    "match_count": 4901
+  },
+  {
+    "country_slug": "England",
+    "competition_slug": "Premier_League",
+    "competition_id": 13,
+    "code": "ENG1",
+    "title": "Premier League",
+    "for_national_teams": 0,
+    "match_count": 4180
+  },
+  {
+    "country_slug": "Europe",
+    "competition_slug": "Champions_League",
+    "competition_id": 16,
+    "code": "UCL",
+    "title": "Champions League",
+    "for_national_teams": 0,
+    "match_count": 2371
+  },
+  {
+    "country_slug": "Europe",
+    "competition_slug": "EURO",
+    "competition_id": 28,
+    "code": "EURO",
+    "title": "EURO",
+    "for_national_teams": 1,
+    "match_count": 153
+  },
+  {
+    "country_slug": "Europe",
+    "competition_slug": "EURO_U19",
+    "competition_id": 204,
+    "code": "EU19",
+    "title": "EURO U19",
+    "for_national_teams": 1,
+    "match_count": 468
+  },
+  {
+    "country_slug": "Europe",
+    "competition_slug": "EURO_U21",
+    "competition_id": 80,
+    "code": "EU21",
+    "title": "EURO U21",
+    "for_national_teams": 1,
+    "match_count": 657
+  },
+  {
+    "country_slug": "Europe",
+    "competition_slug": "EURO_U21_Qualification",
+    "competition_id": 341,
+    "code": "EU21Q",
+    "title": "EURO U21 Qualification",
+    "for_national_teams": 1,
+    "match_count": 692
+  },
+  {
+    "country_slug": "Europe",
+    "competition_slug": "EURO_Women",
+    "competition_id": 306,
+    "code": "EUROW",
+    "title": "EURO Women",
+    "for_national_teams": 1,
+    "match_count": 471
+  },
+  {
+    "country_slug": "Europe",
+    "competition_slug": "Europa_League",
+    "competition_id": 18,
+    "code": "UEL",
+    "title": "Europa League",
+    "for_national_teams": 0,
+    "match_count": 3602
+  },
+  {
+    "country_slug": "Europe",
+    "competition_slug": "Nations_League",
+    "competition_id": 33,
+    "code": "UNL",
+    "title": "Nations League",
+    "for_national_teams": 1,
+    "match_count": 662
+  },
+  {
+    "country_slug": "Europe",
+    "competition_slug": "World_Cup_Qualification",
+    "competition_id": 205,
+    "code": "WCQE",
+    "title": "World Cup Qualification",
+    "for_national_teams": 1,
+    "match_count": 740
+  },
+  {
+    "country_slug": "Europe",
+    "competition_slug": "euro-qualification",
+    "competition_id": 365,
+    "code": "EURQ",
+    "title": "EURO Qualifiction",
+    "for_national_teams": 1,
+    "match_count": 501
+  },
+  {
+    "country_slug": "Europe",
+    "competition_slug": "euro-u19-qualification",
+    "competition_id": 511,
+    "code": "EU19Q",
+    "title": "EURO U19 Qualification",
+    "for_national_teams": 1,
+    "match_count": 120
+  },
+  {
+    "country_slug": "Europe",
+    "competition_slug": "euro-u19-women",
+    "competition_id": 513,
+    "code": "EU19W",
+    "title": "EURO U19 Women",
+    "for_national_teams": 1,
+    "match_count": 0
+  },
+  {
+    "country_slug": "Europe",
+    "competition_slug": "euro-women-qualification",
+    "competition_id": 470,
+    "code": "EURWQ",
+    "title": "EURO Women Qualification",
+    "for_national_teams": 1,
+    "match_count": 192
+  },
+  {
+    "country_slug": "France",
+    "competition_slug": "Ligue_1",
+    "competition_id": 1,
+    "code": "FRA1",
+    "title": "Ligue 1",
+    "for_national_teams": 0,
+    "match_count": 3868
+  },
+  {
+    "country_slug": "France",
+    "competition_slug": "Ligue_2",
+    "competition_id": 43,
+    "code": "FRA2",
+    "title": "Ligue 2",
+    "for_national_teams": 0,
+    "match_count": 3192
+  },
+  {
+    "country_slug": "Germany",
+    "competition_slug": "Bundesliga",
+    "competition_id": 3,
+    "code": "GER1",
+    "title": "Bundesliga",
+    "for_national_teams": 0,
+    "match_count": 3373
+  },
+  {
+    "country_slug": "Germany",
+    "competition_slug": "Bundesliga_II",
+    "competition_id": 8,
+    "code": "GER2",
+    "title": "Bundesliga II",
+    "for_national_teams": 0,
+    "match_count": 3376
+  },
+  {
+    "country_slug": "Greece",
+    "competition_slug": "Super_League",
+    "competition_id": 51,
+    "code": "GRE1",
+    "title": "Super League",
+    "for_national_teams": 0,
+    "match_count": 2155
+  },
+  {
+    "country_slug": "Hungary",
+    "competition_slug": "NB_I",
+    "competition_id": 181,
+    "code": "HUN1",
+    "title": "NB I",
+    "for_national_teams": 0,
+    "match_count": 1782
+  },
+  {
+    "country_slug": "India",
+    "competition_slug": "I-League",
+    "competition_id": 146,
+    "code": "IND2",
+    "title": "I-League",
+    "for_national_teams": 0,
+    "match_count": 765
+  },
+  {
+    "country_slug": "India",
+    "competition_slug": "Indian_Super_League",
+    "competition_id": 58,
+    "code": "IND1",
+    "title": "Indian Super League",
+    "for_national_teams": 0,
+    "match_count": 1025
+  },
+  {
+    "country_slug": "International",
+    "competition_slug": "Friendlies",
+    "competition_id": 222,
+    "code": "FRII",
+    "title": "Friendlies",
+    "for_national_teams": 1,
+    "match_count": 2694
+  },
+  {
+    "country_slug": "International",
+    "competition_slug": "Olympic_Games",
+    "competition_id": 309,
+    "code": "OLYM",
+    "title": "Olympic Games",
+    "for_national_teams": 1,
+    "match_count": 96
+  },
+  {
+    "country_slug": "International",
+    "competition_slug": "World_Cup",
+    "competition_id": 27,
+    "code": "WC",
+    "title": "World Cup",
+    "for_national_teams": 1,
+    "match_count": 128
+  },
+  {
+    "country_slug": "International",
+    "competition_slug": "World_Cup_U20",
+    "competition_id": 217,
+    "code": "WCU20",
+    "title": "World Cup U20",
+    "for_national_teams": 1,
+    "match_count": 208
+  },
+  {
+    "country_slug": "International",
+    "competition_slug": "World_Cup_Women",
+    "competition_id": 218,
+    "code": "WCW",
+    "title": "World Cup Women",
+    "for_national_teams": 1,
+    "match_count": 130
+  },
+  {
+    "country_slug": "International",
+    "competition_slug": "World_Cup_Women_Qualification",
+    "competition_id": 342,
+    "code": "WCWQ",
+    "title": "World Cup Women Qualification",
+    "for_national_teams": 1,
+    "match_count": 525
+  },
+  {
+    "country_slug": "International",
+    "competition_slug": "finalissima",
+    "competition_id": 319,
+    "code": "FIN",
+    "title": "Finalissima",
+    "for_national_teams": 1,
+    "match_count": 1
+  },
+  {
+    "country_slug": "International",
+    "competition_slug": "world-cup-qualification-intercontinental-playoff",
+    "competition_id": 340,
+    "code": "WCQIC",
+    "title": "WC Qual. Inter Confederation Playoffs",
+    "for_national_teams": 1,
+    "match_count": 10
+  },
+  {
+    "country_slug": "International",
+    "competition_slug": "world-cup-u20-women",
+    "competition_id": 512,
+    "code": "WCU20W",
+    "title": "World Cup U20 Women",
+    "for_national_teams": 1,
+    "match_count": 0
+  },
+  {
+    "country_slug": "Iran",
+    "competition_slug": "Pro_League",
+    "competition_id": 186,
+    "code": "IRN1",
+    "title": "Pro League",
+    "for_national_teams": 0,
+    "match_count": 2095
+  },
+  {
+    "country_slug": "Italy",
+    "competition_slug": "Serie_A",
+    "competition_id": 2,
+    "code": "ITA1",
+    "title": "Serie A",
+    "for_national_teams": 0,
+    "match_count": 4181
+  },
+  {
+    "country_slug": "Italy",
+    "competition_slug": "Serie_B",
+    "competition_id": 19,
+    "code": "ITA2",
+    "title": "Serie B",
+    "for_national_teams": 0,
+    "match_count": 3552
+  },
+  {
+    "country_slug": "Japan",
+    "competition_slug": "Cup",
+    "competition_id": 228,
+    "code": "JAPC",
+    "title": "Cup",
+    "for_national_teams": 0,
+    "match_count": 723
+  },
+  {
+    "country_slug": "Japan",
+    "competition_slug": "J",
+    "error": "HTTP Error 404: Not Found"
+  },
+  {
+    "country_slug": "Japan",
+    "competition_slug": "J2-League",
+    "competition_id": 188,
+    "code": "JAP2",
+    "title": "J2-League",
+    "for_national_teams": 0,
+    "match_count": 4014
+  },
+  {
+    "country_slug": "Mexico",
+    "competition_slug": "Cup",
+    "error": "HTTP Error 404: Not Found"
+  },
+  {
+    "country_slug": "Mexico",
+    "competition_slug": "Liga_MX",
+    "competition_id": 74,
+    "code": "MEX1",
+    "title": "Liga MX",
+    "for_national_teams": 0,
+    "match_count": 2986
+  },
+  {
+    "country_slug": "Morocco",
+    "competition_slug": "GNF_1",
+    "competition_id": 234,
+    "code": "MA1",
+    "title": "GNF 1",
+    "for_national_teams": 0,
+    "match_count": 1616
+  },
+  {
+    "country_slug": "Netherlands",
+    "competition_slug": "Eredivisie",
+    "competition_id": 4,
+    "code": "NED1",
+    "title": "Eredivisie",
+    "for_national_teams": 0,
+    "match_count": 3344
+  },
+  {
+    "country_slug": "Nigeria",
+    "competition_slug": "Premier_League",
+    "competition_id": 252,
+    "code": "NG1",
+    "title": "Premier League",
+    "for_national_teams": 0,
+    "match_count": 2094
+  },
+  {
+    "country_slug": "Oceania",
+    "competition_slug": "world-cup-qualification",
+    "competition_id": 482,
+    "code": "WCCO",
+    "title": "World Cup Qualification",
+    "for_national_teams": 1,
+    "match_count": 18
+  },
+  {
+    "country_slug": "Palestine",
+    "competition_slug": "West_Bank_League",
+    "competition_id": 263,
+    "code": "PS1",
+    "title": "West Bank League",
+    "for_national_teams": 0,
+    "match_count": 546
+  },
+  {
+    "country_slug": "Paraguay",
+    "competition_slug": "Division_Profesional",
+    "competition_id": 290,
+    "code": "PY1",
+    "title": "Division Profesional",
+    "for_national_teams": 0,
+    "match_count": 1837
+  },
+  {
+    "country_slug": "Peru",
+    "competition_slug": "Primera_Division",
+    "competition_id": 225,
+    "code": "PER1",
+    "title": "Primera Division",
+    "for_national_teams": 0,
+    "match_count": 3028
+  },
+  {
+    "country_slug": "Poland",
+    "competition_slug": "Ekstraklasa",
+    "competition_id": 39,
+    "code": "POL1",
+    "title": "Ekstraklasa",
+    "for_national_teams": 0,
+    "match_count": 2658
+  },
+  {
+    "country_slug": "Portugal",
+    "competition_slug": "Liga_NOS",
+    "competition_id": 9,
+    "code": "POR1",
+    "title": "Primeira",
+    "for_national_teams": 0,
+    "match_count": 3062
+  },
+  {
+    "country_slug": "Qatar",
+    "competition_slug": "Stars_League",
+    "competition_id": 132,
+    "code": "QAT1",
+    "title": "Stars League",
+    "for_national_teams": 0,
+    "match_count": 1191
+  },
+  {
+    "country_slug": "Romania",
+    "competition_slug": "Liga_I",
+    "competition_id": 45,
+    "code": "ROM1",
+    "title": "Liga I",
+    "for_national_teams": 0,
+    "match_count": 2704
+  },
+  {
+    "country_slug": "Russia",
+    "competition_slug": "Football_National_League",
+    "competition_id": 66,
+    "code": "RUS2",
+    "title": "League PARI",
+    "for_national_teams": 0,
+    "match_count": 3096
+  },
+  {
+    "country_slug": "Russia",
+    "competition_slug": "Premier_League",
+    "competition_id": 14,
+    "code": "RUS1",
+    "title": "Premier League",
+    "for_national_teams": 0,
+    "match_count": 2640
+  },
+  {
+    "country_slug": "Saudi_Arabia",
+    "competition_slug": "Premier_League",
+    "competition_id": 223,
+    "code": "SAR1",
+    "title": "Pro League",
+    "for_national_teams": 0,
+    "match_count": 2302
+  },
+  {
+    "country_slug": "South_Africa",
+    "competition_slug": "Premier_League",
+    "competition_id": 56,
+    "code": "SOA1",
+    "title": "Premier League",
+    "for_national_teams": 0,
+    "match_count": 2154
+  },
+  {
+    "country_slug": "South_America",
+    "competition_slug": "Copa_America",
+    "competition_id": 71,
+    "code": "COPA",
+    "title": "Copa America",
+    "for_national_teams": 1,
+    "match_count": 118
+  },
+  {
+    "country_slug": "South_America",
+    "competition_slug": "Copa_Sudamericana",
+    "competition_id": 126,
+    "code": "CSUD",
+    "title": "Copa Sudamericana",
+    "for_national_teams": 0,
+    "match_count": 1318
+  },
+  {
+    "country_slug": "South_America",
+    "competition_slug": "Libertadores",
+    "competition_id": 65,
+    "code": "CLIB",
+    "title": "Libertadores",
+    "for_national_teams": 0,
+    "match_count": 1523
+  },
+  {
+    "country_slug": "South_America",
+    "competition_slug": "World_Cup_Qualification",
+    "competition_id": 220,
+    "code": "WCQSA",
+    "title": "World Cup Qualification",
+    "for_national_teams": 1,
+    "match_count": 209
+  },
+  {
+    "country_slug": "South_Korea",
+    "competition_slug": "K-League_1",
+    "competition_id": 189,
+    "code": "KOR1",
+    "title": "K-League 1",
+    "for_national_teams": 0,
+    "match_count": 2076
+  },
+  {
+    "country_slug": "Spain",
+    "competition_slug": "LaLiga_2",
+    "competition_id": 22,
+    "code": "SPA2",
+    "title": "La Liga 2",
+    "for_national_teams": 0,
+    "match_count": 4204
+  },
+  {
+    "country_slug": "Spain",
+    "competition_slug": "La_Liga",
+    "competition_id": 5,
+    "code": "SPA1",
+    "title": "La Liga",
+    "for_national_teams": 0,
+    "match_count": 4180
+  },
+  {
+    "country_slug": "Sweden",
+    "competition_slug": "Allsvenskan",
+    "competition_id": 12,
+    "code": "SWE1",
+    "title": "Allsvenskan",
+    "for_national_teams": 0,
+    "match_count": 2250
+  },
+  {
+    "country_slug": "Thailand",
+    "competition_slug": "Premier_League",
+    "competition_id": 154,
+    "code": "THA1",
+    "title": "Premier League",
+    "for_national_teams": 0,
+    "match_count": 1440
+  },
+  {
+    "country_slug": "Turkey",
+    "competition_slug": "Super_Lig",
+    "competition_id": 7,
+    "code": "TUR1",
+    "title": "Super Lig",
+    "for_national_teams": 0,
+    "match_count": 3700
+  },
+  {
+    "country_slug": "UAE",
+    "competition_slug": "Premier_League",
+    "competition_id": 129,
+    "code": "UAE1",
+    "title": "Premier League",
+    "for_national_teams": 0,
+    "match_count": 1407
+  },
+  {
+    "country_slug": "USA",
+    "competition_slug": "Major_League_Soccer",
+    "competition_id": 15,
+    "code": "USA1",
+    "title": "Major League Soccer",
+    "for_national_teams": 0,
+    "match_count": 5020
+  },
+  {
+    "country_slug": "Uganda",
+    "competition_slug": "Premier_League",
+    "competition_id": 240,
+    "code": "UG1",
+    "title": "Premier League",
+    "for_national_teams": 0,
+    "match_count": 1568
+  },
+  {
+    "country_slug": "Ukraine",
+    "competition_slug": "Premier_League",
+    "competition_id": 31,
+    "code": "UKR1",
+    "title": "Premier League",
+    "for_national_teams": 0,
+    "match_count": 1868
+  },
+  {
+    "country_slug": "Venezuela",
+    "competition_slug": "Primera_Division",
+    "competition_id": 172,
+    "code": "VEN1",
+    "title": "Primera Division",
+    "for_national_teams": 0,
+    "match_count": 2632
+  },
+  {
+    "country_slug": "Vietnam",
+    "competition_slug": "V-League",
+    "competition_id": 173,
+    "code": "VIE1",
+    "title": "V-League",
+    "for_national_teams": 0,
+    "match_count": 1411
+  }
+]

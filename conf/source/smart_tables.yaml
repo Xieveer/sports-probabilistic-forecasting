@@ -1,0 +1,57 @@
+# Source: Smart Tables — футбол / сборные (backend.smart-tables.ru)
+#
+# Документация: docs/cursor/source_data/football.md, docs/cursor/source_data/smart_tables.md
+# Каталог турниров: docs/cursor/source_data/smart-tables/competition_catalog.json
+#
+# Ingest-турнир: football_nationals (conf/source/football_nationals.yaml → defaults сюда).
+# Bronze и source.csv: data/source/smart_tables/ (поле name ниже).
+
+name: smart_tables
+
+provider:
+  type: smart_tables_api
+  base_url: https://backend.smart-tables.ru/api/v1
+  origin: https://smart-tables.ru
+  referer: https://smart-tables.ru/
+  min_delay_sec: 1.0
+  timeout_sec: 60
+  retries: 3
+  backoff_factor: 0.8
+  timeout_attempts: 4
+  timeout_retry_backoff_sec: 1.5
+
+  # backfill | incremental (nearest-matches + stat-odds sidecar)
+  mode: backfill
+
+  # Каталог slug → competition_id (регенерация: make football-catalog-refresh)
+  catalog_path: docs/cursor/source_data/smart-tables/competition_catalog.json
+  national_teams_only: true
+
+  # Отладка: null = полный scope; WC-only: [WC]
+  competition_codes: null
+  max_matches: null
+
+  # Пагинация списка матчей
+  matches_page_limit: 200
+  matches_list_checkpoint: .smart_tables_matches_checkpoint.json
+  matches_list_cache_dir: raw/lists
+
+  # Детали матча (card + stat×3 + chart×3 + similar)
+  raw_cache_dir: raw
+  checkpoint_file: .smart_tables_checkpoint.txt
+  csv_flush_every: 50
+  progress_log_every: 25
+
+  # Incremental (R42.15): prematch rows + stat-odds sidecar
+  incremental:
+    nearest_matches_limit: 50
+    stat_odds_sidecar: match_stat_odds.parquet
+
+sport: football
+
+split_strategy:
+  enabled: false
+
+# Odds enrichment (winner + total lines) — отдельный epic после R42
+odds:
+  enabled: false

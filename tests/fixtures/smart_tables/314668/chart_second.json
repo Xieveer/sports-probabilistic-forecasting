@@ -1,0 +1,9 @@
+{
+  "success": true,
+  "data": {
+    "chart": {
+      "home": {"minutes": []},
+      "away": {"minutes": ["80", "81"]}
+    }
+  }
+}

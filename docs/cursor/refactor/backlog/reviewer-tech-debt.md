@@ -734,3 +734,19 @@
   - Добавить `make refresh-lock-kill` — операция `fuser -k -9 "$LOCK"` с подтверждением, чтобы избежать ручного grep→kill.
   - При наличии systemd/journald: добавить вывод последних строк `journalctl -u sf-refresh` в диагностику.
   - Рассмотреть `--timeout 0` вместо `flock -w $seconds` для принудительного провала без ожидания в CI/cron при уже занятом lock.
+
+### 2026-06-06 — R42 Football Smart Tables ingest (Phase 1)
+
+- **Задача:** `backlog/R42.md` → `done_task/R42.md`
+- **Ограничения и компромиссы:**
+  - **R42.16 (stretch)** не реализован: нет Airflow DAG / reuse `sf_scheduled_refresh_ops` для football incremental — ожидаемо для Phase 2+ ops.
+  - Полный backfill (~93k запросов, ~26 ч при 1 req/s) не прогоняется в CI; покрытие — offline fixtures + smoke на 1–3 матча.
+  - Pandera: football-специфичные колонки добавлены в `InterimSchema` как optional; `RawSchema` остаётся общим минимумом (`strict=False`).
+  - Исторические prematch odds (winner + total 1.5–4.5) вне scope; ST card 1X2 — nullable best-effort.
+  - `make football-backfill` создаёт `data/source/football_nationals/`, тогда как bronze/CSV пишутся в `data/source/smart_tables/` (поле `name` в yaml) — косметическое расхождение.
+- **Возможные улучшения / техдолг:**
+  - Unit-тесты для `incremental` mode (`run_incremental`, stat-odds sidecar) с моками nearest-matches.
+  - Airflow incremental refresh для `football_nationals` по паттерну R39/R41 после стабилизации operational backfill.
+  - Phase 2: features multirun, train-sweep winner + total×4 линии, historical odds merge (отдельный epic).
+  - Явные Pandera-колонки `home_team`/`away_team` в interim при появлении validate-гейтов на football.
+  - Операционный прогон полного backfill + `dvc repro clean tournament=football_nationals` с фиксацией dvc.lock.

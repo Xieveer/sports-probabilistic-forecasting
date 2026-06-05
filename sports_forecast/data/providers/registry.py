@@ -8,6 +8,7 @@ from sports_forecast.data.providers.base import SourceProvider, SourceProviderEr
 from sports_forecast.data.providers.file_provider import FileSourceProvider
 from sports_forecast.data.providers.http_provider import HttpApiSourceProvider
 from sports_forecast.data.providers.nhl.provider import NhlWebApiSourceProvider
+from sports_forecast.data.providers.smart_tables.provider import SmartTablesSourceProvider
 
 
 class UnknownProviderTypeError(SourceProviderError, ValueError):
@@ -40,6 +41,11 @@ class ProviderRegistry:
             )
         if type_id == "nhl_web_api":
             return NhlWebApiSourceProvider(
+                source_cfg=source_cfg,
+                paths_cfg=paths_cfg,
+            )
+        if type_id == "smart_tables_api":
+            return SmartTablesSourceProvider(
                 source_cfg=source_cfg,
                 paths_cfg=paths_cfg,
             )

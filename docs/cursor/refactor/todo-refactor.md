@@ -50,6 +50,7 @@
 | R39    | 🔴 High     | High      | ✅     | prod-like e2e: Airflow → БД → live Pinnacle → один TG digest (`done_task/R39.md`; R39.1–R39.8 ✅) |
 | R40    | 🟡 Medium   | Low       | ✅     | codebase housekeeping: логи, комментарии, gates stub, lint (`done_task/R40.md`) |
 | R41    | 🔴 High     | High      | ✅     | predict→Telegram light/heavy, SSA турнира, Airflow bash reuse (`done_task/R41.md`) |
+| R42    | 🔴 High     | High      | ✅     | Football Smart Tables: dataset ingest → clean; рынки winner + total 1.5/2.5/3.5/4.5 (`done_task/R42.md`) |
 
 ---
 
@@ -192,6 +193,27 @@
   - [x] R39.6 — Локальный compose / parity (`done_task/R39.6.md`)
   - [x] R39.7 — Идемпотентность retries + observability (`done_task/R39.7.md`)
   - [x] R39.8 — `run_nhl_refresh_notify.py` → `post_refresh_digest` по умолчанию (`done_task/R39.8.md`)
+
+- [x] **R42** — Football (Smart Tables): training dataset ingest → clean; рынки **winner** + **total** (1.5/2.5/3.5/4.5) ✅ 2026-06-06; см. `done_task/R42.md`
+  - [x] R42.1 — `football.md`: колонки + API→CSV + planned markets (winner + total lines)
+  - [x] R42.2 — `.gitignore` для `*.har`; заметка о cookies
+  - [x] R42.3 — `conf/source/smart_tables.yaml`: provider, rate limit, catalog, modes
+  - [x] R42.4 — `conf/sport/football.yaml`: winner + total `[1.5, 2.5, 3.5, 4.5]`, targets, data_clean
+  - [x] R42.5 — `conf/tournament/football_nationals.yaml`: select_columns, train_eval_split scaffold
+  - [x] R42.6 — `SmartTablesApiClient` + unit-тесты
+  - [x] R42.7 — Catalog loader + `scripts/refresh_smart_tables_catalog.py`
+  - [x] R42.8 — Backfill A–B: match lists + pagination checkpoint
+  - [x] R42.9 — Backfill C: per-match detail + raw JSON cache
+  - [x] R42.10 — `SmartTablesDataAssembler` → wide `source.csv`
+  - [x] R42.11 — `SmartTablesSourceProvider` + registry
+  - [x] R42.12 — Pandera schema football (raw/interim)
+  - [x] R42.13 — DVC: ingest deps + `dvc repro clean` для `football_nationals`
+  - [x] R42.14 — Makefile: catalog-refresh, backfill, ingest-debug
+  - [x] R42.15 — Incremental nearest-matches + ST stat-odds (опционально)
+  - [ ] R42.16 — *(stretch)* Airflow incremental DAG → Phase 2+ ops
+  - [x] R42.17 — Unit-тесты assembler/fixtures (match 314668)
+  - [x] R42.18 — Contract test: колонки + smoke ingest+clean (max_matches=3)
+  - [x] R42.19 — HOW_TO: smart_tables_api + football_nationals
 
 - [x] **R40** — Codebase housekeeping (логи, комментарии, docstrings, lint) ✅ 2026-05-13; см. `done_task/R40.md`
   - [x] R40.1 — Удалить stale .log из рабочего дерева, проверить .gitignore

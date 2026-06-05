@@ -1,0 +1,8 @@
+{
+  "success": true,
+  "data": {
+    "stat": [
+      {"code": "goals", "home": 2, "away": 0}
+    ]
+  }
+}

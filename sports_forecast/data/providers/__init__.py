@@ -18,12 +18,14 @@ from sports_forecast.data.providers.registry import (
     UnknownProviderTypeError,
     get_provider,
 )
+from sports_forecast.data.providers.smart_tables.provider import SmartTablesSourceProvider
 
 
 __all__ = [
     "FileSourceProvider",
     "HttpApiSourceProvider",
     "NhlWebApiSourceProvider",
+    "SmartTablesSourceProvider",
     "ProviderRegistry",
     "SourceDataNotFoundError",
     "SourceFetchError",

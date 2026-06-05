@@ -1,0 +1,80 @@
+# Tournament: Football national teams (all ST competitions, for_national_teams=1)
+# Один training pool; фильтр по competition_code / match_importance — в train config (Phase 2).
+
+defaults:
+  - /sport@_here_: football
+
+name: football_nationals
+region: international
+description: "National team matches (Smart Tables, 37 competitions ~11.6k matches)"
+
+data:
+  processed_dir: data/processed/football_nationals
+  formats:
+    long: train_long.parquet
+    wide: train_wide.parquet
+  inference:
+    long: inference_long.parquet
+    wide: inference_wide.parquet
+
+data_clean:
+  derived_columns:
+    tour_num:
+      source: datetime
+      transform: hour_to_time_of_day
+    weekday:
+      source: datetime
+      transform: dayofweek
+  select_columns:
+    - id
+    - datetime
+    - status
+    - home_points
+    - away_points
+    - home_team
+    - away_team
+    - match_is_end
+    - match_importance
+    - is_friendly
+    - competition_code
+    - competition_id
+    - season_id
+    - home_score_ht
+    - away_score_ht
+    # stat wide (all periods)
+    - home_goals_all
+    - away_goals_all
+    - home_xg_all
+    - away_xg_all
+    - home_corners_all
+    - away_corners_all
+    - home_yellowcards_all
+    - away_yellowcards_all
+    - home_possession_all
+    - away_possession_all
+    - home_shotstarget_all
+    - away_shotstarget_all
+    - odd_home
+    - odd_draw
+    - odd_away
+    - tour_num
+    - weekday
+
+stats:
+  avg_home_points: 1.4
+  avg_away_points: 1.1
+  avg_total: 2.5
+  typical_range: [0, 8]
+
+time_range:
+  start: "2000-01-01"
+  end: null
+
+# Заготовка holdout под WC/EURO (обучение — Phase 2)
+train_eval_split:
+  kind: competition_holdout
+  competition_column: competition_code
+  holdout_codes:
+    - WC
+    - EURO
+  train_codes: null

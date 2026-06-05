@@ -19,11 +19,13 @@ stages:
   # Шаг 1: Ingest (source → raw)
   # Читает CSV, разделяет на подтурниры, извлекает odds
   # NHL: провайдер nhl_web_api (conf/source/nhl.yaml) пишет data/source/nhl/source.csv;
-  # этап features ниже по умолчанию не включает tournament=nhl — добавьте в multirun при готовых interim-данных.
+  # Football: smart_tables_api → data/source/smart_tables/source.csv (ingest slug football_nationals);
+  # этап features ниже по умолчанию не включает tournament=nhl / football_nationals — добавьте в multirun при готовых interim.
   ingest:
     cmd: uv run python -m sports_forecast.data.ingest
     deps:
       - sports_forecast/data/ingest.py
+      - sports_forecast/data/providers/smart_tables/
       - conf/source/
       - conf/bookmaker/
       - data/source/
@@ -42,6 +44,7 @@ stages:
       - conf/tournament/
       - conf/sport/
       - conf/paths.yaml
+      - docs/cursor/source_data/football.md
       - data/raw/
     outs:
       - data/interim/:
