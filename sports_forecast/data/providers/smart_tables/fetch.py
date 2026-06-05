@@ -50,7 +50,7 @@ def fetch_match_bronze(
     Args:
         client: HTTP-клиент.
         match_id: PK матча ST.
-        raw_root: ``data/source/smart_tables/raw``.
+        raw_root: ``data/source/football_nationals/raw``.
         use_network: При отсутствии кэша — запрос к API.
 
     Returns:

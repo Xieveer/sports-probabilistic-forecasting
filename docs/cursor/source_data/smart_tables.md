@@ -715,7 +715,7 @@ is_flagship = competition.is_top == 1
 - Только **backend.smart-tables.ru** (не качать HTML в bulk).
 - `Origin` + `Referer` как у браузера.
 - **1–2 req/s** при массовой выкачке.
-- Кэш raw JSON на диск (`data/source/smart_tables/raw/`).
+- Кэш raw JSON на диск (`data/source/football_nationals/raw/`).
 - Exponential backoff на 429/403/5xx.
 - Checkpoint-файл (как `.nhl_checkpoint.txt`).
 

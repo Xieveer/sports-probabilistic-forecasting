@@ -743,7 +743,7 @@
   - Полный backfill (~93k запросов, ~26 ч при 1 req/s) не прогоняется в CI; покрытие — offline fixtures + smoke на 1–3 матча.
   - Pandera: football-специфичные колонки добавлены в `InterimSchema` как optional; `RawSchema` остаётся общим минимумом (`strict=False`).
   - Исторические prematch odds (winner + total 1.5–4.5) вне scope; ST card 1X2 — nullable best-effort.
-  - `make football-backfill` создаёт `data/source/football_nationals/`, тогда как bronze/CSV пишутся в `data/source/smart_tables/` (поле `name` в yaml) — косметическое расхождение.
+  - ~~`make football-backfill` создаёт `data/source/football_nationals/`, тогда как bronze/CSV пишутся в `data/source/smart_tables/`~~ — **исправлено:** провайдер пишет в `data/source/football_nationals/` (как NHL).
 - **Возможные улучшения / техдолг:**
   - Unit-тесты для `incremental` mode (`run_incremental`, stat-odds sidecar) с моками nearest-matches.
   - Airflow incremental refresh для `football_nationals` по паттерну R39/R41 после стабилизации operational backfill.

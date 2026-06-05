@@ -4,9 +4,9 @@
 # Каталог турниров: docs/cursor/source_data/smart-tables/competition_catalog.json
 #
 # Ingest-турнир: football_nationals (conf/source/football_nationals.yaml → defaults сюда).
-# Bronze и source.csv: data/source/smart_tables/ (поле name ниже).
+# Bronze и source.csv: data/source/football_nationals/ (поле name = ingest-slug).
 
-name: smart_tables
+name: football_nationals
 
 provider:
   type: smart_tables_api

@@ -284,7 +284,7 @@ class SmartTablesDataAssembler:
         """Выполнить backfill и записать ``source.csv``.
 
         Args:
-            storage_dir: ``data/source/smart_tables``.
+            storage_dir: ``data/source/football_nationals``.
             output_csv_path: Путь к итоговому CSV.
 
         Returns:

@@ -23,9 +23,8 @@ logger = get_logger(__name__)
 class SmartTablesSourceProvider(SourceProvider):
     """Скачивание матчей сборных Smart Tables и запись ``source.csv``.
 
-    Данные хранятся в ``data/source/<name>/`` (``name`` из source yaml, по умолчанию
-    ``smart_tables``). Ingest-турнир может быть ``football_nationals`` — путь к CSV
-    определяется полем ``name``, а не аргументом ``fetch``.
+    Путь: ``{project_root}/{source_dir}/{source_name}/source.csv`` (как у NHL).
+    Ingest-slug: ``football_nationals`` → ``data/source/football_nationals/``.
     """
 
     def __init__(
@@ -43,24 +42,16 @@ class SmartTablesSourceProvider(SourceProvider):
         self._client = SmartTablesApiClient(prov)
         self._asm_cfg = load_assembler_config(prov)
 
-    def _storage_name(self) -> str:
-        name = OmegaConf.select(self._source_cfg, "name")
-        return str(name) if name else "smart_tables"
-
-    def _storage_dir(self) -> Path:
-        return self._project_root / self._source_dir / self._storage_name()
-
     def fetch(self, source_name: str) -> Path:
         """Выполнить backfill или incremental и вернуть путь к ``source.csv``.
 
         Args:
-            source_name: Имя турнира ingest (``football_nationals``); каталог данных — ``name`` в yaml.
+            source_name: Имя каталога под ``data/source`` (как у турнира при ingest).
 
         Returns:
             Путь к ``source.csv``.
         """
-        _ = source_name  # каталог данных из self._storage_name()
-        target_dir = self._storage_dir()
+        target_dir = self._project_root / self._source_dir / source_name
         target_dir.mkdir(parents=True, exist_ok=True)
         out_path = target_dir / "source.csv"
 

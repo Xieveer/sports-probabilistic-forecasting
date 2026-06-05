@@ -216,7 +216,7 @@ provider:
 
 NHL Web API (`NhlWebApiSourceProvider`, пакет `sports_forecast/data/providers/nhl/`): многократные запросы к `api-web.nhle.com`, сбор `source.csv` по полям из `docs/cursor/source_data/nhl.md`. См. `conf/source/nhl.yaml` (`provider.type: nhl_web_api`): при `finished_only: false` в файл попадают и предстоящие матчи (`match_is_end=0`), завершённые обогащаются boxscore/PBP (`match_is_end=1`). Коэффициенты БК в этом API отсутствуют — для линий букмекеров используется отдельный источник (The Odds API); политика: сбор кэфов для валидации/бенчмарка, **не** как признаки для обучения — см. `docs/cursor/source_data/the_odds_api.md`.
 
-Smart Tables API (`SmartTablesSourceProvider`, пакет `sports_forecast/data/providers/smart_tables/`): футбол / **сборные** через `backend.smart-tables.ru`. См. `conf/source/smart_tables.yaml` (`provider.type: smart_tables_api`), ingest-slug `football_nationals` (`conf/source/football_nationals.yaml` → defaults на smart_tables). Bronze и `source.csv` лежат в **`data/source/smart_tables/`** (поле `name` в yaml), не в каталоге турнира.
+Smart Tables API (`SmartTablesSourceProvider`, пакет `sports_forecast/data/providers/smart_tables/`): футбол / **сборные** через `backend.smart-tables.ru`. См. `conf/source/smart_tables.yaml` (`provider.type: smart_tables_api`), ingest-slug `football_nationals` (`conf/source/football_nationals.yaml` → defaults на smart_tables). Bronze и `source.csv` лежат в **`data/source/football_nationals/`** (как у NHL: каталог = ingest-slug).
 
 **Отличия от NHL:**
 

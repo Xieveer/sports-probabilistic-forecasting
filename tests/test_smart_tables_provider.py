@@ -96,7 +96,7 @@ def _provider_cfg(**overrides: object) -> OmegaConf:
 
 def _seed_storage(tmp_path: Path, match_ids: list[int]) -> Path:
     """Скопировать fixtures и подготовить list cache для WC competition_id=27."""
-    storage = tmp_path / "smart_tables"
+    storage = tmp_path / "football_nationals"
     raw = storage / "raw"
     for mid in match_ids:
         src = FIXTURES / str(mid) if (FIXTURES / str(mid)).is_dir() else FIXTURES / "314668"
@@ -178,7 +178,7 @@ def test_catalog_national_filter() -> None:
 def test_get_provider_smart_tables_api() -> None:
     source_cfg = OmegaConf.create(
         {
-            "name": "smart_tables",
+            "name": "football_nationals",
             "provider": {"type": "smart_tables_api", "catalog_path": str(CATALOG_PATH)},
         }
     )
@@ -204,7 +204,7 @@ def test_provider_backfill_offline(tmp_path: Path) -> None:
 
     source_cfg = OmegaConf.create(
         {
-            "name": "smart_tables",
+            "name": "football_nationals",
             "provider": _provider_cfg(max_matches=1, competition_codes=["WC"]),
         }
     )
@@ -230,7 +230,7 @@ def test_contract_ingest_clean_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     source_cfg = OmegaConf.create(
         {
-            "name": "smart_tables",
+            "name": "football_nationals",
             "provider": _provider_cfg(max_matches=1, competition_codes=["WC"]),
         }
     )

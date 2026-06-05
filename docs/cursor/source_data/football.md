@@ -7,13 +7,13 @@
 
 | Слой | Путь |
 |------|------|
-| Bronze JSON | `data/source/smart_tables/raw/{match_id}/` |
-| Ingest CSV | `data/source/smart_tables/source.csv` |
+| Bronze JSON | `data/source/football_nationals/raw/{match_id}/` |
+| Ingest CSV | `data/source/football_nationals/source.csv` |
 | DVC raw | `data/raw/football_nationals/matches.parquet` |
 | DVC interim | `data/interim/football_nationals/matches_interim.parquet` |
 
 Ingest-турнир: `football_nationals` (конфиг `conf/tournament/football_nationals.yaml`).
-Каталог данных и bronze-кэш: `data/source/smart_tables/` (поле `name` в `conf/source/smart_tables.yaml`).
+Каталог данных и bronze-кэш: `data/source/football_nationals/` (ingest-slug = `name` в `conf/source/smart_tables.yaml`).
 
 > **HAR:** файлы `*.har` содержат cookies — не коммитить (см. `.gitignore`).
 
