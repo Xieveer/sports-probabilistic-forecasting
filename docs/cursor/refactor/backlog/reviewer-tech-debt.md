@@ -747,6 +747,19 @@
 - **Возможные улучшения / техдолг:**
   - Unit-тесты для `incremental` mode (`run_incremental`, stat-odds sidecar) с моками nearest-matches.
   - Airflow incremental refresh для `football_nationals` по паттерну R39/R41 после стабилизации operational backfill.
+
+### 2026-06-15 — R43 Football post-backfill data fixes
+
+- **Задача:** `backlog/R43.md` → `done_task/R43.md`
+- **Ограничения и компромиссы:**
+  - Полный rebuild/verify (11.4k строк) и `dvc repro clean` на реальных данных — локально у разработчика; CI покрывает offline fixtures + smoke на 1 матч.
+  - `_row_needs_bronze_refresh` при resume пересобирает любую строку с `match_is_end≠1` или пустым `datetime` — корректно, но дополнительный I/O по bronze на каждый resume.
+  - Пороги verify в CLI (`rows≥11000`, `datetime` 100%, `match_is_end` ≥99.8%) завязаны на локальный датасет; на пустом/урезанном кэше скрипт падает по дизайну.
+  - Неизвестные статусы ST по-прежнему дают `match_is_end=0`; fallback по счёту не добавлен в production path (см. риски R43).
+- **Возможные улучшения / техдолг:**
+  - Интеграционный тест rebuild на mini-fixture bronze (3–5 матчей) без хардкода 11k порога.
+  - Аудит уникальных `status` в bronze → расширение `_match_is_finished` или warning-лог для неизвестных значений.
+  - Опционально синхронизировать таблицу статусов в `smart_tables.md` (сейчас канон в `football.md`).
   - Phase 2: features multirun, train-sweep winner + total×4 линии, historical odds merge (отдельный epic).
   - Явные Pandera-колонки `home_team`/`away_team` в interim при появлении validate-гейтов на football.
   - Операционный прогон полного backfill + `dvc repro clean tournament=football_nationals` с фиксацией dvc.lock.

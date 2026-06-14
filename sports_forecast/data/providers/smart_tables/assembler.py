@@ -25,6 +25,7 @@ from sports_forecast.data.providers.smart_tables.constants import (
 from sports_forecast.data.providers.smart_tables.fetch import (
     append_checkpoint,
     fetch_match_bronze,
+    load_match_bronze_from_cache,
     read_checkpoint,
 )
 from sports_forecast.data.providers.smart_tables.importance import (
@@ -165,6 +166,57 @@ def _parse_stat_payload(payload: dict[str, Any], period_suffix: str) -> dict[str
     return row
 
 
+def _truthy_api_flag(item: dict[str, Any], *keys: str) -> int | None:
+    """Вернуть 1/0 если в ``item`` есть явный булев флаг, иначе ``None``."""
+    for key in keys:
+        if key not in item:
+            continue
+        val = item[key]
+        if val is None or val == "":
+            continue
+        if isinstance(val, bool):
+            return 1 if val else 0
+        if isinstance(val, (int, float)):
+            return 1 if int(val) != 0 else 0
+        s = str(val).strip().lower()
+        if s in ("1", "true", "yes"):
+            return 1
+        if s in ("0", "false", "no"):
+            return 0
+    return None
+
+
+def _match_is_finished(status: str, item: dict[str, Any]) -> int:
+    """Определить ``match_is_end`` (1/0) по статусу ST и опциональным API-флагам.
+
+    Приоритет: ``is_end`` / ``is_finished`` на ``item``, затем нормализация ``status``.
+    Поддерживаются EN (``finished``, ``ft``, ``ended``), RU (``Матч окончен``),
+    walkover (``matches.status.is-walkover`` и варианты с ``walkover``).
+    """
+    explicit = _truthy_api_flag(item, "is_end", "is_finished")
+    if explicit is not None:
+        return explicit
+
+    st = status.strip().lower()
+    if st in ("finished", "ended", "ft", "full time", "fulltime"):
+        return 1
+    if "матч окончен" in st:
+        return 1
+    if "walkover" in st or "is-walkover" in st:
+        return 1
+    return 0
+
+
+def _normalize_begin_at(value: Any) -> str:
+    """Вернуть строку ``datetime`` из ``begin_at`` карточки матча."""
+    if value is None:
+        return ""
+    s = str(value).strip()
+    if s.lower() in ("nan", "none", "nat"):
+        return ""
+    return s
+
+
 def _parse_chart_payload(payload: dict[str, Any], prefix: str) -> dict[str, Any]:
     data = payload.get("data") if payload else None
     chart = data.get("chart") if isinstance(data, dict) else None
@@ -213,7 +265,7 @@ def bronze_to_row(bronze: dict[str, Any]) -> dict[str, Any] | None:
 
     competition = item.get("competition") if isinstance(item.get("competition"), dict) else {}
     status = str(item.get("status", ""))
-    is_end = 1 if status.lower() in ("finished", "ended", "ft") else 0
+    is_end = _match_is_finished(status, item)
 
     h_coach_id, h_coach_name = _current_coach(home_team)
     a_coach_id, a_coach_name = _current_coach(away_team)
@@ -225,7 +277,7 @@ def bronze_to_row(bronze: dict[str, Any]) -> dict[str, Any] | None:
         "competition_id": item.get("competition_id", competition.get("id", "")),
         "competition_code": competition.get("code", ""),
         "season_id": item.get("season_id", ""),
-        "datetime": item.get("begin_at", ""),
+        "datetime": _normalize_begin_at(item.get("begin_at")),
         "match_status": status,
         "match_is_end": is_end,
         "match_importance": compute_match_importance(competition),
@@ -266,6 +318,79 @@ def bronze_to_row(bronze: dict[str, Any]) -> dict[str, Any] | None:
     row["away_score_ht"] = row.get("away_goals_1h", "")
 
     return row
+
+
+def _row_needs_bronze_refresh(row: dict[str, Any]) -> bool:
+    """True если строка resume имеет пустой ``datetime`` или неверный ``match_is_end``."""
+    dt = str(row.get("datetime", "")).strip()
+    if not dt or dt.lower() in ("nan", "none", "nat"):
+        return True
+    return str(row.get("match_is_end", "0")).strip() not in ("1", "True", "true")
+
+
+def _refresh_prev_rows(prev_rows: list[dict[str, Any]], raw_root: Path) -> list[dict[str, Any]]:
+    """Пересобрать строки resume из bronze-кэша при неполных полях."""
+    refreshed: list[dict[str, Any]] = []
+    for row in prev_rows:
+        mid = row.get("match_id")
+        if mid is None:
+            refreshed.append(row)
+            continue
+        card_path = raw_root / str(mid) / "card.json"
+        if not card_path.is_file():
+            refreshed.append(row)
+            continue
+        if _row_needs_bronze_refresh(row):
+            bronze = load_match_bronze_from_cache(raw_root, int(mid))
+            fresh = bronze_to_row(bronze)
+            if fresh is not None:
+                refreshed.append(fresh)
+                continue
+        refreshed.append(row)
+    return refreshed
+
+
+def rebuild_rows_from_bronze(raw_root: Path) -> list[dict[str, Any]]:
+    """Собрать все national-строки из каталогов ``raw/{match_id}/``."""
+    rows: list[dict[str, Any]] = []
+    if not raw_root.is_dir():
+        return rows
+    match_dirs = sorted(
+        (d for d in raw_root.iterdir() if d.is_dir() and d.name.isdigit()),
+        key=lambda d: int(d.name),
+    )
+    for mdir in match_dirs:
+        if not (mdir / "card.json").is_file():
+            continue
+        bronze = load_match_bronze_from_cache(raw_root, int(mdir.name))
+        row = bronze_to_row(bronze)
+        if row is not None:
+            rows.append(row)
+    return rows
+
+
+def rebuild_dataframe_from_bronze(
+    storage_dir: Path,
+    output_csv_path: Path,
+    *,
+    raw_cache_dir: str = "raw",
+) -> pd.DataFrame:
+    """Полная пересборка ``source.csv`` из bronze-кэша (без сети).
+
+    Args:
+        storage_dir: ``data/source/football_nationals``.
+        output_csv_path: Путь к итоговому CSV.
+        raw_cache_dir: Подкаталог bronze относительно ``storage_dir``.
+
+    Returns:
+        DataFrame записанных строк.
+    """
+    raw_root = storage_dir / raw_cache_dir
+    rows = rebuild_rows_from_bronze(raw_root)
+    if not rows:
+        logger.warning("Smart Tables rebuild: нет строк из bronze в %s", raw_root)
+        return pd.DataFrame()
+    return SmartTablesDataAssembler._write_csv(output_csv_path, rows)
 
 
 class SmartTablesDataAssembler:
@@ -325,6 +450,8 @@ class SmartTablesDataAssembler:
         if output_csv_path.is_file() and done:
             prev_df = pd.read_csv(output_csv_path, dtype=str, low_memory=False)
             prev_rows = cast(list[dict[str, Any]], prev_df.to_dict(orient="records"))
+            if prev_rows and raw_root.is_dir():
+                prev_rows = _refresh_prev_rows(prev_rows, raw_root)
 
         rows: list[dict[str, Any]] = list(prev_rows)
         seen_row_ids = {str(r.get("match_id")) for r in prev_rows if r.get("match_id") is not None}
@@ -380,9 +507,10 @@ class SmartTablesDataAssembler:
         path.parent.mkdir(parents=True, exist_ok=True)
         df = pd.DataFrame(rows)
         if "datetime" in df.columns:
-            ts = pd.to_datetime(df["datetime"], errors="coerce", utc=True)
-            df = df.assign(datetime=ts)
-            df = df.sort_values(by=["datetime", "match_id"], na_position="last")
+            sort_ts = pd.to_datetime(df["datetime"], errors="coerce", utc=True)
+            df = df.assign(_sort_ts=sort_ts)
+            df = df.sort_values(by=["_sort_ts", "match_id"], na_position="last")
+            df = df.drop(columns=["_sort_ts"])
         df.to_csv(path, index=False)
         logger.info("Smart Tables: записано %d строк → %s", len(df), path)
         return cast(pd.DataFrame, df)

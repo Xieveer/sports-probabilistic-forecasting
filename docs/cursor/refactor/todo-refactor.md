@@ -51,6 +51,8 @@
 | R40    | 🟡 Medium   | Low       | ✅     | codebase housekeeping: логи, комментарии, gates stub, lint (`done_task/R40.md`) |
 | R41    | 🔴 High     | High      | ✅     | predict→Telegram light/heavy, SSA турнира, Airflow bash reuse (`done_task/R41.md`) |
 | R42    | 🔴 High     | High      | ✅     | Football Smart Tables: dataset ingest → clean; рынки winner + total 1.5/2.5/3.5/4.5 (`done_task/R42.md`) |
+| R43    | 🔴 High     | Medium    | ✅     | post-backfill fix match_is_end + datetime, rebuild source, clean/interim (`done_task/R43.md`) |
+| R44    | 🟡 Medium   | High      | 🟡     | 44-й (после R43): football features — interview → design → implement |
 
 ---
 
@@ -215,6 +217,15 @@
   - [x] R42.18 — Contract test: колонки + smoke ingest+clean (max_matches=3)
   - [x] R42.19 — HOW_TO: smart_tables_api + football_nationals
 
+- [x] **R43** — Football nationals: post-backfill data fixes → clean/interim ✅ 2026-06-15; см. `done_task/R43.md`
+  - [x] R43.1 — Нормализация `match_is_end` (RU/EN status, walkover, API `is_end`)
+  - [x] R43.2 — Тесты: 314668 + `Матч окончен` + walkover + clean smoke
+  - [x] R43.3 — Fix `datetime` (begin_at, resume/csv_flush)
+  - [x] R43.4 — CLI rebuild `source.csv` из bronze + Makefile `football-rebuild-source`
+  - [x] R43.5 — Прогон rebuild + verify (100% datetime, match_is_end)
+  - [x] R43.6 — `dvc repro clean` + interim validation (Pandera, drop_na)
+  - [x] R43.7 — Документация статусов в `football.md`
+
 - [x] **R40** — Codebase housekeeping (логи, комментарии, docstrings, lint) ✅ 2026-05-13; см. `done_task/R40.md`
   - [x] R40.1 — Удалить stale .log из рабочего дерева, проверить .gitignore
   - [x] R40.2 — AI-артефакты: целевой grep — совпадений по строгим паттернам нет
@@ -250,6 +261,18 @@
   - [x] R23.8 — Scheduled data refresh: `cron_refresh.py` + shell wrapper + unit tests
 
 ### В работе / Backlog 🟡
+
+- [ ] **R44** — Football nationals: feature engineering Phase 2 (interview → design → impl); см. `backlog/R44.md`
+  - [ ] **R44.1** — Interview с пользователем (вопросы в R44.md) — **gate**
+  - [ ] **R44.2** — ADR `football_features_design.md`
+  - [ ] **R44.3** — `conf/sport/football.yaml`: ewm_spans, ewm_metrics, groups
+  - [ ] **R44.4** — Derived diff/total stat cols в long path
+  - [ ] **R44.5** — Football EWM generators (inject_sport_ewm)
+  - [ ] **R44.6** — Опционально: streak / coach continuity
+  - [ ] **R44.7** — Tournament select_columns для features
+  - [ ] **R44.8** — DVC features multirun + football_nationals
+  - [ ] **R44.9** — Smoke `dvc repro features`
+  - [ ] **R44.10** — HOW_TO / football.md features section
 
 - [ ] **R33** — Согласованность `market` и `market_spec`: валидация семейства, тесты, документация; см. `backlog/R33.md`
   - [ ] R33.1 — `validate_experiment_config`: `market.family` == `market_spec.market_family` при наличии поля

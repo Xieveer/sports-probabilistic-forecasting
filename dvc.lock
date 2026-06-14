@@ -5,29 +5,34 @@ stages:
     deps:
     - path: conf/bookmaker/
       hash: md5
-      md5: 284df88443465e48c024a08b8c153c4a.dir
-      size: 12851
+      md5: 67bf8772662aacbe00dceee4a07b279d.dir
+      size: 13805
       nfiles: 3
     - path: conf/source/
       hash: md5
-      md5: 4f2ab21123374f4b629625a80103f415.dir
-      size: 9574
-      nfiles: 4
+      md5: fd3e60704e3b32f6ca7dc51badb15dbc.dir
+      size: 11614
+      nfiles: 6
     - path: data/source/
       hash: md5
-      md5: 3a3dc488d942ec86f4a8644f5d3d0b0c.dir
-      size: 498914973
-      nfiles: 16
+      md5: bf4d0aef9fa11fbfc3c834352b625736.dir
+      size: 804523091
+      nfiles: 92795
     - path: sports_forecast/data/ingest.py
       hash: md5
       md5: 4f1d4400f440eb889bb759de23ddc9db
       size: 28120
+    - path: sports_forecast/data/providers/smart_tables/
+      hash: md5
+      md5: 83edd2ce3e06105cdc6f99567cb6ebd7.dir
+      size: 97551
+      nfiles: 20
     outs:
     - path: data/raw/
       hash: md5
-      md5: b5fc61e44e8ec0e496ad1edc83a81a20.dir
-      size: 51031965
-      nfiles: 8
+      md5: 8e8c6236cf8546c67d85aca3f7b267ab.dir
+      size: 52218748
+      nfiles: 9
   features:
     cmd: uv run python -m sports_forecast.features.features_build --multirun
       tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by,nhl
@@ -90,33 +95,37 @@ stages:
       size: 252
     - path: conf/sport/
       hash: md5
-      md5: 125b4ed54b932de92fae85422a79529e.dir
-      size: 18176
+      md5: 9279bbda6a3c880ef5f10ddd4213f7c3.dir
+      size: 19590
       nfiles: 5
     - path: conf/tournament/
       hash: md5
-      md5: d9557d5e4cfd9a368e207fbd213b6d0e.dir
-      size: 12146
+      md5: 633a8884906be284f816df97dc24de4e.dir
+      size: 11815
       nfiles: 9
     - path: data/raw/
       hash: md5
-      md5: b5fc61e44e8ec0e496ad1edc83a81a20.dir
-      size: 51031965
-      nfiles: 8
+      md5: 8e8c6236cf8546c67d85aca3f7b267ab.dir
+      size: 52218748
+      nfiles: 9
+    - path: docs/cursor/source_data/football.md
+      hash: md5
+      md5: ef230ae33fa1ec2218bf7b42fa17fd92
+      size: 7493
     - path: sports_forecast/data/clean.py
       hash: md5
       md5: cb04bda9eeb7e29a11ff69fc14d12126
       size: 27351
     - path: sports_forecast/validation/schemas.py
       hash: md5
-      md5: 61b2b3e018710f0ca1831707ed524938
-      size: 21193
+      md5: 1cc442a48d8a4f941ab69a6ac6bcbdcc
+      size: 22271
     outs:
     - path: data/interim/
       hash: md5
-      md5: 78ea61015faa914aeb5f8bea7db28364.dir
-      size: 33463837
-      nfiles: 8
+      md5: 512359a08eef10f10a79cdcd2cb87f46.dir
+      size: 33867480
+      nfiles: 9
   validate:
     cmd: uv run python -m sports_forecast.validation.run_validation
     deps:

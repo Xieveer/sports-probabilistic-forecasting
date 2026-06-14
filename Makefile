@@ -11,7 +11,7 @@ DOCS_BUILD := docs/build
 .PHONY: help init install lint format fix test test-unit test-cov test-watch test-file pre-commit train train-sweep train-sweep-nhl train-sweep-nhl-ot-winner train-sweep-nhl-ot-total promote clean dvc-repro
 .PHONY: docs docs-serve docs-clean docs-open docs-coverage docs-linkcheck tree
 .PHONY: api api-dev bot-dev bot-up materialize nhl-morning-refresh-dry-run nhl-morning-refresh nhl-morning-test-notify refresh-lock-status docker-up docker-down docker-build docker-logs db-init
-.PHONY: football-catalog-refresh football-backfill football-ingest-debug football-backfill-wc
+.PHONY: football-catalog-refresh football-backfill football-ingest-debug football-backfill-wc football-rebuild-source
 .PHONY: airflow-init airflow-up airflow-down airflow-logs
 .PHONY: monitoring-up monitoring-down
 
@@ -69,6 +69,7 @@ help:
 	@echo "  make football-backfill         - полный ingest сборных (SF_TOURNAMENT_FILTER=football_nationals)"
 	@echo "  make football-backfill-wc      - backfill только WC (env SF_SMART_TABLES_COMPETITION_CODES=WC)"
 	@echo "  make football-ingest-debug     - ingest max 3 матча (SF_SMART_TABLES_MAX_MATCHES=3)"
+	@echo "  make football-rebuild-source   - пересборка source.csv из bronze (без API)"
 	@echo "  make db-init       - инициализировать таблицы DB (SQLite)"
 	@echo ""
 	@echo "Docker:"
@@ -422,6 +423,9 @@ football-ingest-debug:
 	mkdir -p data/source/football_nationals
 	SF_SMART_TABLES_MAX_MATCHES=3 SF_TOURNAMENT_FILTER=football_nationals \
 		uv run python -m sports_forecast.data.ingest
+
+football-rebuild-source:
+	uv run python scripts/rebuild_football_source_from_bronze.py
 
 # Диагностика эксклюзивной блокировки refresh (flock на SF_REFRESH_LOCK_FILE, см. cron_refresh / Airflow Variables)
 refresh-lock-status:

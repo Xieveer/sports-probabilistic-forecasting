@@ -38,6 +38,40 @@ def _read_or_fetch(
     return payload
 
 
+def load_match_bronze_from_cache(raw_root: Path, match_id: int) -> dict[str, Any]:
+    """Прочитать bronze JSON с диска без HTTP-клиента.
+
+    Args:
+        raw_root: ``data/source/football_nationals/raw``.
+        match_id: PK матча ST.
+
+    Returns:
+        Словарь с ключами ``card``, ``stat_{period}``, ``chart_{period}``, ``similar``.
+        Пустой ``card`` если ``card.json`` отсутствует.
+    """
+    mdir = match_raw_dir(raw_root, match_id)
+    out: dict[str, Any] = {}
+    card_path = mdir / "card.json"
+    if not card_path.is_file():
+        return out
+    out["card"] = cast(dict[str, Any], json.loads(card_path.read_text(encoding="utf-8")))
+    for period in PERIODS_API:
+        for kind in ("stat", "chart"):
+            cache_path = mdir / f"{kind}_{period}.json"
+            out[f"{kind}_{period}"] = (
+                cast(dict[str, Any], json.loads(cache_path.read_text(encoding="utf-8")))
+                if cache_path.is_file()
+                else {}
+            )
+    similar_path = mdir / "similar.json"
+    out["similar"] = (
+        cast(dict[str, Any], json.loads(similar_path.read_text(encoding="utf-8")))
+        if similar_path.is_file()
+        else {}
+    )
+    return out
+
+
 def fetch_match_bronze(
     client: SmartTablesApiClient,
     match_id: int,

@@ -51,7 +51,7 @@ Ingest-турнир: `football_nationals` (конфиг `conf/tournament/footbal
 | `id` | str | `match_id` (после clean) |
 | `datetime` | ISO UTC | `begin_at` |
 | `status` | str | derived: `finished` / `upcoming` из `match_is_end` + счёт |
-| `match_is_end` | 0/1 | `status == finished` |
+| `match_is_end` | 0/1 | см. таблицу маппинга ST status ниже |
 | `home_team` | str | `home_team_name` (`common_title`) |
 | `away_team` | str | `away_team_name` |
 | `home_points` | float | `home_score_ft` |
@@ -65,7 +65,7 @@ Ingest-турнир: `football_nationals` (конфиг `conf/tournament/footbal
 |---------|----------|
 | `match_center_id` | ID match-center |
 | `competition_id`, `competition_code`, `season_id` | Турнир / сезон |
-| `match_status` | Сырой статус ST (`finished`, `not-started`, …) |
+| `match_status` | Сырой статус ST (RU/EN, см. ниже) |
 | `match_importance` | 1=friendly … 4=flagship (см. ниже) |
 | `is_friendly` | 1 если `competition_code == FRII` |
 | `competition_is_cup`, `competition_is_top` | Из объекта `competition` |
@@ -116,6 +116,24 @@ Ingest-турнир: `football_nationals` (конфиг `conf/tournament/footbal
 
 Исторические кэфы winner + total (1.5–4.5) — **отдельный epic** (API-Football / Odds API).
 Stat-odds ST — только incremental upcoming/live → sidecar `match_stat_odds.parquet`.
+
+---
+
+## Маппинг ST status → `match_is_end`
+
+Реализация: `_match_is_finished()` в `sports_forecast/data/providers/smart_tables/assembler.py`.
+
+| Приоритет | Условие | `match_is_end` |
+|-----------|---------|----------------|
+| 1 | `item.is_end` или `item.is_finished` явно заданы | `1` / `0` по флагу |
+| 2 | EN: `finished`, `ended`, `ft`, `full time` | `1` |
+| 3 | RU: `Матч окончен` (основной статус в bronze backfill) | `1` |
+| 4 | Walkover: `matches.status.is-walkover`, любой статус с `walkover` / `is-walkover` | `1` |
+| — | Прочие (`not-started`, live, …) | `0` |
+
+**Walkover:** ~20 матчей в backfill; трактуем как завершённые (есть счёт, не live).
+
+**Rebuild без сети:** `make football-rebuild-source` — полная пересборка `source.csv` из `raw/{match_id}/`.
 
 ---
 

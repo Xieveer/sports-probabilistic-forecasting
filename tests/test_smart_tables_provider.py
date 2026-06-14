@@ -16,6 +16,7 @@ from sports_forecast.config.loaders import load_tournament_config
 from sports_forecast.data.clean import process_tournament as clean_tournament
 from sports_forecast.data.providers import SmartTablesSourceProvider, get_provider
 from sports_forecast.data.providers.smart_tables.assembler import (
+    _match_is_finished,
     bronze_to_row,
     load_assembler_config,
 )
@@ -146,8 +147,46 @@ def test_bronze_to_row_wc_final_314668() -> None:
     assert row["home_score_ht"] == 2
     assert row["away_score_ht"] == 0
     assert row["odd_home"] == 2.45
+    assert row["match_is_end"] == 1
+    assert row["datetime"] == "2022-12-18T18:00:00+00:00"
     for col in FOOTBALL_REQUIRED_COLUMNS:
         assert col in row, f"missing {col}"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        ("Матч окончен", 1),
+        ("finished", 1),
+        ("matches.status.is-walkover", 1),
+        ("not-started", 0),
+        ("", 0),
+    ],
+)
+def test_match_is_finished_status_mapping(status: str, expected: int) -> None:
+    assert _match_is_finished(status, {}) == expected
+
+
+def test_bronze_to_row_ru_status_match_is_end() -> None:
+    bronze = _load_bronze_fixture()
+    bronze["card"]["data"]["item"]["status"] = "Матч окончен"
+    row = bronze_to_row(bronze)
+    assert row is not None
+    assert row["match_is_end"] == 1
+    assert row["match_status"] == "Матч окончен"
+
+
+def test_bronze_to_row_walkover_match_is_end() -> None:
+    bronze = _load_bronze_fixture()
+    bronze["card"]["data"]["item"]["status"] = "matches.status.is-walkover"
+    row = bronze_to_row(bronze)
+    assert row is not None
+    assert row["match_is_end"] == 1
+
+
+def test_match_is_finished_api_flag_priority() -> None:
+    assert _match_is_finished("not-started", {"is_end": 1}) == 1
+    assert _match_is_finished("Матч окончен", {"is_finished": False}) == 0
 
 
 def test_national_filter_rejects_club_teams() -> None:
@@ -224,9 +263,13 @@ def test_provider_backfill_offline(tmp_path: Path) -> None:
 
 
 def test_contract_ingest_clean_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Assembler → ingest → clean на offline cache (max 1 матч)."""
+    """Assembler → ingest → clean на offline cache (max 1 матч, RU status)."""
     project = tmp_path / "repo"
-    _seed_storage(project / "data" / "source", [314668])
+    storage = _seed_storage(project / "data" / "source", [314668])
+    card_path = storage / "raw" / "314668" / "card.json"
+    card = json.loads(card_path.read_text(encoding="utf-8"))
+    card["data"]["item"]["status"] = "Матч окончен"
+    card_path.write_text(json.dumps(card, ensure_ascii=False), encoding="utf-8")
 
     source_cfg = OmegaConf.create(
         {
@@ -251,13 +294,16 @@ def test_contract_ingest_clean_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyP
     csv_path = provider.fetch("football_nationals")
     assert csv_path.is_file()
 
+    raw_df = pd.read_csv(csv_path, dtype=str, low_memory=False)
+    assert len(raw_df) >= 1
+    assert raw_df["match_is_end"].astype(str).iloc[0] == "1"
+    assert raw_df["datetime"].astype(str).str.strip().iloc[0] != ""
+
     raw_root = project / "data" / "raw"
     raw_parquet = raw_root / "football_nationals" / "matches.parquet"
     raw_parquet.parent.mkdir(parents=True, exist_ok=True)
-    pd.read_csv(csv_path, dtype=str, low_memory=False).to_parquet(raw_parquet, index=False)
+    raw_df.to_parquet(raw_parquet, index=False)
     assert raw_parquet.is_file()
-    raw_df = pd.read_parquet(raw_parquet)
-    assert len(raw_df) >= 1
 
     monkeypatch.setattr(clean_mod, "PROJECT_ROOT", project)
     tournament_cfg = load_tournament_config("football_nationals")
@@ -266,6 +312,8 @@ def test_contract_ingest_clean_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyP
     interim_path = project / "data" / "interim" / "football_nationals" / "matches_interim.parquet"
     assert interim_path.is_file()
     interim = pd.read_parquet(interim_path)
+    assert len(interim) >= 1
+    assert interim["status"].iloc[0] == "finished"
     for col in ("id", "datetime", "home_points", "away_points", "competition_code"):
         assert col in interim.columns
     assert interim["competition_code"].iloc[0] == "WC"
