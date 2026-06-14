@@ -20,7 +20,7 @@ stages:
   # Читает CSV, разделяет на подтурниры, извлекает odds
   # NHL: провайдер nhl_web_api (conf/source/nhl.yaml) пишет data/source/nhl/source.csv;
   # Football: smart_tables_api → data/source/football_nationals/source.csv;
-  # этап features ниже по умолчанию не включает tournament=nhl / football_nationals — добавьте в multirun при готовых interim.
+  # этап features включает football_nationals при наличии interim (R44).
   ingest:
     cmd: uv run python -m sports_forecast.data.ingest
     deps:
@@ -56,7 +56,7 @@ stages:
   features:
     cmd: >-
       uv run python -m sports_forecast.features.features_build --multirun
-      tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by,nhl
+      tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by,nhl,football_nationals
       features=${features.config}
     params:
       - features.config

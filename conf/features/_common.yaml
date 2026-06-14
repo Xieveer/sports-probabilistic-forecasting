@@ -19,6 +19,10 @@ exclude_cols:
   - pinnacle_draw_close
   - pinnacle_total_open
   - pinnacle_total_close
+  # Smart Tables prematch odds (R44: not in feature generators)
+  - odd_home
+  - odd_draw
+  - odd_away
 
 # Колонки с результатами матчей (для защиты от утечек)
 result_cols:
@@ -54,6 +58,34 @@ result_cols:
   - opp_2pim_ft
   - pl_fow_ft
   - opp_fow_ft
+  # Football ST stats (period=all) — R44
+  - goals_all_diff
+  - goals_all_total
+  - xg_all_diff
+  - xg_all_total
+  - corners_all_diff
+  - corners_all_total
+  - possession_all_diff
+  - possession_all_total
+  - shotstarget_all_diff
+  - shotstarget_all_total
+  - pl_goals_all
+  - opp_goals_all
+  - pl_xg_all
+  - opp_xg_all
+  - pl_corners_all
+  - opp_corners_all
+  - pl_possession_all
+  - opp_possession_all
+  - pl_shotstarget_all
+  - opp_shotstarget_all
+  - pl_yellowcards_all
+  - opp_yellowcards_all
+  - home_score_ht
+  - away_score_ht
+  - odd_home
+  - odd_draw
+  - odd_away
   # Wide format
   - home_points
   - away_points
@@ -86,6 +118,17 @@ create_metrics:
   - "hits_diff_ft"
   - "pim2_diff_ft"
   - "fow_diff_ft"
+  # Football ST stats (period=all) — R44; skipped when columns absent
+  - "goals_all_diff"
+  - "goals_all_total"
+  - "xg_all_diff"
+  - "xg_all_total"
+  - "corners_all_diff"
+  - "corners_all_total"
+  - "possession_all_diff"
+  - "possession_all_total"
+  - "shotstarget_all_diff"
+  - "shotstarget_all_total"
 
 # Контекстные колонки для wide→long трансформации.
 # TimeFeatureGenerator автоматически добавляет свои колонки (weekday, hour, ...)
@@ -94,3 +137,5 @@ long_format_context_columns:
   - "tour_num"
   - "tour_match_num"
   - "season"
+  - "season_id"
+  - "competition_code"

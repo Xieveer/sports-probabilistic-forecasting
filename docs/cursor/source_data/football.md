@@ -156,6 +156,32 @@ Stat-odds ST — только incremental upcoming/live → sidecar `match_stat_
 
 ---
 
+## Features layer (Phase 2, R44)
+
+**ADR:** [`docs/cursor/context/football_features_design.md`](../context/football_features_design.md)
+
+| Слой | Путь |
+|------|------|
+| Processed long | `data/processed/football_nationals/train_long.parquet` |
+| Processed wide | `data/processed/football_nationals/train_wide.parquet` |
+
+**Профиль:** `features=advanced` (первый sweep). **DVC:** `football_nationals` в multirun этапа `features`.
+
+```bash
+uv run python -m sports_forecast.features.features_build \
+  tournament=football_nationals features=advanced
+```
+
+**EWM (sport-level):** метрики `goals`, `xg`, `corners`, `possession`, `shotstarget` (period `all` only), spans `[3, 10]`, контексты из `conf/sport/football.yaml` + `inseason` по `season_id`.
+
+**Исключено v1:** HT/`_1h` stats, streak, coach/referee, odds в модели (`odd_*` в interim, `exclude_cols`), similar-neighbor features.
+
+**Holdout:** `train_eval_split.competition_holdout` — WC, EURO (`conf/tournament/football_nationals.yaml`).
+
+**Рынки (приоритет):** winner → total 2.5 → остальные линии 1.5/3.5/4.5.
+
+---
+
 ## Ссылки
 
 - Полная разведка: [`smart_tables.md`](smart_tables.md)

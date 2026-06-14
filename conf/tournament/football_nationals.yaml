@@ -39,9 +39,7 @@ data_clean:
     - competition_code
     - competition_id
     - season_id
-    - home_score_ht
-    - away_score_ht
-    # stat wide (all periods)
+    # stat wide (period=all only for features v1; *_1h/*_2h excluded — leakage risk)
     - home_goals_all
     - away_goals_all
     - home_xg_all

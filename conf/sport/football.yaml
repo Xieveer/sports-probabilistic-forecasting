@@ -16,12 +16,32 @@ rolling_context_names:
   - weekday
   - tour_side
   - form
+  - inseason
   - team
   - h2h_global
   - h2h_match_state
   - h2h_side
   - h2h_form
+  - h2h_inseason
   - h2h_team
+
+# R44: inseason context library key ``season`` → ``season_id`` в interim.
+rolling_column_aliases:
+  season: season_id
+
+# R44: EWM по ST stat (period=all); spans короче NHL из‑за редких матчей сборных.
+ewm_spans: [3, 10]
+ewm_metrics:
+  - { metric: goals_all_diff, label: goals_diff }
+  - { metric: goals_all_total, label: goals_total }
+  - { metric: xg_all_diff, label: xg_diff }
+  - { metric: xg_all_total, label: xg_total }
+  - { metric: corners_all_diff, label: corners_diff }
+  - { metric: corners_all_total, label: corners_total }
+  - { metric: possession_all_diff, label: possession_diff }
+  - { metric: possession_all_total, label: possession_total }
+  - { metric: shotstarget_all_diff, label: shotstarget_diff }
+  - { metric: shotstarget_all_total, label: shotstarget_total }
 
 form_params:
   fg_trigger_minutes: 10080   # 7 дней между матчами сборной
@@ -73,6 +93,19 @@ data_clean:
       away_points: float
       match_importance: float
       is_friendly: float
+      # ST match stats (period=all) — R44; bronze may store as str
+      home_goals_all: float
+      away_goals_all: float
+      home_xg_all: float
+      away_xg_all: float
+      home_corners_all: float
+      away_corners_all: float
+      home_possession_all: float
+      away_possession_all: float
+      home_shotstarget_all: float
+      away_shotstarget_all: float
+      home_yellowcards_all: float
+      away_yellowcards_all: float
     string: [id, status, home_team, away_team, competition_code]
     datetime:
       datetime:

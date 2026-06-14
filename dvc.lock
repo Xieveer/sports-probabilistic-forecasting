@@ -35,13 +35,13 @@ stages:
       nfiles: 9
   features:
     cmd: uv run python -m sports_forecast.features.features_build --multirun
-      tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by,nhl
+      tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by,nhl,football_nationals
       features=advanced
     deps:
     - path: conf/features/
       hash: md5
-      md5: b3f76e4ef96ffee337becbaaba1b5df8.dir
-      size: 13861
+      md5: 30d3db8568204cce5326dbe4c0d89258.dir
+      size: 14885
       nfiles: 12
     - path: conf/features_pipeline.yaml
       hash: md5
@@ -53,9 +53,9 @@ stages:
       size: 252
     - path: data/interim/
       hash: md5
-      md5: 78ea61015faa914aeb5f8bea7db28364.dir
-      size: 33463837
-      nfiles: 8
+      md5: e39f84b0a5e04f271babfa022167fa2d.dir
+      size: 33856520
+      nfiles: 9
     - path: sports_forecast/features/feature_pipeline_compose.py
       hash: md5
       md5: 3c1db32fbf283ee09d96be90e4fe7eac
@@ -83,9 +83,9 @@ stages:
     outs:
     - path: data/processed/
       hash: md5
-      md5: e8b207c4bdabdd877860de44c8aaf397.dir
-      size: 2423342253
-      nfiles: 32
+      md5: ddd9975c23cf792d8a7c4c687420bad4.dir
+      size: 2529800510
+      nfiles: 34
   clean:
     cmd: uv run python -m sports_forecast.data.clean
     deps:
@@ -95,13 +95,13 @@ stages:
       size: 252
     - path: conf/sport/
       hash: md5
-      md5: 9279bbda6a3c880ef5f10ddd4213f7c3.dir
-      size: 19590
+      md5: a7632e656276aac171824e6070dc52dc.dir
+      size: 20877
       nfiles: 5
     - path: conf/tournament/
       hash: md5
-      md5: 633a8884906be284f816df97dc24de4e.dir
-      size: 11815
+      md5: 1b6ed2a58da89be04fb4bad11bd2409f.dir
+      size: 11832
       nfiles: 9
     - path: data/raw/
       hash: md5
@@ -110,8 +110,8 @@ stages:
       nfiles: 9
     - path: docs/cursor/source_data/football.md
       hash: md5
-      md5: ef230ae33fa1ec2218bf7b42fa17fd92
-      size: 7493
+      md5: 659a9a77f8fca319bcdd967e20742679
+      size: 8660
     - path: sports_forecast/data/clean.py
       hash: md5
       md5: cb04bda9eeb7e29a11ff69fc14d12126
@@ -123,8 +123,8 @@ stages:
     outs:
     - path: data/interim/
       hash: md5
-      md5: 512359a08eef10f10a79cdcd2cb87f46.dir
-      size: 33867480
+      md5: e39f84b0a5e04f271babfa022167fa2d.dir
+      size: 33856520
       nfiles: 9
   validate:
     cmd: uv run python -m sports_forecast.validation.run_validation

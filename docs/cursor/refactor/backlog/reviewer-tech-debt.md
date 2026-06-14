@@ -763,3 +763,23 @@
   - Phase 2: features multirun, train-sweep winner + total×4 линии, historical odds merge (отдельный epic).
   - Явные Pandera-колонки `home_team`/`away_team` в interim при появлении validate-гейтов на football.
   - Операционный прогон полного backfill + `dvc repro clean tournament=football_nationals` с фиксацией dvc.lock.
+
+### 2026-06-15 — R44 Football nationals features Phase 2
+
+- **Задача:** `backlog/R44.md` → `done_task/R44.md`
+- **Ограничения и компромиссы:**
+  - Interview defaults v1 (architect), пользователь не заполнял форму — решения по EWM/spans/contexts могут пересмотреться.
+  - Streak, coach continuity, similar-neighbor features и odds в модели **отложены** v1.
+  - xG и часть ST stat-колонок с NaN → EWM skip (без impute); покрытие xg ~43% на истории.
+  - HT/`_1h` stats исключены из feature inputs (anti-leakage).
+  - `dvc repro features` пересобирает **все** турниры multirun (~30 мин локально); CI smoke — синтетический wide без parquet.
+  - Pandera interim для `odd_*` при clean логирует dtype object (не float64) — не блокирует запись interim.
+  - DVC `features` deps не включают `conf/sport/` и `long_format.py` — смена sport yaml может не инвалидировать lock (наследие R29).
+- **Возможные улучшения / техдолг:**
+  - Пользовательский interview → ревизия ADR (spans, метрики attacks/dattacks/yellowcards).
+  - `odd_*` dtype в `football.yaml` + Pandera interim schema.
+  - Streak / coach continuity / similar.json neighbor features (Phase 2+).
+  - Historical odds epic для betting eval (как NHL R20/R26).
+  - Train sweep: winner → total 2.5 → остальные линии; friendly filter в train config.
+  - Добавить `long_format.py` и `conf/sport/` в deps этапа `features` в `dvc.yaml`.
+  - Интеграционный smoke на реальном `train_wide.parquet` fixture (mini-subset) в CI.

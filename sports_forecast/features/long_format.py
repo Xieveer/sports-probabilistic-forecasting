@@ -316,13 +316,16 @@ def create_player_metrics(df: pd.DataFrame, metrics: list[str]) -> pd.DataFrame:
     """
     result = df.copy()
 
+    def _numeric_series(col: str) -> pd.Series:
+        return pd.to_numeric(df[col], errors="coerce")
+
     def _diff_pair(name: str, pl_c: str, opp_c: str) -> None:
         if name not in metrics:
             return
         if pl_c not in df.columns or opp_c not in df.columns:
             logger.debug("create_player_metrics: пропуск %s (нет %s / %s)", name, pl_c, opp_c)
             return
-        result[name] = df[pl_c] - df[opp_c]
+        result[name] = _numeric_series(pl_c) - _numeric_series(opp_c)
         logger.debug("Создана метрика: %s = %s - %s", name, pl_c, opp_c)
 
     def _sum_pair(name: str, pl_c: str, opp_c: str) -> None:
@@ -331,7 +334,7 @@ def create_player_metrics(df: pd.DataFrame, metrics: list[str]) -> pd.DataFrame:
         if pl_c not in df.columns or opp_c not in df.columns:
             logger.debug("create_player_metrics: пропуск %s (нет %s / %s)", name, pl_c, opp_c)
             return
-        result[name] = df[pl_c] + df[opp_c]
+        result[name] = _numeric_series(pl_c) + _numeric_series(opp_c)
         logger.debug("Создана метрика: %s = %s + %s", name, pl_c, opp_c)
 
     if "diff" in metrics and "pl_points" in df.columns and "opp_points" in df.columns:
@@ -352,6 +355,12 @@ def create_player_metrics(df: pd.DataFrame, metrics: list[str]) -> pd.DataFrame:
     _diff_pair("hits_diff_ft", "pl_hits_ft", "opp_hits_ft")
     _diff_pair("pim2_diff_ft", "pl_2pim_ft", "opp_2pim_ft")
     _diff_pair("fow_diff_ft", "pl_fow_ft", "opp_fow_ft")
+
+    # R44: football ST stats (period=all); skip if columns absent (other sports).
+    for stat in ("goals", "xg", "corners", "possession", "shotstarget"):
+        suffix = f"{stat}_all"
+        _diff_pair(f"{suffix}_diff", f"pl_{suffix}", f"opp_{suffix}")
+        _sum_pair(f"{suffix}_total", f"pl_{suffix}", f"opp_{suffix}")
 
     return result
 

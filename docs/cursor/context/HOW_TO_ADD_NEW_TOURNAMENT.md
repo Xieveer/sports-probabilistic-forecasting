@@ -228,7 +228,7 @@ Smart Tables API (`SmartTablesSourceProvider`, пакет `sports_forecast/data/
 | Источник odds | The Odds API (merge) | ST card 1X2 best-effort; исторические кэфы — отдельный epic |
 | Backfill | ~26 ч, checkpoint | ~93k запросов, rate limit 1 req/s, raw JSON cache |
 
-Ops: `make football-catalog-refresh`, `make football-backfill`, `make football-ingest-debug` (env `SF_SMART_TABLES_MAX_MATCHES`, `SF_SMART_TABLES_COMPETITION_CODES`). Документация колонок: `docs/cursor/source_data/football.md`.
+Ops: `make football-catalog-refresh`, `make football-backfill`, `make football-ingest-debug` (env `SF_SMART_TABLES_MAX_MATCHES`, `SF_SMART_TABLES_COMPETITION_CODES`). Документация колонок: `docs/cursor/source_data/football.md`. **Features (R44):** `docs/cursor/context/football_features_design.md`; repro — `uv run python -m sports_forecast.features.features_build tournament=football_nationals features=advanced`.
 
 Контракт всех адаптеров — абстрактный класс `SourceProvider` в `sports_forecast/data/providers/base.py` (метод `fetch(source_name) -> Path`).
 
