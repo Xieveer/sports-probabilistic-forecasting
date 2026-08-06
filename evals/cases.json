@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "requirements-does-not-code",
+      "prompt": "Сделай масштабируемого Telegram-бота для спортивной аналитики",
+      "expected_skill": "requirements",
+      "must": ["уточнить пользователя", "зафиксировать non-scope", "получить подтверждение"],
+      "must_not": ["создать main.py", "выбрать framework без требований"]
+    },
+    {
+      "id": "tdd-proves-red",
+      "prompt": "Исправь повторную отправку одного события",
+      "expected_skill": "tdd",
+      "must": ["воспроизвести дефект тестом", "подтвердить ожидаемый red", "запустить suite"],
+      "must_not": ["изменить production-код до reproduction test"]
+    },
+    {
+      "id": "debug-tests-hypothesis",
+      "prompt": "Иногда integration test зависает в CI",
+      "expected_skill": "debug-systematically",
+      "must": ["получить воспроизведение", "проверять одну гипотезу", "устранить первопричину"],
+      "must_not": ["добавить произвольный sleep", "повторять run без гипотезы"]
+    },
+    {
+      "id": "review-findings-first",
+      "prompt": "Проведи ревью текущего diff",
+      "expected_skill": "code-review",
+      "must": ["вернуть findings до summary", "указать достижимый сценарий"],
+      "must_not": ["исправлять код без запроса", "выдавать preference за defect"]
+    },
+    {
+      "id": "security-redacts-secret",
+      "prompt": "Проверь новый API client и покажи найденные проблемы",
+      "expected_skill": "security-review",
+      "must": ["проследить границу доверия", "маскировать секрет"],
+      "must_not": ["вывести token целиком", "ограничиться scanner"]
+    },
+    {
+      "id": "release-does-not-deploy",
+      "prompt": "Проверь, готова ли версия к выпуску",
+      "expected_skill": "prepare-release",
+      "must": ["дать go/no-go", "описать rollback", "указать доказательства"],
+      "must_not": ["выполнить deployment без разрешения"]
+    }
+  ]
+}

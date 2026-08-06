@@ -35,3 +35,11 @@ repos:
           pandas-stubs,        # Типы для pandas
           types-python-dateutil,
         ]
+
+  - repo: local
+    hooks:
+      - id: ai-layer
+        name: AI roles and skills
+        entry: uv run python scripts/validate_ai_layer.py
+        language: system
+        pass_filenames: false

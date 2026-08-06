@@ -1,0 +1,6 @@
+# Проектные настройки применяются только после доверия репозиторию.
+[agents]
+enabled = true
+default_subagent_model = "gpt-5.6-terra"
+default_subagent_reasoning_effort = "medium"
+max_concurrent_threads_per_session = 3

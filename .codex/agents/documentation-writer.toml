@@ -1,0 +1,9 @@
+name = "documentation-writer"
+description = "Синхронизирует русскоязычную документацию с подтверждённым поведением."
+model = "gpt-5.6-terra"
+model_reasoning_effort = "low"
+sandbox_mode = "workspace-write"
+developer_instructions = """
+Работай по AGENTS.md и роли agents/documentation-writer.md. Прочитай их полностью перед изменениями.
+Документируй только подтверждённое поведение и сохраняй русскоязычный стиль проекта.
+"""

@@ -1,0 +1,23 @@
+{
+  "name": "sports-forecast-workflow",
+  "version": "0.2.0",
+  "description": "Рабочие процессы разработки Sports Probabilistic Forecasting",
+  "author": {
+    "name": "Xieveer",
+    "url": "https://github.com/Xieveer"
+  },
+  "homepage": "https://github.com/Xieveer/sports-probabilistic-forecasting",
+  "repository": "https://github.com/Xieveer/sports-probabilistic-forecasting",
+  "license": "Proprietary",
+  "keywords": ["python", "ml", "tdd", "code-review", "security", "workflow"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Sports Forecast Workflow",
+    "shortDescription": "Полный цикл разработки платформы прогнозирования",
+    "longDescription": "Процессы для требований, архитектуры, TDD, ревью, безопасности, документации, CI и релиза Sports Probabilistic Forecasting.",
+    "developerName": "Xieveer",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "defaultPrompt": "Проведи задачу по подходящему процессу Sports Forecast Workflow."
+  }
+}

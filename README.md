@@ -359,6 +359,22 @@ make airflow-down     # Остановить
 
 ---
 
+## AI-агенты и skills
+
+Репозиторий использует переносимый AI-слой, совместимый с Codex и другими агентными
+инструментами:
+
+- `AGENTS.md` — обязательные проектные правила;
+- `agents/` и `.codex/agents/` — роли и именованные профили Codex;
+- `skills/` — повторяемые процессы разработки;
+- `references/` — общие критерии и чек-листы;
+- `evals/` — поведенческие сценарии для проверки skills;
+- `.codex-plugin/` и `.agents/plugins/` — нативный plugin manifest.
+
+Карта выбора ролей и процессов находится в
+[`docs/development/ai-agents-and-skills.md`](docs/development/ai-agents-and-skills.md).
+Структура проверяется командой `make ai-validate`.
+
 ## Документация
 
 ### Пользовательская (Sphinx)

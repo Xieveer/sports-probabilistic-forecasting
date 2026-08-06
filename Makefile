@@ -14,6 +14,7 @@ DOCS_BUILD := docs/build
 .PHONY: football-catalog-refresh football-backfill football-ingest-debug football-backfill-wc football-rebuild-source
 .PHONY: airflow-init airflow-up airflow-down airflow-logs
 .PHONY: monitoring-up monitoring-down
+.PHONY: ai-validate security production-check check
 
 # ---------- Справка ----------
 
@@ -119,6 +120,19 @@ fix:
 # Полный прогон всех pre-commit хуков
 pre-commit:
 	uv run pre-commit run --all-files
+
+ai-validate:
+	uv run python scripts/validate_ai_layer.py
+
+security:
+	uv export --locked --no-dev --no-emit-project --output-file requirements-audit.txt
+	uvx --from pip-audit pip-audit --requirement requirements-audit.txt
+	@rm -f requirements-audit.txt
+
+production-check:
+	uv run python scripts/validate_production_readiness.py
+
+check: lint test-unit docs ai-validate production-check
 
 # ---------- Тесты ----------
 

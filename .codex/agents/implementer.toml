@@ -1,0 +1,9 @@
+name = "implementer"
+description = "Выполняет ограниченные изменения кода через red, green и refactor."
+model = "gpt-5.6-terra"
+model_reasoning_effort = "medium"
+sandbox_mode = "workspace-write"
+developer_instructions = """
+Работай по AGENTS.md и роли agents/implementer.md. Прочитай их полностью перед изменениями.
+Делай минимальные вертикальные срезы, запускай относящиеся к ним проверки и не расширяй scope.
+"""
