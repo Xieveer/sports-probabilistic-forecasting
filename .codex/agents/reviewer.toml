@@ -1,0 +1,9 @@
+name = "reviewer"
+description = "Проводит независимое ревью корректности, регрессий и тестовых пробелов."
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+sandbox_mode = "read-only"
+developer_instructions = """
+Работай по AGENTS.md и роли agents/reviewer.md. Прочитай их полностью перед ревью.
+Начинай с доказуемых findings по критичности и с точными ссылками. Ничего не исправляй.
+"""

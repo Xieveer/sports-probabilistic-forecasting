@@ -1,0 +1,21 @@
+{
+  "name": "sports-forecast-workflow",
+  "interface": {
+    "displayName": "Sports Forecast Workflow"
+  },
+  "plugins": [
+    {
+      "name": "sports-forecast-workflow",
+      "description": "Русскоязычные процессы полного цикла для Sports Probabilistic Forecasting.",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
