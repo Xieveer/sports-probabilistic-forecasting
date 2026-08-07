@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Final
 
@@ -147,7 +147,7 @@ def migrate_v1_to_v2(df: pd.DataFrame) -> pd.DataFrame:
     """
     if df is None:
         return pd.DataFrame(columns=list(ODDS_STORE_COLUMNS_V2))
-    renamed = df.rename(columns=dict(_V1_TO_V2_RENAME), copy=True)
+    renamed = df.rename(columns=_V1_TO_V2_RENAME)
     return renamed.reindex(columns=list(ODDS_STORE_COLUMNS_V2))
 
 
@@ -228,7 +228,7 @@ def _coerce_input_to_v3(df: pd.DataFrame) -> pd.DataFrame:
 
 def _now_utc_iso() -> str:
     """Текущий момент в UTC в формате ISO 8601 (для ``fetched_at``)."""
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
 def _align_to_store_schema(df: pd.DataFrame) -> pd.DataFrame:

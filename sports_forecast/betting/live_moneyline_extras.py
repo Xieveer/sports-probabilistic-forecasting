@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from sports_forecast.betting.edge_decision import (
@@ -53,8 +53,8 @@ def match_dt_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def proba_home_from_prediction(pred: LiveMoneylinePredictionInput) -> float | None:

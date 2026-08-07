@@ -51,7 +51,7 @@ MLOps-система вероятностного прогнозирования
 Технологический стек
 ~~~~~~~~~~~~~~~~~~~~
 
-* Python 3.10+, Hydra, DVC, MLflow
+* Python 3.12, Hydra, DVC, MLflow
 * CatBoost, LightGBM, Logistic Regression, Stacking Ensemble
 * FastAPI, SQLAlchemy, PostgreSQL/SQLite
 * Airflow, Docker Compose

@@ -1,0 +1,24 @@
+# Правила полноты данных NHL для tournament-neutral quality gate.
+tournament: nhl
+schedule_window_hours: 48
+id_column: id
+datetime_column: datetime
+schedule_state_column: game_state
+schedule_finished_values: ["OFF"]
+schedule_snapshot_filename: nhl_quality_schedule.csv
+schedule_coverage_filename: nhl_quality_schedule.coverage.json
+source_finished_column: match_is_end
+source_finished_values: ["1", "true"]
+required_result_fields: [home_score_ft, away_score_ft, match_end]
+result_field_rules:
+  home_score_ft:
+    value_type: integer
+    minimum: 0
+    maximum: 99
+  away_score_ft:
+    value_type: integer
+    minimum: 0
+    maximum: 99
+  match_end:
+    value_type: enum
+    allowed_values: [REG, OT, SO]

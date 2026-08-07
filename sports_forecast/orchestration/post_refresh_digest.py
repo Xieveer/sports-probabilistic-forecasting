@@ -41,7 +41,7 @@ import os
 import sys
 import urllib.error
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -175,9 +175,9 @@ def _predictions_to_match_lines(
 
         commence = p.match_datetime
         if commence is not None and commence.tzinfo is None:
-            commence = commence.replace(tzinfo=timezone.utc)
+            commence = commence.replace(tzinfo=UTC)
         elif commence is not None:
-            commence = commence.astimezone(timezone.utc)
+            commence = commence.astimezone(UTC)
 
         out.append(
             DigestMatchLine(
@@ -348,7 +348,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             marker_path.parent.mkdir(parents=True, exist_ok=True)
             marker_path.write_text(
-                datetime.now(timezone.utc).isoformat(timespec="seconds") + "\n",
+                datetime.now(UTC).isoformat(timespec="seconds") + "\n",
                 encoding="utf-8",
             )
         except OSError as exc:

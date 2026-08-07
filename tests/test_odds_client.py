@@ -52,7 +52,7 @@ def test_odds_client_cache_hit(
 
     payload: dict[str, Any] = {"data": []}
     cache_key = "test_key"
-    cpath = tmp_path / "test_key.json"
+    cpath = client._cache_path(cache_key)
     cpath.write_text(json.dumps(payload), encoding="utf-8")
 
     with caplog.at_level("INFO"):
@@ -92,3 +92,41 @@ def test_quota_headers(
     assert "x-requests-remaining=42" in caplog.text
     assert "cached=False" in caplog.text
     assert "test-key" not in caplog.text
+
+
+def test_live_request_without_cache_does_not_persist_key_or_response(
+    tmp_path: Path,
+    odds_cfg_dict: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``use_cache=False`` не создаёт файл кэша и не раскрывает ключ в имени."""
+    monkeypatch.setenv("ODDS_API_KEY", "secret-api-key")
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.headers = {}
+    resp.json.return_value = []
+    resp.raise_for_status = MagicMock()
+    session = MagicMock()
+    session.get.return_value = resp
+
+    cache_dir = tmp_path / "cache"
+    client = OddsApiClient(
+        bookmaker_cfg=OmegaConf.create(odds_cfg_dict), cache_dir=cache_dir, session=session
+    )
+    client.get_json("/sports/x/odds", {"regions": "eu"}, use_cache=False)
+
+    assert not cache_dir.exists()
+
+
+def test_cache_filename_hashes_explicit_key_without_secret(
+    tmp_path: Path,
+    odds_cfg_dict: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Имя файла кэша не раскрывает даже явно переданный секретный ключ."""
+    monkeypatch.setenv("ODDS_API_KEY", "secret-api-key")
+    client = OddsApiClient(bookmaker_cfg=OmegaConf.create(odds_cfg_dict), cache_dir=tmp_path)
+
+    cache_path = client._cache_path("contains-secret-api-key")
+
+    assert "secret-api-key" not in cache_path.name

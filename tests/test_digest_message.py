@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sports_forecast.orchestration.digest_message import (
     DigestMatchLine,
@@ -15,7 +15,7 @@ def test_build_post_refresh_digest_text_sorted_msk_and_format() -> None:
     m_late = DigestMatchLine(
         home_player="Echo",
         away_player="Foxtrot",
-        commence_utc=datetime(2026, 1, 3, 12, 0, tzinfo=timezone.utc),
+        commence_utc=datetime(2026, 1, 3, 12, 0, tzinfo=UTC),
         proba_home=0.4,
         pinnacle_home_decimal=2.5,
         pinnacle_away_decimal=1.55,
@@ -27,7 +27,7 @@ def test_build_post_refresh_digest_text_sorted_msk_and_format() -> None:
     m_early = DigestMatchLine(
         home_player="Alpha",
         away_player="Beta",
-        commence_utc=datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc),
+        commence_utc=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
         proba_home=0.55,
         pinnacle_home_decimal=2.0,
         pinnacle_away_decimal=1.9,
@@ -39,7 +39,7 @@ def test_build_post_refresh_digest_text_sorted_msk_and_format() -> None:
     m_mid = DigestMatchLine(
         home_player="Gamma",
         away_player="Delta",
-        commence_utc=datetime(2026, 1, 2, 9, 0, tzinfo=timezone.utc),
+        commence_utc=datetime(2026, 1, 2, 9, 0, tzinfo=UTC),
         proba_home=None,
         pinnacle_home_decimal=None,
         pinnacle_away_decimal=None,
@@ -102,7 +102,7 @@ def test_edges_recomputed_when_missing_but_kf_present() -> None:
     m = DigestMatchLine(
         home_player="H",
         away_player="A",
-        commence_utc=datetime(2026, 5, 1, 18, 0, tzinfo=timezone.utc),
+        commence_utc=datetime(2026, 5, 1, 18, 0, tzinfo=UTC),
         proba_home=0.5,
         pinnacle_home_decimal=2.0,
         pinnacle_away_decimal=2.0,

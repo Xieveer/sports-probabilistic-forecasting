@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -38,14 +38,14 @@ def test_live_pinnacle_disabled() -> None:
         market_spec="winner_withOT",
         home_player="TOR",
         away_player="BOS",
-        match_datetime=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        match_datetime=datetime(2026, 1, 1, tzinfo=UTC),
         predictions_json='{"home_win": 0.55, "away_win": 0.45}',
         proba_home=0.55,
         proba_away=0.45,
         model_version="v",
         algorithm="cb",
         featureset="adv",
-        prediction_ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        prediction_ts=datetime(2026, 1, 1, tzinfo=UTC),
         status="ok",
     )
     out = batch_live_response_extras([p], live_pinnacle=False)[1]
@@ -68,7 +68,7 @@ def test_skipped_not_nhl() -> None:
         model_version="v",
         algorithm="cb",
         featureset="adv",
-        prediction_ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        prediction_ts=datetime(2026, 1, 1, tzinfo=UTC),
         status="ok",
     )
     out = batch_live_response_extras([p], live_pinnacle=True)[2]
@@ -91,7 +91,7 @@ def test_skipped_unsupported_market() -> None:
         model_version="v",
         algorithm="cb",
         featureset="adv",
-        prediction_ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        prediction_ts=datetime(2026, 1, 1, tzinfo=UTC),
         status="ok",
     )
     out = batch_live_response_extras([p], live_pinnacle=True)[3]
@@ -115,7 +115,7 @@ def test_missing_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
         model_version="v",
         algorithm="cb",
         featureset="adv",
-        prediction_ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        prediction_ts=datetime(2026, 1, 1, tzinfo=UTC),
         status="ok",
     )
     out = batch_live_response_extras([p], live_pinnacle=True)[4]
@@ -139,7 +139,7 @@ def test_fetch_maps_quote_and_edge(monkeypatch: pytest.MonkeyPatch) -> None:
         model_version="v",
         algorithm="cb",
         featureset="adv",
-        prediction_ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        prediction_ts=datetime(2026, 1, 1, tzinfo=UTC),
         status="ok",
     )
     fake_quote = PinnacleH2HQuote(

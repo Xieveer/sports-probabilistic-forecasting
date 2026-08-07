@@ -46,6 +46,9 @@ provider:
 
 sport: ice_hockey
 
+quality_gate:
+  profile: nhl
+
 split_strategy:
   enabled: false
 

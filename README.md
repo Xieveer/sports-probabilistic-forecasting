@@ -1,4 +1,4 @@
-![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
+![Python](https://img.shields.io/badge/python-3.12-blue.svg)
 ![DVC](https://img.shields.io/badge/DVC-3.0+-orange.svg)
 ![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
@@ -44,7 +44,8 @@ MLOps-система промышленного уровня для вероят
 
 ### 1. Установка зависимостей
 
-Требуется [uv](https://docs.astral.sh/uv/) (менеджер окружения и зависимостей по `pyproject.toml`). Команда `make install` выполняет `uv sync`.
+Требуются Python 3.12 и [uv](https://docs.astral.sh/uv/) (менеджер окружения и зависимостей по
+`pyproject.toml`). Команда `make install` выполняет `uv sync`.
 
 ```bash
 make install
@@ -311,7 +312,8 @@ make materialize TOURNAMENT=uel_kz_1
 | dag_training | Training sweep + promotion | Еженедельно |
 | dag_materialize | Batch prediction | Каждые 2 часа |
 | dag_monitoring | Drift detection + retraining | Ежедневно |
-| dag_nhl_morning_refresh | NHL: source/odds → ingest → clean → features → materialize; опционально Telegram-digest после validate | 09:00 UTC (см. docstring DAG) |
+| notification_nhl_heavy_refresh | NHL-профиль: source/odds → ingest → clean → features → materialize → quality gate → initial Telegram fan-out | 10:00 Europe/Moscow (из `conf/notification/nhl.yaml`) |
+| notification_nhl_odds_poll | NHL-профиль: один batch live Pinnacle → сравнение state → Telegram delta fan-out | Каждые 15 минут (из `conf/notification/nhl.yaml`) |
 
 ---
 

@@ -40,6 +40,7 @@ x-airflow-common: &airflow-common
     # post_refresh_digest: Telegram (sendMessage), те же секреты, что у telegram-bot.
     BOT_TOKEN: ${BOT_TOKEN:-}
     BOT_ALLOWED_USER_IDS: ${BOT_ALLOWED_USER_IDS:-}
+    BOT_ADMIN_USER_IDS: ${BOT_ADMIN_USER_IDS:-}
   volumes:
     - ../airflow/dags:/opt/airflow/dags:ro
     - ../data:/app/data

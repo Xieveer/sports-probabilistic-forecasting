@@ -6,6 +6,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -84,7 +85,6 @@ class OddsApiClient:
         self._real_http_requests = 0
 
         self._cache_dir = cache_dir or (PROJECT_ROOT / "data" / "cache" / "the_odds_api")
-        self._cache_dir.mkdir(parents=True, exist_ok=True)
 
         self._session = session or self._build_session()
 
@@ -118,8 +118,9 @@ class OddsApiClient:
             time.sleep(self._min_interval_sec - delta)
 
     def _cache_path(self, cache_key: str) -> Path:
-        safe = cache_key.replace("/", "_").replace("?", "_")
-        return self._cache_dir / f"{safe}.json"
+        """Вернуть непрозрачный путь: ключ запроса не попадает в имя файла."""
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        return self._cache_dir / f"odds-{sha256(cache_key.encode()).hexdigest()}.json"
 
     @staticmethod
     def _log_network_response(
@@ -182,9 +183,13 @@ class OddsApiClient:
         q = dict(params)
         q["apiKey"] = self._api_key
         full_path = path if path.startswith("/") else f"/{path}"
-        key = cache_key or f"{full_path}?{urlencode(sorted((k, str(v)) for k, v in q.items()))}"
-        cpath = self._cache_path(key)
-        if use_cache and cpath.is_file():
+        cache_params = {key: value for key, value in q.items() if key != "apiKey"}
+        key = (
+            cache_key
+            or f"{full_path}?{urlencode(sorted((k, str(v)) for k, v in cache_params.items()))}"
+        )
+        cpath = self._cache_path(key) if use_cache else None
+        if cpath is not None and cpath.is_file():
             snap = self.last_quota()
             self._log_network_response(
                 full_path,
@@ -242,8 +247,9 @@ class OddsApiClient:
             )
         resp.raise_for_status()
         data: dict[str, Any] | list[Any] = resp.json()
-        with cpath.open("w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        if cpath is not None:
+            with cpath.open("w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
         return data
 
     def fetch_odds_for_sport(

@@ -127,3 +127,53 @@ class Prediction(Base):
             f"market={self.market!r}, "
             f"status={self.status!r})>"
         )
+
+
+class NotificationLineState(Base):
+    """Последняя валидная линия для матча в notification-профиле."""
+
+    __tablename__ = "notification_line_states"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    profile_id: str = Column(String(128), nullable=False)
+    match_id: str = Column(String(64), nullable=False)
+    line_json: str = Column(Text, nullable=False)
+    updated_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("uq_notification_line_profile_match", "profile_id", "match_id", unique=True),
+    )
+
+
+class NotificationCycle(Base):
+    """Одно агрегированное событие изменения линий за логический цикл."""
+
+    __tablename__ = "notification_cycles"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    profile_id: str = Column(String(128), nullable=False)
+    logical_cycle: str = Column(String(128), nullable=False)
+    changes_json: str = Column(Text, nullable=False)
+    created_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("uq_notification_cycle_profile_cycle", "profile_id", "logical_cycle", unique=True),
+    )
+
+
+class NotificationDelivery(Base):
+    """Состояние доставки агрегированного события одному получателю."""
+
+    __tablename__ = "notification_deliveries"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    cycle_id: int = Column(Integer, nullable=False, index=True)
+    chat_id: str = Column(String(64), nullable=False)
+    status: str = Column(String(16), nullable=False, default="pending")
+    attempts: int = Column(Integer, nullable=False, default=0)
+    sent_at: datetime | None = Column(DateTime, nullable=True)
+    updated_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("uq_notification_delivery_cycle_chat", "cycle_id", "chat_id", unique=True),
+    )

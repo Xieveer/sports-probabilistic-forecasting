@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
@@ -77,7 +77,7 @@ def load_assembler_config(provider_cfg: DictConfig) -> AssemblerConfig:
     c = OmegaConf.to_container(provider_cfg, resolve=True)
     if not isinstance(c, dict):
         raise SourceFetchError("nhl_web_api: provider должен быть объектом")
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     d0 = _cfg_date(c, "date_from", date(1999, 9, 1))
     d1 = _cfg_date(c, "date_to", today)
     if d1 < d0:
@@ -422,6 +422,25 @@ class NhlDataAssembler:
         """
         self._client = client
         self._cfg = cfg
+        self._schedule_stubs: tuple[ScheduleGameStub, ...] = ()
+
+    @property
+    def schedule_snapshot_rows(self) -> pd.DataFrame:
+        """Нормализованные строки последнего успешно собранного расписания.
+
+        В отличие от progress-файла, результат содержит только поля, необходимые
+        quality gate, и не переносит исходные ответы NHL API.
+        """
+        return pd.DataFrame(
+            [
+                {
+                    "id": str(stub.game_id),
+                    "datetime": stub.start_time_utc,
+                    "game_state": stub.game_state,
+                }
+                for stub in self._schedule_stubs
+            ]
+        )
 
     def build_dataframe(
         self,
@@ -469,6 +488,7 @@ class NhlDataAssembler:
         )
         stubs = list(games.values())
         stubs.sort(key=lambda s: (s.game_date, s.start_time_utc, s.game_id))
+        self._schedule_stubs = tuple(stubs)
 
         ck_path: Path | None = None
         done: set[int] = set()

@@ -285,9 +285,9 @@ class BettingSimulator:
         trace_rows: list[dict[str, Any]] | None = [] if return_event_trace else None
 
         for i in range(n_total):
-            prob = y_pred_proba[i]
-            odd = odds[i]
-            outcome = y_true[i]
+            prob = float(y_pred_proba[i])
+            odd = float(odds[i])
+            outcome = float(y_true[i])
 
             ev, _ = self.calculate_expected_value(prob, odd)
             p_implied = float(1.0 / odd) if odd > 1.0 else float("nan")
@@ -451,8 +451,11 @@ class BettingSimulator:
         y_pred_proba = np.asarray(y_pred_proba, dtype=float)
         odds = np.asarray(odds, dtype=float)
 
+        resolved_thresholds: list[float] | np.ndarray
         if thresholds is None:
-            thresholds = np.round(np.arange(0.0, 0.31, 0.01), 4).tolist()
+            resolved_thresholds = [value / 100 for value in range(31)]
+        else:
+            resolved_thresholds = thresholds
 
         # Pre-compute EV, edge, unit return for every event
         evs = y_pred_proba * (odds - 1) - (1 - y_pred_proba)
@@ -462,9 +465,10 @@ class BettingSimulator:
         unit_returns = y_true * (odds - 1) - (1 - y_true)
 
         rows: list[dict[str, float]] = []
-        for thr in thresholds:
+        for threshold in resolved_thresholds:
+            thr = float(threshold)
             mask = edges > thr
-            n_bets = int(mask.sum())
+            n_bets = int(np.count_nonzero(mask))
             if n_bets == 0:
                 rows.append(
                     {
@@ -539,7 +543,7 @@ class BettingSimulator:
 
         y_true = np.asarray(y_true, dtype=float)
         odds = np.asarray(odds, dtype=float)
-        bet_mask = np.asarray(bet_mask, dtype=bool)
+        normalized_bet_mask = np.asarray(bet_mask, dtype=np.bool_)
 
         # Unit returns (flat=1)
         unit_returns = y_true * (odds - 1) - (1 - y_true)
@@ -547,8 +551,11 @@ class BettingSimulator:
         result: dict[str, dict[str, float]] = {}
         for i, label in enumerate(labels):
             lo, hi = bins[i], bins[i + 1]
-            bin_mask = bet_mask & (odds >= lo) & (odds < hi)
-            n = int(bin_mask.sum())
+            bin_mask = np.logical_and(
+                normalized_bet_mask,
+                np.logical_and(odds >= lo, odds < hi),
+            )
+            n = int(np.count_nonzero(bin_mask))
             if n == 0:
                 result[label] = {"n_bets": 0, "roi": 0.0, "profit_units": 0.0}
                 continue

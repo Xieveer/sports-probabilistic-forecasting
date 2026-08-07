@@ -17,13 +17,18 @@ CRUD операции над таблицей ``predictions``.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
-from sports_forecast.service.db.models import Prediction
+from sports_forecast.service.db.models import (
+    NotificationCycle,
+    NotificationDelivery,
+    NotificationLineState,
+    Prediction,
+)
 
 
 def _utc_naive_for_query(dt: datetime) -> datetime:
@@ -33,7 +38,7 @@ def _utc_naive_for_query(dt: datetime) -> datetime:
     """
     if dt.tzinfo is None:
         return dt
-    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt.astimezone(UTC).replace(tzinfo=None)
 
 
 class PredictionRepository:
@@ -125,7 +130,7 @@ class PredictionRepository:
         Returns:
             Список Prediction, отсортированных по match_datetime.
         """
-        now = now_utc if now_utc is not None else datetime.now(tz=timezone.utc)
+        now = now_utc if now_utc is not None else datetime.now(tz=UTC)
         start = _utc_naive_for_query(now)
         end = _utc_naive_for_query(now + timedelta(hours=hours))
 
@@ -210,7 +215,7 @@ class PredictionRepository:
         )
 
         predictions_json = json.dumps(predictions, ensure_ascii=False)
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
 
         if existing is not None:
             # Update
@@ -336,3 +341,107 @@ class PredictionRepository:
             Prediction.prediction_ts.asc()  # type: ignore[attr-defined]
         ).all()
         return rows
+
+
+class NotificationStateRepository:
+    """Repository персистентного состояния и delivery ledger уведомлений."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get_line(self, profile_id: str, match_id: str) -> NotificationLineState | None:
+        """Вернуть последнюю валидную линию матча."""
+        return cast(
+            NotificationLineState | None,
+            self.session.query(NotificationLineState)
+            .filter(
+                NotificationLineState.profile_id == profile_id,
+                NotificationLineState.match_id == match_id,
+            )
+            .one_or_none(),
+        )
+
+    def save_line(self, profile_id: str, match_id: str, line_json: str) -> None:
+        """Сохранить или обновить последнюю валидную линию матча."""
+        existing = self.get_line(profile_id, match_id)
+        if existing is None:
+            self.session.add(
+                NotificationLineState(
+                    profile_id=profile_id,
+                    match_id=match_id,
+                    line_json=line_json,
+                )
+            )
+            self.session.flush()
+            return
+        existing.line_json = line_json
+        existing.updated_at = datetime.now(tz=UTC).replace(tzinfo=None)
+
+    def get_cycle(self, profile_id: str, logical_cycle: str) -> NotificationCycle | None:
+        """Найти агрегированное событие логического цикла."""
+        return cast(
+            NotificationCycle | None,
+            self.session.query(NotificationCycle)
+            .filter(
+                NotificationCycle.profile_id == profile_id,
+                NotificationCycle.logical_cycle == logical_cycle,
+            )
+            .one_or_none(),
+        )
+
+    def create_cycle(
+        self,
+        profile_id: str,
+        logical_cycle: str,
+        changes_json: str,
+    ) -> NotificationCycle:
+        """Создать единственное агрегированное событие цикла."""
+        cycle = NotificationCycle(
+            profile_id=profile_id,
+            logical_cycle=logical_cycle,
+            changes_json=changes_json,
+        )
+        self.session.add(cycle)
+        self.session.flush()
+        return cycle
+
+    def reserve_delivery(self, cycle_id: int, chat_id: str) -> NotificationDelivery | None:
+        """Зарезервировать доставку или вернуть pending-запись для повторной попытки.
+
+        Успешно отправленная запись возвращает ``None`` и не может быть отправлена
+        повторно в том же логическом цикле.
+        """
+        delivery = cast(
+            NotificationDelivery | None,
+            self.session.query(NotificationDelivery)
+            .filter(
+                NotificationDelivery.cycle_id == cycle_id,
+                NotificationDelivery.chat_id == str(chat_id),
+            )
+            .one_or_none(),
+        )
+        if delivery is not None:
+            if delivery.status == "sent":
+                return None
+            delivery.attempts += 1
+            delivery.updated_at = datetime.now(tz=UTC).replace(tzinfo=None)
+            return delivery
+
+        delivery = NotificationDelivery(cycle_id=cycle_id, chat_id=str(chat_id), attempts=1)
+        self.session.add(delivery)
+        self.session.flush()
+        return delivery
+
+    def mark_delivery_sent(self, delivery: NotificationDelivery) -> None:
+        """Надёжно зафиксировать успех до доставки следующему получателю."""
+        sent_at = datetime.now(tz=UTC).replace(tzinfo=None)
+        delivery.status = "sent"
+        delivery.sent_at = sent_at
+        delivery.updated_at = sent_at
+        self.session.commit()
+
+    def mark_delivery_failed(self, delivery: NotificationDelivery) -> None:
+        """Надёжно зафиксировать неуспех, оставив получателя доступным для retry."""
+        delivery.status = "failed"
+        delivery.updated_at = datetime.now(tz=UTC).replace(tzinfo=None)
+        self.session.commit()

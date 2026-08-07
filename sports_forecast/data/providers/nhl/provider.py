@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from omegaconf import DictConfig, OmegaConf
 
-from sports_forecast.config.loaders import PROJECT_ROOT as CONFIG_PROJECT_ROOT
+from sports_forecast.config.loaders import (
+    PROJECT_ROOT as CONFIG_PROJECT_ROOT,
+)
+from sports_forecast.config.loaders import (
+    load_tournament_quality_gate_config,
+)
 from sports_forecast.data.providers.base import SourceFetchError, SourceProvider
 from sports_forecast.data.providers.nhl.assembler import (
     NhlDataAssembler,
@@ -16,6 +23,11 @@ from sports_forecast.data.providers.nhl.assembler import (
 from sports_forecast.data.providers.nhl.client import NhlApiClient
 from sports_forecast.data.providers.nhl.schedule import clear_schedule_progress
 from sports_forecast.utils.log_config import get_logger
+from sports_forecast.validation.tournament_quality import (
+    TournamentQualityGateConfig,
+    save_schedule_snapshot,
+    schedule_snapshot_path,
+)
 
 
 logger = get_logger(__name__)
@@ -65,7 +77,15 @@ class NhlWebApiSourceProvider(SourceProvider):
         target_dir.mkdir(parents=True, exist_ok=True)
         out_path = target_dir / "source.csv"
 
+        quality_config = self._quality_gate_config()
+        required_coverage_until = (
+            datetime.now(UTC) + timedelta(hours=quality_config.schedule_window_hours)
+            if quality_config is not None
+            else None
+        )
         asm_cfg = resolve_incremental_date_from(self._asm_cfg, out_path)
+        if required_coverage_until is not None and asm_cfg.date_to < required_coverage_until.date():
+            asm_cfg = replace(asm_cfg, date_to=required_coverage_until.date())
         logger.info(
             "NhlWebApiSourceProvider: старт загрузки source_name=%s, интервал %s … %s (incremental=%s)",
             source_name,
@@ -82,6 +102,14 @@ class NhlWebApiSourceProvider(SourceProvider):
         except OSError as e:
             raise SourceFetchError(f"Не удалось записать {out_path}: {e}") from e
 
+        if quality_config is not None and required_coverage_until is not None:
+            self._save_quality_schedule_snapshot(
+                assembler,
+                out_path,
+                quality_config,
+                required_coverage_until,
+            )
+
         if self._asm_cfg.schedule_progress_file:
             sp = target_dir / self._asm_cfg.schedule_progress_file
             clear_schedule_progress(sp)
@@ -95,6 +123,33 @@ class NhlWebApiSourceProvider(SourceProvider):
             out_path,
         )
         return out_path
+
+    def _save_quality_schedule_snapshot(
+        self,
+        assembler: NhlDataAssembler,
+        source_csv_path: Path,
+        config: TournamentQualityGateConfig,
+        covered_until: datetime,
+    ) -> None:
+        """Сохранить snapshot, если source-конфиг включает профиль quality gate."""
+        try:
+            path = schedule_snapshot_path(source_csv_path, config)
+            save_schedule_snapshot(
+                assembler.schedule_snapshot_rows,
+                path,
+                config,
+                covered_until=covered_until,
+            )
+        except (OSError, ValueError) as exc:
+            raise SourceFetchError(
+                "Не удалось сохранить нормализованный schedule snapshot"
+            ) from exc
+
+    def _quality_gate_config(self) -> TournamentQualityGateConfig | None:
+        """Загрузить профиль gate, явно включённый source-конфигом."""
+        quality_gate = self._source_cfg.get("quality_gate")
+        profile_name = str(quality_gate.get("profile") or "").strip() if quality_gate else ""
+        return load_tournament_quality_gate_config(profile_name) if profile_name else None
 
     def is_available(self) -> bool:
         """Доступен, если в конфиге явно указан ``provider.type == nhl_web_api``."""

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine
@@ -36,7 +36,7 @@ def _upsert(
 def _utc_naive(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt
-    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt.astimezone(UTC).replace(tzinfo=None)
 
 
 @pytest.fixture
@@ -54,7 +54,7 @@ def memory_session():
 def test_get_upcoming_predictions_respects_hours_window(memory_session) -> None:
     """Матчи вне [now, now+hours] и без match_datetime не попадают в выборку."""
     repo = PredictionRepository(memory_session)
-    now = datetime(2025, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2025, 6, 15, 12, 0, 0, tzinfo=UTC)
     inside = now + timedelta(hours=10)
     outside = now + timedelta(hours=50)
 
@@ -74,7 +74,7 @@ def test_get_upcoming_predictions_respects_hours_window(memory_session) -> None:
 def test_get_upcoming_predictions_excludes_past_matches(memory_session) -> None:
     """Матчи строго до ``now_utc`` исключаются."""
     repo = PredictionRepository(memory_session)
-    now = datetime(2025, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2025, 6, 15, 12, 0, 0, tzinfo=UTC)
     past = now - timedelta(hours=2)
     future = now + timedelta(hours=5)
 
@@ -89,7 +89,7 @@ def test_get_upcoming_predictions_excludes_past_matches(memory_session) -> None:
 def test_get_upcoming_predictions_market_spec_filter(memory_session) -> None:
     """При заданном ``market_spec`` остаются только совпадающие строки."""
     repo = PredictionRepository(memory_session)
-    now = datetime(2025, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2025, 6, 15, 12, 0, 0, tzinfo=UTC)
     t1 = now + timedelta(hours=1)
 
     _upsert(

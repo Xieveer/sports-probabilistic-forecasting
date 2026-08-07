@@ -6,7 +6,7 @@ Health check endpoints.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter
 from sqlalchemy import text
@@ -39,5 +39,5 @@ def health_check() -> HealthResponse:
     return HealthResponse(
         status="ok" if db_ok else "degraded",
         db_connected=db_ok,
-        timestamp=datetime.now(tz=timezone.utc),
+        timestamp=datetime.now(tz=UTC),
     )

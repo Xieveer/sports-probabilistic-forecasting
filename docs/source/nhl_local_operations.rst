@@ -117,27 +117,22 @@ Airflow через ``airflow/docker-compose.airflow.yml`` — тот же кон
 #. Из корня репозитория поднимите БД: ``docker compose up -d db`` (или полный стек ``make docker-up``).
 #. Один раз: ``make airflow-init``.
 #. Запуск Airflow: ``make airflow-up`` (webserver + scheduler поверх общего compose).
-#. В корневом ``.env`` задайте ``POSTGRES_PASSWORD``; для digest — ``ODDS_API_KEY``,
-   ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS``. Runtime-skip digest — ``SF_TELEGRAM_DIGEST_ENABLE``
-   как Airflow Variable или через UI; как задавать Variables vs ``AIRFLOW_VAR_*`` в compose —
-   см. подраздел «Airflow Variables» ниже, без дублирования здесь.
-#. В Airflow UI: снимите паузу с DAG ``nhl_morning_refresh``; при необходимости создайте pool
-   ``sf_refresh_pool`` (или имя из Variable ``SF_REFRESH_POOL``); **Trigger DAG** и дождитесь
-   успешного ``post_refresh_digest``.
+#. В корневом ``.env`` задайте ``POSTGRES_PASSWORD``, ``BOT_TOKEN``,
+   ``BOT_ALLOWED_USER_IDS`` и отдельный ``BOT_ADMIN_USER_IDS``. Первый список получает initial
+   digest, второй — только краткое уведомление о сбое.
+#. В Airflow UI: снимите паузу с DAG ``notification_nhl_heavy_refresh``; при необходимости
+   создайте pool ``sf_refresh_pool`` (значение notification-профиля); **Trigger DAG** и
+   дождитесь последовательности ``capture_quality_watermark → refresh → quality_gate → initial_digest``.
 #. Логи задачи: Airflow UI → DAG Run → Task Instance → **Logs**.
 
-Утренний NHL (12:00 MSK / 09:00 UTC, R37.6)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Утренний NHL (10:00 MSK, notification profile)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**Airflow:** DAG ``nhl_morning_refresh`` (``airflow/dags/dag_nhl_morning_refresh.py``) — расписание
-``0 9 * * *`` в часовом поясе планировщика Airflow по умолчанию (**UTC**), то есть **09:00 UTC**
-= **12:00 по Москве** (MSK, UTC+3). Пайплайн: ``source`` (при ``odds.enabled`` в ``conf/source/nhl.yaml``
+**Airflow:** DAG ``notification_nhl_heavy_refresh``, созданный из
+``conf/notification/nhl.yaml`` — расписание ``0 10 * * *`` в ``Europe/Moscow``. Пайплайн: ``source`` (при ``odds.enabled`` в ``conf/source/nhl.yaml``
 — инкрементальный odds post-step внутри ``source_refresh``) → ingest → clean → features →
-materialize для ``winner_withOT`` / ``nhl`` по умолчанию; затем ``validate``. Пул и ``flock``
-совпадают с ``data_refresh`` (переменные ``SF_REFRESH_POOL``, ``SF_REFRESH_LOCK_FILE``, …).
-
-Переопределения через Airflow Variables: ``SF_NHL_MORNING_TOURNAMENT``, ``SF_NHL_MORNING_FEATURES``,
-``SF_NHL_MORNING_MARKET``, ``SF_NHL_MORNING_SPEC``, ``SF_NHL_MORNING_MAX_ACTIVE_RUNS`` (и др., см. DAG).
+materialize для ``winner_withOT`` / ``nhl``; затем tournament quality gate и fan-out initial digest.
+Пул, ``flock`` и ограничения параллелизма задаёт notification-профиль.
 
 **Хостовый cron (без Airflow)** — тот же смысл, что у DAG, в локальном часовом поясе Москвы::
 
@@ -396,6 +391,23 @@ Airflow Variables: ``nhl_morning_refresh`` и ``data_refresh``
   ``dag_run.conf`` / ``params``.
 * Переменные окружения уровня **бота** (``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS``, …) — для отправки
   сообщения из задачи digest.
+
+Notification-профиль: лёгкий poll коэффициентов
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``conf/notification/nhl.yaml`` также создаёт отдельный DAG
+``notification_nhl_odds_poll``. Он выполняется по ``poll_schedule`` (для NHL —
+каждые 15 минут), читает только materialized прогнозы в ``window_hours`` и делает
+один batch-запрос Pinnacle h2h. Source refresh, ingest, features и materialization
+в этом DAG не запускаются.
+
+При новой или изменившейся валидной линии в одном logical cycle всем ID из
+``BOT_ALLOWED_USER_IDS`` отправляется один общий delta-digest. Пустая витрина,
+отсутствие изменений и уже начавшиеся матчи завершают poll без пользовательского
+сообщения. ``poll_max_active_runs: 1`` не допускает перекрытия собственных run;
+timeout, retry, pool и provider также задаются в профиле. Сбой poll переводит
+задачу в failed, а зависимая ветка уведомляет только ``BOT_ADMIN_USER_IDS``
+кратким сообщением ``odds_poll_failed``.
 
 Smoke-проверки API
 ------------------

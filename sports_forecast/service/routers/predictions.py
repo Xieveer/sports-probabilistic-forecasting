@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from typing import Any
 
@@ -354,7 +354,7 @@ def get_prediction_cached(
         prediction_ts=(
             datetime.fromisoformat(result["prediction_ts"])
             if result["prediction_ts"]
-            else datetime.now(tz=timezone.utc)
+            else datetime.now(tz=UTC)
         ),
         status=result["status"],
         pinnacle_home_decimal=None,
@@ -433,7 +433,7 @@ def get_stale_predictions(
     Returns:
         Список устаревших предсказаний.
     """
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=max_age_hours)
+    cutoff = datetime.now(tz=UTC) - timedelta(hours=max_age_hours)
 
     with get_session() as session:
         repo = PredictionRepository(session)
@@ -447,10 +447,7 @@ def get_stale_predictions(
             market_spec=p.market_spec,
             prediction_ts=p.prediction_ts,
             age_hours=round(
-                (
-                    datetime.now(tz=timezone.utc) - p.prediction_ts.replace(tzinfo=timezone.utc)
-                ).total_seconds()
-                / 3600,
+                (datetime.now(tz=UTC) - p.prediction_ts.replace(tzinfo=UTC)).total_seconds() / 3600,
                 1,
             )
             if p.prediction_ts
