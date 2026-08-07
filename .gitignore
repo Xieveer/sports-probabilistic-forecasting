@@ -2,7 +2,6 @@
 .idea/
 .vscode/
 .cursor/
-.python-version
 
 # Python
 __pycache__/

@@ -38,7 +38,7 @@ GitHub CI                    ← lint + test-unit на PR/push в main
 [project]
 name = "my-project"
 version = "0.1.0"
-requires-python = ">=3.10"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     # runtime deps
 ]
@@ -110,7 +110,6 @@ CMD ["uv", "run", "uvicorn", "my_package.app:app", "--host", "0.0.0.0", "--port"
 
 ```
 .venv/
-.python-version
 __pycache__/
 .pytest_cache/
 .ruff_cache/
@@ -132,7 +131,7 @@ __pycache__/
 | Современный Python | UP (pyupgrade) | `list[str]` вместо `List[str]` |
 | pathlib | PTH | `Path` вместо `os.path` |
 
-Параметры: `line-length = 100`, `target-version = "py310"`.
+Параметры: `line-length = 100`, `target-version = "py312"`.
 
 ### Per-file ignores (паттерн)
 
@@ -154,7 +153,7 @@ lines-after-imports = 2
 
 ```toml
 line-length = 100
-target-version = "py310"
+target-version = "py312"
 
 [lint]
 select = [

@@ -1,7 +1,7 @@
 name = "security-reviewer"
 description = "Проверяет достижимые угрозы, секреты, зависимости, ввод, сеть и права доступа."
 model = "gpt-5.6-sol"
-model_reasoning_effort = "high"
+model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
 developer_instructions = """
 Работай по AGENTS.md и роли agents/security-reviewer.md. Прочитай их полностью перед ревью.
