@@ -1,0 +1,40 @@
+# Декларативный каталог портфеля (ADR-003).
+#
+# Это ещё не runtime-регистр Airflow/DVC: TASK-003-1 вводит проверяемый контракт.
+# Задачи EPIC-003 последовательно подключат к нему обучение, promotion и оркестрацию.
+
+model_pools:
+  nhl_winner_with_ot:
+    sport: ice_hockey
+    market_specs: [winner_withOT]
+  football_nationals_winner:
+    sport: football
+    market_specs: [winner]
+
+tournaments:
+  nhl:
+    sport: ice_hockey
+    source: nhl
+    memberships:
+      - model_pool: nhl_winner_with_ot
+        market_specs: [winner_withOT]
+  football_nationals:
+    sport: football
+    source: football_nationals
+    memberships:
+      - model_pool: football_nationals_winner
+        market_specs: [winner]
+
+deployment_profiles:
+  nhl_winner_with_ot:
+    tournament: nhl
+    model_pool: nhl_winner_with_ot
+    market_spec: winner_withOT
+    state: production
+    immutable_model_ref: legacy:models/nhl/winner_withOT/best/deploy.yaml
+    candidate_report_ref: legacy:mlflow/nhl__winner_withOT
+  football_nationals_winner:
+    tournament: football_nationals
+    model_pool: football_nationals_winner
+    market_spec: winner
+    state: candidate

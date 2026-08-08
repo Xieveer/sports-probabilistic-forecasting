@@ -12,6 +12,9 @@
 - `source/` — источники данных (uel, lp_eu, lp_ru_by)
 - `market/` — семейства рынков (winner, total)
 - `market_spec/` — спецификации (winner, winner_home, total_over, total_under)
+- `portfolio/` — версионируемый каталог связей `sport` → `tournament` →
+  `model_pool` → `market/spec` → deployment profile; на текущем этапе валидирует
+  контракт, но ещё не является runtime-источником DVC/Airflow (ADR-003)
 - `algorithm/` — алгоритмы (catboost, lgbm, logreg, stacking, dummy)
 - `features/` — наборы фичей (basic, advanced) + generators
 - `feature_selection/` — стратегии отбора фичей
