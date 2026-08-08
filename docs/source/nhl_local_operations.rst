@@ -54,7 +54,10 @@
 
    Имена переменных, которые чаще всего нужны для операционного контура и NHL-сценариев:
 
-   * ``ODDS_API_KEY`` — доступ к The Odds API (ингест коэффициентов и связанные задачи).
+   * ``ODDS_API_KEY_FREE``, ``ODDS_API_KEY_20K`` и ``ODDS_API_KEY_100K`` — ключи
+     The Odds API для ингеста коэффициентов и связанных задач. Они применяются
+     строго в этом порядке; ``ODDS_API_KEY`` оставлен только как временный
+     fallback для старой конфигурации.
    * При запуске **Telegram-бота** (локально или через Compose-профиль ``bot``): ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS``, ``BOT_ADMIN_USER_IDS``, ``BOT_API_BASE_URL``.
    * Для Compose без бота также актуальны, например: ``POSTGRES_PASSWORD``, ``GRAFANA_PASSWORD``, ``MLFLOW_TRACKING_URI``, образы ``SF_*_IMAGE`` в прод-подобных настройках — см. полный перечень в ``.env.example``.
 
@@ -199,8 +202,10 @@ env ниже), а не только сервису ``api``.
 Для DAG ``nhl_morning_refresh`` ориентируйтесь на последовательность:
 
 #. Локально: ``make docker-up``, при необходимости ``make airflow-init`` (один раз), затем
-   ``make airflow-up``; в ``.env`` заданы пароль БД, при необходимости — ``ODDS_API_KEY``,
-   ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS`` (и проброс в сервисы Airflow — см. ниже).
+   ``make airflow-up``; в ``.env`` заданы пароль БД, при необходимости —
+   ``ODDS_API_KEY_FREE`` (и следующие уровни ``ODDS_API_KEY_20K`` /
+   ``ODDS_API_KEY_100K``), ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS`` (и проброс в
+   сервисы Airflow — см. ниже).
 #. В Airflow UI создан пул слотов с именем по умолчанию ``sf_refresh_pool`` (или измените Variable
    ``SF_REFRESH_POOL`` и создайте пул с новым именем); иначе задачи зависнут в очереди.
 #. Заданы **Airflow Variables** (или эквивалент через префикс ``AIRFLOW_VAR_`` в Compose), как
@@ -411,6 +416,23 @@ timeout, retry, pool и provider также задаются в профиле. 
 
 Smoke-проверки API
 ------------------
+
+NHL readiness в межсезонье
+---------------------------
+
+Перед реальным запуском проверьте план без сети и чтения секретов::
+
+    uv run python -m sports_forecast.orchestration.nhl_readiness --dry-run
+
+Для контролируемой проверки используйте ``--execute``. По умолчанию historical
+odds ограничены одним календарным днём; увеличить лимит можно только явным
+``--max-odds-days N``. Команда не материализует прогнозы автоматически.
+Если NHL API ещё не опубликовал будущие матчи, результат ``no_upcoming_schedule``
+является штатным: quality gate и The Odds API не запускаются.
+
+Для реального odds-этапа в secret environment задайте один или несколько ключей
+``ODDS_API_KEY_FREE``, ``ODDS_API_KEY_20K``, ``ODDS_API_KEY_100K``. Они никогда
+не должны попадать в CLI output или репозиторий.
 
 При работающем API на хосте по умолчанию::
 

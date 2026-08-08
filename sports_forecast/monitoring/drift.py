@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -49,8 +50,8 @@ class DriftResult:
 
 
 def compute_psi(
-    expected: np.ndarray,
-    actual: np.ndarray,
+    expected: Any,
+    actual: Any,
     n_bins: int = 10,
     eps: float = 1e-4,
 ) -> float:
@@ -75,8 +76,10 @@ def compute_psi(
     if len(bins) < 2:
         return 0.0
 
-    expected_counts = np.histogram(expected, bins=bins)[0]
-    actual_counts = np.histogram(actual, bins=bins)[0]
+    expected_histogram = cast(tuple[np.ndarray, np.ndarray], np.histogram(expected, bins=bins))
+    actual_histogram = cast(tuple[np.ndarray, np.ndarray], np.histogram(actual, bins=bins))
+    expected_counts = expected_histogram[0]
+    actual_counts = actual_histogram[0]
 
     # Доля в каждом бине
     expected_pct = (expected_counts + eps) / (len(expected) + eps * len(bins))
@@ -86,8 +89,8 @@ def compute_psi(
 
 
 def compute_ks_statistic(
-    expected: np.ndarray,
-    actual: np.ndarray,
+    expected: Any,
+    actual: Any,
 ) -> float:
     """Вычислить Kolmogorov-Smirnov статистику.
 

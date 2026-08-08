@@ -1,6 +1,6 @@
 [project]
 name = "sports-probabilistic-forecasting"
-version = "0.1.0"
+version = "1.0.0"
 description = "Probabilistic Forecasting Service for Sports Event Outcomes"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -28,6 +28,13 @@ dependencies = [
     "httpx>=0.28.0",
     "python-dotenv>=1.0.0",
 ]
+
+[build-system]
+requires = ["setuptools>=80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["sports_forecast*"]
 
 [dependency-groups]
 dev = [

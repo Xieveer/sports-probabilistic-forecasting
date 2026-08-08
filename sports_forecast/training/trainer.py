@@ -21,7 +21,7 @@ SingleExperimentRunner — оркестратор обучения одного 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 import mlflow
 import numpy as np
@@ -1092,7 +1092,7 @@ class SingleExperimentRunner:
         logger.info("=" * 60)
 
         proba = model.predict_proba(test_features)[:, 1]
-        y_pred = (proba >= 0.5).astype(int)
+        y_pred = np.asarray(proba >= 0.5, dtype=int)
 
         metrics: dict[str, float] = {}
 
@@ -1374,7 +1374,11 @@ class SingleExperimentRunner:
             thr_min = sweep_cfg.get("min", 0.0)
             thr_max = sweep_cfg.get("max", 0.30)
             thr_step = sweep_cfg.get("step", 0.01)
-            thresholds = np.round(np.arange(thr_min, thr_max + thr_step / 2, thr_step), 4).tolist()
+            rounded_thresholds = cast(
+                list[float],
+                np.round(np.arange(thr_min, thr_max + thr_step / 2, thr_step), 4).tolist(),
+            )
+            thresholds = [float(value) for value in rounded_thresholds]
             sweep_df = simulator.sweep_thresholds(y_true_arr, proba, odds_arr, thresholds)
 
         # ── 5. Calibration table (reliability diagram data) ──────────────

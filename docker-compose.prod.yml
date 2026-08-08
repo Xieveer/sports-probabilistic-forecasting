@@ -10,7 +10,7 @@
 # TLS: сервис `caddy` (deploy/Caddyfile). Задайте SF_API_DOMAIN и DNS A/AAAA на этот хост.
 #
 # Образы CI: см. .github/workflows/docker.yml — пакеты
-#   ghcr.io/<github-owner>/sports-probabilistic-forecasting-{api,worker,telegram-bot}:latest
+#   ghcr.io/<github-owner>/sports-probabilistic-forecasting-{api,worker,telegram-bot}:<SemVer>
 
 services:
   api:
@@ -31,7 +31,7 @@ services:
   telegram-bot:
     build: !reset
     # Задайте свой ghcr.io/<owner>/… при использовании profile bot (см. .env.example).
-    image: ${SF_BOT_IMAGE:-ghcr.io/your-github-user/sports-probabilistic-forecasting-telegram-bot:latest}
+    image: ${SF_BOT_IMAGE:-ghcr.io/your-github-user/sports-probabilistic-forecasting-telegram-bot:1.0.0}
     pull_policy: always
     logging: *prod_logging
     cpus: "0.5"

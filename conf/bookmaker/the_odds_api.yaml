@@ -9,7 +9,8 @@
 name: the_odds_api
 description: "The Odds API — REST-источник линий букмекеров (Pinnacle и др.)"
 
-# Ключ доступа только из окружения: ODDS_API_KEY (не хранить в репозитории).
+# Ключи только из окружения: ODDS_API_KEY_FREE → ODDS_API_KEY_20K →
+# ODDS_API_KEY_100K; ODDS_API_KEY — временный fallback (не хранить в репозитории).
 
 api:
   base_url: https://api.the-odds-api.com

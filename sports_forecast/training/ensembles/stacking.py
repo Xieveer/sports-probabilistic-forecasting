@@ -148,7 +148,7 @@ class StackingEnsemble(BaseModel):
 
         # Матрица для out-of-fold предсказаний
         # Shape: (n_samples, n_base_models)
-        oof_predictions = np.zeros((n_samples, len(self.base_models)))
+        oof_predictions = [[0.0] * len(self.base_models) for _ in range(n_samples)]
 
         # Обучаем базовые модели через TSCV
         for model_idx, base_model in enumerate(self.base_models):
@@ -160,7 +160,7 @@ class StackingEnsemble(BaseModel):
             )
 
             # Out-of-fold предсказания для этой модели
-            oof_model = np.zeros(n_samples)
+            oof_model = [0.0] * n_samples
 
             # TSCV
             for fold_idx, (train_idx, val_idx) in enumerate(self.tscv.split(features, target), 1):
@@ -178,10 +178,12 @@ class StackingEnsemble(BaseModel):
                 proba_val = base_model.predict_proba(val_features)[:, 1]
 
                 # Сохраняем в oof_model
-                oof_model[val_idx] = proba_val
+                for row_idx, probability in zip(val_idx.tolist(), proba_val.tolist(), strict=True):
+                    oof_model[int(row_idx)] = float(probability)
 
             # Сохраняем в матрицу oof_predictions
-            oof_predictions[:, model_idx] = oof_model
+            for row_idx, probability in enumerate(oof_model):
+                oof_predictions[row_idx][model_idx] = probability
 
             logger.info("  ✓ Out-of-fold предсказания собраны для %s", base_model.get_name())
 
@@ -242,11 +244,12 @@ class StackingEnsemble(BaseModel):
             )
 
         # Получаем предсказания от базовых моделей
-        base_predictions = np.zeros((len(features), len(self.base_models)))
+        base_predictions = [[0.0] * len(self.base_models) for _ in range(len(features))]
 
         for model_idx, base_model in enumerate(self.base_models):
             proba = base_model.predict_proba(features)[:, 1]
-            base_predictions[:, model_idx] = proba
+            for row_idx, probability in enumerate(proba.tolist()):
+                base_predictions[row_idx][model_idx] = float(probability)
 
         # Создаём DataFrame для мета-модели
         meta_features = pd.DataFrame(

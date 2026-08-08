@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypeAlias
 
 import numpy as np
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
@@ -28,6 +28,8 @@ from sports_forecast.utils.log_config import get_logger
 
 
 logger = get_logger(__name__)
+
+Array: TypeAlias = np.ndarray[Any, np.dtype[Any]]  # noqa: UP040
 
 
 @dataclass
@@ -61,8 +63,8 @@ class ABTestResult:
 
 
 def _compute_model_metrics(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
+    y_true: Array,
+    y_pred: Array,
 ) -> dict[str, float]:
     """Вычислить ML-метрики для одной модели.
 
@@ -90,8 +92,8 @@ def _compute_model_metrics(
     except Exception:
         metrics["brier"] = float("inf")
 
-    y_class = (y_pred >= 0.5).astype(int)
-    metrics["accuracy"] = float(np.mean(y_true == y_class))
+    y_class = np.asarray(y_pred >= 0.5, dtype=int)
+    metrics["accuracy"] = float(np.mean(np.equal(y_true, y_class)))
 
     return metrics
 
@@ -134,9 +136,9 @@ class ModelComparator:
 
     def compare_predictions(
         self,
-        y_true: np.ndarray,
-        prod_predictions: np.ndarray,
-        shadow_predictions: np.ndarray,
+        y_true: Array,
+        prod_predictions: Array,
+        shadow_predictions: Array,
     ) -> ABTestResult:
         """Сравнить предсказания prod и shadow моделей.
 

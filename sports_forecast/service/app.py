@@ -21,6 +21,7 @@ from prometheus_client import make_asgi_app
 
 from sports_forecast.service.db.engine import get_engine, init_db
 from sports_forecast.service.routers import health, predictions
+from sports_forecast.version import get_service_version
 
 
 @asynccontextmanager
@@ -39,7 +40,7 @@ app = FastAPI(
         "Префикс `/internal/predict` — операционные endpoint-ы (кеш, stale); "
         "отдельный контракт, без публичного SLA."
     ),
-    version="2.0.0",
+    version=get_service_version(),
     lifespan=lifespan,
     openapi_tags=[
         {

@@ -10,6 +10,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from sports_forecast.version import get_service_version
+
 
 # ─────────────────────────────────────────────────────────────────────
 # RESPONSE MODELS
@@ -95,7 +97,7 @@ class HealthResponse(BaseModel):
     """Ответ healthcheck."""
 
     status: str = "ok"
-    version: str = "2.0.0"
+    version: str = Field(default_factory=get_service_version)
     db_connected: bool = True
     timestamp: datetime
 

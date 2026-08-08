@@ -18,3 +18,9 @@
 | TASK-003-4 | backlog | high | [Оркестрация портфеля](tasks/TASK-003-4-portfolio-orchestration.md) |
 | TASK-003-5 | backlog | high | [Быстрый контур составов](tasks/TASK-003-5-lineup-fast-path.md) |
 | TASK-003-6 | backlog | high | [Статистические и player-рынки](tasks/TASK-003-6-special-and-player-markets.md) |
+| EPIC-004 | in_progress | high | [Готовность NHL и релиза 1.0.0](EPIC-004-nhl-release-readiness.md) |
+| TASK-004-1 | done | high | [Контракт версии релиза 1.0.0](tasks/TASK-004-1-release-version-contract.md) |
+| TASK-004-2 | done | high | [Приоритетный key-ring The Odds API](tasks/TASK-004-2-odds-api-key-ring.md) |
+| TASK-004-3 | done | high | [Воспроизводимая проверка готовности NHL](tasks/TASK-004-3-nhl-readiness-command.md) |
+| TASK-004-4 | done | high | [Предпроизводственная проверка NHL и handoff 1.0.0](tasks/TASK-004-4-nhl-preproduction-validation.md) |
+| TASK-004-5 | done | high | [Зелёный mypy baseline для релиза](tasks/TASK-004-5-mypy-baseline.md) |

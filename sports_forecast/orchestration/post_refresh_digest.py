@@ -48,6 +48,7 @@ from typing import Any
 import yaml
 
 from sports_forecast.betting.live_moneyline_extras import proba_home_from_prediction
+from sports_forecast.data.providers.odds.client import has_configured_odds_api_key
 from sports_forecast.orchestration.digest_message import (
     DigestMatchLine,
     OddsWarning,
@@ -197,7 +198,7 @@ def _predictions_to_match_lines(
 
 
 def _pipeline_odds_warning(*, live_pinnacle: bool) -> OddsWarning:
-    if live_pinnacle and not os.environ.get("ODDS_API_KEY", "").strip():
+    if live_pinnacle and not has_configured_odds_api_key():
         return "missing_api_key"
     return "none"
 

@@ -31,6 +31,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any, cast
 
 import pandas as pd
 from omegaconf import DictConfig
@@ -206,7 +207,8 @@ def _apply_dtype_conversion(
 
             try:
                 # Конвертируем в числа
-                df[col] = pd.to_numeric(df[col], errors="coerce")
+                numeric_column = cast("pd.Series[Any]", df[col])
+                df[col] = pd.to_numeric(numeric_column, errors="coerce")
 
                 # Подсчитываем NaN после конвертации
                 nan_count = df[col].isna().sum()

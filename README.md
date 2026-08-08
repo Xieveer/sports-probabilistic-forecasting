@@ -110,6 +110,11 @@ make docker-up
 # Grafana:    http://localhost:3000 (admin/admin)
 ```
 
+Подготовка production-релиза описана в
+[документе передачи в эксплуатацию](docs/operations/production-handoff.md):
+версия берётся из `pyproject.toml`, а release-тег имеет вид `v<version>`.
+Публикация образов и развёртывание выполняются только после отдельного одобрения владельца.
+
 ---
 
 ## Технологический стек

@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -316,10 +316,12 @@ class TestComputeBusinessMetrics:
         target = pd.Series(np.random.randint(0, 2, n))
         # odds_raw содержит строковые представления dict с ключом "1" (home_win)
         odds_values = np.random.uniform(1.5, 3.0, n)
+        odds_values_list = cast(Any, odds_values).tolist()
         df = pd.DataFrame(
             {
                 "odds_raw": [
-                    str({"1": round(float(v), 2), "2": round(float(4 - v), 2)}) for v in odds_values
+                    str({"1": round(float(v), 2), "2": round(float(4 - v), 2)})
+                    for v in odds_values_list
                 ],
                 "other": range(n),
                 "datetime": pd.date_range("2024-01-01", periods=n, freq="h"),
