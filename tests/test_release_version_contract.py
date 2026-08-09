@@ -66,3 +66,24 @@ def test_docker_publish_waits_for_security_gates_and_attests_digest() -> None:
     assert "Attest build provenance" in step_names
     assert workflow["permissions"]["attestations"] == "write"
     assert workflow["permissions"]["id-token"] == "write"
+
+
+def test_docker_workflow_normalizes_ghcr_image_owner_for_all_release_steps() -> None:
+    """GHCR reference всегда lowercase для build, scan, attestation и evidence."""
+    workflow_path = PROJECT_ROOT / ".github" / "workflows" / "docker.yml"
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["build-push"]["steps"]
+
+    image_name_step = next(step for step in steps if step.get("id") == "image-name")
+    assert "${GITHUB_REPOSITORY_OWNER,,}" in image_name_step["run"]
+
+    image_name = "${{ steps.image-name.outputs.value }}"
+    metadata_step = next(step for step in steps if step.get("id") == "meta")
+    scan_step = next(step for step in steps if step.get("name") == "Scan pushed image")
+    attestation_step = next(step for step in steps if step.get("name") == "Attest build provenance")
+    evidence_step = next(step for step in steps if step.get("name") == "Publish release evidence")
+
+    assert image_name in metadata_step["with"]["images"]
+    assert image_name in scan_step["with"]["image-ref"]
+    assert image_name in attestation_step["with"]["subject-name"]
+    assert image_name in evidence_step["env"]["IMAGE_NAME"]

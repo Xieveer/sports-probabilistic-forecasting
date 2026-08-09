@@ -87,12 +87,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Normalize GHCR image name
+        id: image-name
+        run: >-
+          echo "value=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_BASENAME}-${{ matrix.target }}"
+          >> "$GITHUB_OUTPUT"
+
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_BASENAME }}-${{ matrix.target }}
+            ${{ steps.image-name.outputs.value }}
           tags: |
             type=sha,prefix=
             type=raw,value=latest
@@ -114,7 +120,7 @@ jobs:
       - name: Scan pushed image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_BASENAME }}-${{ matrix.target }}@${{ steps.build.outputs.digest }}
+          image-ref: ${{ steps.image-name.outputs.value }}@${{ steps.build.outputs.digest }}
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
@@ -122,13 +128,13 @@ jobs:
       - name: Attest build provenance
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_BASENAME }}-${{ matrix.target }}
+          subject-name: ${{ steps.image-name.outputs.value }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
       - name: Publish release evidence
         env:
-          IMAGE_NAME: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_BASENAME }}-${{ matrix.target }}
+          IMAGE_NAME: ${{ steps.image-name.outputs.value }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           {
