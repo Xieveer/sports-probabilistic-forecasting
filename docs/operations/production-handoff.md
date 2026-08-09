@@ -24,6 +24,9 @@ rollout и rollback в репозитории управления инфрас�
 
 - Команда запуска контейнера: `docker compose -f docker-compose.prod.yml up -d`.
 - Требуемая версия Python и системные зависимости: Python 3.12; curl и libpq-dev в Dockerfile.
+- Runtime dependency boundary: `uv sync --frozen --no-dev` устанавливает только
+  serving-зависимости. DVC, DVC S3, MLflow и Optuna находятся в dev-группе для
+  local training/control plane и не должны попадать в API, Worker или bot image.
 - Переменные окружения (значения хранятся только в secret store):
   `POSTGRES_PASSWORD` — пароль PostgreSQL; `SF_API_IMAGE`, `SF_WORKER_IMAGE`,
   `SF_BOT_IMAGE` — точные `image@sha256:digest`; `SF_APP_VERSION` — версия
@@ -88,6 +91,21 @@ rollout и rollback в репозитории управления инфрас�
   проверяет API/model version, выполняет параметризованный `SELECT` safe outcome
   Worker и bot heartbeat. Она не запускает Worker/training, не отправляет
   Telegram-сообщения, не делает DML и не выводит response payloads или secrets.
+- Контролируемая первая доставка выполняется только после успешного
+  `make acceptance-check`, published immutable image evidence и отдельного
+  разрешения владельца. Оператор задаёт в secret environment `BOT_TOKEN` и
+  один `SF_DELIVERY_VERIFICATION_CHAT_ID`, затем запускает:
+
+  ```bash
+  uv run python -m sports_forecast.orchestration.delivery_verification \
+    --send \
+    --release-image "${SF_API_IMAGE}" \
+    --model-version "${SF_ACCEPTANCE_MODEL_VERSION}"
+  ```
+
+  Команда не имеет retry, не запускается CI/scheduler/acceptance и не выводит
+  token, chat ID либо тело ответа Telegram. При неуспехе повтор возможен только
+  новым явным операторским запуском после проверки причины.
 - Локальные evidence: [контракт runner](../../tests/test_acceptance_check.py),
   [строгий handoff gate](../../tests/test_production_readiness_validation.py),
   [worker measurement](worker-measurement-evidence.md), [migration/recovery](database-migrations.md),
@@ -96,9 +114,10 @@ rollout и rollback в репозитории управления инфрас�
   GHCR provenance attestation, published image digest, production DB role,
   external Telegram/API connectivity и VPS rollout. Их нельзя отмечать как
   выполненные до соответствующего remote run.
-- Локальный `make security` на 2026-08-09 не прошёл: `pip-audit` выявил 154
-  известных уязвимости в 24 locked runtime-зависимостях. До отдельной
-  remediation-задачи и зелёного повторного audit production rollout запрещён.
+- Локальный `make security` на 2026-08-09 успешно выполнил `pip-audit` для
+  locked production runtime dependencies: `No known vulnerabilities found`.
+  Он не заменяет dependency/filesystem/image scans опубликованных образов и
+  external evidence, поэтому production rollout всё ещё запрещён до их получения.
 
 ## Артефакт и откат
 

@@ -6,16 +6,12 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "catboost",
-    "dvc",
-    "dvc-s3>=3.2.2",
     "hydra-core",
-    "mlflow",
     "numpy>=2.2.6",
     "pandas>=2.3.3",
     "requests>=2.32.5",
     "scikit-learn",
     "lightgbm>=4.0.0",
-    "optuna>=3.0.0",
     "pyyaml>=6.0",
     "fastapi>=0.124.0",
     "uvicorn>=0.38.0",
@@ -46,4 +42,8 @@ dev = [
     "sphinx-autobuild>=2024.4.0",
     "sphinx-rtd-theme>=2.0.0",
     "pytest-cov>=4.0.0",
+    "dvc",
+    "dvc-s3>=3.2.2",
+    "mlflow",
+    "optuna>=3.0.0",
 ]

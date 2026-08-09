@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 from typing import cast
 
@@ -71,3 +72,16 @@ def test_worker_image_does_not_embed_training_data_or_models() -> None:
 
     assert "COPY --chown=sf:sf data/ ./data/" not in dockerfile
     assert "COPY --chown=sf:sf models/ ./models/" not in dockerfile
+
+
+def test_production_dependencies_exclude_local_training_control_plane() -> None:
+    """Runtime image не устанавливает DVC, MLflow и Optuna из базовой группы."""
+    pyproject = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    dependencies = pyproject["project"]["dependencies"]
+
+    assert isinstance(dependencies, list)
+    dependency_names = {
+        str(dependency).split("[", maxsplit=1)[0].split("=", maxsplit=1)[0]
+        for dependency in dependencies
+    }
+    assert {"dvc", "dvc-s3", "mlflow", "optuna"}.isdisjoint(dependency_names)
