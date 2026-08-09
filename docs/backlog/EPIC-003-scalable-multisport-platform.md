@@ -1,6 +1,6 @@
 # EPIC-003 — Масштабируемая мультиспортивная платформа
 
-> **Статус:** in_progress
+> **Статус:** done
 > **Приоритет:** high
 > **Владелец:** главный агент
 > **Требование:** [REQ-003](../product/requirements/REQ-003-scalable-multisport-platform.md)
@@ -28,7 +28,7 @@
 | [TASK-003-3](tasks/TASK-003-3-model-provenance-promotion.md) | Model identity, ручной promotion и legacy NHL manifest | TASK-003-1, TASK-003-2 | DB/model-registry contract | done |
 | [TASK-003-4](tasks/TASK-003-4-portfolio-orchestration.md) | Конфигурационный heavy fan-out без статических списков | TASK-003-1, TASK-003-3 | DAG/command integration tests | done |
 | [TASK-003-5](tasks/TASK-003-5-lineup-fast-path.md) | Минутный fast path составов с версионированием и надёжной доставкой | TASK-003-3, TASK-003-4 | DB + idempotency integration tests | done |
-| [TASK-003-6](tasks/TASK-003-6-special-and-player-markets.md) | Расширяемый контракт статистических и player-рынков | Футбольские winner и total одобрены | market contract tests | backlog |
+| [TASK-003-6](tasks/TASK-003-6-special-and-player-markets.md) | Расширяемый контракт статистических и player-рынков | Футбольские winner и total одобрены | market contract tests | cancelled (отдельный будущий scope) |
 
 ## Риски и rollout
 
@@ -39,3 +39,6 @@
   прежний immutable manifest, без переобучения и удаления данных.
 - Параллельность включается только после измерения нагрузки источников и
   успешных изоляционных тестов; глобальный lock не снимается заранее.
+- Статистические и player-рынки не реализованы в этом эпике: TASK-003-6
+  отменена как отложенный scope и должна быть создана заново после подтверждения
+  конкретного рынка, source contract и anti-leakage правил.

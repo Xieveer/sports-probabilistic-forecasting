@@ -64,6 +64,11 @@ Sports Probabilistic Forecasting — прикладная платформа в�
 - Не изменяй и не удаляй большие data/model artifacts без явной задачи.
 - Перед production-развёртыванием заполни `docs/operations/production-handoff.md`, переведи
   статус в `candidate` и выполни `make production-check`.
+- После успешного review, до финальных проверок и коммита, приведи в порядок всю
+  затронутую каноническую документацию: REQ/ADR/EPIC/TASK, отчёт `done`, README/
+  runbook/`.env.example` и ссылки между ними. Синхронизируй статус эпика с
+  итоговыми статусами задач; незавершённый будущий scope явно переводи в
+  `blocked` или `cancelled`, а не оставляй эпик ложным `in_progress`.
 
 ## Роли и skills
 

@@ -41,7 +41,9 @@ REQ (confirmed)
   → ADR (если решение значимо) + EPIC/TASK
   → TASK (in_progress) + тестовый план
   → отчёт done + обновлённый TASK
-  → review / security / documentation
+  → review / security
+  → финальная синхронизация документации и статусов
+  → документация / commit
 ```
 
 - Product analyst создаёт или обновляет `REQ` и передаёт только `confirmed` требования.
@@ -54,6 +56,10 @@ REQ (confirmed)
 - Reviewer, security-reviewer и documentation-writer добавляют результаты в раздел
   «Проверки и follow-up» отчёта или создают отдельную связанную задачу для finding. Они не
   переписывают доказательства implementer.
+- После успешного review главный агент до коммита синхронизирует все затронутые
+  канонические документы и статусы: REQ/ADR/EPIC/TASK, отчёт `done`, runbook,
+  README и `.env.example`. Эпик становится `done` только когда его задачи имеют
+  terminal status; отложенный scope должен быть явно `blocked` или `cancelled`.
 
 ## Доказательства
 

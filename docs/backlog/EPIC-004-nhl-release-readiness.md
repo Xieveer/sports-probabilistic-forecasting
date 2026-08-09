@@ -1,6 +1,6 @@
 # EPIC-004 — Готовность NHL и релиза 1.0.0
 
-> **Статус:** in_progress
+> **Статус:** done
 > **Приоритет:** high
 > **Владелец:** главный агент
 > **Требование:** [REQ-004](../product/requirements/REQ-004-nhl-readiness-and-release-versioning.md)
