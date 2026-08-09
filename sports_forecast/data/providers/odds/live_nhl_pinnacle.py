@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from math import inf
 from typing import Any
 
@@ -77,8 +77,8 @@ def _parse_commence_utc(raw: object) -> datetime | None:
     except ValueError:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def _team_merge_key(name: str, registry: TeamNameRegistry | None) -> str:
@@ -166,7 +166,7 @@ def map_match_refs_to_pinnacle_quotes(
         refs,
         key=lambda r: (
             r.commence_utc is None,
-            r.commence_utc or datetime(1970, 1, 1, tzinfo=timezone.utc),
+            r.commence_utc or datetime(1970, 1, 1, tzinfo=UTC),
         ),
     )
 
@@ -230,6 +230,8 @@ def fetch_nhl_pinnacle_quotes_for_refs(
     book_cfg: DictConfig | None = None,
     team_registry: TeamNameRegistry | None = None,
     client: OddsApiClient | None = None,
+    sport_key: str | None = None,
+    bookmaker_key: str | None = None,
 ) -> dict[str, PinnacleH2HQuote | None]:
     """Один запрос odds NHL + сопоставление со списком матчей витрины.
 
@@ -252,8 +254,12 @@ def fetch_nhl_pinnacle_quotes_for_refs(
         raise ValueError("Не найден conf/bookmaker/the_odds_api.yaml")
 
     live = OmegaConf.select(cfg, "bookmaker.live_inference") or {}
-    sport_key = str(OmegaConf.select(cfg, "bookmaker.sport_keys.nhl") or "icehockey_nhl")
-    bookmaker_key = str(OmegaConf.select(cfg, "bookmaker.bookmakers.primary") or "pinnacle")
+    resolved_sport_key = sport_key or str(
+        OmegaConf.select(cfg, "bookmaker.sport_keys.nhl") or "icehockey_nhl"
+    )
+    resolved_bookmaker_key = bookmaker_key or str(
+        OmegaConf.select(cfg, "bookmaker.bookmakers.primary") or "pinnacle"
+    )
     regions = str(live.get("regions", "eu"))
     tol = int(live.get("commence_tolerance_minutes", 360))
     # Для витрины нужны актуальные линии; дисковый кэш клиента иначе может отдать
@@ -267,14 +273,14 @@ def fetch_nhl_pinnacle_quotes_for_refs(
 
     oc = client or build_odds_client_for_live(cfg)
     payload = oc.fetch_odds_for_sport(
-        sport_key,
+        resolved_sport_key,
         regions=regions,
         markets=["h2h"],
         use_cache=use_disk_cache,
     )
     quotes = parse_pinnacle_h2h_quotes_from_payload(
         payload,
-        bookmaker_key=bookmaker_key,
+        bookmaker_key=resolved_bookmaker_key,
         team_registry=team_registry,
     )
     return map_match_refs_to_pinnacle_quotes(

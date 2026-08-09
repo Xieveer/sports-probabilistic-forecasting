@@ -65,7 +65,7 @@ def test_all_winning_roi_ci_strictly_positive() -> None:
 def test_block_length_exceeds_n_bets_uses_full_sample_block() -> None:
     n = 10
     profit = np.array([1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0])
-    df = _make_trace(np.ones(n), profit, (profit > 0).astype(float))
+    df = _make_trace(np.ones(n), profit, np.asarray(profit > 0, dtype=float))
     res = BlockBootstrap(
         df,
         n_resamples=500,
@@ -84,7 +84,7 @@ def test_reproducibility_with_seed() -> None:
     rng = np.random.default_rng(99)
     y = rng.integers(0, 2, size=n)
     pnl = np.where(y == 1, 0.8, -1.0)
-    df = _make_trace(np.ones(n), pnl, y.astype(float))
+    df = _make_trace(np.ones(n), pnl, np.asarray(y, dtype=float))
     a = BlockBootstrap(
         df,
         n_resamples=800,

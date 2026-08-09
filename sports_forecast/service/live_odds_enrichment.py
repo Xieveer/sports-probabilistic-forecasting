@@ -11,7 +11,6 @@ Live Pinnacle (The Odds API) для ответов публичного predicti
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 import requests
@@ -22,7 +21,7 @@ from sports_forecast.betting.live_moneyline_extras import (
     proba_home_from_prediction,
 )
 from sports_forecast.config.loaders import load_bookmaker_config
-from sports_forecast.data.providers.odds.client import QuotaBudgetError
+from sports_forecast.data.providers.odds.client import QuotaBudgetError, has_configured_odds_api_key
 from sports_forecast.data.providers.odds.live_nhl_pinnacle import (
     PinnacleH2HQuote,
     build_odds_client_for_live,
@@ -124,7 +123,7 @@ def batch_live_response_extras(
     fetch_error: str | None = None
 
     if nhl_ml:
-        if not os.environ.get("ODDS_API_KEY", "").strip():
+        if not has_configured_odds_api_key():
             fetch_error = "missing_api_key"
         else:
             try:

@@ -5,11 +5,14 @@ name: Docker
 on:
   push:
     branches: [main]
+    tags: ["v*.*.*"]
   workflow_dispatch:
 
 permissions:
   contents: read
   packages: write
+  attestations: write
+  id-token: write
 
 env:
   REGISTRY: ghcr.io
@@ -17,7 +20,44 @@ env:
   IMAGE_BASENAME: sports-probabilistic-forecasting
 
 jobs:
+  verify:
+    name: Release gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --frozen --python 3.12 --group dev
+
+      - name: Lint
+        run: make lint
+
+      - name: Unit tests
+        run: make test-unit
+
+      - name: Dependency audit
+        run: make security
+
+      - name: Filesystem and secret scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
   build-push:
+    needs: [verify]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -28,6 +68,14 @@ jobs:
           - target: telegram-bot
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate release tag matches package version
+        if: github.ref_type == 'tag'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          package_version="$(python -c 'import tomllib; from pathlib import Path; print(tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"])')"
+          test "$RELEASE_TAG" = "v$package_version"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -48,8 +96,10 @@ jobs:
           tags: |
             type=sha,prefix=
             type=raw,value=latest
+            type=semver,pattern={{version}}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -60,3 +110,30 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Scan pushed image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_BASENAME }}-${{ matrix.target }}@${{ steps.build.outputs.digest }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_BASENAME }}-${{ matrix.target }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Publish release evidence
+        env:
+          IMAGE_NAME: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_BASENAME }}-${{ matrix.target }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "### Release image evidence"
+            echo "- commit: \`${GITHUB_SHA}\`"
+            echo "- ref: \`${GITHUB_REF_NAME}\`"
+            echo "- image: \`${IMAGE_NAME}@${IMAGE_DIGEST}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

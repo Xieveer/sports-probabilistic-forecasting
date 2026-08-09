@@ -36,12 +36,16 @@ def test_file_source_provider_is_concrete_subclass() -> None:
 
 
 def test_file_provider_fetch_on_demo_uel(tmp_path: Path) -> None:
-    project_root = Path(__file__).resolve().parents[1]
+    source_csv = tmp_path / "data" / "source" / "uel" / "source.csv"
+    source_csv.parent.mkdir(parents=True)
+    source_csv.write_text("id,date\n1,2026-08-09\n", encoding="utf-8")
+
     paths_cfg = OmegaConf.create({"paths": {"source_dir": "data/source"}})
-    provider = FileSourceProvider(paths_cfg=paths_cfg, project_root=project_root)
+    provider = FileSourceProvider(paths_cfg=paths_cfg, project_root=tmp_path)
+
     path = provider.fetch("uel")
-    assert path.name == "source.csv"
-    assert path.is_file()
+
+    assert path == source_csv
 
 
 def test_file_provider_missing_file_raises() -> None:

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 from omegaconf import OmegaConf
 
+from sports_forecast.config.loaders import load_tournament_quality_gate_config
 from sports_forecast.data.providers import NhlWebApiSourceProvider, get_provider
 from sports_forecast.data.providers.nhl.assembler import (
     _build_upcoming_row,
@@ -29,6 +30,7 @@ from sports_forecast.data.providers.nhl.standings import (
     parse_standings_payload,
     standings_snapshot_ymd_before_game_date,
 )
+from sports_forecast.validation.tournament_quality import load_schedule_coverage
 
 
 def test_schedule_stub_roundtrip_dict() -> None:
@@ -518,3 +520,51 @@ def test_nhl_provider_fetch_writes_csv(mock_build: MagicMock, tmp_path: Path) ->
     df = pd.read_csv(out)
     assert len(df) == 1
     assert df.iloc[0]["home_team"] == "NYI"
+
+
+@patch("sports_forecast.data.providers.nhl.provider.NhlDataAssembler")
+def test_nhl_provider_saves_configured_quality_schedule_snapshot(
+    mock_assembler_cls: MagicMock, tmp_path: Path
+) -> None:
+    source_rows = pd.DataFrame([{"id": "1", "datetime": "2026-08-08T09:00:00Z"}])
+    schedule_rows = pd.DataFrame(
+        [
+            {
+                "id": "1",
+                "datetime": "2026-08-08T09:00:00Z",
+                "game_state": "FUT",
+                "raw_payload": "must-not-be-saved",
+            }
+        ]
+    )
+    assembler = mock_assembler_cls.return_value
+    assembler.schedule_snapshot_rows = schedule_rows
+
+    def _build(*, output_csv_path: Path | None = None, **_kwargs: object) -> pd.DataFrame:
+        assert output_csv_path is not None
+        source_rows.to_csv(output_csv_path, index=False)
+        return source_rows
+
+    assembler.build_dataframe.side_effect = _build
+    paths_cfg = OmegaConf.create({"paths": {"source_dir": str(tmp_path / "src")}})
+    source_cfg = OmegaConf.create(
+        {"provider": {"type": "nhl_web_api", "max_games": 1}, "quality_gate": {"profile": "nhl"}}
+    )
+    provider = NhlWebApiSourceProvider(
+        source_cfg=source_cfg, paths_cfg=paths_cfg, project_root=tmp_path
+    )
+
+    before_fetch = datetime.now(UTC)
+    source_path = provider.fetch("nhl")
+
+    snapshot_path = source_path.parent / "nhl_quality_schedule.csv"
+    assert snapshot_path.is_file()
+    assert pd.read_csv(snapshot_path).to_dict(orient="records") == [
+        {"id": 1, "datetime": "2026-08-08T09:00:00Z", "game_state": "FUT"}
+    ]
+    assert "must-not-be-saved" not in snapshot_path.read_text(encoding="utf-8")
+    assert load_schedule_coverage(
+        source_path, load_tournament_quality_gate_config("nhl")
+    ) >= before_fetch + timedelta(hours=47)
+    assembler_config = mock_assembler_cls.call_args.args[1]
+    assert assembler_config.date_to >= (before_fetch + timedelta(hours=47)).date()

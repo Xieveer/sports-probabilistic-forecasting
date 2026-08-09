@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
@@ -245,8 +245,8 @@ def _parse_commence_time_utc(ev: dict[str, Any]) -> str | None:
     try:
         dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     except ValueError:
         return None
 

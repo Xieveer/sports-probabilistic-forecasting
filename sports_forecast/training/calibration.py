@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -126,9 +126,9 @@ class ModelCalibrator:
             Калиброванные вероятности.
         """
         if isinstance(mapper, IsotonicRegression):
-            return np.asarray(mapper.predict(raw_proba))
+            return cast(np.ndarray, np.asarray(mapper.predict(raw_proba)))
         # Sigmoid
-        return np.asarray(mapper.predict_proba(raw_proba.reshape(-1, 1))[:, 1])
+        return cast(np.ndarray, np.asarray(mapper.predict_proba(raw_proba.reshape(-1, 1))[:, 1]))
 
     def calibrate_if_needed(
         self,

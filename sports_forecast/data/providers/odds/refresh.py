@@ -16,7 +16,7 @@ import os
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
@@ -106,7 +106,7 @@ class OddsRefreshResult:
 
 
 def _now_utc_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
 def resolve_path_under_tournament_source(

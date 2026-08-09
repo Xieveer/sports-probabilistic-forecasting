@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -415,7 +415,7 @@ class BaseSingleModel(BaseModel):
             cal_p1 = np.clip(cal_p1, 1e-15, 1 - 1e-15)
             proba = np.column_stack([1 - cal_p1, cal_p1])
 
-        return np.asarray(proba)
+        return cast(np.ndarray, np.asarray(proba))
 
     def save(self, path: Path, version: str = "prod") -> None:
         """

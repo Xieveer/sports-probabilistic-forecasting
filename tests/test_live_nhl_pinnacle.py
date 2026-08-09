@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -89,7 +89,7 @@ def test_map_by_team_and_commence_tolerance() -> None:
         _sample_payload(),
         bookmaker_key="pinnacle",
     )
-    ref_time = datetime(2026, 1, 10, 0, 15, tzinfo=timezone.utc)
+    ref_time = datetime(2026, 1, 10, 0, 15, tzinfo=UTC)
     refs = [
         NHLLiveMatchRef(
             match_id="m1",
@@ -112,7 +112,7 @@ def test_map_rejects_when_commence_outside_tolerance() -> None:
         _sample_payload(),
         bookmaker_key="pinnacle",
     )
-    ref_time = datetime(2026, 1, 10, 10, 0, tzinfo=timezone.utc)
+    ref_time = datetime(2026, 1, 10, 10, 0, tzinfo=UTC)
     refs = [
         NHLLiveMatchRef(
             match_id="m1",
@@ -181,7 +181,7 @@ def test_fetch_with_injected_client_no_network() -> None:
             match_id="m1",
             home_team="TOR",
             away_team="BOS",
-            commence_utc=datetime(2026, 1, 10, 0, 0, tzinfo=timezone.utc),
+            commence_utc=datetime(2026, 1, 10, 0, 0, tzinfo=UTC),
         )
     ]
     out = fetch_nhl_pinnacle_quotes_for_refs(refs, book_cfg=cfg, client=mock_client)

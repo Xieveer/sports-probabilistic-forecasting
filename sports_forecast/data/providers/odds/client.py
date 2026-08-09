@@ -6,6 +6,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -37,10 +38,47 @@ class OddsApiQuotaSnapshot:
     requests_used: int | None
 
 
+@dataclass(frozen=True)
+class OddsApiKey:
+    """Ключ The Odds API без раскрытия значения в диагностике."""
+
+    tier: str
+    value: str
+
+
+_KEY_ENV_TIERS: tuple[tuple[str, str], ...] = (
+    ("free", "ODDS_API_KEY_FREE"),
+    ("20k", "ODDS_API_KEY_20K"),
+    ("100k", "ODDS_API_KEY_100K"),
+)
+
+
+def configured_odds_api_keys() -> tuple[OddsApiKey, ...]:
+    """Прочитать уникальные ключи в порядке расходования квоты."""
+    keys: list[OddsApiKey] = []
+    seen: set[str] = set()
+    for tier, env_name in _KEY_ENV_TIERS:
+        value = os.environ.get(env_name, "").strip()
+        if value and value not in seen:
+            keys.append(OddsApiKey(tier=tier, value=value))
+            seen.add(value)
+    if not keys:
+        legacy = os.environ.get("ODDS_API_KEY", "").strip()
+        if legacy:
+            keys.append(OddsApiKey(tier="legacy", value=legacy))
+    return tuple(keys)
+
+
+def has_configured_odds_api_key() -> bool:
+    """Вернуть True, если задан хотя бы один поддерживаемый ключ Odds API."""
+    return bool(configured_odds_api_keys())
+
+
 class OddsApiClient:
     """Клиент REST The Odds API (актуальные и исторические коэффициенты).
 
-    Ключ: переменная окружения ``ODDS_API_KEY`` (не хранить в репозитории).
+    Ключи: ``ODDS_API_KEY_FREE`` → ``ODDS_API_KEY_20K`` →
+    ``ODDS_API_KEY_100K``; ``ODDS_API_KEY`` остаётся fallback.
     Параметры запросов и пути — из ``conf/bookmaker/the_odds_api.yaml``.
 
     Args:
@@ -73,9 +111,11 @@ class OddsApiClient:
         if not prefix.startswith("/"):
             prefix = "/" + prefix
         self._base_url = f"{base}{prefix}"
-        self._api_key = os.environ.get("ODDS_API_KEY", "").strip()
-        if not self._api_key:
-            raise ValueError("Требуется переменная окружения ODDS_API_KEY")
+        self._api_keys = configured_odds_api_keys()
+        if not self._api_keys:
+            raise ValueError("Требуется один из ключей Odds API в переменных окружения")
+        self._api_key_index = 0
+        self._api_key = self._api_keys[self._api_key_index].value
 
         rl = self._book.get("rate_limit") or {}
         self._min_interval_sec = float(rl.get("min_interval_sec", 0.5))
@@ -84,7 +124,6 @@ class OddsApiClient:
         self._real_http_requests = 0
 
         self._cache_dir = cache_dir or (PROJECT_ROOT / "data" / "cache" / "the_odds_api")
-        self._cache_dir.mkdir(parents=True, exist_ok=True)
 
         self._session = session or self._build_session()
 
@@ -95,7 +134,7 @@ class OddsApiClient:
             connect=3,
             read=3,
             backoff_factor=0.8,
-            status_forcelist=(429, 500, 502, 503, 504),
+            status_forcelist=(500, 502, 503, 504),
             allowed_methods=frozenset(["GET"]),
         )
         adapter = HTTPAdapter(max_retries=retry)
@@ -118,8 +157,9 @@ class OddsApiClient:
             time.sleep(self._min_interval_sec - delta)
 
     def _cache_path(self, cache_key: str) -> Path:
-        safe = cache_key.replace("/", "_").replace("?", "_")
-        return self._cache_dir / f"{safe}.json"
+        """Вернуть непрозрачный путь: ключ запроса не попадает в имя файла."""
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        return self._cache_dir / f"odds-{sha256(cache_key.encode()).hexdigest()}.json"
 
     @staticmethod
     def _log_network_response(
@@ -156,6 +196,19 @@ class OddsApiClient:
                 self._quota_remaining,
             )
 
+    def _advance_api_key(self) -> bool:
+        """Перейти к следующему tier после доказанного исчерпания квоты."""
+        if self._api_key_index + 1 >= len(self._api_keys):
+            return False
+        previous = self._api_keys[self._api_key_index].tier
+        self._api_key_index += 1
+        current = self._api_keys[self._api_key_index]
+        self._api_key = current.value
+        logger.warning(
+            "Odds API: quota tier=%s исчерпан, переключение на tier=%s", previous, current.tier
+        )
+        return True
+
     def get_json(
         self,
         path: str,
@@ -182,9 +235,13 @@ class OddsApiClient:
         q = dict(params)
         q["apiKey"] = self._api_key
         full_path = path if path.startswith("/") else f"/{path}"
-        key = cache_key or f"{full_path}?{urlencode(sorted((k, str(v)) for k, v in q.items()))}"
-        cpath = self._cache_path(key)
-        if use_cache and cpath.is_file():
+        cache_params = {key: value for key, value in q.items() if key != "apiKey"}
+        key = (
+            cache_key
+            or f"{full_path}?{urlencode(sorted((k, str(v)) for k, v in cache_params.items()))}"
+        )
+        cpath = self._cache_path(key) if use_cache else None
+        if cpath is not None and cpath.is_file():
             snap = self.last_quota()
             self._log_network_response(
                 full_path,
@@ -208,20 +265,7 @@ class OddsApiClient:
             )
 
         url = f"{self._base_url.rstrip('/')}{full_path}"
-        self._throttle()
-        resp = self._session.get(url, params=q, timeout=120)
-        self._last_request_ts = time.monotonic()
-        self._real_http_requests += 1
-        self._parse_quota_headers(resp)
-        self._log_network_response(
-            full_path,
-            status=resp.status_code,
-            x_requests_remaining=resp.headers.get("x-requests-remaining"),
-            cached=False,
-        )
-        if resp.status_code == 429:
-            logger.warning("Odds API 429 — ожидание 60с и одна повторная попытка без кэша")
-            time.sleep(60)
+        while True:
             if (
                 self._max_real_http_requests is not None
                 and self._real_http_requests >= self._max_real_http_requests
@@ -230,7 +274,9 @@ class OddsApiClient:
                     f"Достигнут лимит сетевых запросов The Odds API за run: "
                     f"{self._max_real_http_requests}"
                 )
-            resp = self._session.get(url, params=q, timeout=120)
+            q["apiKey"] = self._api_key
+            self._throttle()
+            resp = self._session.get(url, params=dict(q), timeout=120)
             self._last_request_ts = time.monotonic()
             self._real_http_requests += 1
             self._parse_quota_headers(resp)
@@ -240,10 +286,16 @@ class OddsApiClient:
                 x_requests_remaining=resp.headers.get("x-requests-remaining"),
                 cached=False,
             )
+            if resp.status_code == 429 and self._advance_api_key():
+                continue
+            break
         resp.raise_for_status()
         data: dict[str, Any] | list[Any] = resp.json()
-        with cpath.open("w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        if self._quota_remaining == 0:
+            self._advance_api_key()
+        if cpath is not None:
+            with cpath.open("w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
         return data
 
     def fetch_odds_for_sport(

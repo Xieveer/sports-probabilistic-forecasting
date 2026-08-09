@@ -30,9 +30,16 @@ Workflow **Deploy** после успешного **Docker** на `main` зап�
 ## Сервер (VPS)
 
 1. Клон репозитория и файл `.env` по шаблону [.env.example](../../.env.example).
-2. Значения `SF_*_IMAGE` должны совпадать с пакетами, которые публикует `.github/workflows/docker.yml` (owner и имя пакета в нижнем регистре, как правило).
-3. `POSTGRES_PASSWORD`, `GRAFANA_PASSWORD`, `BOT_TOKEN`, `ODDS_API_KEY` задаются **только** в серверном `.env` (или в менеджере секретов), не в GitHub, если это не нужно для CI.
-4. Эпик **R39** (post-refresh Telegram **digest** в Airflow): для отправки сводки и вызова Odds API из задачи digest те же значения `BOT_TOKEN`, `BOT_ALLOWED_USER_IDS` (и при необходимости `ODDS_API_KEY`) должны быть доступны **процессу Airflow** (не только контейнеру `api` / `telegram-bot`). Проброс — в `environment` сервисов Airflow в compose или эквивалент на VPS; подробности — `docs/source/nhl_local_operations.rst` (раздел Prod-like E2E).
+2. Значения `SF_*_IMAGE` должны совпадать с пакетами, которые публикует
+   `.github/workflows/docker.yml` (owner и имя пакета в нижнем регистре, как
+   правило) и использовать SemVer-тег конкретного release, например `1.0.0`,
+   а не `latest`.
+3. `POSTGRES_PASSWORD`, `GRAFANA_PASSWORD`, `BOT_TOKEN`, `ODDS_API_KEY_FREE`,
+   `ODDS_API_KEY_20K` и `ODDS_API_KEY_100K` задаются **только** в серверном
+   `.env` (или в менеджере секретов), не в GitHub, если это не нужно для CI.
+   Клиент расходует ключи в этом порядке; старый `ODDS_API_KEY` допустим только
+   как временный fallback для существующей конфигурации.
+4. Эпик **R39** (post-refresh Telegram **digest** в Airflow): для отправки сводки и вызова Odds API из задачи digest те же значения `BOT_TOKEN`, `BOT_ALLOWED_USER_IDS` (и при необходимости все настроенные `ODDS_API_KEY_*`) должны быть доступны **процессу Airflow** (не только контейнеру `api` / `telegram-bot`). Проброс — в `environment` сервисов Airflow в compose или эквивалент на VPS; подробности — `docs/source/nhl_local_operations.rst` (раздел Prod-like E2E).
 
 ## Basic auth за Caddy (Grafana / MLflow)
 
@@ -44,3 +51,11 @@ Workflow **Deploy** после успешного **Docker** на `main` зап�
 
 - [docker-compose.prod.yml](../../docker-compose.prod.yml) — production overrides, лимиты, Caddy, node_exporter.
 - [sports_forecast/orchestration/cron_refresh.py](../../sports_forecast/orchestration/cron_refresh.py) — расписание NHL без Airflow.
+
+## Выпуск образов
+
+Версия задаётся только в [`pyproject.toml`](../../pyproject.toml). После успешной
+предпроизводственной проверки уполномоченный оператор создаёт Git-тег
+`v<version>`; workflow Docker сверяет его с package metadata и публикует
+одноимённый SemVer-тег вместе с SHA-тегом каждого образа. Создание тега, push
+образов и deployment требуют отдельных разрешений владельца.

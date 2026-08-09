@@ -43,8 +43,8 @@ from sports_forecast.predict import (
     load_feature_names,
     load_model_from_path,
 )
-from sports_forecast.service.db.engine import get_engine, get_session, init_db
-from sports_forecast.service.db.repository import PredictionRepository
+from sports_forecast.service.db.engine import get_engine, get_session
+from sports_forecast.service.db.repository import ModelRegistryRepository, PredictionRepository
 from sports_forecast.utils.log_config import configure_logging, get_logger
 
 
@@ -79,8 +79,12 @@ def _load_promoted_contract(cfg: DictConfig, project_root: Path) -> PromotedMode
     """
     tournament_name = str(cfg.tournament.name)
     market_spec_name = str(cfg.market_spec.name)
-    models_dir = Path(str(cfg.paths.models_dir))
-    promoted_dir = project_root / models_dir / tournament_name / market_spec_name / "best"
+    runtime_bundle = cfg.get("runtime_model_bundle")
+    if isinstance(runtime_bundle, str) and runtime_bundle:
+        promoted_dir = Path(runtime_bundle)
+    else:
+        models_dir = Path(str(cfg.paths.models_dir))
+        promoted_dir = project_root / models_dir / tournament_name / market_spec_name / "best"
     deploy_path = promoted_dir / "deploy.yaml"
 
     if not deploy_path.exists():
@@ -134,6 +138,23 @@ def _load_algorithm_config(
 
     logger.warning("Некорректный конфиг алгоритма %s, использую cfg.algorithm", algorithm_cfg_path)
     return fallback
+
+
+def _resolve_model_provenance(
+    cfg: DictConfig, registry: ModelRegistryRepository
+) -> tuple[str | None, str | None]:
+    """Вернуть provenance active pointer для pool-run либо legacy ``None``."""
+    model_pool = cfg.get("model_pool")
+    if model_pool is None:
+        return None, None
+    pool_name = model_pool.get("name")
+    if not isinstance(pool_name, str) or not pool_name:
+        raise ValueError("model_pool.name обязателен для materialize")
+    market_spec = str(cfg.market_spec.name)
+    active = registry.get_active(pool_name, market_spec)
+    if active is None:
+        raise ValueError("Materialize model pool требует active production pointer")
+    return pool_name, active.model_identity
 
 
 def _long_row_participant_display_name(row: pd.Series) -> str:
@@ -334,46 +355,53 @@ def materialize_predictions(cfg: DictConfig, version: str = "prod") -> bool:
             logger.warning("Нет агрегированных предсказаний")
             return True
 
-        # 7. Запись в БД
-        init_db()
-
-        with get_session() as session:
-            repo = PredictionRepository(session)
-
-            # Помечаем старые предсказания для этого турнира+рынка как stale
-            repo.mark_stale(tournament=tournament_name)
-
-            count = 0
-            for _, row in preds_df.iterrows():
-                repo.upsert_prediction(
-                    match_id=row["match_id"],
-                    tournament=tournament_name,
-                    market=market_name,
-                    market_spec=market_spec_name,
-                    predictions=json.loads(row["predictions_json"]),
-                    model_version=model_version,
-                    algorithm=algorithm_name,
-                    featureset=featureset_name,
-                    home_player=row.get("home_player"),
-                    away_player=row.get("away_player"),
-                    match_datetime=row.get("match_datetime"),
-                    proba_home=row.get("proba_home"),
-                    proba_away=row.get("proba_away"),
-                    odds_raw=row.get("odds_raw"),
-                    status="ok",
-                )
-                count += 1
-
-            logger.info("Записано %d предсказаний в Prediction Store", count)
-
-        # 8. Также сохраняем parquet
+        # 7. Файловый результат готовится до смены DB-витрины. Если этот шаг
+        # не удался, прежние API predictions остаются нетронутыми.
         predictions_root = PROJECT_ROOT / cfg.paths.predictions_dir
         out_dir = predictions_root / tournament_name / market_spec_name
         out_dir.mkdir(parents=True, exist_ok=True)
-
         out_path = out_dir / f"predictions_{version}.parquet"
         preds_df.to_parquet(out_path, index=False)
         logger.info("Parquet сохранён: %s", out_path)
+
+        # 8. Запись в БД. Schema применяет отдельная migration command.
+        with get_session() as session:
+            repo = PredictionRepository(session)
+            model_pool, immutable_model_version = _resolve_model_provenance(
+                cfg, ModelRegistryRepository(session)
+            )
+
+            records: list[dict[str, object]] = []
+            for _, row in preds_df.iterrows():
+                records.append(
+                    {
+                        "match_id": row["match_id"],
+                        "tournament": tournament_name,
+                        "market": market_name,
+                        "market_spec": market_spec_name,
+                        "predictions": json.loads(row["predictions_json"]),
+                        "model_version": model_version,
+                        "algorithm": algorithm_name,
+                        "featureset": featureset_name,
+                        "model_pool": model_pool,
+                        "immutable_model_version": immutable_model_version,
+                        "home_player": row.get("home_player"),
+                        "away_player": row.get("away_player"),
+                        "match_datetime": row.get("match_datetime"),
+                        "proba_home": row.get("proba_home"),
+                        "proba_away": row.get("proba_away"),
+                        "odds_raw": row.get("odds_raw"),
+                        "status": "ok",
+                    }
+                )
+            count = repo.publish_showcase(
+                records,
+                tournament=tournament_name,
+                market=market_name,
+                market_spec=market_spec_name,
+            )
+
+            logger.info("Записано %d предсказаний в Prediction Store", count)
 
         logger.info("Материализация для %s завершена успешно", tournament_name)
         return True
@@ -404,7 +432,6 @@ def run(cfg: DictConfig) -> None:
         os.environ["DATABASE_URL"] = str(db_url)
 
     get_engine()
-    init_db()
 
     version = cfg.get("model_version", "prod")
 

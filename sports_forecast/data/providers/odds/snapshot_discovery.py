@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
 from sports_forecast.data.providers.odds.enrichment import unwrap_odds_payload
@@ -77,8 +77,8 @@ def _as_utc_datetime(raw: str) -> datetime | None:
     except ValueError:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def parse_commence_utc_from_event(ev: dict[str, Any]) -> datetime | None:
@@ -119,7 +119,7 @@ def earliest_commence_on_day_from_payload(payload: Any, day: date) -> datetime |
 
 def to_api_iso_z(dt: datetime) -> str:
     """Нормализованный ISO для параметра ``date`` The Odds API (суффикс ``Z``)."""
-    d = dt.astimezone(timezone.utc).replace(microsecond=0)
+    d = dt.astimezone(UTC).replace(microsecond=0)
     return d.isoformat().replace("+00:00", "Z")
 
 
@@ -142,7 +142,7 @@ def minutes_before_commence(
     snapshot_utc: datetime,
 ) -> int:
     """Минуты от ``snapshot`` до ``commence``; неотрицательно (снимок не позже старта матча)."""
-    delta = reference_commence_utc - snapshot_utc.astimezone(timezone.utc)
+    delta = reference_commence_utc - snapshot_utc.astimezone(UTC)
     secs = int(delta.total_seconds())
     return max(0, secs // 60)
 
@@ -173,7 +173,7 @@ def _legacy_isos(
 
 def _parse_any_iso_to_utc(s: str) -> datetime:
     s2 = s.replace("Z", "+00:00")
-    return datetime.fromisoformat(s2).astimezone(timezone.utc)
+    return datetime.fromisoformat(s2).astimezone(UTC)
 
 
 def discover_close_snapshot_for_day(

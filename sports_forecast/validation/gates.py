@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -321,8 +321,8 @@ def check_data_freshness(
         raise RuntimeError(msg)
 
     latest = max(parquet_files, key=lambda p: p.stat().st_mtime)
-    latest_mtime = datetime.fromtimestamp(latest.stat().st_mtime, tz=timezone.utc)
-    now = datetime.now(tz=timezone.utc)
+    latest_mtime = datetime.fromtimestamp(latest.stat().st_mtime, tz=UTC)
+    now = datetime.now(tz=UTC)
     age = now - latest_mtime
 
     logger.info("Самый свежий файл: %s (возраст: %s)", latest.name, age)
@@ -407,7 +407,7 @@ def save_schema_snapshot(
     snapshot = {
         "stage": stage,
         "tournament": tournament,
-        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+        "timestamp": datetime.now(tz=UTC).isoformat(),
         "n_rows": len(df),
         "n_cols": len(df.columns),
         "columns": {

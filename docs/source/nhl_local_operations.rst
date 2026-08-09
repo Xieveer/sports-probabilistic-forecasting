@@ -54,7 +54,10 @@
 
    Имена переменных, которые чаще всего нужны для операционного контура и NHL-сценариев:
 
-   * ``ODDS_API_KEY`` — доступ к The Odds API (ингест коэффициентов и связанные задачи).
+   * ``ODDS_API_KEY_FREE``, ``ODDS_API_KEY_20K`` и ``ODDS_API_KEY_100K`` — ключи
+     The Odds API для ингеста коэффициентов и связанных задач. Они применяются
+     строго в этом порядке; ``ODDS_API_KEY`` оставлен только как временный
+     fallback для старой конфигурации.
    * При запуске **Telegram-бота** (локально или через Compose-профиль ``bot``): ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS``, ``BOT_ADMIN_USER_IDS``, ``BOT_API_BASE_URL``.
    * Для Compose без бота также актуальны, например: ``POSTGRES_PASSWORD``, ``GRAFANA_PASSWORD``, ``MLFLOW_TRACKING_URI``, образы ``SF_*_IMAGE`` в прод-подобных настройках — см. полный перечень в ``.env.example``.
 
@@ -117,27 +120,22 @@ Airflow через ``airflow/docker-compose.airflow.yml`` — тот же кон
 #. Из корня репозитория поднимите БД: ``docker compose up -d db`` (или полный стек ``make docker-up``).
 #. Один раз: ``make airflow-init``.
 #. Запуск Airflow: ``make airflow-up`` (webserver + scheduler поверх общего compose).
-#. В корневом ``.env`` задайте ``POSTGRES_PASSWORD``; для digest — ``ODDS_API_KEY``,
-   ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS``. Runtime-skip digest — ``SF_TELEGRAM_DIGEST_ENABLE``
-   как Airflow Variable или через UI; как задавать Variables vs ``AIRFLOW_VAR_*`` в compose —
-   см. подраздел «Airflow Variables» ниже, без дублирования здесь.
-#. В Airflow UI: снимите паузу с DAG ``nhl_morning_refresh``; при необходимости создайте pool
-   ``sf_refresh_pool`` (или имя из Variable ``SF_REFRESH_POOL``); **Trigger DAG** и дождитесь
-   успешного ``post_refresh_digest``.
+#. В корневом ``.env`` задайте ``POSTGRES_PASSWORD``, ``BOT_TOKEN``,
+   ``BOT_ALLOWED_USER_IDS`` и отдельный ``BOT_ADMIN_USER_IDS``. Первый список получает initial
+   digest, второй — только краткое уведомление о сбое.
+#. В Airflow UI: снимите паузу с DAG ``notification_nhl_heavy_refresh``; при необходимости
+   создайте pool ``sf_refresh_pool`` (значение notification-профиля); **Trigger DAG** и
+   дождитесь последовательности ``capture_quality_watermark → refresh → quality_gate → initial_digest``.
 #. Логи задачи: Airflow UI → DAG Run → Task Instance → **Logs**.
 
-Утренний NHL (12:00 MSK / 09:00 UTC, R37.6)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Утренний NHL (10:00 MSK, notification profile)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**Airflow:** DAG ``nhl_morning_refresh`` (``airflow/dags/dag_nhl_morning_refresh.py``) — расписание
-``0 9 * * *`` в часовом поясе планировщика Airflow по умолчанию (**UTC**), то есть **09:00 UTC**
-= **12:00 по Москве** (MSK, UTC+3). Пайплайн: ``source`` (при ``odds.enabled`` в ``conf/source/nhl.yaml``
+**Airflow:** DAG ``notification_nhl_heavy_refresh``, созданный из
+``conf/notification/nhl.yaml`` — расписание ``0 10 * * *`` в ``Europe/Moscow``. Пайплайн: ``source`` (при ``odds.enabled`` в ``conf/source/nhl.yaml``
 — инкрементальный odds post-step внутри ``source_refresh``) → ingest → clean → features →
-materialize для ``winner_withOT`` / ``nhl`` по умолчанию; затем ``validate``. Пул и ``flock``
-совпадают с ``data_refresh`` (переменные ``SF_REFRESH_POOL``, ``SF_REFRESH_LOCK_FILE``, …).
-
-Переопределения через Airflow Variables: ``SF_NHL_MORNING_TOURNAMENT``, ``SF_NHL_MORNING_FEATURES``,
-``SF_NHL_MORNING_MARKET``, ``SF_NHL_MORNING_SPEC``, ``SF_NHL_MORNING_MAX_ACTIVE_RUNS`` (и др., см. DAG).
+materialize для ``winner_withOT`` / ``nhl``; затем tournament quality gate и fan-out initial digest.
+Пул, ``flock`` и ограничения параллелизма задаёт notification-профиль.
 
 **Хостовый cron (без Airflow)** — тот же смысл, что у DAG, в локальном часовом поясе Москвы::
 
@@ -204,8 +202,10 @@ env ниже), а не только сервису ``api``.
 Для DAG ``nhl_morning_refresh`` ориентируйтесь на последовательность:
 
 #. Локально: ``make docker-up``, при необходимости ``make airflow-init`` (один раз), затем
-   ``make airflow-up``; в ``.env`` заданы пароль БД, при необходимости — ``ODDS_API_KEY``,
-   ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS`` (и проброс в сервисы Airflow — см. ниже).
+   ``make airflow-up``; в ``.env`` заданы пароль БД, при необходимости —
+   ``ODDS_API_KEY_FREE`` (и следующие уровни ``ODDS_API_KEY_20K`` /
+   ``ODDS_API_KEY_100K``), ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS`` (и проброс в
+   сервисы Airflow — см. ниже).
 #. В Airflow UI создан пул слотов с именем по умолчанию ``sf_refresh_pool`` (или измените Variable
    ``SF_REFRESH_POOL`` и создайте пул с новым именем); иначе задачи зависнут в очереди.
 #. Заданы **Airflow Variables** (или эквивалент через префикс ``AIRFLOW_VAR_`` в Compose), как
@@ -397,8 +397,42 @@ Airflow Variables: ``nhl_morning_refresh`` и ``data_refresh``
 * Переменные окружения уровня **бота** (``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS``, …) — для отправки
   сообщения из задачи digest.
 
+Notification-профиль: лёгкий poll коэффициентов
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``conf/notification/nhl.yaml`` также создаёт отдельный DAG
+``notification_nhl_odds_poll``. Он выполняется по ``poll_schedule`` (для NHL —
+каждые 15 минут), читает только materialized прогнозы в ``window_hours`` и делает
+один batch-запрос Pinnacle h2h. Source refresh, ingest, features и materialization
+в этом DAG не запускаются.
+
+При новой или изменившейся валидной линии в одном logical cycle всем ID из
+``BOT_ALLOWED_USER_IDS`` отправляется один общий delta-digest. Пустая витрина,
+отсутствие изменений и уже начавшиеся матчи завершают poll без пользовательского
+сообщения. ``poll_max_active_runs: 1`` не допускает перекрытия собственных run;
+timeout, retry, pool и provider также задаются в профиле. Сбой poll переводит
+задачу в failed, а зависимая ветка уведомляет только ``BOT_ADMIN_USER_IDS``
+кратким сообщением ``odds_poll_failed``.
+
 Smoke-проверки API
 ------------------
+
+NHL readiness в межсезонье
+---------------------------
+
+Перед реальным запуском проверьте план без сети и чтения секретов::
+
+    uv run python -m sports_forecast.orchestration.nhl_readiness --dry-run
+
+Для контролируемой проверки используйте ``--execute``. По умолчанию historical
+odds ограничены одним календарным днём; увеличить лимит можно только явным
+``--max-odds-days N``. Команда не материализует прогнозы автоматически.
+Если NHL API ещё не опубликовал будущие матчи, результат ``no_upcoming_schedule``
+является штатным: quality gate и The Odds API не запускаются.
+
+Для реального odds-этапа в secret environment задайте один или несколько ключей
+``ODDS_API_KEY_FREE``, ``ODDS_API_KEY_20K``, ``ODDS_API_KEY_100K``. Они никогда
+не должны попадать в CLI output или репозиторий.
 
 При работающем API на хосте по умолчанию::
 

@@ -9,12 +9,18 @@
 
 from __future__ import annotations
 
+from typing import Any, TypeAlias
+
 import numpy as np
 
 
+Array: TypeAlias = np.ndarray[Any, np.dtype[Any]]  # noqa: UP040
+BoolArray: TypeAlias = np.ndarray[Any, np.dtype[np.bool_]]  # noqa: UP040
+
+
 def _calibration_bin_data(
-    y_true: np.ndarray,
-    y_pred_proba: np.ndarray,
+    y_true: Array,
+    y_pred_proba: Array,
     n_bins: int = 10,
 ) -> list[tuple[int, float, float]]:
     """Вычислить данные по бинам для калибровки.
@@ -32,7 +38,7 @@ def _calibration_bin_data(
 
     result: list[tuple[int, float, float]] = []
     for bin_idx in range(1, n_bins + 1):
-        mask = bin_indices == bin_idx
+        mask: BoolArray = np.asarray(bin_indices == bin_idx, dtype=bool)
         if not mask.any():
             continue
         n_samples = int(mask.sum())
@@ -43,7 +49,7 @@ def _calibration_bin_data(
 
 
 def compute_expected_calibration_error(
-    y_true: np.ndarray, y_pred_proba: np.ndarray, n_bins: int = 10
+    y_true: Array, y_pred_proba: Array, n_bins: int = 10
 ) -> float:
     """Вычислить Expected Calibration Error (ECE).
 
@@ -76,9 +82,7 @@ def compute_expected_calibration_error(
     return float(ece)
 
 
-def compute_max_calibration_error(
-    y_true: np.ndarray, y_pred_proba: np.ndarray, n_bins: int = 10
-) -> float:
+def compute_max_calibration_error(y_true: Array, y_pred_proba: Array, n_bins: int = 10) -> float:
     """Вычислить Maximum Calibration Error (MCE).
 
     MCE — максимальная абсолютная разность между предсказанной
@@ -107,7 +111,7 @@ def compute_max_calibration_error(
 
 
 def compute_calibration_table(
-    y_true: np.ndarray, y_pred_proba: np.ndarray, n_bins: int = 10
+    y_true: Array, y_pred_proba: Array, n_bins: int = 10
 ) -> list[dict[str, float]]:
     """Построить reliability diagram данные (таблица для артефакта).
 
@@ -130,8 +134,10 @@ def compute_calibration_table(
     table: list[dict[str, float]] = []
     for n_samples, avg_pred, actual_freq in bin_data:
         # Определяем mid по avg_pred (приблизительно)
-        bin_idx = int(np.digitize([avg_pred], bins, right=True)[0])
-        bin_mid = float((bins[max(0, bin_idx - 1)] + bins[min(bin_idx, n_bins)]) / 2)
+        bin_idx = int(np.take(np.digitize([avg_pred], bins, right=True), 0))
+        lower = float(np.take(bins, max(0, bin_idx - 1)))
+        upper = float(np.take(bins, min(bin_idx, n_bins)))
+        bin_mid = (lower + upper) / 2
         table.append(
             {
                 "bin_mid": bin_mid,

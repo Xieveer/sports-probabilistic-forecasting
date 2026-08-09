@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sports_forecast.data.providers.odds.enrichment import unwrap_odds_payload
@@ -32,13 +32,13 @@ def _ev(commence: str) -> dict[str, Any]:
 
 
 def test_build_close_snapshot_iso_tminus_15m() -> None:
-    ref = datetime(2024, 1, 10, 20, 0, tzinfo=timezone.utc)
+    ref = datetime(2024, 1, 10, 20, 0, tzinfo=UTC)
     assert build_close_snapshot_iso_tminus(ref, 15) == "2024-01-10T19:45:00Z"
 
 
 def test_discover_close_snapshot_happy_t15() -> None:
     day = date(2024, 1, 10)
-    ref_utc = datetime(2024, 1, 10, 20, 0, tzinfo=timezone.utc)
+    ref_utc = datetime(2024, 1, 10, 20, 0, tzinfo=UTC)
     seed = {"data": [_ev("2024-01-10T20:00:00Z")]}
     t_close = build_close_snapshot_iso_tminus(ref_utc, 15)
     assert t_close == "2024-01-10T19:45:00Z"
@@ -121,7 +121,7 @@ def test_discover_close_snapshot_no_commence_uses_legacy_close() -> None:
 
 def test_happy_path_known_commence_and_minutes() -> None:
     day = date(2024, 1, 10)
-    ref_utc = datetime(2024, 1, 10, 20, 0, tzinfo=timezone.utc)
+    ref_utc = datetime(2024, 1, 10, 20, 0, tzinfo=UTC)
     seed_payload = {
         "data": [
             _ev("2024-01-10T20:00:00Z"),
@@ -224,7 +224,7 @@ def test_fallback_legacy_no_commence_in_seed() -> None:
 def test_open_probe_order_first_hit_wins() -> None:
     """Больший offset пустой, меньший — с данными: берём первый с данными по убыванию offset."""
     day = date(2024, 3, 15)
-    ref_utc = datetime(2024, 3, 15, 1, 0, tzinfo=timezone.utc)
+    ref_utc = datetime(2024, 3, 15, 1, 0, tzinfo=UTC)
     seed = {"data": [_ev("2024-03-15T01:00:00Z")]}
     t_48 = to_api_iso_z(ref_utc - timedelta(hours=48))
     t_6 = to_api_iso_z(ref_utc - timedelta(hours=6))
@@ -263,11 +263,11 @@ def test_open_probe_order_first_hit_wins() -> None:
 
 
 def test_minutes_before_non_negative() -> None:
-    ref = datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc)
-    snap = datetime(2024, 1, 1, 10, 30, tzinfo=timezone.utc)
+    ref = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
+    snap = datetime(2024, 1, 1, 10, 30, tzinfo=UTC)
     assert minutes_before_commence(ref, snap) == 90
     # snapshot после старта — 0
-    assert minutes_before_commence(ref, datetime(2024, 1, 1, 13, 0, tzinfo=timezone.utc)) == 0
+    assert minutes_before_commence(ref, datetime(2024, 1, 1, 13, 0, tzinfo=UTC)) == 0
 
 
 def test_stability_empty_and_malformed_payloads() -> None:
@@ -288,7 +288,7 @@ def test_stability_empty_and_malformed_payloads() -> None:
 def test_discover_uses_open_fallback_when_probes_empty_but_ref_from_seed() -> None:
     """ref из seed есть, все пробы пусты — open = legacy, close остаётся динамическим."""
     day = date(2024, 6, 1)
-    ref_utc = datetime(2024, 6, 1, 18, 0, tzinfo=timezone.utc)
+    ref_utc = datetime(2024, 6, 1, 18, 0, tzinfo=UTC)
     seed = {"data": [_ev("2024-06-01T18:00:00Z")]}
     t_close = build_close_snapshot_iso(ref_utc, 1.0)
     t_probe = to_api_iso_z(ref_utc - timedelta(hours=12))

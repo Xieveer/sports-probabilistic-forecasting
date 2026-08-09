@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -152,10 +152,10 @@ def test_build_extras_partial_line_home_missing() -> None:
     naive = datetime(2024, 1, 15, 18, 30, 0)
     u = match_dt_utc(naive)
     assert u is not None
-    assert u.tzinfo == timezone.utc
+    assert u.tzinfo == UTC
     assert u.hour == 18
 
-    aware = datetime(2024, 1, 15, 18, 30, 0, tzinfo=timezone.utc)
+    aware = datetime(2024, 1, 15, 18, 30, 0, tzinfo=UTC)
     assert match_dt_utc(aware) == aware
     assert match_dt_utc(None) is None
 
@@ -197,7 +197,7 @@ def test_nhl_live_match_ref_from_prediction() -> None:
     assert ref.home_team == "X"
     assert ref.away_team == "Y"
     assert ref.commence_utc is not None
-    assert ref.commence_utc.tzinfo == timezone.utc
+    assert ref.commence_utc.tzinfo == UTC
 
 
 def test_end_to_end_same_as_direct_build() -> None:

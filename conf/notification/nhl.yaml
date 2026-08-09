@@ -1,0 +1,26 @@
+# Единственный tournament-specific контур MVP; код factory остаётся нейтральным.
+profile_id: nhl
+tournament: nhl
+market: winner_withOT
+market_spec: winner_withOT
+window_hours: 48
+timezone: Europe/Moscow
+heavy_schedule: "0 10 * * *"
+max_active_runs: 1
+max_active_tasks: 1
+refresh_pool: sf_refresh_pool
+lock_file: /tmp/sf_nhl_refresh_pipeline.lock
+lock_wait_seconds: 300
+enabled: true
+poll_schedule: "*/15 * * * *"
+poll_max_active_runs: 1
+poll_max_active_tasks: 1
+poll_pool: sf_odds_poll_pool
+poll_retries: 2
+poll_retry_delay_seconds: 60
+poll_execution_timeout_seconds: 300
+live_odds_adapter: odds_api_h2h
+live_odds_bookmaker_config: the_odds_api
+live_odds_sport_key: icehockey_nhl
+live_odds_bookmaker_key: pinnacle
+live_odds_team_registry: nhl

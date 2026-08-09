@@ -14,14 +14,17 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 
+from sports_forecast.version import get_service_version  # noqa: E402
+
+
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "Sports Probabilistic Forecasting"
 copyright = "2025-2026, Dmitriy Tkachev"
 author = "Dmitriy Tkachev"
-release = "3.0.0"
-version = "3.0"
+release = get_service_version()
+version = release
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

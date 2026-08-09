@@ -1,0 +1,68 @@
+"""Контракт единой версии поставки и release-образов."""
+
+from __future__ import annotations
+
+import tomllib
+from datetime import datetime
+from pathlib import Path
+
+import yaml
+
+from sports_forecast.service.app import app
+from sports_forecast.service.schemas import HealthResponse
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+RELEASE_VERSION = "1.0.0"
+
+
+def test_package_and_fastapi_publish_same_release_version() -> None:
+    """Package metadata и OpenAPI должны публиковать версию релиза 1.0.0."""
+    with (PROJECT_ROOT / "pyproject.toml").open("rb") as file:
+        project = tomllib.load(file)["project"]
+
+    assert project["version"] == RELEASE_VERSION
+    assert app.version == RELEASE_VERSION
+    assert app.openapi()["info"]["version"] == RELEASE_VERSION
+    assert HealthResponse(timestamp=datetime.now()).version == RELEASE_VERSION
+
+
+def test_release_workflow_publishes_semver_and_sha_image_tags() -> None:
+    """Release по Git-тегу публикует SemVer и traceable SHA теги всех образов."""
+    workflow_path = PROJECT_ROOT / ".github" / "workflows" / "docker.yml"
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+
+    assert "v*.*.*" in workflow[True]["push"]["tags"]
+    steps = workflow["jobs"]["build-push"]["steps"]
+    validation_step = next(
+        step for step in steps if step.get("name") == "Validate release tag matches package version"
+    )
+    assert validation_step["if"] == "github.ref_type == 'tag'"
+    assert "pyproject.toml" in validation_step["run"]
+
+    metadata_step = next(step for step in steps if step.get("id") == "meta")
+    tags = metadata_step["with"]["tags"]
+    assert "type=semver,pattern={{version}}" in tags
+    assert "type=sha,prefix=" in tags
+
+
+def test_docker_publish_waits_for_security_gates_and_attests_digest() -> None:
+    """Публикация образа выполняется после gates и создаёт provenance по digest."""
+    workflow_path = PROJECT_ROOT / ".github" / "workflows" / "docker.yml"
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+
+    verify = workflow["jobs"]["verify"]
+    verify_steps = verify["steps"]
+    verify_commands = "\n".join(step.get("run", "") for step in verify_steps)
+    assert "make lint" in verify_commands
+    assert "make test-unit" in verify_commands
+    assert "make security" in verify_commands
+    assert any(step.get("with", {}).get("scan-type") == "fs" for step in verify_steps)
+
+    build_push = workflow["jobs"]["build-push"]
+    assert build_push["needs"] == ["verify"]
+    step_names = {step.get("name") for step in build_push["steps"]}
+    assert "Scan pushed image" in step_names
+    assert "Attest build provenance" in step_names
+    assert workflow["permissions"]["attestations"] == "write"
+    assert workflow["permissions"]["id-token"] == "write"

@@ -1,21 +1,17 @@
 [project]
 name = "sports-probabilistic-forecasting"
-version = "0.1.0"
+version = "1.0.0"
 description = "Probabilistic Forecasting Service for Sports Event Outcomes"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "catboost",
-    "dvc",
-    "dvc-s3>=3.2.2",
     "hydra-core",
-    "mlflow",
     "numpy>=2.2.6",
     "pandas>=2.3.3",
     "requests>=2.32.5",
     "scikit-learn",
     "lightgbm>=4.0.0",
-    "optuna>=3.0.0",
     "pyyaml>=6.0",
     "fastapi>=0.124.0",
     "uvicorn>=0.38.0",
@@ -29,6 +25,13 @@ dependencies = [
     "python-dotenv>=1.0.0",
 ]
 
+[build-system]
+requires = ["setuptools>=80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["sports_forecast*"]
+
 [dependency-groups]
 dev = [
     "cookiecutter>=2.6.0",
@@ -39,4 +42,8 @@ dev = [
     "sphinx-autobuild>=2024.4.0",
     "sphinx-rtd-theme>=2.0.0",
     "pytest-cov>=4.0.0",
+    "dvc",
+    "dvc-s3>=3.2.2",
+    "mlflow",
+    "optuna>=3.0.0",
 ]

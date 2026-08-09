@@ -41,13 +41,14 @@ import os
 import sys
 import urllib.error
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from sports_forecast.betting.live_moneyline_extras import proba_home_from_prediction
+from sports_forecast.data.providers.odds.client import has_configured_odds_api_key
 from sports_forecast.orchestration.digest_message import (
     DigestMatchLine,
     OddsWarning,
@@ -175,9 +176,9 @@ def _predictions_to_match_lines(
 
         commence = p.match_datetime
         if commence is not None and commence.tzinfo is None:
-            commence = commence.replace(tzinfo=timezone.utc)
+            commence = commence.replace(tzinfo=UTC)
         elif commence is not None:
-            commence = commence.astimezone(timezone.utc)
+            commence = commence.astimezone(UTC)
 
         out.append(
             DigestMatchLine(
@@ -197,7 +198,7 @@ def _predictions_to_match_lines(
 
 
 def _pipeline_odds_warning(*, live_pinnacle: bool) -> OddsWarning:
-    if live_pinnacle and not os.environ.get("ODDS_API_KEY", "").strip():
+    if live_pinnacle and not has_configured_odds_api_key():
         return "missing_api_key"
     return "none"
 
@@ -348,7 +349,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             marker_path.parent.mkdir(parents=True, exist_ok=True)
             marker_path.write_text(
-                datetime.now(timezone.utc).isoformat(timespec="seconds") + "\n",
+                datetime.now(UTC).isoformat(timespec="seconds") + "\n",
                 encoding="utf-8",
             )
         except OSError as exc:

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from math import isfinite
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
@@ -76,8 +76,8 @@ def _to_utc_aware(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def _format_msk_line(dt_utc: datetime | None) -> str:
@@ -178,7 +178,7 @@ def _truncate(text: str, max_chars: int) -> str:
 def _sort_key_commence(m: DigestMatchLine) -> datetime:
     u = _to_utc_aware(m.commence_utc)
     if u is None:
-        return datetime.max.replace(tzinfo=timezone.utc)
+        return datetime.max.replace(tzinfo=UTC)
     return u
 
 
