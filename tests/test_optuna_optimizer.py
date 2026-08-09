@@ -16,12 +16,12 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock
 
+import optuna
 import pytest
 from omegaconf import DictConfig, OmegaConf
 from optuna.study import load_study
 from optuna.trial import Trial
 
-import optuna
 from sports_forecast.training.optimization.optuna_optimizer import (
     OptunaHyperOptimizer,
     build_param_space_from_config,
