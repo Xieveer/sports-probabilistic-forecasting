@@ -136,12 +136,19 @@ def _ensure_sqlite_predictions_schema(eng: Engine) -> None:
     if not insp.has_table("predictions"):
         return
     column_names = {c["name"] for c in insp.get_columns("predictions")}
-    if "model_tag" in column_names:
-        return
     with eng.begin() as conn:
-        conn.execute(
-            text("ALTER TABLE predictions ADD COLUMN model_tag VARCHAR(16) NOT NULL DEFAULT 'prod'")
-        )
+        if "model_tag" not in column_names:
+            conn.execute(
+                text(
+                    "ALTER TABLE predictions ADD COLUMN model_tag VARCHAR(16) NOT NULL DEFAULT 'prod'"
+                )
+            )
+        if "model_pool" not in column_names:
+            conn.execute(text("ALTER TABLE predictions ADD COLUMN model_pool VARCHAR(128)"))
+        if "immutable_model_version" not in column_names:
+            conn.execute(
+                text("ALTER TABLE predictions ADD COLUMN immutable_model_version VARCHAR(192)")
+            )
 
 
 def init_db(engine: Engine | None = None) -> None:

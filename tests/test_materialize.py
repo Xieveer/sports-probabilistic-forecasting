@@ -10,7 +10,11 @@ import numpy as np
 import pandas as pd
 from omegaconf import OmegaConf
 
-from sports_forecast.materialize import _aggregate_long_predictions, materialize_predictions
+from sports_forecast.materialize import (
+    _aggregate_long_predictions,
+    _resolve_model_provenance,
+    materialize_predictions,
+)
 
 
 def _build_cfg() -> dict:
@@ -33,10 +37,8 @@ class TestMaterializePromotedContract:
 
     @patch("sports_forecast.materialize.load_model_from_path")
     @patch("sports_forecast.materialize.get_session")
-    @patch("sports_forecast.materialize.init_db")
     def test_uses_deploy_contract_for_prod(
         self,
-        _mock_init_db: MagicMock,
         mock_get_session: MagicMock,
         mock_load_model: MagicMock,
         tmp_path: Path,
@@ -92,11 +94,12 @@ class TestMaterializePromotedContract:
         algorithm_cfg = mock_load_model.call_args.args[0]
         assert str(algorithm_cfg.name) == "lgbm"
 
-        assert mock_repo.upsert_prediction.call_count == 1
-        upsert_kwargs = mock_repo.upsert_prediction.call_args.kwargs
-        assert upsert_kwargs["algorithm"] == "lgbm"
-        assert upsert_kwargs["featureset"] == "advanced"
-        assert upsert_kwargs["model_version"] == "lgbm_advanced_prod"
+        assert mock_repo.publish_showcase.call_count == 1
+        records = mock_repo.publish_showcase.call_args.args[0]
+        assert len(records) == 1
+        assert records[0]["algorithm"] == "lgbm"
+        assert records[0]["featureset"] == "advanced"
+        assert records[0]["model_version"] == "lgbm_advanced_prod"
 
     def test_prod_fails_without_deploy_contract(self, tmp_path: Path) -> None:
         cfg = OmegaConf.create(_build_cfg())
@@ -141,3 +144,24 @@ def test_aggregate_long_prefers_pl_short_name_en_over_pl() -> None:
     out = _aggregate_long_predictions(df, proba)
     assert out.iloc[0]["home_player"] == "Home Star"
     assert out.iloc[0]["away_player"] == "Away Star"
+
+
+def test_resolve_model_provenance_uses_active_pointer_for_explicit_pool() -> None:
+    """Pool materialize получает immutable identity только из active registry pointer."""
+    cfg = OmegaConf.create(
+        {
+            "model_pool": {"name": "football_nationals_winner"},
+            "market_spec": {"name": "winner"},
+        }
+    )
+    registry = MagicMock()
+    registry.get_active.return_value = MagicMock(
+        model_identity="pool:football_nationals_winner:winner:immutable"
+    )
+
+    provenance = _resolve_model_provenance(cfg, registry)
+
+    assert provenance == (
+        "football_nationals_winner",
+        "pool:football_nationals_winner:winner:immutable",
+    )

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+
 HANDOFF_PATH = Path("docs/operations/production-handoff.md")
 REQUIRED_PATHS = (
     Path(".env.example"),
@@ -14,6 +15,7 @@ REQUIRED_PATHS = (
     Path("Dockerfile"),
     Path("pyproject.toml"),
     Path("uv.lock"),
+    Path("scripts/acceptance_check.py"),
     HANDOFF_PATH,
 )
 REQUIRED_SECTIONS = (
@@ -25,9 +27,7 @@ REQUIRED_SECTIONS = (
     "Артефакт и откат",
     "Нерешённые вопросы",
 )
-STATUS_PATTERN = re.compile(
-    r"^- Статус подготовки: `(?P<status>draft|candidate)`$", re.MULTILINE
-)
+STATUS_PATTERN = re.compile(r"^- Статус подготовки: `(?P<status>draft|candidate)`$", re.MULTILINE)
 ENTRYPOINT_PATTERN = re.compile(r"^\s*(?:CMD|ENTRYPOINT)\s+", re.MULTILINE)
 NON_ROOT_USER_PATTERN = re.compile(r"^\s*USER\s+(?!root(?:\s|$))\S+", re.MULTILINE)
 
@@ -71,6 +71,8 @@ def validate(root: Path) -> list[str]:
         errors.append("production-handoff.md: для candidate остались плейсхолдеры")
     if has_project_placeholders:
         errors.append("pyproject.toml: не заменены project-name/project_name")
+    if "make acceptance-check" not in handoff:
+        errors.append("production-handoff.md: для candidate обязательна acceptance-команда")
     if ENTRYPOINT_PATTERN.search(dockerfile) is None:
         errors.append("Dockerfile: для candidate требуется CMD или ENTRYPOINT")
     if NON_ROOT_USER_PATTERN.search(dockerfile) is None:

@@ -22,23 +22,42 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Runtime и конфигурация
 
-- Команда запуска контейнера: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`.
+- Команда запуска контейнера: `docker compose -f docker-compose.prod.yml up -d`.
 - Требуемая версия Python и системные зависимости: Python 3.12; curl и libpq-dev в Dockerfile.
-- Переменные окружения: перечислить имена и назначение по `.env.example`, без значений.
-- Внешние зависимости, адреса и ожидаемые таймауты: PostgreSQL, MLflow, Telegram, NHL API и The Odds API; timeout Odds API 120 секунд.
+- Переменные окружения (значения хранятся только в secret store):
+  `POSTGRES_PASSWORD` — пароль PostgreSQL; `SF_API_IMAGE`, `SF_WORKER_IMAGE`,
+  `SF_BOT_IMAGE` — точные `image@sha256:digest`; `SF_APP_VERSION` — версия
+  приложения; `SF_WORKER_RUN_ID` — уникальный scheduler ID; `SF_API_DOMAIN` —
+  публичный DNS; `BOT_TOKEN`, `BOT_ALLOWED_USER_IDS`, `BOT_ADMIN_USER_IDS`,
+  `BOT_API_BASE_URL` — Telegram и внутренний API; `ODDS_API_KEY_FREE`,
+  `ODDS_API_KEY_20K`, `ODDS_API_KEY_100K`, `ODDS_API_KEY` — ключи Odds API;
+  `DATABASE_URL` — только host CLI; `SF_OBJECT_STORAGE_ENDPOINT`,
+  `SF_OBJECT_STORAGE_BUCKET`, `SF_OBJECT_STORAGE_ACCESS_KEY_ID`,
+  `SF_OBJECT_STORAGE_SECRET_ACCESS_KEY`, `SF_OPERATIONAL_ARCHIVE_PREFIX`,
+  `SF_SERVING_DATA_PREFIX` — archive/bundle; `MLFLOW_TRACKING_URI` — только
+  local training. Acceptance использует отдельные operator-only
+  `SF_ACCEPTANCE_BASE_URL`, `SF_ACCEPTANCE_PREDICTION_PATH`,
+  `SF_ACCEPTANCE_MODEL_VERSION`, `SF_ACCEPTANCE_DATABASE_URL`,
+  `SF_ACCEPTANCE_WORKER_RUN_ID`, `SF_ACCEPTANCE_BOT_HEALTH_COMMAND`.
+- Внешние зависимости, адреса и ожидаемые таймауты: PostgreSQL, Telegram, NHL API и The Odds API; timeout Odds API 120 секунд. MLflow остаётся в локальном training-контуре.
 - Порты и исходящие сетевые соединения: API 8000; Caddy 80/443; исходящий HTTPS к внешним API.
 
 ## Healthcheck и smoke-проверка
 
 - Команда или endpoint liveness: `curl -sf http://127.0.0.1:8000/health`.
-- Команда или endpoint readiness, проверяющий значимые зависимости: `/health` проверяет БД.
-- Безопасная smoke-проверка после запуска: GET `/health` и `/docs` без пользовательских данных.
+- Команда или endpoint readiness, проверяющий значимые зависимости: `curl -sf http://127.0.0.1:8000/ready`; `/health` остаётся liveness и не обращается к БД.
+- Безопасная smoke-проверка после запуска: GET `/health`, `/ready`, `/docs` и
+  заранее выбранного known prediction c `live_pinnacle=false`; acceptance
+  дополнительно читает `worker_executions` через отдельную DB role только с
+  `SELECT` и запускает только heartbeat healthcheck bot.
 - Ожидаемый результат и максимальное время ожидания: HTTP 200 за 90 секунд.
 
 ## Данные и совместимость
 
-- Постоянные данные и тома: PostgreSQL, MLflow artifacts, `data/`, `models/` и monitoring volumes; фактические пути проверяет Operations Agent.
-- Миграции и порядок их выполнения: additive DB schema и `init_db()` до API; Operations Agent подтверждает backup и порядок на VPS.
+- Постоянные данные и тома: PostgreSQL, `runtime_data` (не более семи дней), `runtime_models` (current/previous model bundles), read-only `serving_data` для Worker и Caddy volumes; фактические пути проверяет Operations Agent.
+- Runbook serving-data/archive: [serving-data.md](serving-data.md).
+- Миграции и порядок их выполнения: после успешного backup и до API/Worker выполнить `docker compose -f docker-compose.prod.yml run --rm --no-deps api uv run alembic -c alembic.ini upgrade head`, затем проверить `/ready` и только после этого запускать Worker. API и Worker не выполняют DDL при старте.
+- Runbook migration/recovery: [database-migrations.md](database-migrations.md).
 - Совместимость новой версии с предыдущей: rollback выполняется immutable предыдущим образом; миграции не удаляют данные в этом выпуске.
 - Требования к резервному копированию и восстановлению: Operations Agent делает backup PostgreSQL и persistent volumes до rollout и проверяет restore.
 
@@ -49,18 +68,54 @@ rollout и rollback в репозитории управления инфрас�
 - Метрики доступности, ошибок, ресурсов и результата работы: `/metrics`, healthcheck, container/host metrics; dashboards и alerts настраивает Operations Agent.
 - Данные, которые необходимо маскировать до отправки логов: все env secrets, Telegram token, пароли, Odds API keys и HTTP query с ключами.
 - Предлагаемые пороги оповещений и ссылки на runbook: недоступность `/health`, restart loop, ошибка refresh; runbook — `docs/source/nhl_local_operations.rst`.
+- Ресурсный budget Worker: `2.0` CPU, `2048m` RAM и внешний scheduler timeout
+  `20m`; локальное production-like evidence — 4.48 сек. и ≈399.6 MiB RSS для
+  3 248 inference rows, см. [worker-measurement-evidence.md](worker-measurement-evidence.md).
+- Retention: на VPS `runtime_data` не более 7 дней, current/previous model и
+  serving-data bundles сохраняются для rollback; operational archive в Object
+  Storage не удаляется автоматически, стоимость и целостность проверяет Operations Agent.
+
+## Acceptance и release evidence
+
+- Точная non-mutating команда после запуска candidate (значения берутся из
+  защищённого operator environment):
+
+  ```bash
+  make acceptance-check
+  ```
+
+  Команда выполняет только GET `/health`, `/ready`, `/docs` и known prediction,
+  проверяет API/model version, выполняет параметризованный `SELECT` safe outcome
+  Worker и bot heartbeat. Она не запускает Worker/training, не отправляет
+  Telegram-сообщения, не делает DML и не выводит response payloads или secrets.
+- Локальные evidence: [контракт runner](../../tests/test_acceptance_check.py),
+  [строгий handoff gate](../../tests/test_production_readiness_validation.py),
+  [worker measurement](worker-measurement-evidence.md), [migration/recovery](database-migrations.md),
+  [signals](observability.md), [model bundle](model-bundle.md), [serving data](serving-data.md).
+- Не полученные локально evidence: GitHub CI, dependency/filesystem/image scans,
+  GHCR provenance attestation, published image digest, production DB role,
+  external Telegram/API connectivity и VPS rollout. Их нельзя отмечать как
+  выполненные до соответствующего remote run.
+- Локальный `make security` на 2026-08-09 не прошёл: `pip-audit` выявил 154
+  известных уязвимости в 24 locked runtime-зависимостях. До отдельной
+  remediation-задачи и зелёного повторного audit production rollout запрещён.
 
 ## Артефакт и откат
 
-- Registry и неизменяемый идентификатор image (`digest` или commit): GHCR image `:1.0.0` плюс digest, который передаётся после publish.
-- Способ доказать происхождение артефакта: Git tag `v1.0.0`, совпадающий с `pyproject.toml`, и SHA-tag CI image.
+- Registry и неизменяемый идентификатор image (`digest` или commit): GHCR `image@sha256:digest`, который передаётся после publish; SemVer tag не используется как runtime ID.
+- Способ доказать происхождение артефакта: commit SHA, Git tag `v1.0.0`,
+  совпадающий с `pyproject.toml`, CI provenance attestation и отдельный digest
+  каждого runtime image. В текущем candidate эти значения ещё не созданы.
 - Предыдущая исправная версия: определяется Operations Agent из последнего работоспособного immutable image.
-- Процедура и допустимое время отката: вернуть Compose на предыдущий immutable image и проверить `/health`; целевое время определяет Operations Agent.
+- Процедура и допустимое время отката: до migration вернуть Compose на предыдущий immutable image; после additive migration использовать forward-fix либо восстановить проверенный backup — destructive downgrade запрещён. После действия проверить `/ready`; целевое время определяет Operations Agent.
 - Критерии остановки rollout: health не 200, DB недоступна, crash loop или рост ошибок refresh.
 
 ## Нерешённые вопросы
 
-- До отдельного разрешения не созданы Git tag, immutable images и deployment; Operations Agent должен заполнить digest и VPS evidence перед rollout.
+- До отдельного разрешения не созданы Git tag, immutable images и deployment;
+  Operations Agent должен заполнить digest, GitHub/GHCR scan/provenance evidence,
+  scheduler owner, backup RPO/RTO, read-only acceptance DB role и VPS evidence
+  перед rollout.
 
 ## Граница ответственности
 

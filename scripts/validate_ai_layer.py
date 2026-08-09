@@ -8,6 +8,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+
 REQUIRED_SKILL_SECTIONS = {"Нельзя сокращать", "Red flags", "Проверка"}
 REQUIRED_ROLE_SECTIONS = {"Цель", "Scope", "Результат", "Composition"}
 REQUIRED_AGENT_FIELDS = {"name", "description", "developer_instructions", "model"}

@@ -19,16 +19,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from prometheus_client import make_asgi_app
 
-from sports_forecast.service.db.engine import get_engine, init_db
+from sports_forecast.service.db.engine import get_engine
 from sports_forecast.service.routers import health, predictions
 from sports_forecast.version import get_service_version
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    """Application lifespan: init DB on startup."""
+    """Подготовить соединение API без изменения schema базы данных."""
     get_engine()
-    init_db()
     yield
 
 

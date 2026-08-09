@@ -82,6 +82,27 @@ deployment_profiles: {}
         load_portfolio_catalog(path)
 
 
+def test_rejects_tournament_membership_for_missing_model_pool(tmp_path: Path) -> None:
+    """Ссылка tournament на отсутствующий model pool завершается fail-fast ошибкой."""
+    path = _write_catalog(
+        tmp_path,
+        """
+model_pools: {}
+tournaments:
+  premier_league:
+    sport: football
+    source: football_feed
+    memberships:
+      - model_pool: missing_pool
+        market_specs: [winner]
+deployment_profiles: {}
+""",
+    )
+
+    with pytest.raises(PortfolioConfigError, match="model_pool missing_pool не найден"):
+        load_portfolio_catalog(path)
+
+
 def test_rejects_duplicate_market_spec_membership(tmp_path: Path) -> None:
     """Один market/spec турнира принадлежит ровно одному model pool."""
     path = _write_catalog(

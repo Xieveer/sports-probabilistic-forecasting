@@ -1,6 +1,6 @@
 # TASK-003-1 — Конфигурационный каталог портфеля
 
-> **Статус:** in_progress
+> **Статус:** done
 > **Владелец:** implementer
 > **Эпик:** [EPIC-003](../EPIC-003-scalable-multisport-platform.md)
 > **Требование:** [REQ-003](../../product/requirements/REQ-003-scalable-multisport-platform.md)
@@ -16,11 +16,11 @@
 
 ## Критерии приёмки
 
-- [ ] Валидный профиль связывает sport, tournament, model pool, market/spec и
+- [x] Валидный профиль связывает sport, tournament, model pool, market/spec и
   lifecycle; его можно загрузить через публичный typed API.
-- [ ] Отсутствующая ссылка, несовместимый sport, дублирующее участие или
+- [x] Отсутствующая ссылка, несовместимый sport, дублирующее участие или
   production без immutable model reference завершаются понятной ошибкой.
-- [ ] Канонические документы описывают границы сущностей, конфигурационное
+- [x] Канонические документы описывают границы сущностей, конфигурационное
   подключение типового турнира и различают реализованный контракт от roadmap.
 
 ## План реализации
@@ -45,6 +45,6 @@
 
 ## Handoff и отчёт
 
-- Отчёт выполнения: `docs/changes/done/TASK-003-1-portfolio-catalog.md`.
+- Отчёт выполнения: [TASK-003-1](../../changes/done/TASK-003-1-portfolio-catalog.md).
 - Follow-up / findings: TASK-003-2, TASK-003-3 и TASK-003-4 используют только
   публичный контракт каталога.

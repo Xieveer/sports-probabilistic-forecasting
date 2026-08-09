@@ -1,0 +1,8 @@
+# Read-only provenance legacy NHL production artifact.
+# Загрузчик проверяет существование артефакта и ничего не создаёт/не переобучает.
+model_identity: legacy:nhl:winner_withOT:pre-registry
+artifact_ref: models/nhl/winner_withOT/best
+code_ref: git:legacy-unpinned
+data_ref: dvc:legacy-unpinned
+config_ref: conf/tournament/nhl.yaml
+metrics_ref: mlflow:nhl__winner_withOT

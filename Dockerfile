@@ -4,7 +4,7 @@
 # Stages:
 #   base   — runtime dependencies + uv
 #   api    — FastAPI read-only prediction server
-#   worker — batch prediction / materialize / training
+#   worker — одноразовый batch prediction / materialize
 # ─────────────────────────────────────────────────────────────────
 
 # ── Base stage ──────────────────────────────────────────────────
@@ -32,6 +32,8 @@ RUN uv sync --frozen --no-dev --no-install-project
 # Copy project code
 COPY --chown=sf:sf sports_forecast/ ./sports_forecast/
 COPY --chown=sf:sf conf/ ./conf/
+COPY --chown=sf:sf migrations/ ./migrations/
+COPY --chown=sf:sf alembic.ini ./
 COPY --chown=sf:sf params.yaml ./
 
 # Install the local package after its sources are available.
@@ -56,17 +58,15 @@ FROM base AS telegram-bot
 USER sf
 
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
-    CMD pgrep -f "sports_forecast.bot" || exit 1
+    CMD uv run python -m sports_forecast.bot.heartbeat --path /tmp/sf-bot-heartbeat.json --max-age-seconds 120
 
 CMD ["uv", "run", "python", "-m", "sports_forecast.bot"]
 
-# ── Worker stage (batch prediction / training) ─────────────────
+# ── Worker stage (batch prediction / materialize) ──────────────
 FROM base AS worker
-
-# Копируем данные и модели (при необходимости монтируются как volume)
-COPY --chown=sf:sf data/ ./data/
-COPY --chown=sf:sf models/ ./models/
 
 USER sf
 
-CMD ["uv", "run", "python", "-m", "sports_forecast.materialize"]
+CMD ["uv", "run", "python", "-m", "sports_forecast.worker", \
+     "tournament=nhl", "market=winner_withOT", "market_spec=winner_withOT", \
+     "algorithm=catboost_reg", "features=advanced"]

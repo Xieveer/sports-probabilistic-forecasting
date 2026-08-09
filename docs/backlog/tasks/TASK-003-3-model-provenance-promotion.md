@@ -1,6 +1,6 @@
 # TASK-003-3 — Provenance и ручное promotion модельного пула
 
-> **Статус:** backlog
+> **Статус:** done
 > **Владелец:** implementer
 > **Эпик:** [EPIC-003](../EPIC-003-scalable-multisport-platform.md)
 > **Требование:** [REQ-003](../../product/requirements/REQ-003-scalable-multisport-platform.md)
@@ -15,10 +15,10 @@
 
 ## Критерии приёмки
 
-- [ ] Production pointer меняется только явной командой/действием с ссылкой на
+- [x] Production pointer меняется только явной командой/действием с ссылкой на
   отчёт кандидата; обучение его не меняет.
-- [ ] Витрина различает tournament, model pool и immutable model version.
-- [ ] Legacy NHL manifest загружает прежний артефакт и метаданные без
+- [x] Витрина различает tournament, model pool и immutable model version.
+- [x] Legacy NHL manifest загружает прежний артефакт и метаданные без
   переобучения; rollback возвращает прежний pointer без удаления артефактов.
 
 ## План реализации

@@ -8,13 +8,13 @@ TESTS := tests
 DOCS_SOURCE := docs/source
 DOCS_BUILD := docs/build
 
-.PHONY: help init install lint format fix test test-unit test-cov test-watch test-file pre-commit train train-sweep train-sweep-nhl train-sweep-nhl-ot-winner train-sweep-nhl-ot-total promote clean dvc-repro
+.PHONY: help init install lint format fix test test-unit test-cov test-watch test-file pre-commit train train-sweep train-sweep-nhl train-sweep-nhl-ot-winner train-sweep-nhl-ot-total promote clean dvc-repro db-init db-migrate
 .PHONY: docs docs-serve docs-clean docs-open docs-coverage docs-linkcheck tree
 .PHONY: api api-dev bot-dev bot-up materialize nhl-morning-refresh-dry-run nhl-morning-refresh nhl-morning-test-notify refresh-lock-status docker-up docker-down docker-build docker-logs db-init
 .PHONY: football-catalog-refresh football-backfill football-ingest-debug football-backfill-wc football-rebuild-source
 .PHONY: airflow-init airflow-up airflow-down airflow-logs
 .PHONY: monitoring-up monitoring-down
-.PHONY: ai-validate security production-check check
+.PHONY: ai-validate security production-check acceptance-check check
 
 # ---------- Справка ----------
 
@@ -131,6 +131,17 @@ security:
 
 production-check:
 	uv run python scripts/validate_production_readiness.py
+
+# Non-mutating acceptance уже запущенного candidate; все значения задаёт оператор.
+acceptance-check:
+	uv run python scripts/acceptance_check.py \
+		--base-url "$(SF_ACCEPTANCE_BASE_URL)" \
+		--prediction-path "$(SF_ACCEPTANCE_PREDICTION_PATH)" \
+		--expected-app-version "$(SF_APP_VERSION)" \
+		--expected-model-version "$(SF_ACCEPTANCE_MODEL_VERSION)" \
+		--database-url "$(SF_ACCEPTANCE_DATABASE_URL)" \
+		--worker-run-id "$(SF_ACCEPTANCE_WORKER_RUN_ID)" \
+		--bot-health-command "$(SF_ACCEPTANCE_BOT_HEALTH_COMMAND)"
 
 check: lint test-unit docs ai-validate production-check
 
@@ -382,10 +393,13 @@ bot-dev:
 bot-up:
 	docker compose --profile bot up -d api telegram-bot
 
-# Инициализация БД (создание таблиц)
-db-init:
-	@echo "🗄️  Инициализация Prediction Store..."
-	uv run python -c "from sports_forecast.service.db.engine import init_db; init_db(); print('✅ Таблицы созданы')"
+# Версионированная migration Prediction Store. Перед production запуском сделайте backup.
+db-migrate:
+	@echo "🗄️  Применение versioned migrations Prediction Store..."
+	uv run alembic -c alembic.ini upgrade head
+
+# Устаревший алиас локальной инициализации. Используйте db-migrate.
+db-init: db-migrate
 
 # Материализация предсказаний (NHL promoted: TOURNAMENT=nhl MARKET=winner SPEC=winner)
 materialize:

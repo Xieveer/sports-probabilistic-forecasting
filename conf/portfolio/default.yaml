@@ -24,6 +24,12 @@ tournaments:
     memberships:
       - model_pool: football_nationals_winner
         market_specs: [winner]
+  football_friendlies:
+    sport: football
+    source: football_feed
+    memberships:
+      - model_pool: football_nationals_winner
+        market_specs: [winner]
 
 deployment_profiles:
   nhl_winner_with_ot:

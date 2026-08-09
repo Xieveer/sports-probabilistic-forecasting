@@ -44,3 +44,25 @@ def test_release_workflow_publishes_semver_and_sha_image_tags() -> None:
     tags = metadata_step["with"]["tags"]
     assert "type=semver,pattern={{version}}" in tags
     assert "type=sha,prefix=" in tags
+
+
+def test_docker_publish_waits_for_security_gates_and_attests_digest() -> None:
+    """Публикация образа выполняется после gates и создаёт provenance по digest."""
+    workflow_path = PROJECT_ROOT / ".github" / "workflows" / "docker.yml"
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+
+    verify = workflow["jobs"]["verify"]
+    verify_steps = verify["steps"]
+    verify_commands = "\n".join(step.get("run", "") for step in verify_steps)
+    assert "make lint" in verify_commands
+    assert "make test-unit" in verify_commands
+    assert "make security" in verify_commands
+    assert any(step.get("with", {}).get("scan-type") == "fs" for step in verify_steps)
+
+    build_push = workflow["jobs"]["build-push"]
+    assert build_push["needs"] == ["verify"]
+    step_names = {step.get("name") for step in build_push["steps"]}
+    assert "Scan pushed image" in step_names
+    assert "Attest build provenance" in step_names
+    assert workflow["permissions"]["attestations"] == "write"
+    assert workflow["permissions"]["id-token"] == "write"

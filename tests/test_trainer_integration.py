@@ -9,8 +9,11 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import MagicMock
 
 import numpy as np
 import pandas as pd
@@ -170,6 +173,64 @@ class TestSelectFeatures:
         features, names = runner._select_features(df_with_features, runner.config)
         assert len(features) == len(df_with_features)
         assert list(features.columns) == names
+
+
+def test_run_tags_include_explicit_model_pool_identity() -> None:
+    """Pool training передаёт identity в MLflow metadata без изменения NHL default."""
+    cfg = _make_cfg(
+        model_pool={
+            "name": "football_nationals_winner",
+            "identity": "pool:football_nationals_winner:winner:abc123",
+        }
+    )
+    runner = SingleExperimentRunner(cfg, Path("/tmp/test_project"))
+
+    tags = runner._get_run_tags(cfg)
+
+    assert tags["model_pool"] == "football_nationals_winner"
+    assert tags["model_pool_identity"] == "pool:football_nationals_winner:winner:abc123"
+
+
+def test_pool_context_uses_pool_artifact_path_not_tournament_path(tmp_path: Path) -> None:
+    """Pool run изолирует model artifacts от legacy tournament directory."""
+    cfg = _make_cfg(
+        model_pool={
+            "name": "football_nationals_winner",
+            "identity": "pool:football_nationals_winner:winner:abc123",
+        }
+    )
+    runner = SingleExperimentRunner(cfg, tmp_path)
+
+    path = runner._get_model_path(cfg, version="shadow")
+
+    assert path == tmp_path / "models/pools/football_nationals_winner/winner/dummy_basic"
+
+
+def test_pool_entrypoint_trains_prevalidated_dataframe_without_loading_files(monkeypatch) -> None:
+    """Pool entrypoint передаёт pooled dataframe в training и не вызывает _load_data."""
+    cfg = _make_cfg(
+        model_pool={"name": "football_winner", "identity": "pool:football_winner:winner:abc"}
+    )
+    runner = SingleExperimentRunner(cfg, Path("/tmp/test_project"))
+    dataframe = pd.DataFrame({"id": ["a"], "tournament": ["football_nationals"]})
+    run = SimpleNamespace(info=SimpleNamespace(run_id="pool-run"))
+    train = MagicMock(return_value=True)
+    target = pd.Series([1])
+
+    monkeypatch.setattr(
+        "sports_forecast.training.trainer.mlflow.start_run", lambda **_: nullcontext(run)
+    )
+    monkeypatch.setattr("sports_forecast.training.trainer.mlflow.log_text", lambda *_: None)
+    monkeypatch.setattr(
+        runner,
+        "_load_data",
+        MagicMock(side_effect=AssertionError("Pool entrypoint не должен загружать файл")),
+    )
+    monkeypatch.setattr(runner, "_compute_target", MagicMock(return_value=target))
+    monkeypatch.setattr(runner, "_train_model", train)
+
+    assert runner.run_experiment_with_dataframe(dataframe) is True
+    assert train.call_args.args[:2] == (dataframe, target)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

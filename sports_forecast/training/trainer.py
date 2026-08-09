@@ -143,6 +143,26 @@ class SingleExperimentRunner:
             # Обучаем модель
             return self._train_model(df, target, cfg, run.info.run_id)
 
+    def run_experiment_with_dataframe(self, dataframe: pd.DataFrame) -> bool:
+        """Запустить обучение для заранее проверенного датафрейма model pool.
+
+        Стандартный ``run_experiment`` продолжает самостоятельно загружать
+        данные одного турнира. Этот entrypoint предназначен только для
+        вызывающего кода, который уже проверил совместимость и provenance через
+        ``build_pool_dataset``.
+        """
+        cfg = self.config
+        if cfg.get("model_pool") is None:
+            raise ValueError("Pool training требует явный model_pool context")
+
+        run_name = self._get_run_name(cfg)
+        run_tags = self._get_run_tags(cfg)
+        with mlflow.start_run(run_name=run_name, tags=run_tags) as run:
+            config_str = OmegaConf.to_yaml(cfg, resolve=True)
+            mlflow.log_text(config_str, "experiment_config.yaml")
+            target = self._compute_target(dataframe, cfg)
+            return self._train_model(dataframe, target, cfg, run.info.run_id)
+
     # ─────────────────────────────────────────────────────────────────────────
     # ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
     # ─────────────────────────────────────────────────────────────────────────
@@ -200,6 +220,15 @@ class SingleExperimentRunner:
 
         if hasattr(cfg.market_spec, "data_format"):
             tags["data_format"] = cfg.market_spec.data_format
+
+        model_pool = cfg.get("model_pool")
+        if model_pool is not None:
+            pool_name = model_pool.get("name")
+            pool_identity = model_pool.get("identity")
+            if not isinstance(pool_name, str) or not isinstance(pool_identity, str):
+                raise ValueError("model_pool требует строковые name и identity")
+            tags["model_pool"] = pool_name
+            tags["model_pool_identity"] = pool_identity
 
         return tags
 
@@ -1553,18 +1582,33 @@ class SingleExperimentRunner:
         Returns:
             Путь к директории модели.
         """
-        tournament_name = str(cfg.tournament.name)
         algorithm_name = str(cfg.algorithm.name)
         featureset_name = str(cfg.features.name)
         market_spec_name = str(cfg.market_spec.name)
+        model_pool = cfg.get("model_pool")
 
-        model_dir = (
-            self.project_root
-            / "models"
-            / tournament_name
-            / market_spec_name
-            / f"{algorithm_name}_{featureset_name}"
-        )
+        if model_pool is not None:
+            pool_name = model_pool.get("name")
+            pool_identity = model_pool.get("identity")
+            if not isinstance(pool_name, str) or not isinstance(pool_identity, str):
+                raise ValueError("model_pool требует строковые name и identity")
+            model_dir = (
+                self.project_root
+                / "models"
+                / "pools"
+                / pool_name
+                / market_spec_name
+                / f"{algorithm_name}_{featureset_name}"
+            )
+        else:
+            tournament_name = str(cfg.tournament.name)
+            model_dir = (
+                self.project_root
+                / "models"
+                / tournament_name
+                / market_spec_name
+                / f"{algorithm_name}_{featureset_name}"
+            )
         model_dir.mkdir(parents=True, exist_ok=True)
         return model_dir
 
