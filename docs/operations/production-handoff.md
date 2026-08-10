@@ -91,10 +91,11 @@ rollout и rollback в репозитории управления инфрас�
   проверяет API/model version, выполняет параметризованный `SELECT` safe outcome
   Worker и bot heartbeat. Она не запускает Worker/training, не отправляет
   Telegram-сообщения, не делает DML и не выводит response payloads или secrets.
-- Контролируемая первая доставка выполняется только после успешного
-  `make acceptance-check`, published immutable image evidence и отдельного
-  разрешения владельца. Оператор задаёт в secret environment `BOT_TOKEN` и
-  один `SF_DELIVERY_VERIFICATION_CHAT_ID`, затем запускает:
+- Локальная контролируемая первая доставка выполняется командой разработки из
+  workspace после published immutable image evidence и отдельного разрешения
+  владельца. Она не является VPS rollout или server acceptance. Разработчик
+  задаёт в `.env` либо secret environment `BOT_TOKEN` и один
+  `SF_DELIVERY_VERIFICATION_CHAT_ID`, затем запускает:
 
   ```bash
   uv run python -m sports_forecast.orchestration.delivery_verification \
