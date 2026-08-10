@@ -1,6 +1,6 @@
 # TASK-006-1 — Закрытие release gates для первого сообщения
 
-> **Статус:** blocked
+> **Статус:** done
 > **Владелец:** security-reviewer / devops-reviewer
 > **Эпик:** [EPIC-006](../EPIC-006-first-telegram-delivery.md)
 > **Требование:** [REQ-006](../../product/requirements/REQ-006-first-telegram-delivery.md)
@@ -17,8 +17,9 @@ immutable runtime images и их evidence доступны, handoff заполн
 - [x] Зафиксировано устранение blocking security finding; `make security`
   на 2026-08-09 завершился с `No known vulnerabilities found` для production
   runtime dependencies.
-- [ ] Для API, Worker и bot зафиксированы published immutable image digests и
-  соответствующие CI/scan/provenance evidence.
+- [x] Для API, Worker и bot зафиксированы published immutable image digests и
+  соответствующие CI/scan/provenance evidence в Docker workflow
+  [#31382689135](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/31382689135).
 - [x] `production-handoff.md` не содержит ложного утверждения о внешних
   проверках и содержит актуальный gate decision.
 
@@ -32,9 +33,8 @@ immutable runtime images и их evidence доступны, handoff заполн
 ## Затрагиваемые области и зависимости
 
 - Lockfile и зависимости, CI/GHCR, `docs/operations/production-handoff.md`.
-- Нужны внешние GitHub/GHCR и полномочия владельца для publish/принятия риска.
-  На 2026-08-09 `gh auth status` не смог получить credential из keyring по
-  timeout, поэтому publish и remote evidence не выполнялись.
+- GitHub/GHCR evidence получен 2026-08-10; rollout остаётся отдельной
+  ответственностью Operations Agent и TASK-006-3.
 
 ## Проверка
 
@@ -43,6 +43,6 @@ immutable runtime images и их evidence доступны, handoff заполн
 
 ## Handoff и отчёт
 
-- Отчёт выполнения не создаётся до publication evidence: задача заблокирована,
-  а не завершена.
-- Follow-up / findings: передать TASK-006-2 и оператору ссылку на evidence.
+- Отчёт выполнения: [TASK-006-1](../../changes/done/TASK-006-1-release-gate-remediation.md).
+- Follow-up / findings: передать TASK-006-3 immutable image digests и ссылку
+  на evidence.

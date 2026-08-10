@@ -26,6 +26,6 @@
 | TASK-004-5 | done | high | [Зелёный mypy baseline для релиза](tasks/TASK-004-5-mypy-baseline.md) |
 | EPIC-005 | done | high | [Готовность production serving-контура](EPIC-005-production-serving-readiness.md) |
 | EPIC-006 | in_progress | high | [Первое подтверждённое Telegram-сообщение](EPIC-006-first-telegram-delivery.md) |
-| TASK-006-1 | blocked | high | [Закрытие release gates](tasks/TASK-006-1-release-gate-remediation.md) |
+| TASK-006-1 | done | high | [Закрытие release gates](tasks/TASK-006-1-release-gate-remediation.md) |
 | TASK-006-2 | done | high | [Контролируемая проверка доставки](tasks/TASK-006-2-controlled-delivery-verification.md) |
 | TASK-006-3 | blocked | high | [Разрешённый rollout и первое сообщение](tasks/TASK-006-3-authorized-rollout-and-first-delivery.md) |
