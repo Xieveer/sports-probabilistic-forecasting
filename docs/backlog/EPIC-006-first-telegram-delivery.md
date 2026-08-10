@@ -1,6 +1,6 @@
 # EPIC-006 — Первое подтверждённое Telegram-сообщение
 
-> **Статус:** in_progress
+> **Статус:** done
 > **Приоритет:** high
 > **Владелец:** главный агент
 > **Требование:** [REQ-006](../product/requirements/REQ-006-first-telegram-delivery.md)
@@ -18,13 +18,13 @@ workspace разработки. Эпик не выполняет deployment ил
 |---|---|---|---|---|
 | [TASK-006-1](tasks/TASK-006-1-release-gate-remediation.md) | Решение security/release blockers и проверяемый candidate | REQ-005 / handoff | security, published image evidence, production-check | done |
 | [TASK-006-2](tasks/TASK-006-2-controlled-delivery-verification.md) | Узкий opt-in сценарий первой доставки | ADR-006 accepted, local security baseline TASK-006-1 | red/green tests, no scheduler/acceptance invocation | done |
-| [TASK-006-3](tasks/TASK-006-3-authorized-rollout-and-first-delivery.md) | Локальная проверка и подтверждение получения | TASK-006-1, TASK-006-2, явное разрешение владельца | Локальная отправка + сообщение получено владельцем | blocked |
+| [TASK-006-3](tasks/TASK-006-3-authorized-rollout-and-first-delivery.md) | Локальная проверка и подтверждение получения | TASK-006-1, TASK-006-2, явное разрешение владельца | Локальная отправка + сообщение получено владельцем | done |
 
 ## Риски и rollout
 
-- Security audit зелёный, immutable images опубликованы; `TASK-006-3` остаётся
-  `blocked` до настройки локального recipient и явной Telegram-отправки.
-- Успешный healthcheck или bot heartbeat не равен полученному пользователем
-  сообщению; финальным доказательством эпика служит подтверждение владельца.
+- Security audit зелёный, immutable images опубликованы; локальная Telegram-
+  отправка успешно выполнена 2026-08-10.
+- Финальное доказательство эпика — подтверждение владельца о получении первого
+  сообщения; оно получено 2026-08-10.
 - Откат rollout выполняется по [production handoff](../operations/production-handoff.md);
   delivery-verification не должна создавать миграции или менять прогнозы.

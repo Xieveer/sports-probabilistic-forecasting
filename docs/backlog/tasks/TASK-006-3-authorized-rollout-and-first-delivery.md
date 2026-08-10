@@ -1,6 +1,6 @@
 # TASK-006-3 — Локальная проверка и первое сообщение
 
-> **Статус:** blocked
+> **Статус:** done
 > **Владелец:** команда разработки
 > **Эпик:** [EPIC-006](../EPIC-006-first-telegram-delivery.md)
 > **Требование:** [REQ-006](../../product/requirements/REQ-006-first-telegram-delivery.md)
@@ -14,13 +14,13 @@
 
 ## Критерии приёмки
 
-- [ ] Получено и зафиксировано явное разрешение владельца на локальную
+- [x] Получено и зафиксировано явное разрешение владельца на локальную
   Telegram-отправку.
-- [ ] Локальный environment содержит `BOT_TOKEN` и ровно один
+- [x] Локальный environment содержит `BOT_TOKEN` и ровно один
   `SF_DELIVERY_VERIFICATION_CHAT_ID` без их вывода.
-- [ ] Delivery-verification запущен один раз из workspace; владелец
+- [x] Delivery-verification запущен один раз из workspace; владелец
   подтвердил получение сообщения.
-- [ ] Evidence содержит release/model identity и безопасные статусы, но не
+- [x] Evidence содержит release/model identity и безопасные статусы, но не
   secrets, chat ID и полные внешние ответы.
 
 ## План реализации
@@ -43,5 +43,5 @@
 
 ## Handoff и отчёт
 
-- Отчёт выполнения: создаётся командой разработки в `docs/changes/done/`.
+- Отчёт выполнения: [TASK-006-3](../../changes/done/TASK-006-3-local-first-telegram-delivery.md).
 - Follow-up / findings: передать внешний VPS rollout server operations agent.
