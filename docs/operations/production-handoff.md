@@ -13,7 +13,7 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Идентификация и ответственность
 
-- Название сервиса: Sports Probabilistic Forecasting 1.0.0.
+- Название сервиса: Sports Probabilistic Forecasting 1.0.1.
 - Репозиторий и основной branch: SportsProbabilisticForecasting, `main`.
 - Владелец приложения: пользователь.
 - Владелец решения о production-развёртывании: пользователь.
@@ -110,10 +110,13 @@ rollout и rollback в репозитории управления инфрас�
   [строгий handoff gate](../../tests/test_production_readiness_validation.py),
   [worker measurement](worker-measurement-evidence.md), [migration/recovery](database-migrations.md),
   [signals](observability.md), [model bundle](model-bundle.md), [serving data](serving-data.md).
-- Не полученные локально evidence: GitHub CI, dependency/filesystem/image scans,
-  GHCR provenance attestation, published image digest, production DB role,
-  external Telegram/API connectivity и VPS rollout. Их нельзя отмечать как
-  выполненные до соответствующего remote run.
+- Release `v1.0.1` создаётся только после успешных checks на итоговом `main`.
+  До его создания не использовать старый tag `v1.0.0` и его image digests:
+  они относятся к прежнему commit и запрещены для production. После tag pipeline
+  обязан зафиксировать новые GitHub CI, dependency/filesystem/image scans, GHCR
+  provenance и три published image digest. Production DB role, external
+  Telegram/API connectivity и VPS rollout подтверждает внешний server operations
+  agent.
 - Локальный `make security` на 2026-08-09 успешно выполнил `pip-audit` для
   locked production runtime dependencies: `No known vulnerabilities found`.
   Он не заменяет dependency/filesystem/image scans опубликованных образов и
@@ -121,20 +124,20 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Артефакт и откат
 
-- Registry и неизменяемый идентификатор image (`digest` или commit): GHCR `image@sha256:digest`, который передаётся после publish; SemVer tag не используется как runtime ID.
-- Способ доказать происхождение артефакта: commit SHA, Git tag `v1.0.0`,
-  совпадающий с `pyproject.toml`, CI provenance attestation и отдельный digest
-  каждого runtime image. В текущем candidate эти значения ещё не созданы.
+- Registry и неизменяемый идентификатор image: после `v1.0.1` использовать
+  только новые GHCR `image@sha256:digest`; SemVer tag не является runtime ID.
+- Способ доказать происхождение артефакта: итоговый commit SHA, Git tag
+  `v1.0.1`, совпадающий с `pyproject.toml`, CI provenance attestation и
+  отдельный digest каждого runtime image.
 - Предыдущая исправная версия: определяется Operations Agent из последнего работоспособного immutable image.
 - Процедура и допустимое время отката: до migration вернуть Compose на предыдущий immutable image; после additive migration использовать forward-fix либо восстановить проверенный backup — destructive downgrade запрещён. После действия проверить `/ready`; целевое время определяет Operations Agent.
 - Критерии остановки rollout: health не 200, DB недоступна, crash loop или рост ошибок refresh.
 
 ## Нерешённые вопросы
 
-- До отдельного разрешения не созданы Git tag, immutable images и deployment;
-  Operations Agent должен заполнить digest, GitHub/GHCR scan/provenance evidence,
-  scheduler owner, backup RPO/RTO, read-only acceptance DB role и VPS evidence
-  перед rollout.
+- До отдельного разрешения не выполняется deployment; после `v1.0.1` Operations
+  Agent получает новые digests, GitHub/GHCR scan/provenance evidence, scheduler
+  owner, backup RPO/RTO, read-only acceptance DB role и VPS evidence.
 
 ## Граница ответственности
 
