@@ -91,10 +91,11 @@ rollout и rollback в репозитории управления инфрас�
   проверяет API/model version, выполняет параметризованный `SELECT` safe outcome
   Worker и bot heartbeat. Она не запускает Worker/training, не отправляет
   Telegram-сообщения, не делает DML и не выводит response payloads или secrets.
-- Контролируемая первая доставка выполняется только после успешного
-  `make acceptance-check`, published immutable image evidence и отдельного
-  разрешения владельца. Оператор задаёт в secret environment `BOT_TOKEN` и
-  один `SF_DELIVERY_VERIFICATION_CHAT_ID`, затем запускает:
+- Локальная контролируемая первая доставка выполняется командой разработки из
+  workspace после published immutable image evidence и отдельного разрешения
+  владельца. Она не является VPS rollout или server acceptance. Разработчик
+  задаёт в `.env` либо secret environment `BOT_TOKEN` и один
+  `SF_DELIVERY_VERIFICATION_CHAT_ID`, затем запускает:
 
   ```bash
   uv run python -m sports_forecast.orchestration.delivery_verification \
@@ -110,10 +111,20 @@ rollout и rollback в репозитории управления инфрас�
   [строгий handoff gate](../../tests/test_production_readiness_validation.py),
   [worker measurement](worker-measurement-evidence.md), [migration/recovery](database-migrations.md),
   [signals](observability.md), [model bundle](model-bundle.md), [serving data](serving-data.md).
-- Не полученные локально evidence: GitHub CI, dependency/filesystem/image scans,
-  GHCR provenance attestation, published image digest, production DB role,
-  external Telegram/API connectivity и VPS rollout. Их нельзя отмечать как
-  выполненные до соответствующего remote run.
+- Полученное remote evidence 2026-08-10: Docker workflow
+  [#31382689135](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/31382689135)
+  завершился успешно. CI gates, dependency/filesystem/image scans и provenance
+  прошли для трёх runtime images; Trivy сообщил 0 HIGH/CRITICAL findings.
+  Immutable references для candidate commit `d37469e`:
+
+  ```text
+  SF_API_IMAGE=ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:b6054d35896e500866f902324f3e3aef1758cfcb2fe79b8925ff3e5740a7a8ad
+  SF_WORKER_IMAGE=ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:df985fb62974b7ebfe5f0c1f48788e3daae1f88f0b96d517ed408911a8837b9b
+  SF_BOT_IMAGE=ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:2f1db660b29e4972935a99d30dea088e14c9a6db3cf996416c851482e1bfdf58
+  ```
+
+  Production DB role, external Telegram/API connectivity и VPS rollout ещё не
+  проверялись; их нельзя отмечать как выполненные до соответствующего remote run.
 - Локальный `make security` на 2026-08-09 успешно выполнил `pip-audit` для
   locked production runtime dependencies: `No known vulnerabilities found`.
   Он не заменяет dependency/filesystem/image scans опубликованных образов и
@@ -121,18 +132,20 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Артефакт и откат
 
-- Registry и неизменяемый идентификатор image (`digest` или commit): GHCR `image@sha256:digest`, который передаётся после publish; SemVer tag не используется как runtime ID.
+- Registry и неизменяемый идентификатор image: три `SF_*_IMAGE` digest выше;
+  SemVer tag не используется как runtime ID.
 - Способ доказать происхождение артефакта: commit SHA, Git tag `v1.0.0`,
   совпадающий с `pyproject.toml`, CI provenance attestation и отдельный digest
-  каждого runtime image. В текущем candidate эти значения ещё не созданы.
+  каждого runtime image. Для candidate `d37469e` provenance создан в Docker
+  workflow [#31382689135](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/31382689135).
 - Предыдущая исправная версия: определяется Operations Agent из последнего работоспособного immutable image.
 - Процедура и допустимое время отката: до migration вернуть Compose на предыдущий immutable image; после additive migration использовать forward-fix либо восстановить проверенный backup — destructive downgrade запрещён. После действия проверить `/ready`; целевое время определяет Operations Agent.
 - Критерии остановки rollout: health не 200, DB недоступна, crash loop или рост ошибок refresh.
 
 ## Нерешённые вопросы
 
-- До отдельного разрешения не созданы Git tag, immutable images и deployment;
-  Operations Agent должен заполнить digest, GitHub/GHCR scan/provenance evidence,
+- До отдельного разрешения не созданы Git tag и deployment; Operations Agent
+  использует зафиксированные выше digest и GitHub/GHCR scan/provenance evidence,
   scheduler owner, backup RPO/RTO, read-only acceptance DB role и VPS evidence
   перед rollout.
 
