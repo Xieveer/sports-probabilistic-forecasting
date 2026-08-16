@@ -1,6 +1,6 @@
 # EPIC-008 — Проверяемые gates процесса Codex-агентов
 
-> **Статус:** in_progress
+> **Статус:** done
 > **Приоритет:** high
 > **Владелец:** главный агент
 > **Требование:** [REQ-009](../product/requirements/REQ-009-agent-workflow-gates.md)
@@ -24,6 +24,13 @@ Rollback — отменить изменённые process-файлы одним
 
 ## Полное EPIC review
 
-Ожидает независимого reviewer. До его review EPIC остаётся `in_progress`; reviewer должен
-проверить REQ-009, ADR-009, TASK-008-1, профиль reviewer, rules, templates и валидатор,
-зафиксировать findings/проверки и только после этого выполнить итоговый commit/push.
+Независимый reviewer проверил REQ-009, ADR-009, terminal TASK-008-1 и его отчёт,
+профили и роли, skill, templates, валидатор и отрицательные regression-тесты.
+Ранее найденные P1/P2 исправлены; блокирующих findings в финальном review нет.
+Каноническая документация синхронизирована, незавершённого scope нет; release evidence для
+изменения process-layer ограничено локальными gates, production rollout не применим.
+
+Фактически выполнены: `uv run pytest tests/test_ai_layer_validation.py -q` (6 passed),
+целевой mypy hook (Passed), Ruff (Passed), `make ai-validate` (valid), `make docs`
+(успешно с существующим warning о `_static`) и `git diff --check` (успешно).
+Хеш проверенного коммита: `077ee01fc321e9a9eb80920df1bbb31869e32cb1`.

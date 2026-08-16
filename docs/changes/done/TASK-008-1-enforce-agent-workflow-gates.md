@@ -37,9 +37,11 @@
 ## Документация, review и follow-up
 
 - Документация: REQ-009, ADR-009, EPIC-008, TASK-008-1 и канонические process-документы обновлены.
-- Review / security: первое независимое review выявило 2 P1 и P2, повторное — 3 P2; все
-  исправлены. Ожидается финальное независимое review.
-- Commit/push: ожидает reviewer.
+- Review / security: первое независимое review выявило 2 P1 и P2, повторное — 3 P2;
+  все findings исправлены. Финальное независимое review: blockers нет.
+- Commit/push: проверенный commit
+  `077ee01fc321e9a9eb80920df1bbb31869e32cb1`; evidence фиксируется отдельным
+  documentation-only commit, оба коммита отправляет reviewer одним push.
 - Follow-up: нет.
 
 ## Остаточные риски

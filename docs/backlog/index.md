@@ -39,5 +39,5 @@
 | TASK-007-7 | done | high | [Автономный source snapshot и odds observations](tasks/TASK-007-7-autonomous-source-and-odds.md) |
 | TASK-007-8 | done | high | [Проверяемый archive sync и local training import](tasks/TASK-007-8-verified-archive-sync.md) |
 | TASK-007-9 | done | high | [Private ingress и tag-only release artifacts](tasks/TASK-007-9-private-ingress-and-tag-release.md) |
-| EPIC-008 | in_progress | high | [Проверяемые gates процесса Codex-агентов](EPIC-008-agent-workflow-gates.md) |
+| EPIC-008 | done | high | [Проверяемые gates процесса Codex-агентов](EPIC-008-agent-workflow-gates.md) |
 | TASK-008-1 | done | high | [Проверяемые gates workflow агентов](tasks/TASK-008-1-enforce-agent-workflow-gates.md) |
