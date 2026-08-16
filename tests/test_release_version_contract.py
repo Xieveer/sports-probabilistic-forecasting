@@ -13,11 +13,11 @@ from sports_forecast.service.schemas import HealthResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.1"
+RELEASE_VERSION = "1.1.0"
 
 
 def test_package_and_fastapi_publish_same_release_version() -> None:
-    """Package metadata и OpenAPI должны публиковать версию patch-релиза 1.0.1."""
+    """Package metadata и OpenAPI должны публиковать версию релиза 1.1.0."""
     with (PROJECT_ROOT / "pyproject.toml").open("rb") as file:
         project = tomllib.load(file)["project"]
 

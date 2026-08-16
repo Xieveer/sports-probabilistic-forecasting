@@ -19,7 +19,7 @@ release. В состав не входят training data, secrets или MLflow 
 uv run python -m sports_forecast.deploy.model_bundle install \
   --bundle /srv/production-models/sha256:<bundle-id> \
   --runtime-root /srv/sports-forecast/models \
-  --app-version 1.0.0
+  --app-version 1.1.0
 ```
 
 Команда не обучает модель и не получает artifact из MLflow/DVC. VPS Worker/API
@@ -36,7 +36,7 @@ approved bundles остаётся обязательным согласно ADR-
 ```bash
 uv run python -m sports_forecast.deploy.model_bundle rollback \
   --runtime-root /srv/sports-forecast/models \
-  --app-version 1.0.0
+  --app-version 1.1.0
 ```
 
 При отсутствующем, повреждённом или несовместимом bundle команда завершается с

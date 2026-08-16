@@ -82,19 +82,24 @@ def _file_entries(source: Path) -> list[dict[str, str | int]]:
     return entries
 
 
-def _artifact_id(entries: list[dict[str, str | int]]) -> str:
+def _artifact_id(entries: list[dict[str, str | int]], provenance: dict[str, str]) -> str:
     """Построить content-derived immutable ID из списка файлов."""
-    payload = json.dumps(entries, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    payload = json.dumps(
+        {"files": entries, "provenance": provenance}, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
     return f"sha256:{hashlib.sha256(payload).hexdigest()}"
 
 
-def _manifest(entries: list[dict[str, str | int]], created_at: datetime) -> dict[str, Any]:
+def _manifest(
+    entries: list[dict[str, str | int]], created_at: datetime, provenance: dict[str, str]
+) -> dict[str, Any]:
     """Сформировать безопасный serializable archive manifest."""
     return {
         "schema_version": _SCHEMA_VERSION,
-        "artifact_id": _artifact_id(entries),
+        "artifact_id": _artifact_id(entries, provenance),
         "created_at": _isoformat_utc(created_at),
         "files": entries,
+        "provenance": provenance,
     }
 
 
@@ -111,6 +116,7 @@ def archive_snapshot(
     archive_root: Path,
     *,
     created_at: datetime | None = None,
+    provenance: dict[str, str] | None = None,
 ) -> ArchiveArtifact:
     """Архивировать snapshot в immutable content-addressed layout.
 
@@ -123,7 +129,9 @@ def archive_snapshot(
         Проверенный immutable artifact. Повторный вызов с тем же содержимым
         возвращает существующий archive без перезаписи.
     """
-    return _create_artifact(snapshot, archive_root, _ARCHIVE_DIRECTORY, created_at=created_at)
+    return _create_artifact(
+        snapshot, archive_root, _ARCHIVE_DIRECTORY, created_at=created_at, provenance=provenance
+    )
 
 
 def _create_artifact(
@@ -132,10 +140,14 @@ def _create_artifact(
     directory_name: str,
     *,
     created_at: datetime | None = None,
+    provenance: dict[str, str] | None = None,
 ) -> ArchiveArtifact:
     """Создать immutable artifact в заданном верхнеуровневом layout-каталоге."""
     entries = _file_entries(source)
-    manifest = _manifest(entries, created_at or datetime.now(tz=UTC))
+    safe_provenance = provenance or {}
+    if any(not key or not value for key, value in safe_provenance.items()):
+        raise ValueError("Archive provenance должна содержать непустые строки")
+    manifest = _manifest(entries, created_at or datetime.now(tz=UTC), safe_provenance)
     artifact_id = str(manifest["artifact_id"])
     destination = root / directory_name / artifact_id
 
@@ -182,6 +194,39 @@ def import_verified_archive(archive_path: Path, import_root: Path) -> Path:
         raise
     logger.info("Archive подготовлен для локального import artifact_id=%s", artifact.artifact_id)
     return destination
+
+
+def prepare_training_input(
+    archive_path: Path,
+    import_root: Path,
+    descriptor_path: Path,
+) -> Path:
+    """Подготовить immutable local training input после verify/deduplicated import.
+
+    DVC намеренно не вызывается: descriptor является явной проверяемой границей
+    между VPS operational archive и ручным local training workflow.
+    """
+    artifact = verify_archive(archive_path)
+    imported = import_verified_archive(archive_path, import_root)
+    manifest = json.loads((imported / _MANIFEST_NAME).read_text(encoding="utf-8"))
+    descriptor = {
+        "schema_version": 1,
+        "artifact_id": artifact.artifact_id,
+        "archive_path": str(imported),
+        "provenance": manifest.get("provenance", {}),
+        "partitions": [item["path"] for item in manifest["files"]],
+    }
+    descriptor_path.parent.mkdir(parents=True, exist_ok=True)
+    stage = descriptor_path.with_name(f".{descriptor_path.name}.tmp")
+    try:
+        stage.write_text(
+            json.dumps(descriptor, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        stage.replace(descriptor_path)
+    finally:
+        stage.unlink(missing_ok=True)
+    return descriptor_path
 
 
 def build_serving_bundle(
@@ -287,7 +332,16 @@ def verify_archive(archive_path: Path, *, require_path_name: bool = True) -> Arc
 
     artifact_id = raw_manifest.get("artifact_id")
     created_at = raw_manifest.get("created_at")
-    if artifact_id != _artifact_id(entries) or not isinstance(created_at, str):
+    provenance = raw_manifest.get("provenance", {})
+    if (
+        not isinstance(provenance, dict)
+        or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in provenance.items()
+        )
+        or artifact_id != _artifact_id(entries, provenance)
+        or not isinstance(created_at, str)
+    ):
         raise ArchiveVerificationError("Manifest содержит неверный immutable ID или timestamp")
     if require_path_name and archive_path.name != artifact_id:
         raise ArchiveVerificationError("Путь archive не соответствует immutable ID")
@@ -320,7 +374,7 @@ def prune_runtime_snapshots(
         if snapshot.is_symlink() or not snapshot.is_dir() or snapshot.stat().st_mtime >= cutoff:
             continue
         try:
-            artifact_id = _artifact_id(_file_entries(snapshot))
+            artifact_id = _artifact_id(_file_entries(snapshot), {})
             verify_archive(archive_root / _ARCHIVE_DIRECTORY / artifact_id)
         except (ArchiveVerificationError, ValueError):
             logger.warning("Runtime snapshot сохранён: archive не верифицирован path=%s", snapshot)
@@ -349,6 +403,10 @@ def _parser() -> argparse.ArgumentParser:
         command = commands.add_parser(name)
         command.add_argument(f"--{positional.replace('_', '-')}", required=True)
         command.add_argument(f"--{option.replace('_', '-')}", required=True)
+    training_input = commands.add_parser("training-input")
+    training_input.add_argument("--archive", required=True)
+    training_input.add_argument("--import-root", required=True)
+    training_input.add_argument("--descriptor", required=True)
     prune = commands.add_parser("prune")
     prune.add_argument("--runtime-root", required=True)
     prune.add_argument("--archive-root", required=True)
@@ -370,6 +428,12 @@ def main(argv: list[str] | None = None) -> int:
             print(artifact.artifact_id)
         elif args.command == "install":
             print(install_serving_bundle(Path(args.bundle), Path(args.runtime_root)))
+        elif args.command == "training-input":
+            print(
+                prepare_training_input(
+                    Path(args.archive), Path(args.import_root), Path(args.descriptor)
+                )
+            )
         else:
             removed = prune_runtime_snapshots(
                 Path(args.runtime_root),

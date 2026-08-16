@@ -7,7 +7,7 @@
 
 services:
   db:
-    image: postgres:16-alpine
+    image: ${SF_POSTGRES_IMAGE:?set SF_POSTGRES_IMAGE to an immutable postgres digest}
     restart: unless-stopped
     environment:
       POSTGRES_DB: sports_forecast
@@ -34,12 +34,10 @@ services:
     pull_policy: always
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://sf_user:${POSTGRES_PASSWORD}@db:5432/sports_forecast
+      DATABASE_URL: ${SF_API_DATABASE_URL:?set SF_API_DATABASE_URL}
     depends_on:
       db:
         condition: service_healthy
-    volumes:
-      - runtime_models:/app/models:ro
     cpus: "1.5"
     mem_limit: 1536m
     logging: *prod_logging
@@ -56,8 +54,6 @@ services:
     depends_on:
       api:
         condition: service_started
-    volumes:
-      - runtime_models:/app/models:ro
     cpus: "0.5"
     mem_limit: 384m
     logging: *prod_logging
@@ -66,24 +62,26 @@ services:
     image: ${SF_WORKER_IMAGE:?set SF_WORKER_IMAGE to an immutable ghcr image digest}
     pull_policy: always
     environment:
-      DATABASE_URL: postgresql://sf_user:${POSTGRES_PASSWORD}@db:5432/sports_forecast
+      DATABASE_URL: ${SF_WORKER_DATABASE_URL:?set SF_WORKER_DATABASE_URL}
       SF_WORKER_RUN_ID: ${SF_WORKER_RUN_ID:?set a scheduler-generated id}
       SF_MODEL_RUNTIME_ROOT: /app/models
       SF_APP_VERSION: ${SF_APP_VERSION:?set SF_APP_VERSION}
+      SF_CANONICAL_SOURCE_CSV: /app/source/current.csv
+      SF_OPERATIONAL_ARCHIVE_ROOT: /app/archive
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - runtime_models:/app/models:ro
-      - runtime_data:/app/data
-      - serving_data:/app/serving-data:ro
+      - ${SF_CANONICAL_SOURCE_ROOT:?set SF_CANONICAL_SOURCE_ROOT}:/app/source:ro
+      - ${SF_OPERATIONAL_ARCHIVE_ROOT:?set SF_OPERATIONAL_ARCHIVE_ROOT}:/app/archive
     profiles: ["worker"]
     cpus: "2.0"
-    mem_limit: 2048m
+    mem_limit: 3g
     logging: *prod_logging
 
   caddy:
-    image: caddy:2.8-alpine
+    image: ${SF_CADDY_IMAGE:?set SF_CADDY_IMAGE to an immutable caddy digest}
     restart: unless-stopped
     ports:
       - "80:80"
@@ -104,7 +102,5 @@ services:
 volumes:
   pg_data:
   runtime_models:
-  runtime_data:
-  serving_data:
   caddy_data:
   caddy_config:

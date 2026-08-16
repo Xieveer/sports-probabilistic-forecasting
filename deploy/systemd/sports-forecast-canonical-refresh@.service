@@ -1,0 +1,19 @@
+[Unit]
+Description=Sports Forecast canonical full refresh (%i)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+StartLimitIntervalSec=6h
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/sports-forecast
+EnvironmentFile=/etc/sports-forecast/refresh/%i.env
+TimeoutStartSec=90m
+Restart=on-failure
+RestartSec=5m
+ExecStart=/usr/bin/flock -n /run/sports-forecast-refresh-%i.lock /opt/sports-forecast/deploy/systemd/run-canonical-refresh.sh %i
+
+[Install]
+WantedBy=multi-user.target

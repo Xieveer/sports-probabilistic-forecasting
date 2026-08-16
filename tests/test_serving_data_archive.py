@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -14,6 +15,8 @@ from sports_forecast.deploy.serving_data import (
     build_serving_bundle,
     import_verified_archive,
     install_serving_bundle,
+    main,
+    prepare_training_input,
     prune_runtime_snapshots,
     verify_archive,
 )
@@ -39,6 +42,19 @@ def test_archive_snapshot_has_immutable_id_timestamp_checksum_and_manifest(tmp_p
     assert archive.created_at == "2026-08-09T08:00:00Z"
     assert (archive.path / "manifest.json").is_file()
     assert verify_archive(archive.path).artifact_id == archive.artifact_id
+
+
+def test_archive_identity_includes_safe_snapshot_provenance(tmp_path: Path) -> None:
+    """Разные run/config identities не могут выдать один immutable manifest."""
+    snapshot = _write_snapshot(tmp_path, "snapshot", '{"game": "nhl-1"}')
+    first = archive_snapshot(
+        snapshot, tmp_path / "archive", provenance={"run_id": "run-1", "config_id": "cfg-a"}
+    )
+    second = archive_snapshot(
+        snapshot, tmp_path / "archive", provenance={"run_id": "run-2", "config_id": "cfg-a"}
+    )
+
+    assert first.artifact_id != second.artifact_id
 
 
 def test_archive_verification_rejects_tampered_file_without_importing(tmp_path: Path) -> None:
@@ -98,6 +114,43 @@ def test_import_validates_and_deduplicates_before_creating_local_staging(tmp_pat
     with pytest.raises(ArchiveVerificationError):
         import_verified_archive(archive.path, import_root)
     assert list(import_root.iterdir()) == [first_import]
+
+
+def test_training_input_descriptor_is_created_only_after_verified_import(tmp_path: Path) -> None:
+    """Descriptor фиксирует immutable input, не вызывая DVC и не храня payload."""
+    snapshot = _write_snapshot(tmp_path, "snapshot", '{"game": "nhl-1"}')
+    archive = archive_snapshot(
+        snapshot, tmp_path / "archive", provenance={"run_id": "run-1", "source": "nhl_web_api"}
+    )
+    descriptor = prepare_training_input(
+        archive.path, tmp_path / "imports", tmp_path / "training" / "input.json"
+    )
+
+    payload = json.loads(descriptor.read_text(encoding="utf-8"))
+    assert payload["artifact_id"] == archive.artifact_id
+    assert payload["provenance"]["run_id"] == "run-1"
+
+
+def test_training_input_cli_creates_descriptor(tmp_path: Path) -> None:
+    """CLI не требует DVC и возвращает успех только после verified import."""
+    snapshot = _write_snapshot(tmp_path, "snapshot", '{"game": "nhl-1"}')
+    archive = archive_snapshot(snapshot, tmp_path / "archive")
+    descriptor = tmp_path / "training" / "input.json"
+
+    code = main(
+        [
+            "training-input",
+            "--archive",
+            str(archive.path),
+            "--import-root",
+            str(tmp_path / "imports"),
+            "--descriptor",
+            str(descriptor),
+        ]
+    )
+
+    assert code == 0
+    assert descriptor.is_file()
 
 
 def test_serving_bundle_install_keeps_current_and_previous_verified_versions(

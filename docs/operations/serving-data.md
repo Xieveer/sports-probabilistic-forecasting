@@ -55,6 +55,21 @@ uv run python -m sports_forecast.deploy.serving_data import \
 Лишь успешно созданный staging может стать входом явной DVC-команды оператора;
 невалидный archive не меняет `data/`, DVC cache или DVC revision.
 
+Для зафиксированного training input используйте descriptor: команда повторно
+проверяет archive, дедуплицирует import и только затем атомарно записывает
+artifact ID, provenance и список partitions. Она не запускает DVC или training.
+
+```bash
+uv run python -m sports_forecast.deploy.serving_data training-input \
+  --archive /srv/archive/operational-archive/sha256:<content-hash> \
+  --import-root data/archive-imports \
+  --descriptor data/training-inputs/nhl-latest.json
+```
+
+Оператор передаёт этот descriptor в DVC/experiment provenance перед ручным
+обучением. Содержимое provider payload и Object Storage credentials в descriptor
+не попадают.
+
 Для обратного пути соберите только заранее доказанные lookback/state files,
 загрузите bundle в `serving-data-bundles/`, затем на VPS выполните `install`.
 Installer проверяет manifest до записи и поддерживает links `current` и

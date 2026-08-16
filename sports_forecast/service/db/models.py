@@ -23,10 +23,12 @@ from sqlalchemy import (
     Column,
     DateTime,
     Float,
+    ForeignKey,
     Index,
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase
@@ -82,6 +84,9 @@ class Prediction(Base):
     model_version: str = Column(String(128), nullable=False)
     model_pool: str | None = Column(String(128), nullable=True, index=True)
     immutable_model_version: str | None = Column(String(192), nullable=True, index=True)
+    refresh_run_id: str | None = Column(String(128), nullable=True, index=True)
+    canonical_snapshot_id: str | None = Column(String(128), nullable=True, index=True)
+    feature_contract_id: str | None = Column(String(128), nullable=True)
     algorithm: str = Column(String(32), nullable=False)
     featureset: str = Column(String(32), nullable=False)
     model_tag: str = Column(
@@ -170,6 +175,123 @@ class WorkerExecution(Base):
     completed_at: datetime | None = Column(DateTime, nullable=True)
 
     __table_args__ = (Index("ix_worker_executions_status", "status"),)
+
+
+class CanonicalEvent(Base):
+    """Текущее canonical-состояние спортивного события от поставщика данных."""
+
+    __tablename__ = "canonical_events"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    sport: str = Column(String(64), nullable=False, index=True)
+    tournament: str = Column(String(64), nullable=False, index=True)
+    source: str = Column(String(128), nullable=False)
+    source_event_id: str = Column(String(128), nullable=False)
+    scheduled_at: datetime = Column(DateTime, nullable=False, index=True)
+    status: str = Column(String(16), nullable=False)
+    current_revision_sha256: str = Column(String(64), nullable=False)
+    first_ingested_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+    last_ingested_at: datetime = Column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tournament", "source", "source_event_id", name="uq_canonical_event_source"
+        ),
+        Index("ix_canonical_event_tournament_schedule", "tournament", "scheduled_at"),
+    )
+
+
+class CanonicalEventRevision(Base):
+    """Неизменяемая revision canonical event с provider payload и результатом."""
+
+    __tablename__ = "canonical_event_revisions"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    canonical_event_id: int = Column(ForeignKey("canonical_events.id"), nullable=False, index=True)
+    revision_sha256: str = Column(String(64), nullable=False)
+    payload_json: str = Column(Text, nullable=False)
+    result_json: str = Column(Text, nullable=False)
+    source_observed_at: datetime = Column(DateTime, nullable=False)
+    ingested_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint(
+            "canonical_event_id", "revision_sha256", name="uq_canonical_event_revision"
+        ),
+    )
+
+
+class RefreshWatermark(Base):
+    """Последний успешно imported canonical snapshot одного турнира."""
+
+    __tablename__ = "refresh_watermarks"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    tournament: str = Column(String(64), nullable=False, unique=True)
+    source: str = Column(String(128), nullable=False)
+    snapshot_id: str = Column(String(80), nullable=False)
+    updated_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class BootstrapImport(Base):
+    """Идемпотентный audit одной immutable initial bootstrap поставки."""
+
+    __tablename__ = "bootstrap_imports"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    artifact_id: str = Column(String(80), nullable=False, unique=True)
+    tournament: str = Column(String(64), nullable=False, index=True)
+    source: str = Column(String(128), nullable=False)
+    status: str = Column(String(16), nullable=False)
+    events_count: int = Column(Integer, nullable=False)
+    imported_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class RefreshFailureAlert(Base):
+    """Pending admin-only alert одного failed refresh run без внешнего payload."""
+
+    __tablename__ = "refresh_failure_alerts"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    run_id: str = Column(String(128), nullable=False, unique=True)
+    tournament: str = Column(String(64), nullable=False, index=True)
+    failure_code: str = Column(String(64), nullable=False)
+    status: str = Column(String(16), nullable=False, default="pending")
+    attempts: int = Column(Integer, nullable=False, default=0)
+    created_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class RefreshLock(Base):
+    """Durable ownership одного tournament refresh."""
+
+    __tablename__ = "refresh_locks"
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    tournament: str = Column(String(64), nullable=False, unique=True)
+    run_id: str = Column(String(128), nullable=False)
+    acquired_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class TournamentPublicationState(Base):
+    """Eligibility public-витрины одного tournament/market/spec среза."""
+
+    __tablename__ = "tournament_publication_states"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    tournament: str = Column(String(64), nullable=False)
+    market: str = Column(String(32), nullable=False)
+    market_spec: str = Column(String(32), nullable=False)
+    status: str = Column(String(16), nullable=False)
+    run_id: str | None = Column(String(128), nullable=True)
+    updated_at: datetime = Column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tournament", "market", "market_spec", name="uq_publication_slice"),
+        Index("ix_publication_state_tournament", "tournament", "status"),
+    )
 
 
 class LineupPredictionRevision(Base):

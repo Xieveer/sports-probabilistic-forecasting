@@ -47,7 +47,7 @@ USER sf
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8000/ready || exit 1
 
 CMD ["uv", "run", "uvicorn", "sports_forecast.service.app:app", \
      "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

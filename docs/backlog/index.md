@@ -29,3 +29,10 @@
 | TASK-006-1 | blocked | high | [Закрытие release gates](tasks/TASK-006-1-release-gate-remediation.md) |
 | TASK-006-2 | done | high | [Контролируемая проверка доставки](tasks/TASK-006-2-controlled-delivery-verification.md) |
 | TASK-006-3 | blocked | high | [Разрешённый rollout и первое сообщение](tasks/TASK-006-3-authorized-rollout-and-first-delivery.md) |
+| EPIC-007 | in_progress | high | [Автономный production data-runtime 1.1.0](EPIC-007-autonomous-production-data-runtime.md) |
+| TASK-007-1 | done | high | [Canonical store и initial NHL bootstrap](tasks/TASK-007-1-canonical-store-and-bootstrap.md) |
+| TASK-007-2 | done | high | [Tournament refresh и quality gate](tasks/TASK-007-2-tournament-refresh-quality-gate.md) |
+| TASK-007-3 | done | high | [NHL full-history refresh, inference и publish](tasks/TASK-007-3-full-history-refresh-and-publish.md) |
+| TASK-007-4 | done | high | [Immutable operational snapshot sync](tasks/TASK-007-4-operational-snapshot-sync.md) |
+| TASK-007-5 | done | high | [Production topology, scheduler и доступы](tasks/TASK-007-5-production-runtime-topology.md) |
+| TASK-007-6 | in_progress | high | [Measurement, DevOps handoff и готовность 1.1.0](tasks/TASK-007-6-measurement-devops-handoff-and-release.md) |
