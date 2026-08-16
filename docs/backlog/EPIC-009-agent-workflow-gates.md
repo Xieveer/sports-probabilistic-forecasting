@@ -1,4 +1,4 @@
-# EPIC-008 — Проверяемые gates процесса Codex-агентов
+# EPIC-009 — Проверяемые gates процесса Codex-агентов
 
 > **Статус:** done
 > **Приоритет:** high
@@ -15,7 +15,7 @@
 
 | Задача | Результат | Зависимости | Проверка | Статус |
 |---|---|---|---|---|
-| [TASK-008-1](tasks/TASK-008-1-enforce-agent-workflow-gates.md) | Правила, templates и валидатор workflow | ADR-009 | unit + `make ai-validate` | done |
+| [TASK-009-1](tasks/TASK-009-1-enforce-agent-workflow-gates.md) | Правила, templates и валидатор workflow | ADR-009 | unit + `make ai-validate` | done |
 
 ## Риски и rollout
 
@@ -24,7 +24,7 @@ Rollback — отменить изменённые process-файлы одним
 
 ## Полное EPIC review
 
-Независимый reviewer проверил REQ-009, ADR-009, terminal TASK-008-1 и его отчёт,
+Независимый reviewer проверил REQ-009, ADR-009, terminal TASK-009-1 и его отчёт,
 профили и роли, skill, templates, валидатор и отрицательные regression-тесты.
 Ранее найденные P1/P2 исправлены; блокирующих findings в финальном review нет.
 Каноническая документация синхронизирована, незавершённого scope нет; release evidence для

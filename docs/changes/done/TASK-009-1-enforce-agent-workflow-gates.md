@@ -1,8 +1,8 @@
-# TASK-008-1 — отчёт о выполнении
+# TASK-009-1 — отчёт о выполнении
 
 > **Статус задачи:** done
 > **Дата:** 2026-08-16
-> **Задача:** [TASK-008-1](../../backlog/tasks/TASK-008-1-enforce-agent-workflow-gates.md)
+> **Задача:** [TASK-009-1](../../backlog/tasks/TASK-009-1-enforce-agent-workflow-gates.md)
 
 ## Реализованный результат
 
@@ -36,7 +36,7 @@
 
 ## Документация, review и follow-up
 
-- Документация: REQ-009, ADR-009, EPIC-008, TASK-008-1 и канонические process-документы обновлены.
+- Документация: REQ-009, ADR-009, EPIC-009, TASK-009-1 и канонические process-документы обновлены.
 - Review / security: первое независимое review выявило 2 P1 и P2, повторное — 3 P2;
   все findings исправлены. Финальное независимое review: blockers нет.
 - Commit/push: проверенный commit

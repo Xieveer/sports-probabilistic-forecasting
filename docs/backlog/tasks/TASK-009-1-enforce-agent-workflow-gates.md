@@ -1,8 +1,8 @@
-# TASK-008-1 — Зафиксировать проверяемые gates workflow агентов
+# TASK-009-1 — Зафиксировать проверяемые gates workflow агентов
 
 > **Статус:** done
 > **Владелец:** implementer
-> **Эпик:** [EPIC-008](../EPIC-008-agent-workflow-gates.md)
+> **Эпик:** [EPIC-009](../EPIC-009-agent-workflow-gates.md)
 > **Требование:** [REQ-009](../../product/requirements/REQ-009-agent-workflow-gates.md)
 > **ADR:** [ADR-009](../../architecture/adr/ADR-009-enforce-agent-workflow-gates.md)
 
@@ -34,7 +34,7 @@ Rules, profiles, templates и `ai-validate` согласованно требу�
 
 ## Handoff и отчёт
 
-- Отчёт выполнения: [TASK-008-1](../../changes/done/TASK-008-1-enforce-agent-workflow-gates.md)
+- Отчёт выполнения: [TASK-009-1](../../changes/done/TASK-009-1-enforce-agent-workflow-gates.md)
 - Follow-up / findings: нет
 - Review: ожидает независимого reviewer
 - Commit/push: ожидает reviewer после чистого review
