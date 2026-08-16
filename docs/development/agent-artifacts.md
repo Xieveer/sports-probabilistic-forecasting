@@ -38,12 +38,14 @@
 
 ```text
 REQ (confirmed)
-  → ADR (если решение значимо) + EPIC/TASK
+  → ADR (если решение значимо)
+  → EPIC + декомпозиция на TASK
   → TASK (in_progress) + тестовый план
-  → отчёт done + обновлённый TASK
-  → review / security
-  → финальная синхронизация документации и статусов
-  → документация / commit
+  → отчёт done + обновлённый TASK + каноническая документация
+  → независимый TASK review
+  → reviewer: commit/push
+  → после всех TASK: полное EPIC review
+  → reviewer: итоговый EPIC evidence commit и статус done
 ```
 
 - Product analyst создаёт или обновляет `REQ` и передаёт только `confirmed` требования.
@@ -56,10 +58,12 @@ REQ (confirmed)
 - Reviewer, security-reviewer и documentation-writer добавляют результаты в раздел
   «Проверки и follow-up» отчёта или создают отдельную связанную задачу для finding. Они не
   переписывают доказательства implementer.
-- После успешного review главный агент до коммита синхронизирует все затронутые
-  канонические документы и статусы: REQ/ADR/EPIC/TASK, отчёт `done`, runbook,
-  README и `.env.example`. Эпик становится `done` только когда его задачи имеют
-  terminal status; отложенный scope должен быть явно `blocked` или `cancelled`.
+- На каждом handoff обновляется относящийся к этапу канонический документ: analyst — REQ,
+  architect — ADR, главный агент — EPIC/TASK, implementer — TASK/отчёт и эксплуатационная
+  документация, reviewer — результат review и hash проверенного commit. Reviewer до commit/push проверяет
+  эту синхронизацию. Эпик становится `done` только когда его задачи имеют terminal status и
+  reviewer завершил отдельное полное EPIC review; отложенный scope должен быть явно `blocked`
+  или `cancelled`.
 
 ## Доказательства
 

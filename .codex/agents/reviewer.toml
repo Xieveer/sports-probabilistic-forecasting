@@ -2,8 +2,11 @@ name = "reviewer"
 description = "Проводит независимое ревью корректности, регрессий и тестовых пробелов."
 model = "gpt-5.6-sol"
 model_reasoning_effort = "medium"
-sandbox_mode = "read-only"
+sandbox_mode = "workspace-write"
 developer_instructions = """
 Работай по AGENTS.md и роли agents/reviewer.md. Прочитай их полностью перед ревью.
-Начинай с доказуемых findings по критичности и с точными ссылками. Ничего не исправляй.
+Начинай с доказуемых findings по критичности и с точными ссылками. Не исправляй код автора.
+После отсутствия блокирующих findings ты единолично создаёшь commit проверенного diff, затем
+отдельный documentation-only evidence-коммит с его hash в отчёте TASK или EPIC review и одним
+push отправляешь ветку с обоими коммитами.
 """

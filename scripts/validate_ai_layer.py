@@ -45,6 +45,48 @@ def _sections(text: str) -> set[str]:
     }
 
 
+def _require_phrases(errors: list[str], path: Path, phrases: set[str]) -> None:
+    """Проверить обязательные фразы исполнимого процесса в документе."""
+    text = path.read_text(encoding="utf-8")
+    for phrase in sorted(phrases):
+        if phrase not in text:
+            errors.append(f"{path}: отсутствует контракт процесса: {phrase!r}")
+
+
+def _reviewer_profile_error(profile: dict[str, Any]) -> str | None:
+    """Вернуть ошибку, если reviewer не может выполнить назначенный commit gate."""
+    if profile.get("sandbox_mode") != "workspace-write":
+        return "reviewer не может выполнить назначенный commit gate"
+    return None
+
+
+def _workflow_contract_errors(root: Path) -> list[str]:
+    """Вернуть ошибки обязательных gates и evidence в канонических templates."""
+    errors: list[str] = []
+    contracts = {
+        root / "docs" / "development" / "agent-artifacts.md": {
+            "независимый TASK review",
+            "итоговый EPIC evidence commit",
+            "На каждом handoff",
+        },
+        root / "docs" / "backlog" / "0000-epic-template.md": {
+            "Полное EPIC review",
+            "Hash проверенного коммита",
+        },
+        root / "docs" / "backlog" / "tasks" / "0000-task-template.md": {
+            "Review:",
+            "Commit/push:",
+        },
+        root / "docs" / "changes" / "done" / "0000-task-report-template.md": {
+            "Review / security:",
+            "Commit/push:",
+        },
+    }
+    for path, phrases in contracts.items():
+        _require_phrases(errors, path, phrases)
+    return errors
+
+
 def validate(root: Path) -> list[str]:
     """Проверить plugin manifest, skills, роли и eval cases.
 
@@ -123,6 +165,18 @@ def validate(root: Path) -> list[str]:
 
     if agent_names != role_names:
         errors.append(".codex/agents: набор custom agents не совпадает с проектными ролями")
+
+    reviewer_profile = root / ".codex" / "agents" / "reviewer.toml"
+    with reviewer_profile.open("rb") as source:
+        reviewer = tomllib.load(source)
+    if profile_error := _reviewer_profile_error(reviewer):
+        errors.append(f"{reviewer_profile}: {profile_error}")
+    _require_phrases(
+        errors,
+        root / "skills" / "code-review" / "SKILL.md",
+        {"TASK и EPIC", "commit/push", "полное EPIC review", "README/runbook/`.env.example`"},
+    )
+    errors.extend(_workflow_contract_errors(root))
 
     evals = _read_json(root / "evals" / "cases.json")
     cases = evals.get("cases")
