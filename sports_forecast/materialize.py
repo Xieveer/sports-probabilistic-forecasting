@@ -28,6 +28,7 @@ Prediction Materialization Pipeline.
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,6 +37,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from omegaconf import DictConfig, OmegaConf
+from sqlalchemy.orm import Session
 
 from sports_forecast.predict import (
     find_model_file,
@@ -262,12 +264,15 @@ def _aggregate_long_predictions(
     return pd.DataFrame(records)
 
 
-def materialize_predictions(cfg: DictConfig, version: str = "prod") -> bool:
+def materialize_predictions(
+    cfg: DictConfig, version: str = "prod", *, session: Session | None = None
+) -> bool:
     """Предвычислить предсказания и записать в БД.
 
     Args:
         cfg: Полный Hydra конфиг.
         version: Версия модели (``"prod"`` по умолчанию).
+        session: Внешняя DB-транзакция для atomic publication (опционально).
 
     Returns:
         True если материализация успешна.
@@ -365,10 +370,11 @@ def materialize_predictions(cfg: DictConfig, version: str = "prod") -> bool:
         logger.info("Parquet сохранён: %s", out_path)
 
         # 8. Запись в БД. Schema применяет отдельная migration command.
-        with get_session() as session:
-            repo = PredictionRepository(session)
+        session_context = get_session() if session is None else nullcontext(session)
+        with session_context as db_session:
+            repo = PredictionRepository(db_session)
             model_pool, immutable_model_version = _resolve_model_provenance(
-                cfg, ModelRegistryRepository(session)
+                cfg, ModelRegistryRepository(db_session)
             )
 
             records: list[dict[str, object]] = []
@@ -385,6 +391,9 @@ def materialize_predictions(cfg: DictConfig, version: str = "prod") -> bool:
                         "featureset": featureset_name,
                         "model_pool": model_pool,
                         "immutable_model_version": immutable_model_version,
+                        "refresh_run_id": cfg.get("refresh_run_id"),
+                        "canonical_snapshot_id": cfg.get("canonical_snapshot_id"),
+                        "feature_contract_id": cfg.get("feature_contract_id"),
                         "home_player": row.get("home_player"),
                         "away_player": row.get("away_player"),
                         "match_datetime": row.get("match_datetime"),

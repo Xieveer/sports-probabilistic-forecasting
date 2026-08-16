@@ -20,7 +20,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import and_
+from sqlalchemy import and_, exists
 from sqlalchemy.orm import Session
 
 from sports_forecast.service.db.models import (
@@ -31,6 +31,7 @@ from sports_forecast.service.db.models import (
     NotificationDelivery,
     NotificationLineState,
     Prediction,
+    TournamentPublicationState,
     WorkerExecution,
 )
 
@@ -43,6 +44,17 @@ def _utc_naive_for_query(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt
     return dt.astimezone(UTC).replace(tzinfo=None)
+
+
+def _public_slice_predicate():
+    """SQL predicate: legacy slice public, explicit ``blocked`` slice hidden."""
+    blocked_slice = exists().where(
+        TournamentPublicationState.tournament == Prediction.tournament,
+        TournamentPublicationState.market == Prediction.market,
+        TournamentPublicationState.market_spec == Prediction.market_spec,
+        TournamentPublicationState.status == "blocked",
+    )
+    return ~blocked_slice
 
 
 class PredictionRepository:
@@ -81,6 +93,7 @@ class PredictionRepository:
                 Prediction.market == market,
             )
         )
+        query = query.filter(_public_slice_predicate())
 
         if market_spec is not None:
             query = query.filter(Prediction.market_spec == market_spec)
@@ -101,7 +114,7 @@ class PredictionRepository:
         """
         rows: list[Prediction] = (
             self.session.query(Prediction)
-            .filter(Prediction.match_id == str(match_id))
+            .filter(Prediction.match_id == str(match_id), _public_slice_predicate())
             .order_by(Prediction.prediction_ts.desc())  # type: ignore[attr-defined]
             .all()
         )
@@ -148,6 +161,8 @@ class PredictionRepository:
             )
         )
 
+        query = query.filter(_public_slice_predicate())
+
         if tournament is not None:
             query = query.filter(Prediction.tournament == tournament)
 
@@ -158,6 +173,37 @@ class PredictionRepository:
             Prediction.match_datetime.asc()  # type: ignore[attr-defined]
         ).all()
         return rows
+
+    def set_publication_state(
+        self,
+        *,
+        tournament: str,
+        market: str,
+        market_spec: str,
+        status: str,
+        run_id: str | None,
+    ) -> TournamentPublicationState:
+        """Атомарно пометить срез public либо blocked без удаления audit history."""
+        if status not in {"public", "blocked"}:
+            raise ValueError("Недопустимый publication status")
+        state = (
+            self.session.query(TournamentPublicationState)
+            .filter_by(tournament=tournament, market=market, market_spec=market_spec)
+            .one_or_none()
+        )
+        if state is None:
+            state = TournamentPublicationState(
+                tournament=tournament,
+                market=market,
+                market_spec=market_spec,
+                status=status,
+                run_id=run_id,
+            )
+            self.session.add(state)
+        else:
+            state.status = status
+            state.run_id = run_id
+        return cast(TournamentPublicationState, state)
 
     # ─────────────────────────────────────────────────────────────────
     # WRITE
@@ -175,6 +221,9 @@ class PredictionRepository:
         featureset: str,
         model_pool: str | None = None,
         immutable_model_version: str | None = None,
+        refresh_run_id: str | None = None,
+        canonical_snapshot_id: str | None = None,
+        feature_contract_id: str | None = None,
         home_player: str | None = None,
         away_player: str | None = None,
         match_datetime: datetime | None = None,
@@ -231,6 +280,9 @@ class PredictionRepository:
             existing.featureset = featureset
             existing.model_pool = model_pool
             existing.immutable_model_version = immutable_model_version
+            existing.refresh_run_id = refresh_run_id
+            existing.canonical_snapshot_id = canonical_snapshot_id
+            existing.feature_contract_id = feature_contract_id
             existing.proba_home = proba_home
             existing.proba_away = proba_away
             existing.odds_raw = odds_raw
@@ -259,6 +311,9 @@ class PredictionRepository:
             featureset=featureset,
             model_pool=model_pool,
             immutable_model_version=immutable_model_version,
+            refresh_run_id=refresh_run_id,
+            canonical_snapshot_id=canonical_snapshot_id,
+            feature_contract_id=feature_contract_id,
             predictions_json=predictions_json,
             proba_home=proba_home,
             proba_away=proba_away,

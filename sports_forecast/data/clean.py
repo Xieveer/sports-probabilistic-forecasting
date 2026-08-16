@@ -79,7 +79,8 @@ def _derive_status(
 
     existing_score_cols = [c for c in score_columns if c in df.columns]
     if existing_score_cols:
-        has_score = df[existing_score_cols].notna().any(axis=1)
+        scores = df[existing_score_cols].replace(r"^\s*$", pd.NA, regex=True)
+        has_score = scores.notna().any(axis=1)
     else:
         has_score = pd.Series(False, index=df.index)
 

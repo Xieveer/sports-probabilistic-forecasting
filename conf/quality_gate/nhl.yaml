@@ -1,6 +1,8 @@
 # Правила полноты данных NHL для tournament-neutral quality gate.
 tournament: nhl
 schedule_window_hours: 48
+match_duration_minutes: 210
+provider_grace_minutes: 30
 id_column: id
 datetime_column: datetime
 schedule_state_column: game_state

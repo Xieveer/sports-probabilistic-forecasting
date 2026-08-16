@@ -60,6 +60,14 @@ def _row(**kwargs: object) -> dict:
     return base
 
 
+def test_odds_store_preserves_separate_t15_reference_contract() -> None:
+    """T−15 fields дополняют legacy close и не переиспользуют его колонки."""
+    assert "pinnacle_winner_withOT_home_close" in ODDS_STORE_COLUMNS
+    assert "pinnacle_winner_withOT_home_t15" in ODDS_STORE_COLUMNS
+    assert "t15_provider_observed_at" in ODDS_STORE_COLUMNS
+    assert "t15_retrieved_at" in ODDS_STORE_COLUMNS
+
+
 def test_empty_store_uses_season_from_config() -> None:
     br = OmegaConf.create(_book_root_nhl())
     plan = build_incremental_need_range(pd.DataFrame(), 3, date(2025, 12, 15), br, "nhl", None)

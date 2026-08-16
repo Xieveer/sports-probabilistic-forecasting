@@ -1,0 +1,6 @@
+# Установите как /etc/systemd/system/sports-forecast-canonical-refresh@nhl.timer.d/schedule.conf.
+# Для другого profile задайте его собственный cadence, затем daemon-reload.
+[Timer]
+# Очистить защитный OnBootSec template и задать cadence profile.
+OnBootSec=
+OnCalendar=*-*-* 10:00:00 Europe/Moscow

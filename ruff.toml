@@ -29,6 +29,7 @@ ignore = [
 
 [lint.isort]
 known-first-party = ["sports_forecast"]
+known-third-party = ["optuna"]
 force-single-line = false
 lines-after-imports = 2
 

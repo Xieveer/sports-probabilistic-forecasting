@@ -1,0 +1,13 @@
+[Unit]
+Description=Schedule Sports Forecast canonical full refresh (%i)
+
+[Timer]
+Unit=sports-forecast-canonical-refresh@%i.service
+# Защищает template от случайного запуска до установки profile drop-in с cadence.
+OnBootSec=365d
+Persistent=true
+RandomizedDelaySec=60
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

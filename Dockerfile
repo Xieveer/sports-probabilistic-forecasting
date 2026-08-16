@@ -47,7 +47,7 @@ USER sf
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8000/ready || exit 1
 
 CMD ["uv", "run", "uvicorn", "sports_forecast.service.app:app", \
      "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
@@ -70,3 +70,12 @@ USER sf
 CMD ["uv", "run", "python", "-m", "sports_forecast.worker", \
      "tournament=nhl", "market=winner_withOT", "market_spec=winner_withOT", \
      "algorithm=catboost_reg", "features=advanced"]
+
+# ── Archive sync (отдельный Object Storage credential boundary) ──
+FROM base AS archive-sync
+
+RUN uv sync --frozen --no-dev --group archive-sync
+
+USER sf
+
+CMD ["uv", "run", "python", "-m", "sports_forecast.deploy.archive_sync_cli"]

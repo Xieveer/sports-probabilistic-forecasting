@@ -1,10 +1,9 @@
-# R23.2 — сборка стадий Dockerfile (api, worker, telegram-bot), push в ghcr.io на main.
+# Сборка runtime images и публикация только exact versioned release tag.
 # Дополнительные registry secrets не нужны: используется GITHUB_TOKEN при permissions packages: write.
 name: Docker
 
 on:
   push:
-    branches: [main]
     tags: ["v*.*.*"]
   workflow_dispatch:
 
@@ -66,6 +65,7 @@ jobs:
           - target: api
           - target: worker
           - target: telegram-bot
+          - target: archive-sync
     steps:
       - uses: actions/checkout@v4
 
@@ -100,8 +100,6 @@ jobs:
           images: |
             ${{ steps.image-name.outputs.value }}
           tags: |
-            type=sha,prefix=
-            type=raw,value=latest
             type=semver,pattern={{version}}
 
       - name: Build and push

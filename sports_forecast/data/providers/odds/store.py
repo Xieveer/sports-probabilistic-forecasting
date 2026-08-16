@@ -4,7 +4,8 @@
 Операции ``upsert`` идемпотентны: дедупликация по дате и нормализованным командам,
 приоритет — более свежий ``fetched_at``.
 
-**Схема V3 (R21.10+):** целевой **close-only** store (17 колонок) — нет open-снимка и
+**Схема V3 (R21.10+):** целевой **close-only** store с отдельными полями эталонного
+снимка ``T−15`` — нет open-снимка и
 колонок ``*_open``, нет ничьи Pinnacle h2h (2-way with OT), есть ничья 1xBet. Семантика
 в префиксах/суффиксах имён: ``winner``/``total`` = regulation, ``*withOT`` = полный матч.
 
@@ -109,11 +110,30 @@ ODDS_STORE_COLUMNS_V3: Final[tuple[str, ...]] = (
     "onexbet_total_over_close",
     "onexbet_total_under_close",
     "fetched_at",
+    "pinnacle_winner_withOT_home_t15",
+    "pinnacle_winner_withOT_away_t15",
+    "pinnacle_total_withOT_line_t15",
+    "pinnacle_total_withOT_over_t15",
+    "pinnacle_total_withOT_under_t15",
+    "onexbet_winner_home_t15",
+    "onexbet_winner_away_t15",
+    "onexbet_winner_draw_t15",
+    "onexbet_total_line_t15",
+    "onexbet_total_over_t15",
+    "onexbet_total_under_t15",
+    "t15_provider_observed_at",
+    "t15_retrieved_at",
 )
 
-#: Публичный кортеж имён колонок текущего Parquet odds-store (R21.10 **V3**, 17 колонок,
-#: close-only, без open и без ничьей Pinnacle).
+#: Публичный кортеж колонок V3 с additive provenance historical ``t15``.
 ODDS_STORE_COLUMNS: Final[tuple[str, ...]] = ODDS_STORE_COLUMNS_V3
+
+T15_REFERENCE_COLUMNS: Final[tuple[str, ...]] = tuple(
+    column for column in ODDS_STORE_COLUMNS_V3 if column.endswith("_t15")
+) + (
+    "t15_provider_observed_at",
+    "t15_retrieved_at",
+)
 
 # Колонки, которые были в V2, но не входят в V3 (для auto-detect).
 _V2_ONLY_COLUMNS: Final[frozenset[str]] = frozenset(ODDS_STORE_COLUMNS_V2) - frozenset(
@@ -220,6 +240,15 @@ def _coerce_input_to_v3(df: pd.DataFrame) -> pd.DataFrame:
             out2["commence_time_utc"] = df["commence_time_utc"]
         return migrate_v2_to_v3(out2)
     if _is_store_v3_frame(df):
+        return df.reindex(columns=list(ODDS_STORE_COLUMNS_V3))
+    if any(
+        column in df.columns
+        for column in (
+            "pinnacle_winner_withOT_home_close",
+            "pinnacle_winner_withOT_home_t15",
+            "onexbet_winner_home_close",
+        )
+    ):
         return df.reindex(columns=list(ODDS_STORE_COLUMNS_V3))
     if _is_store_v2_frame(df):
         return migrate_v2_to_v3(df)
@@ -348,6 +377,14 @@ def upsert_odds_store(existing_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.Dat
     if existing.empty:
         return _dedup_combined(new)
 
+    existing_t15 = existing[list(ODDS_DEDUP_KEYS) + list(T15_REFERENCE_COLUMNS)]
+    merged = new.merge(existing_t15, on=list(ODDS_DEDUP_KEYS), how="left", suffixes=("", "_old"))
+    for column in T15_REFERENCE_COLUMNS:
+        old_column = f"{column}_old"
+        merged[column] = merged[column].where(merged[column].notna(), merged[old_column])
+        merged = merged.drop(columns=old_column)
+    new = merged.reindex(columns=list(ODDS_STORE_COLUMNS_V3))
+
     combined = pd.concat([existing, new], ignore_index=True)
     return _dedup_combined(combined)
 
@@ -376,5 +413,41 @@ def upsert_odds_store_file(new_df: pd.DataFrame, store_path: Path) -> pd.DataFra
     """
     existing = load_odds_store(store_path)
     result = upsert_odds_store(existing, new_df)
+    save_odds_store(result, store_path)
+    return result
+
+
+def upsert_t15_reference_store_file(reference_df: pd.DataFrame, store_path: Path) -> pd.DataFrame:
+    """Записать только historical ``T−15`` поля, не затрагивая legacy ``*_close``.
+
+    Этот путь намеренно не использует обычный row-level upsert: более поздний
+    backfill reference не должен заменить forecast/legacy значения той же игры.
+    """
+    existing = load_odds_store(store_path)
+    updates = reference_df.reindex(columns=list(ODDS_STORE_COLUMNS_V3)).copy()
+    if updates.empty:
+        return existing
+    updates = updates.dropna(subset=list(ODDS_DEDUP_KEYS)).drop_duplicates(
+        subset=list(ODDS_DEDUP_KEYS), keep="last"
+    )
+    if updates.empty:
+        return existing
+
+    out = existing.copy()
+    for _, update in updates.iterrows():
+        key_mask = pd.Series(True, index=out.index)
+        for key_column in ODDS_DEDUP_KEYS:
+            key_mask &= out[key_column] == update[key_column]
+        if key_mask.any():
+            for column in T15_REFERENCE_COLUMNS:
+                if pd.notna(update[column]):
+                    out.loc[key_mask, column] = update[column]
+            continue
+        new_row = update.copy()
+        if pd.isna(new_row["fetched_at"]):
+            new_row["fetched_at"] = _now_utc_iso()
+        out = pd.concat([out, pd.DataFrame([new_row])], ignore_index=True)
+
+    result = _align_to_store_schema(out)
     save_odds_store(result, store_path)
     return result

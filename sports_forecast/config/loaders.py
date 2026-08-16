@@ -221,6 +221,8 @@ def load_tournament_quality_gate_config(tournament_name: str) -> TournamentQuali
         tournament=str(raw.get("tournament", tournament_name)),
         schedule_window_hours=window_hours,
         required_result_fields=required_fields,
+        match_duration_minutes=int(raw.get("match_duration_minutes", 0)),
+        provider_grace_minutes=int(raw.get("provider_grace_minutes", 0)),
         result_field_rules=rules,
         id_column=str(raw.get("id_column", "id")),
         datetime_column=str(raw.get("datetime_column", "datetime")),

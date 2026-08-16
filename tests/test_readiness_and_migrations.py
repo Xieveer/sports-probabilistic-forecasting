@@ -130,4 +130,8 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
         "model_deployments",
         "lineup_prediction_revisions",
         "lineup_notification_outbox",
+        "canonical_events",
+        "canonical_event_revisions",
+        "refresh_watermarks",
+        "bootstrap_imports",
     } <= table_names

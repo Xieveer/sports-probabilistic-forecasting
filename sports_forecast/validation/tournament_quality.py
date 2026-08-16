@@ -34,6 +34,8 @@ class TournamentQualityGateConfig:
     tournament: str
     schedule_window_hours: int
     required_result_fields: tuple[str, ...]
+    match_duration_minutes: int = 0
+    provider_grace_minutes: int = 0
     result_field_rules: dict[str, ResultFieldRule] = field(default_factory=dict)
     id_column: str = "id"
     datetime_column: str = "datetime"

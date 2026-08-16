@@ -13,7 +13,7 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Идентификация и ответственность
 
-- Название сервиса: Sports Probabilistic Forecasting 1.0.1.
+- Название сервиса: Sports Probabilistic Forecasting 1.1.0.
 - Репозиторий и основной branch: SportsProbabilisticForecasting, `main`.
 - Владелец приложения: пользователь.
 - Владелец решения о production-развёртывании: пользователь.
@@ -22,19 +22,25 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Runtime и конфигурация
 
-- Команда запуска контейнера: `docker compose -f docker-compose.prod.yml up -d`.
+- Private Telegram-only candidate: `docker compose -f docker-compose.prod.yml up -d`.
+  Public ingress требует отдельного явного opt-in:
+  `docker compose -f docker-compose.prod.yml -f docker-compose.public.yml up -d`.
 - Требуемая версия Python и системные зависимости: Python 3.12; curl и libpq-dev в Dockerfile.
 - Runtime dependency boundary: `uv sync --frozen --no-dev` устанавливает только
   serving-зависимости. DVC, DVC S3, MLflow и Optuna находятся в dev-группе для
   local training/control plane и не должны попадать в API, Worker или bot image.
 - Переменные окружения (значения хранятся только в secret store):
-  `POSTGRES_PASSWORD` — пароль PostgreSQL; `SF_API_IMAGE`, `SF_WORKER_IMAGE`,
-  `SF_BOT_IMAGE` — точные `image@sha256:digest`; `SF_APP_VERSION` — версия
-  приложения; `SF_WORKER_RUN_ID` — уникальный scheduler ID; `SF_API_DOMAIN` —
-  публичный DNS; `BOT_TOKEN`, `BOT_ALLOWED_USER_IDS`, `BOT_ADMIN_USER_IDS`,
+  `POSTGRES_PASSWORD` — пароль PostgreSQL; `SF_API_DATABASE_URL` — scoped
+  read-only URL API; `SF_WORKER_DATABASE_URL` — scoped write URL refresh;
+  `SF_API_IMAGE`, `SF_WORKER_IMAGE`, `SF_BOT_IMAGE`, `SF_POSTGRES_IMAGE`,
+  `SF_ARCHIVE_SYNC_IMAGE` — точные `image@sha256:digest`; `SF_CADDY_IMAGE` и
+  `SF_API_DOMAIN` нужны только public overlay; `SF_APP_VERSION` — версия
+  приложения; `SF_WORKER_RUN_ID` — уникальный scheduler ID; `BOT_TOKEN`, `BOT_ALLOWED_USER_IDS`, `BOT_ADMIN_USER_IDS`,
   `BOT_API_BASE_URL` — Telegram и внутренний API; `ODDS_API_KEY_FREE`,
   `ODDS_API_KEY_20K`, `ODDS_API_KEY_100K`, `ODDS_API_KEY` — ключи Odds API;
-  `DATABASE_URL` — только host CLI; `SF_OBJECT_STORAGE_ENDPOINT`,
+  `DATABASE_URL` — только host CLI; `SF_CANONICAL_SOURCE_ROOT` — read-only
+  provider snapshot; `SF_OPERATIONAL_ARCHIVE_ROOT` — persistent local staging;
+  `SF_OBJECT_STORAGE_ENDPOINT`,
   `SF_OBJECT_STORAGE_BUCKET`, `SF_OBJECT_STORAGE_ACCESS_KEY_ID`,
   `SF_OBJECT_STORAGE_SECRET_ACCESS_KEY`, `SF_OPERATIONAL_ARCHIVE_PREFIX`,
   `SF_SERVING_DATA_PREFIX` — archive/bundle; `MLFLOW_TRACKING_URI` — только
@@ -43,7 +49,8 @@ rollout и rollback в репозитории управления инфрас�
   `SF_ACCEPTANCE_MODEL_VERSION`, `SF_ACCEPTANCE_DATABASE_URL`,
   `SF_ACCEPTANCE_WORKER_RUN_ID`, `SF_ACCEPTANCE_BOT_HEALTH_COMMAND`.
 - Внешние зависимости, адреса и ожидаемые таймауты: PostgreSQL, Telegram, NHL API и The Odds API; timeout Odds API 120 секунд. MLflow остаётся в локальном training-контуре.
-- Порты и исходящие сетевые соединения: API 8000; Caddy 80/443; исходящий HTTPS к внешним API.
+- Порты и исходящие сетевые соединения: private base не публикует ports; Caddy
+  80/443 появляется только в public overlay; исходящий HTTPS к внешним API.
 
 ## Healthcheck и smoke-проверка
 
@@ -57,7 +64,11 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Данные и совместимость
 
-- Постоянные данные и тома: PostgreSQL, `runtime_data` (не более семи дней), `runtime_models` (current/previous model bundles), read-only `serving_data` для Worker и Caddy volumes; фактические пути проверяет Operations Agent.
+- Постоянные данные и mounts: PostgreSQL и `runtime_models` (current/previous
+  model bundles), read-only provider snapshot и write-only archive staging
+  Worker, archive-sync state и (только public overlay) Caddy volumes. API и bot не монтируют models/data; фактические пути
+  проверяет Operations Agent.
+- Scheduler/topology: [production-runtime-topology.md](production-runtime-topology.md).
 - Runbook serving-data/archive: [serving-data.md](serving-data.md).
 - Миграции и порядок их выполнения: после успешного backup и до API/Worker выполнить `docker compose -f docker-compose.prod.yml run --rm --no-deps api uv run alembic -c alembic.ini upgrade head`, затем проверить `/ready` и только после этого запускать Worker. API и Worker не выполняют DDL при старте.
 - Runbook migration/recovery: [database-migrations.md](database-migrations.md).
@@ -71,9 +82,13 @@ rollout и rollback в репозитории управления инфрас�
 - Метрики доступности, ошибок, ресурсов и результата работы: `/metrics`, healthcheck, container/host metrics; dashboards и alerts настраивает Operations Agent.
 - Данные, которые необходимо маскировать до отправки логов: все env secrets, Telegram token, пароли, Odds API keys и HTTP query с ключами.
 - Предлагаемые пороги оповещений и ссылки на runbook: недоступность `/health`, restart loop, ошибка refresh; runbook — `docs/source/nhl_local_operations.rst`.
-- Ресурсный budget Worker: `2.0` CPU, `2048m` RAM и внешний scheduler timeout
-  `20m`; локальное production-like evidence — 4.48 сек. и ≈399.6 MiB RSS для
-  3 248 inference rows, см. [worker-measurement-evidence.md](worker-measurement-evidence.md).
+- Ресурсный budget canonical Worker до подтверждённой оптимизации: `2.0` CPU,
+  не менее `3g` RAM и scheduler timeout `45m`. Full-history NHL evidence:
+  bootstrap 26.86 сек. / ≈1.05 GiB RSS, refresh 1:42.02 / ≈2.31 GiB RSS для
+  22 218 canonical events; см. [worker-measurement-evidence.md](worker-measurement-evidence.md).
+  Compose limit установлен в `3g`. Локальная future fixture также подтвердила
+  inference и атомарную публикацию; production всё равно требует повтора на
+  актуальном provider snapshot.
 - Retention: на VPS `runtime_data` не более 7 дней, current/previous model и
   serving-data bundles сохраняются для rollback; operational archive в Object
   Storage не удаляется автоматически, стоимость и целостность проверяет Operations Agent.
@@ -110,11 +125,11 @@ rollout и rollback в репозитории управления инфрас�
   [строгий handoff gate](../../tests/test_production_readiness_validation.py),
   [worker measurement](worker-measurement-evidence.md), [migration/recovery](database-migrations.md),
   [signals](observability.md), [model bundle](model-bundle.md), [serving data](serving-data.md).
-- Release `v1.0.1` создаётся только после успешных checks на итоговом `main`.
-  До его создания не использовать старый tag `v1.0.0` и его image digests:
-  они относятся к прежнему commit и запрещены для production. После tag pipeline
+- Release `v1.1.0` создаётся только после успешных checks на итоговом `main`.
+  До его создания не использовать прежние image digests или mutable tags:
+  они относятся к другому commit и запрещены для production. После tag pipeline
   обязан зафиксировать новые GitHub CI, dependency/filesystem/image scans, GHCR
-  provenance и три published image digest. Production DB role, external
+  provenance и published immutable image digests (api, worker, telegram-bot и archive-sync). Production DB role, external
   Telegram/API connectivity и VPS rollout подтверждает внешний server operations
   agent.
 - Локальный `make security` на 2026-08-09 успешно выполнил `pip-audit` для
@@ -124,20 +139,27 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Артефакт и откат
 
-- Registry и неизменяемый идентификатор image: после `v1.0.1` использовать
+- Registry и неизменяемый идентификатор image: после `v1.1.0` использовать
   только новые GHCR `image@sha256:digest`; SemVer tag не является runtime ID.
 - Способ доказать происхождение артефакта: итоговый commit SHA, Git tag
-  `v1.0.1`, совпадающий с `pyproject.toml`, CI provenance attestation и
+  `v1.1.0`, совпадающий с `pyproject.toml`, CI provenance attestation и
   отдельный digest каждого runtime image.
 - Предыдущая исправная версия: определяется Operations Agent из последнего работоспособного immutable image.
+- Model delivery bundle: перед rollout Operations получает путь/immutable
+  `bundle_id`, manifest checksum, `app_version` и source commit; `current` и
+  `previous` устанавливаются только через [model-bundle.md](model-bundle.md).
+  Rollback model выполняется проверенным `previous` pointer, rollback image —
+  предыдущими image digests; destructive migration downgrade запрещён.
 - Процедура и допустимое время отката: до migration вернуть Compose на предыдущий immutable image; после additive migration использовать forward-fix либо восстановить проверенный backup — destructive downgrade запрещён. После действия проверить `/ready`; целевое время определяет Operations Agent.
 - Критерии остановки rollout: health не 200, DB недоступна, crash loop или рост ошибок refresh.
 
 ## Нерешённые вопросы
 
-- До отдельного разрешения не выполняется deployment; после `v1.0.1` Operations
+- До отдельного разрешения не выполняется deployment; после `v1.1.0` Operations
   Agent получает новые digests, GitHub/GHCR scan/provenance evidence, scheduler
-  owner, backup RPO/RTO, read-only acceptance DB role и VPS evidence.
+  owner, backup RPO/RTO, read-only acceptance DB role и VPS evidence. До
+  release нужны подтверждённые worker memory limit не менее 3 GiB и успешный
+  refresh с актуальными upcoming матчами provider.
 
 ## Граница ответственности
 

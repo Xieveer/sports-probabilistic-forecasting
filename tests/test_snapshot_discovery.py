@@ -5,6 +5,9 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+import pytest
+
+from sports_forecast.data.providers.odds.client import QuotaBudgetError
 from sports_forecast.data.providers.odds.enrichment import unwrap_odds_payload
 from sports_forecast.data.providers.odds.snapshot_discovery import (
     CloseSnapshotPlan,
@@ -14,6 +17,7 @@ from sports_forecast.data.providers.odds.snapshot_discovery import (
     commence_datetimes_from_events_payload,
     discover_close_snapshot_for_day,
     discover_snapshots_for_day,
+    discover_t15_reference_snapshots_for_day,
     earliest_commence_on_day_from_payload,
     has_events_for_calendar_day,
     minutes_before_commence,
@@ -117,6 +121,104 @@ def test_discover_close_snapshot_no_commence_uses_legacy_close() -> None:
     assert plan.reference_commence_time_utc is None
     assert plan.close_minutes_before == 0
     assert len(c.calls) == 2
+
+
+def test_discover_t15_reference_snapshots_selects_each_event_independently() -> None:
+    """Эталон T−15 вычисляется для каждого матча, а не для первого матча дня."""
+    day = date(2024, 1, 10)
+    first = _ev("2024-01-10T20:00:00Z")
+    first["id"] = "first"
+    second = _ev("2024-01-10T23:00:00Z")
+    second["id"] = "second"
+    seed = {"data": [first, second]}
+    first_t15 = "2024-01-10T19:45:00Z"
+    second_t15 = "2024-01-10T22:45:00Z"
+
+    class C:
+        def __init__(self) -> None:
+            self.calls: list[str | None] = []
+
+        def fetch_odds_for_sport(
+            self, _sport: str, *, date_iso: str | None = None, **_kwargs: object
+        ) -> object:
+            self.calls.append(date_iso)
+            if date_iso == "2024-01-10T12:00:00Z":
+                return seed
+            if date_iso == first_t15:
+                return {"timestamp": first_t15, "data": [first]}
+            if date_iso == second_t15:
+                return {"timestamp": second_t15, "data": [second]}
+            return {"data": []}
+
+    found = discover_t15_reference_snapshots_for_day(
+        C(),  # type: ignore[arg-type]
+        "icehockey_nhl",
+        day,
+        legacy_seed_time_utc="12:00:00",
+    )
+
+    assert [(item.event_id, item.snapshot_iso) for item in found] == [
+        ("first", first_t15),
+        ("second", second_t15),
+    ]
+    assert all(item.minutes_before == 15 for item in found)
+
+
+def test_discover_t15_uses_provider_observed_timestamp_for_selection() -> None:
+    """Из нескольких запросов выбирается линия ближе к T−15 по timestamp провайдера."""
+    day = date(2024, 1, 10)
+    event = _ev("2024-01-10T20:00:00Z")
+    event["id"] = "game"
+
+    class C:
+        def fetch_odds_for_sport(
+            self, _sport: str, *, date_iso: str | None = None, **_kwargs: object
+        ) -> object:
+            if date_iso == "2024-01-10T12:00:00Z":
+                return {"data": [event]}
+            if date_iso == "2024-01-10T19:45:00Z":
+                return {"timestamp": "2024-01-10T19:38:00Z", "data": [event]}
+            if date_iso == "2024-01-10T19:44:00Z":
+                return {"timestamp": "2024-01-10T19:46:00Z", "data": [event]}
+            return {"data": []}
+
+    found = discover_t15_reference_snapshots_for_day(
+        C(),  # type: ignore[arg-type]
+        "icehockey_nhl",
+        day,
+        legacy_seed_time_utc="12:00:00",
+    )
+
+    assert len(found) == 1
+    assert found[0].snapshot_iso == "2024-01-10T19:46:00Z"
+    assert found[0].minutes_before == 14
+
+
+def test_discover_t15_propagates_quota_error_without_more_probes() -> None:
+    """Исчерпание quota останавливает T−15 discovery, а не маскируется как miss."""
+    day = date(2024, 1, 10)
+    event = _ev("2024-01-10T20:00:00Z")
+    event["id"] = "game"
+
+    class C:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def fetch_odds_for_sport(self, _sport: str, **_kwargs: object) -> object:
+            self.calls += 1
+            if self.calls == 1:
+                return {"data": [event]}
+            raise QuotaBudgetError("quota exhausted")
+
+    client = C()
+    with pytest.raises(QuotaBudgetError):
+        discover_t15_reference_snapshots_for_day(
+            client,  # type: ignore[arg-type]
+            "icehockey_nhl",
+            day,
+            legacy_seed_time_utc="12:00:00",
+        )
+    assert client.calls == 2
 
 
 def test_happy_path_known_commence_and_minutes() -> None:

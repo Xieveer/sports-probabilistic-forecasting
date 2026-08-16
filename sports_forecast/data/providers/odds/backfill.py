@@ -23,7 +23,7 @@ from __future__ import annotations
 import argparse
 import sys
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
@@ -37,8 +37,12 @@ from sports_forecast.data.providers.odds.enrichment import events_to_odds_frame,
 from sports_forecast.data.providers.odds.snapshot_discovery import (
     CloseSnapshotPlan,
     discover_close_snapshot_for_day,
+    discover_t15_reference_snapshots_for_day,
 )
-from sports_forecast.data.providers.odds.store import upsert_odds_store_file
+from sports_forecast.data.providers.odds.store import (
+    upsert_odds_store_file,
+    upsert_t15_reference_store_file,
+)
 from sports_forecast.data.providers.odds.team_name_registry import (
     TeamNameRegistry,
     load_nhl_team_name_registry,
@@ -201,6 +205,84 @@ def _attach_close_snapshot_timing(
     return out
 
 
+_CLOSE_TO_T15_COLUMNS: Final[dict[str, str]] = {
+    "pinnacle_winner_withOT_home_close": "pinnacle_winner_withOT_home_t15",
+    "pinnacle_winner_withOT_away_close": "pinnacle_winner_withOT_away_t15",
+    "pinnacle_total_withOT_line_close": "pinnacle_total_withOT_line_t15",
+    "pinnacle_total_withOT_over_close": "pinnacle_total_withOT_over_t15",
+    "pinnacle_total_withOT_under_close": "pinnacle_total_withOT_under_t15",
+    "onexbet_winner_home_close": "onexbet_winner_home_t15",
+    "onexbet_winner_away_close": "onexbet_winner_away_t15",
+    "onexbet_winner_draw_close": "onexbet_winner_draw_t15",
+    "onexbet_total_line_close": "onexbet_total_line_t15",
+    "onexbet_total_over_close": "onexbet_total_over_t15",
+    "onexbet_total_under_close": "onexbet_total_under_t15",
+}
+
+
+def backfill_t15_reference_day_frames(
+    client: OddsApiClient,
+    sport_key: str,
+    day: date,
+    book_root: Any,
+    *,
+    regions: str = "eu",
+    team_registry: TeamNameRegistry | None = None,
+) -> pd.DataFrame:
+    """Собрать отдельные historical reference odds T−15 для матчей одного дня.
+
+    Полученные цены кладутся только в ``*_t15``. Legacy ``*_close`` намеренно
+    очищаются в возвращаемом update-кадре, чтобы field-level upsert не мог их изменить.
+    """
+    bk = _book_get(book_root, "bookmakers") or {}
+    primary = str(bk.get("primary", "pinnacle"))
+    raw_oc = _book_get(book_root, "output_columns") or {}
+    out_cols = (
+        dict(raw_oc)
+        if isinstance(raw_oc, dict)
+        else OmegaConf.to_container(raw_oc, resolve=True) or {}
+    )
+    if not isinstance(out_cols, dict):
+        out_cols = {}
+    bf = _book_get(book_root, "backfill") or {}
+    if not isinstance(bf, dict):
+        bf = OmegaConf.to_container(bf, resolve=True) or {}
+    seed_time = str(bf.get("open_snapshot_utc", "12:00:00"))
+    references = discover_t15_reference_snapshots_for_day(
+        client,
+        sport_key,
+        day,
+        regions=regions,
+        legacy_seed_time_utc=seed_time,
+        use_cache=True,
+    )
+    parts: list[pd.DataFrame] = []
+    retrieved_at = datetime.now(UTC).replace(microsecond=0).isoformat()
+    for reference in references:
+        frame = events_to_odds_frame(
+            [reference.event],
+            None,
+            primary,
+            out_cols,
+            team_registry=team_registry,
+            book_cfg=book_root,
+        )
+        if frame.empty:
+            continue
+        frame = frame.rename(columns=_CLOSE_TO_T15_COLUMNS)
+        for close_column in _CLOSE_TO_T15_COLUMNS:
+            frame[close_column] = None
+        observed_at = (
+            str(reference.payload.get("timestamp"))
+            if isinstance(reference.payload, dict) and reference.payload.get("timestamp")
+            else reference.snapshot_iso
+        )
+        frame["t15_provider_observed_at"] = observed_at
+        frame["t15_retrieved_at"] = retrieved_at
+        parts.append(frame)
+    return _concat_dedup(parts)
+
+
 def _legacy_day_snapshot_isos(
     day: date,
     open_t: str,
@@ -353,6 +435,7 @@ def _backfill_date_range(
     regions: str,
     team_registry: TeamNameRegistry | None,
     legacy_timestamps: bool = False,
+    t15_reference: bool = False,
 ) -> tuple[pd.DataFrame, bool]:
     """Собрать дни [d0,d1]. Второй элемент — True, если остановка по :exc:`QuotaBudgetError` (частичные данные)."""
     parts: list[pd.DataFrame] = []
@@ -368,15 +451,20 @@ def _backfill_date_range(
             qsnap.requests_remaining,
         )
         try:
-            fr = backfill_day_frames(
-                client,
-                sport_key,
-                d,
-                book_root,
-                regions=regions,
-                team_registry=team_registry,
-                legacy_timestamps=legacy_timestamps,
-            )
+            if t15_reference:
+                fr = backfill_t15_reference_day_frames(
+                    client, sport_key, d, book_root, regions=regions, team_registry=team_registry
+                )
+            else:
+                fr = backfill_day_frames(
+                    client,
+                    sport_key,
+                    d,
+                    book_root,
+                    regions=regions,
+                    team_registry=team_registry,
+                    legacy_timestamps=legacy_timestamps,
+                )
             if not fr.empty:
                 parts.append(fr)
         except QuotaBudgetError as e:
@@ -399,6 +487,7 @@ def run_backfill(
     store_path: Path | None = None,
     bookmaker_key: str = "the_odds_api",
     legacy_timestamps: bool = False,
+    t15_reference: bool = False,
 ) -> BackfillRunResult:
     """Собрать backfill: либо ``date_from..date_to``, либо ``seasons_last_n`` последних сезонов.
 
@@ -413,6 +502,7 @@ def run_backfill(
         store_path: Если задан, upsert в Parquet-файл OddsStore.
         legacy_timestamps: Только фиксированный ``backfill.close_snapshot_utc``; иначе
             :func:`snapshot_discovery.discover_close_snapshot_for_day` (T−N мин, по YAML).
+        t15_reference: Отдельный historical pass в ``*_t15`` без изменения ``*_close``.
 
     Returns:
         :class:`BackfillRunResult` с дедуп DataFrame, флагом исчерпания квоты и
@@ -463,9 +553,13 @@ def run_backfill(
                 regions=regions,
                 team_registry=team_registry,
                 legacy_timestamps=legacy_timestamps,
+                t15_reference=t15_reference,
             )
             if not chunk.empty and store_path is not None:
-                _upsert_if_non_empty(chunk, store_path, context="backfill:upsert")
+                if t15_reference:
+                    upsert_t15_reference_store_file(chunk, store_path)
+                else:
+                    _upsert_if_non_empty(chunk, store_path, context="backfill:upsert")
                 logger.info(
                     "backfill: upsert store после сезона %s (%d строк) → %s",
                     name,
@@ -493,11 +587,15 @@ def run_backfill(
             regions=regions,
             team_registry=team_registry,
             legacy_timestamps=legacy_timestamps,
+            t15_reference=t15_reference,
         )
         hit_quota_out = hit_quota
         all_chunks.append(chunk)
         if not chunk.empty and store_path is not None:
-            _upsert_if_non_empty(chunk, store_path, context="backfill:upsert")
+            if t15_reference:
+                upsert_t15_reference_store_file(chunk, store_path)
+            else:
+                _upsert_if_non_empty(chunk, store_path, context="backfill:upsert")
             logger.info("backfill: upsert store (%d строк) → %s", len(chunk), store_path)
 
     result = _concat_dedup(all_chunks)
@@ -582,6 +680,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Только backfill.open_snapshot_utc/close в конфиге (R20), без динамического snapshot discovery",
     )
+    parser.add_argument(
+        "--t15-reference",
+        action="store_true",
+        help="Отдельно записать historical T−15 reference в *_t15, не меняя legacy *_close",
+    )
     args = parser.parse_args(argv)
 
     if args.seasons is not None:
@@ -620,6 +723,7 @@ def main(argv: list[str] | None = None) -> int:
             out_parquet=args.out,
             store_path=store_path,
             legacy_timestamps=args.legacy_timestamps,
+            t15_reference=args.t15_reference,
         )
     except ValueError as e:
         logger.error("%s", e)

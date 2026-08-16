@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
+from sports_forecast.data.providers.odds.client import QuotaBudgetError
 from sports_forecast.data.providers.odds.enrichment import unwrap_odds_payload
 from sports_forecast.utils.log_config import get_logger
 
@@ -49,6 +50,18 @@ class CloseSnapshotPlan:
     close_minutes_before: int
     reference_commence_time_utc: str | None
     used_legacy_timestamps: bool
+
+
+@dataclass(frozen=True, slots=True)
+class T15ReferenceSnapshot:
+    """Выбранный historical snapshot для одного события в окне ``T−60…T−0``."""
+
+    event_id: str | None
+    event: dict[str, Any]
+    payload: Any
+    snapshot_iso: str
+    commence_time_utc: str
+    minutes_before: int
 
 
 @runtime_checkable
@@ -150,6 +163,118 @@ def minutes_before_commence(
 def has_events_for_calendar_day(payload: Any, day: date) -> bool:
     """Есть ли в ответе хотя бы одно событие с ``commence_time`` на дату ``day`` (UTC)."""
     return bool(commence_datetimes_from_events_payload(payload, day))
+
+
+def _event_matches(candidate: dict[str, Any], source: dict[str, Any]) -> bool:
+    """Проверить, что событие из historical ответа соответствует seed-событию."""
+    source_id = source.get("id")
+    candidate_id = candidate.get("id")
+    if source_id is not None and candidate_id is not None:
+        return str(source_id) == str(candidate_id)
+    return (
+        candidate.get("home_team") == source.get("home_team")
+        and candidate.get("away_team") == source.get("away_team")
+        and parse_commence_utc_from_event(candidate) == parse_commence_utc_from_event(source)
+    )
+
+
+def _t15_probe_minutes(target_minutes: int = 15) -> list[int]:
+    """Минуты до начала в порядке близости к T−15, только в допустимом окне."""
+    return sorted(range(0, 61), key=lambda minutes: (abs(minutes - target_minutes), -minutes))
+
+
+def discover_t15_reference_snapshots_for_day(
+    client: HistoricalOddsClient,
+    sport_key: str,
+    day: date,
+    *,
+    regions: str = "us",
+    target_minutes: int = 15,
+    legacy_seed_time_utc: str = "12:00:00",
+    use_cache: bool = True,
+) -> list[T15ReferenceSnapshot]:
+    """Подобрать отдельный reference snapshot для каждого матча календарного дня.
+
+    Seed-запрос раскрывает расписание. Для каждого события historical endpoint
+    опрашивается в T−15, а при отсутствии события — в остальных минутах окна
+    ``T−60…T−0`` по возрастанию расстояния от T−15. Это сохраняет бизнес-правило
+    эталонной линии и не использует значения после начала матча.
+    """
+    legacy_seed_iso, _ = _legacy_isos(day, legacy_seed_time_utc, "23:30:00")
+    seed_payload = client.fetch_odds_for_sport(
+        sport_key, regions=regions, date_iso=legacy_seed_iso, use_cache=use_cache
+    )
+    seed_events = [
+        event
+        for event in unwrap_odds_payload(seed_payload)
+        if (commence := parse_commence_utc_from_event(event)) is not None and commence.date() == day
+    ]
+    selected: list[T15ReferenceSnapshot] = []
+    for event in seed_events:
+        commence = parse_commence_utc_from_event(event)
+        assert commence is not None
+        best: T15ReferenceSnapshot | None = None
+        for minutes in _t15_probe_minutes(target_minutes):
+            snapshot_iso = to_api_iso_z(commence - timedelta(minutes=minutes))
+            try:
+                payload = client.fetch_odds_for_sport(
+                    sport_key, regions=regions, date_iso=snapshot_iso, use_cache=use_cache
+                )
+            except QuotaBudgetError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "T15 reference: event=%s snapshot=%s unavailable (%s)",
+                    event.get("id"),
+                    snapshot_iso,
+                    _safe_fetch_exception_detail(exc),
+                )
+                continue
+            matched = next(
+                (
+                    candidate
+                    for candidate in unwrap_odds_payload(payload)
+                    if _event_matches(candidate, event)
+                ),
+                None,
+            )
+            if matched is None:
+                continue
+            observed = (
+                _as_utc_datetime(str(payload.get("timestamp")))
+                if isinstance(payload, dict) and payload.get("timestamp")
+                else None
+            )
+            if observed is None:
+                logger.warning(
+                    "T15 reference: event=%s snapshot=%s без provider timestamp",
+                    event.get("id"),
+                    snapshot_iso,
+                )
+                continue
+            observed_minutes = minutes_before_commence(commence, observed)
+            if observed > commence or observed_minutes > 60:
+                continue
+            candidate_reference = T15ReferenceSnapshot(
+                event_id=str(event["id"]) if event.get("id") is not None else None,
+                event=matched,
+                payload=payload,
+                snapshot_iso=to_api_iso_z(observed),
+                commence_time_utc=to_api_iso_z(commence),
+                minutes_before=observed_minutes,
+            )
+            if best is None or _t15_selection_key(
+                candidate_reference, target_minutes
+            ) < _t15_selection_key(best, target_minutes):
+                best = candidate_reference
+        if best is not None:
+            selected.append(best)
+    return selected
+
+
+def _t15_selection_key(reference: T15ReferenceSnapshot, target_minutes: int) -> tuple[int, int]:
+    """Детерминированно выбрать наблюдение ближе к T−15 по provider timestamp."""
+    return (abs(reference.minutes_before - target_minutes), -reference.minutes_before)
 
 
 def _legacy_isos(

@@ -1,0 +1,4 @@
+# Установите как /etc/systemd/system/sports-forecast-canonical-refresh@nhl.service.d/runtime.conf.
+# Укажите подтверждённый upper bound именно этого tournament profile.
+[Service]
+TimeoutStartSec=90m
