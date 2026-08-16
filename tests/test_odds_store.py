@@ -383,3 +383,38 @@ def test_t15_upsert_preserves_existing_close_values(tmp_path) -> None:
     got = load_odds_store(path).iloc[0]
     assert float(got["pinnacle_winner_withOT_home_close"]) == 1.8
     assert float(got["pinnacle_winner_withOT_home_t15"]) == 1.95
+
+
+def test_regular_close_upsert_preserves_existing_t15_values(tmp_path) -> None:
+    """Новый close refresh не стирает отдельный historical T−15 reference."""
+    path = tmp_path / "o.parquet"
+    reference = pd.DataFrame(
+        [
+            {
+                "game_date": "2024-03-01",
+                "home_team_norm": "H",
+                "away_team_norm": "A",
+                "pinnacle_winner_withOT_home_t15": 1.95,
+                "t15_retrieved_at": "2026-08-16T10:00:00+00:00",
+            }
+        ]
+    )
+    upsert_t15_reference_store_file(reference, path)
+    upsert_odds_store_file(
+        pd.DataFrame(
+            [
+                {
+                    "game_date": "2024-03-01",
+                    "home_team_norm": "H",
+                    "away_team_norm": "A",
+                    "pinnacle_winner_withOT_home_close": 1.8,
+                    "fetched_at": "2030-08-16T11:00:00+00:00",
+                }
+            ]
+        ),
+        path,
+    )
+
+    got = load_odds_store(path).iloc[0]
+    assert float(got["pinnacle_winner_withOT_home_close"]) == 1.8
+    assert float(got["pinnacle_winner_withOT_home_t15"]) == 1.95

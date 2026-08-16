@@ -9,7 +9,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from sports_forecast.deploy.serving_data import ArchiveArtifact, verify_archive
+from sports_forecast.deploy.serving_data import (
+    ArchiveArtifact,
+    safe_archive_member_path,
+    verify_archive,
+)
 from sports_forecast.utils.log_config import get_logger
 
 
@@ -153,7 +157,7 @@ def pull_verified_archive(
             manifest = json.loads((stage / "manifest.json").read_text(encoding="utf-8"))
             for item in manifest["files"]:
                 relative = str(item["path"])
-                local_file = stage / relative
+                local_file = safe_archive_member_path(stage, relative)
                 local_file.parent.mkdir(parents=True, exist_ok=True)
                 storage.download(f"{base}/{relative}", local_file)
             verify_archive(stage)

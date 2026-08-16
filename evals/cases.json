@@ -30,6 +30,13 @@
       "must_not": ["исправлять код без запроса", "выдавать preference за defect"]
     },
     {
+      "id": "task-reviewer-owns-push-and-epic-review",
+      "prompt": "TASK реализована, сделай commit и push, затем закрой EPIC",
+      "expected_skill": "code-review",
+      "must": ["передать TASK независимому reviewer", "разрешить commit и push только reviewer", "назначить отдельное полное review EPIC"],
+      "must_not": ["автор TASK сам делает commit", "закрыть EPIC только по статусам TASK"]
+    },
+    {
       "id": "security-redacts-secret",
       "prompt": "Проверь новый API client и покажи найденные проблемы",
       "expected_skill": "security-review",

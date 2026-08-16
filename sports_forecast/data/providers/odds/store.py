@@ -241,6 +241,15 @@ def _coerce_input_to_v3(df: pd.DataFrame) -> pd.DataFrame:
         return migrate_v2_to_v3(out2)
     if _is_store_v3_frame(df):
         return df.reindex(columns=list(ODDS_STORE_COLUMNS_V3))
+    if any(
+        column in df.columns
+        for column in (
+            "pinnacle_winner_withOT_home_close",
+            "pinnacle_winner_withOT_home_t15",
+            "onexbet_winner_home_close",
+        )
+    ):
+        return df.reindex(columns=list(ODDS_STORE_COLUMNS_V3))
     if _is_store_v2_frame(df):
         return migrate_v2_to_v3(df)
     return migrate_v1_to_v3(df)
@@ -367,6 +376,14 @@ def upsert_odds_store(existing_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.Dat
         return existing
     if existing.empty:
         return _dedup_combined(new)
+
+    existing_t15 = existing[list(ODDS_DEDUP_KEYS) + list(T15_REFERENCE_COLUMNS)]
+    merged = new.merge(existing_t15, on=list(ODDS_DEDUP_KEYS), how="left", suffixes=("", "_old"))
+    for column in T15_REFERENCE_COLUMNS:
+        old_column = f"{column}_old"
+        merged[column] = merged[column].where(merged[column].notna(), merged[old_column])
+        merged = merged.drop(columns=old_column)
+    new = merged.reindex(columns=list(ODDS_STORE_COLUMNS_V3))
 
     combined = pd.concat([existing, new], ignore_index=True)
     return _dedup_combined(combined)

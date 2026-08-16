@@ -60,6 +60,18 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def safe_archive_member_path(root: Path, relative: str) -> Path:
+    """Вернуть путь member только внутри archive root; manifest считается недоверенным."""
+    candidate = Path(relative)
+    if not relative or candidate.is_absolute() or ".." in candidate.parts:
+        raise ArchiveVerificationError("Manifest содержит небезопасный путь файла")
+    resolved_root = root.resolve()
+    resolved_candidate = (root / candidate).resolve()
+    if not resolved_candidate.is_relative_to(resolved_root):
+        raise ArchiveVerificationError("Manifest содержит путь вне archive")
+    return resolved_candidate
+
+
 def _file_entries(source: Path) -> list[dict[str, str | int]]:
     """Собрать стабильный checksum-list обычных файлов source directory."""
     if not source.is_dir():
@@ -316,7 +328,7 @@ def verify_archive(archive_path: Path, *, require_path_name: bool = True) -> Arc
             or not isinstance(expected_size, int)
         ):
             raise ArchiveVerificationError("Manifest содержит неполные метаданные файла")
-        file_path = archive_path / relative
+        file_path = safe_archive_member_path(archive_path, relative)
         if (
             file_path.is_symlink()
             or not file_path.is_file()

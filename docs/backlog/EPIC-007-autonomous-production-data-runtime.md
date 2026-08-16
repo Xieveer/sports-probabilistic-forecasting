@@ -50,3 +50,14 @@ stateful EWM.
   а не destructive schema downgrade.
 - `v1.1.0`, immutable GHCR digests и production rollout создаются только после
   всех проверок и отдельного разрешения владельца.
+
+## Полное EPIC review
+
+Независимый review 2026-08-16 подтвердил функциональные и документационные
+границы TASK-007-1…007-5 и закрыл повторный gate TASK-007-7…007-9 без P0/P1/P2
+findings. Проверены REQ-007/008, ADR-007/008, canonical refresh, source/odds,
+archive sync, private/public Compose, tag-only workflow и release handoff.
+
+EPIC остаётся `in_progress`: TASK-007-6 сохраняет статус `blocked` до успешного
+refresh на актуальном provider snapshot и внешних GHCR/IAM/backup/scheduler
+evidence. Git tag, image publication, PR и deployment этим review не выполнялись.

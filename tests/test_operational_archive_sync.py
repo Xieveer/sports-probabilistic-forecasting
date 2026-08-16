@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -83,3 +84,23 @@ def test_local_pull_verifies_before_creating_training_import(tmp_path: Path) -> 
     pulled = pull_verified_archive(artifact.artifact_id, tmp_path / "downloads", storage)
 
     assert (pulled / "data.json").read_text(encoding="utf-8") == "{}"
+
+
+def test_local_pull_rejects_manifest_path_outside_staging(tmp_path: Path) -> None:
+    """Недоверенный manifest не может записать файл за пределами local staging."""
+    artifact_id = "sha256:unsafe"
+    victim = tmp_path / "victim.txt"
+    victim.write_text("safe", encoding="utf-8")
+    storage = _FakeStorage()
+    key = f"operational-archive/{artifact_id}/manifest.json"
+    storage.objects[key] = (
+        '{"schema_version":1,"artifact_id":"sha256:unsafe","created_at":"x",'
+        f'"files":[{{"path":"{victim}","sha256":"{hashlib.sha256(b"pwned").hexdigest()}",'
+        '"size":5}],"provenance":{}}'
+    ).encode()
+    storage.objects[f"operational-archive/{artifact_id}/{victim}"] = b"pwned"
+
+    with pytest.raises(ArchiveSyncError):
+        pull_verified_archive(artifact_id, tmp_path / "downloads", storage)
+
+    assert victim.read_text(encoding="utf-8") == "safe"

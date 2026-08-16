@@ -25,7 +25,7 @@ from sports_forecast.data.providers import (
     SourceProviderError,
     get_provider,
 )
-from sports_forecast.data.providers.odds.refresh import run_odds_refresh
+from sports_forecast.data.providers.odds.refresh import OddsRefreshResult, run_odds_refresh
 from sports_forecast.utils.log_config import get_logger
 
 
@@ -33,6 +33,20 @@ logger = get_logger(__name__)
 
 _DEFAULT_SPORT_KEY: str = "icehockey_nhl"
 _DEFAULT_BOOKMAKER_KEY: str = "the_odds_api"
+
+
+def refresh_source_with_odds_result(tournament: str) -> tuple[Path, OddsRefreshResult | None]:
+    """Обновить provider source и вернуть результат обязательного odds post-step."""
+    paths_cfg = load_paths_config()
+    try:
+        source_cfg = load_source_config(tournament)
+    except FileNotFoundError:
+        source_cfg = None
+    provider = get_provider(source_cfg, paths_cfg)
+    path = provider.fetch(tournament)
+    if source_cfg is None or not _odds_post_fetch_enabled(source_cfg):
+        return path, None
+    return path, _run_odds_post_fetch(tournament, source_cfg, path)
 
 
 def _odds_post_fetch_enabled(source_cfg: DictConfig | None) -> bool:
@@ -50,7 +64,9 @@ def _odds_post_fetch_enabled(source_cfg: DictConfig | None) -> bool:
     return str(raw).lower() in ("1", "true", "yes")
 
 
-def _run_odds_post_fetch(tournament: str, source_cfg: DictConfig, source_csv: Path) -> None:
+def _run_odds_post_fetch(
+    tournament: str, source_cfg: DictConfig, source_csv: Path
+) -> OddsRefreshResult:
     """Вызвать :func:`run_odds_refresh` с параметрами из ``source_cfg.odds`` (fail-fast при ошибке)."""
     odds = source_cfg.get("odds") or OmegaConf.create({})
     bookmaker_key = str(odds.get("bookmaker") or _DEFAULT_BOOKMAKER_KEY)
@@ -81,6 +97,7 @@ def _run_odds_post_fetch(tournament: str, source_cfg: DictConfig, source_csv: Pa
         result.requests_remaining,
         result.requests_used,
     )
+    return result
 
 
 def refresh_source(tournament: str, *, skip_odds: bool = False) -> Path:
@@ -98,16 +115,16 @@ def refresh_source(tournament: str, *, skip_odds: bool = False) -> Path:
         SourceProviderError: Ошибка загрузки NHL/Web и т.п.
         ValueError, OSError: Ошибка odds-refresh (без глотания: пайплайн падает).
     """
+    if not skip_odds:
+        path, _result = refresh_source_with_odds_result(tournament)
+        return path
     paths_cfg = load_paths_config()
     try:
         source_cfg = load_source_config(tournament)
     except FileNotFoundError:
         source_cfg = None
     provider = get_provider(source_cfg, paths_cfg)
-    path = provider.fetch(tournament)
-    if not skip_odds and source_cfg is not None and _odds_post_fetch_enabled(source_cfg):
-        _run_odds_post_fetch(tournament, source_cfg, path)
-    return path
+    return provider.fetch(tournament)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -21,7 +21,18 @@ DVC и training автоматически не запускаются.
 - 22 tests: archive sync, corruption, serving-data import и production topology.
 - `ruff`, `mypy`, `make ai-validate`, `docker compose ... config --quiet`, `git diff --check` — успешно.
 
+## Закрытие независимого review
+
+Повторный security/reviewer gate подтвердил, что абсолютные и содержащие `..`
+пути из недоверенного remote manifest отклоняются до записи, а проверка того же
+инварианта повторяется при локальной верификации archive. Regression test
+сохраняет внешний файл неизменным.
+
+Перед review автором выполнены `make test-unit` (894 passed), `make security`,
+`make pre-commit`; независимый reviewer дополнительно запустил targeted archive
+tests, Ruff, mypy и проверку AI layer.
+
 ## Не выполнялось
 
-- Не выдавались реальные IAM credentials/prefix policy, не выполнялся upload в Object Storage и не запускался VPS service.
-- TASK-007-9 остаётся для private Compose и tag-only release artifacts.
+- Реальные IAM credentials/prefix policy, upload в Object Storage и VPS service
+  остаются внешними Operations evidence и не проверялись локальным review.

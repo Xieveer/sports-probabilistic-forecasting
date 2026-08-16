@@ -152,10 +152,10 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     assert "SF_OBJECT_STORAGE_ACCESS_KEY_ID" not in cast(dict[str, str], worker["environment"])
     assert source_acquirer["environment"] == {
         "SF_CANONICAL_SOURCE_SNAPSHOT": "/app/data/source/nhl/current.csv",
-        "ODDS_API_KEY_FREE": "${ODDS_API_KEY_FREE:?set ODDS_API_KEY_FREE}",
-        "ODDS_API_KEY_20K": "${ODDS_API_KEY_20K:?set ODDS_API_KEY_20K}",
-        "ODDS_API_KEY_100K": "${ODDS_API_KEY_100K:?set ODDS_API_KEY_100K}",
-        "ODDS_API_KEY": "${ODDS_API_KEY:?set ODDS_API_KEY}",
+        "ODDS_API_KEY_FREE": "${ODDS_API_KEY_FREE:-}",
+        "ODDS_API_KEY_20K": "${ODDS_API_KEY_20K:-}",
+        "ODDS_API_KEY_100K": "${ODDS_API_KEY_100K:-}",
+        "ODDS_API_KEY": "${ODDS_API_KEY:-}",
     }
     assert source_acquirer["volumes"] == [
         "${SF_CANONICAL_SOURCE_ROOT:?set SF_CANONICAL_SOURCE_ROOT}:/app/data/source/nhl",

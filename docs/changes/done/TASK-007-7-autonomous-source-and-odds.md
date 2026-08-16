@@ -35,8 +35,20 @@ Historical betting-reference вынесен в отдельный CLI-режим
 - `curl -L https://api-web.nhle.com/v1/schedule/now` (без записи) — HTTP 200, 70 160 байт.
 - `git diff --check` — успешно.
 
+## Закрытие независимого review
+
+Повторный reviewer gate подтвердил исправление всех findings TASK-007-7:
+обычный close-upsert сохраняет `*_t15`, квотная ошибка немедленно завершает
+T−15 discovery, reference выбирается по фактическому provider timestamp, а
+source snapshot публикуется только после полного merged odds результата без
+quota hit и без будущих событий с пустыми обязательными odds.
+
+Перед review автором выполнены `make test-unit` (894 passed), `make lint`,
+`make security`, `make pre-commit`; независимый reviewer дополнительно получил
+зелёные targeted tests, Ruff и mypy по изменённому diff.
+
 ## Не выполнялось и риски
 
-- Реальный historical T−15 backfill не запускался: он расходует квоту API и должен идти небольшими диапазонами.
+- Реальный historical T−15 backfill и production source refresh не запускались:
+  historical проход расходует квоту API и должен идти небольшими диапазонами.
 - VPS deployment, scheduler enable и production migrations не выполнялись.
-- Verified Object Storage sync и private ingress/tag-only images остаются в [TASK-007-8](../../backlog/tasks/TASK-007-8-verified-archive-sync.md) и [TASK-007-9](../../backlog/tasks/TASK-007-9-private-ingress-and-tag-release.md).

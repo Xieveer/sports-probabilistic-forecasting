@@ -63,10 +63,10 @@ services:
     pull_policy: always
     environment:
       SF_CANONICAL_SOURCE_SNAPSHOT: /app/data/source/nhl/current.csv
-      ODDS_API_KEY_FREE: ${ODDS_API_KEY_FREE:?set ODDS_API_KEY_FREE}
-      ODDS_API_KEY_20K: ${ODDS_API_KEY_20K:?set ODDS_API_KEY_20K}
-      ODDS_API_KEY_100K: ${ODDS_API_KEY_100K:?set ODDS_API_KEY_100K}
-      ODDS_API_KEY: ${ODDS_API_KEY:?set ODDS_API_KEY}
+      ODDS_API_KEY_FREE: ${ODDS_API_KEY_FREE:-}
+      ODDS_API_KEY_20K: ${ODDS_API_KEY_20K:-}
+      ODDS_API_KEY_100K: ${ODDS_API_KEY_100K:-}
+      ODDS_API_KEY: ${ODDS_API_KEY:-}
     volumes:
       - ${SF_CANONICAL_SOURCE_ROOT:?set SF_CANONICAL_SOURCE_ROOT}:/app/data/source/nhl
     profiles: ["source-acquisition"]
