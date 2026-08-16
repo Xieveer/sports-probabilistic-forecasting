@@ -1,6 +1,6 @@
 # TASK-007-6 — Measurement, DevOps handoff и готовность `1.1.0`
 
-> **Статус:** in_progress
+> **Статус:** blocked
 > **Владелец:** documentation-writer + devops-reviewer
 > **Эпик:** [EPIC-007](../EPIC-007-autonomous-production-data-runtime.md)
 > **Требование:** [REQ-007](../../product/requirements/REQ-007-production-data-runtime.md)
@@ -51,6 +51,10 @@ images, но не deployment.
 
 Остаются условия до фактического release-candidate artifact и rollout:
 
+0. Закрыть [TASK-007-7](TASK-007-7-autonomous-source-and-odds.md),
+   [TASK-007-8](TASK-007-8-verified-archive-sync.md) и
+   [TASK-007-9](TASK-007-9-private-ingress-and-tag-release.md): feedback
+   Operations Agent подтвердил, что прежние contracts не дают autonomous candidate.
 1. Повторить успешный path full refresh и атомарной публикации на актуальном
    штатном provider snapshot с допустимыми upcoming матчами. NHL API уже
    возвращает будущие матчи с 2026-09-29, но профиль refresh намеренно

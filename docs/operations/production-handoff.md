@@ -22,7 +22,9 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Runtime и конфигурация
 
-- Команда запуска контейнера: `docker compose -f docker-compose.prod.yml up -d`.
+- Private Telegram-only candidate: `docker compose -f docker-compose.prod.yml up -d`.
+  Public ingress требует отдельного явного opt-in:
+  `docker compose -f docker-compose.prod.yml -f docker-compose.public.yml up -d`.
 - Требуемая версия Python и системные зависимости: Python 3.12; curl и libpq-dev в Dockerfile.
 - Runtime dependency boundary: `uv sync --frozen --no-dev` устанавливает только
   serving-зависимости. DVC, DVC S3, MLflow и Optuna находятся в dev-группе для
@@ -31,9 +33,9 @@ rollout и rollback в репозитории управления инфрас�
   `POSTGRES_PASSWORD` — пароль PostgreSQL; `SF_API_DATABASE_URL` — scoped
   read-only URL API; `SF_WORKER_DATABASE_URL` — scoped write URL refresh;
   `SF_API_IMAGE`, `SF_WORKER_IMAGE`, `SF_BOT_IMAGE`, `SF_POSTGRES_IMAGE`,
-  `SF_CADDY_IMAGE` — точные `image@sha256:digest`; `SF_APP_VERSION` — версия
-  приложения; `SF_WORKER_RUN_ID` — уникальный scheduler ID; `SF_API_DOMAIN` —
-  публичный DNS; `BOT_TOKEN`, `BOT_ALLOWED_USER_IDS`, `BOT_ADMIN_USER_IDS`,
+  `SF_ARCHIVE_SYNC_IMAGE` — точные `image@sha256:digest`; `SF_CADDY_IMAGE` и
+  `SF_API_DOMAIN` нужны только public overlay; `SF_APP_VERSION` — версия
+  приложения; `SF_WORKER_RUN_ID` — уникальный scheduler ID; `BOT_TOKEN`, `BOT_ALLOWED_USER_IDS`, `BOT_ADMIN_USER_IDS`,
   `BOT_API_BASE_URL` — Telegram и внутренний API; `ODDS_API_KEY_FREE`,
   `ODDS_API_KEY_20K`, `ODDS_API_KEY_100K`, `ODDS_API_KEY` — ключи Odds API;
   `DATABASE_URL` — только host CLI; `SF_CANONICAL_SOURCE_ROOT` — read-only
@@ -47,7 +49,8 @@ rollout и rollback в репозитории управления инфрас�
   `SF_ACCEPTANCE_MODEL_VERSION`, `SF_ACCEPTANCE_DATABASE_URL`,
   `SF_ACCEPTANCE_WORKER_RUN_ID`, `SF_ACCEPTANCE_BOT_HEALTH_COMMAND`.
 - Внешние зависимости, адреса и ожидаемые таймауты: PostgreSQL, Telegram, NHL API и The Odds API; timeout Odds API 120 секунд. MLflow остаётся в локальном training-контуре.
-- Порты и исходящие сетевые соединения: API 8000; Caddy 80/443; исходящий HTTPS к внешним API.
+- Порты и исходящие сетевые соединения: private base не публикует ports; Caddy
+  80/443 появляется только в public overlay; исходящий HTTPS к внешним API.
 
 ## Healthcheck и smoke-проверка
 
@@ -63,7 +66,7 @@ rollout и rollback в репозитории управления инфрас�
 
 - Постоянные данные и mounts: PostgreSQL и `runtime_models` (current/previous
   model bundles), read-only provider snapshot и write-only archive staging
-  Worker, Caddy volumes. API и bot не монтируют models/data; фактические пути
+  Worker, archive-sync state и (только public overlay) Caddy volumes. API и bot не монтируют models/data; фактические пути
   проверяет Operations Agent.
 - Scheduler/topology: [production-runtime-topology.md](production-runtime-topology.md).
 - Runbook serving-data/archive: [serving-data.md](serving-data.md).
@@ -126,7 +129,7 @@ rollout и rollback в репозитории управления инфрас�
   До его создания не использовать прежние image digests или mutable tags:
   они относятся к другому commit и запрещены для production. После tag pipeline
   обязан зафиксировать новые GitHub CI, dependency/filesystem/image scans, GHCR
-  provenance и три published image digest. Production DB role, external
+  provenance и published immutable image digests (api, worker, telegram-bot и archive-sync). Production DB role, external
   Telegram/API connectivity и VPS rollout подтверждает внешний server operations
   agent.
 - Локальный `make security` на 2026-08-09 успешно выполнил `pip-audit` для
@@ -142,6 +145,11 @@ rollout и rollback в репозитории управления инфрас�
   `v1.1.0`, совпадающий с `pyproject.toml`, CI provenance attestation и
   отдельный digest каждого runtime image.
 - Предыдущая исправная версия: определяется Operations Agent из последнего работоспособного immutable image.
+- Model delivery bundle: перед rollout Operations получает путь/immutable
+  `bundle_id`, manifest checksum, `app_version` и source commit; `current` и
+  `previous` устанавливаются только через [model-bundle.md](model-bundle.md).
+  Rollback model выполняется проверенным `previous` pointer, rollback image —
+  предыдущими image digests; destructive migration downgrade запрещён.
 - Процедура и допустимое время отката: до migration вернуть Compose на предыдущий immutable image; после additive migration использовать forward-fix либо восстановить проверенный backup — destructive downgrade запрещён. После действия проверить `/ready`; целевое время определяет Operations Agent.
 - Критерии остановки rollout: health не 200, DB недоступна, crash loop или рост ошибок refresh.
 

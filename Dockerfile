@@ -70,3 +70,12 @@ USER sf
 CMD ["uv", "run", "python", "-m", "sports_forecast.worker", \
      "tournament=nhl", "market=winner_withOT", "market_spec=winner_withOT", \
      "algorithm=catboost_reg", "features=advanced"]
+
+# ── Archive sync (отдельный Object Storage credential boundary) ──
+FROM base AS archive-sync
+
+RUN uv sync --frozen --no-dev --group archive-sync
+
+USER sf
+
+CMD ["uv", "run", "python", "-m", "sports_forecast.deploy.archive_sync_cli"]

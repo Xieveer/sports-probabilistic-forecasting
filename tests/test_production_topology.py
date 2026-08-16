@@ -10,7 +10,7 @@ import yaml
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-PRODUCTION_SERVICES = {"api", "db", "telegram-bot", "worker", "caddy"}
+PRODUCTION_SERVICES = {"api", "db", "telegram-bot", "source-acquirer", "worker", "archive-sync"}
 SYSTEMD_DIR = PROJECT_ROOT / "deploy" / "systemd"
 
 
@@ -31,7 +31,10 @@ def test_production_compose_contains_only_serving_services() -> None:
     assert set(services) == PRODUCTION_SERVICES
     assert "ports" not in services["api"]
     assert "ports" not in services["db"]
-    assert services["caddy"]["ports"] == ["80:80", "443:443"]
+    assert "caddy" not in services
+    assert "SF_API_DOMAIN" not in (PROJECT_ROOT / "docker-compose.prod.yml").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_production_runtime_images_are_external_and_immutable_inputs() -> None:
@@ -44,8 +47,8 @@ def test_production_runtime_images_are_external_and_immutable_inputs() -> None:
         ("db", "SF_POSTGRES_IMAGE"),
         ("api", "SF_API_IMAGE"),
         ("worker", "SF_WORKER_IMAGE"),
+        ("archive-sync", "SF_ARCHIVE_SYNC_IMAGE"),
         ("telegram-bot", "SF_BOT_IMAGE"),
-        ("caddy", "SF_CADDY_IMAGE"),
     ):
         service = services[service_name]
         assert isinstance(service, dict)
@@ -61,12 +64,38 @@ def test_deploy_workflow_is_manual_only() -> None:
     assert set(triggers) == {"workflow_dispatch"}
 
 
+def test_ci_security_and_image_publication_have_separate_triggers() -> None:
+    """PR/main проверяются без публикации; provenance/digest создаёт только release tag."""
+    ci = _load_yaml(".github/workflows/ci.yml")
+    security = _load_yaml(".github/workflows/security.yml")
+    docker = _load_yaml(".github/workflows/docker.yml")
+
+    ci_triggers = cast(dict[str, object], cast(dict[bool, object], ci)[True])
+    security_triggers = cast(dict[str, object], cast(dict[bool, object], security)[True])
+    docker_triggers = cast(dict[str, object], cast(dict[bool, object], docker)[True])
+    assert "pull_request" in ci_triggers
+    assert "main" in cast(dict[str, list[str]], ci_triggers["push"])["branches"]
+    assert "pull_request" in security_triggers
+    docker_push = cast(dict[str, list[str]], docker_triggers["push"])
+    assert docker_push == {"tags": ["v*.*.*"]}
+    docker_text = (PROJECT_ROOT / ".github/workflows/docker.yml").read_text(encoding="utf-8")
+    assert "type=raw,value=latest" not in docker_text
+    assert "type=sha,prefix=" not in docker_text
+
+
 def test_caddy_does_not_publish_internal_metrics() -> None:
     """Public ingress не проксирует endpoint метрик API."""
     caddyfile = (PROJECT_ROOT / "deploy" / "Caddyfile").read_text(encoding="utf-8")
 
     assert "@internal_metrics path /metrics /metrics/*" in caddyfile
     assert "respond @internal_metrics 404" in caddyfile
+    public_compose = _load_yaml("docker-compose.public.yml")
+    public_services = cast(dict[str, dict[str, object]], public_compose["services"])
+    caddy = public_services["caddy"]
+    assert caddy["ports"] == ["80:80", "443:443"]
+    assert (
+        "${SF_API_DOMAIN:?set SF_API_DOMAIN}" in cast(dict[str, str], caddy["environment"]).values()
+    )
 
 
 def test_worker_image_does_not_embed_training_data_or_models() -> None:
@@ -98,6 +127,8 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     api = services["api"]
     bot = services["telegram-bot"]
     worker = services["worker"]
+    source_acquirer = services["source-acquirer"]
+    archive_sync = services["archive-sync"]
 
     assert api["environment"] == {
         "DATABASE_URL": "${SF_API_DATABASE_URL:?set SF_API_DATABASE_URL}",
@@ -110,15 +141,38 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
         "SF_WORKER_RUN_ID": "${SF_WORKER_RUN_ID:?set a scheduler-generated id}",
         "SF_MODEL_RUNTIME_ROOT": "/app/models",
         "SF_APP_VERSION": "${SF_APP_VERSION:?set SF_APP_VERSION}",
-        "SF_CANONICAL_SOURCE_CSV": "/app/source/current.csv",
+        "SF_CANONICAL_SOURCE_CSV": "/app/data/source/nhl/current.csv",
         "SF_OPERATIONAL_ARCHIVE_ROOT": "/app/archive",
     }
     assert worker["volumes"] == [
         "runtime_models:/app/models:ro",
-        "${SF_CANONICAL_SOURCE_ROOT:?set SF_CANONICAL_SOURCE_ROOT}:/app/source:ro",
+        "${SF_CANONICAL_SOURCE_ROOT:?set SF_CANONICAL_SOURCE_ROOT}:/app/data/source/nhl:ro",
         "${SF_OPERATIONAL_ARCHIVE_ROOT:?set SF_OPERATIONAL_ARCHIVE_ROOT}:/app/archive",
     ]
     assert "SF_OBJECT_STORAGE_ACCESS_KEY_ID" not in cast(dict[str, str], worker["environment"])
+    assert source_acquirer["environment"] == {
+        "SF_CANONICAL_SOURCE_SNAPSHOT": "/app/data/source/nhl/current.csv",
+        "ODDS_API_KEY_FREE": "${ODDS_API_KEY_FREE:?set ODDS_API_KEY_FREE}",
+        "ODDS_API_KEY_20K": "${ODDS_API_KEY_20K:?set ODDS_API_KEY_20K}",
+        "ODDS_API_KEY_100K": "${ODDS_API_KEY_100K:?set ODDS_API_KEY_100K}",
+        "ODDS_API_KEY": "${ODDS_API_KEY:?set ODDS_API_KEY}",
+    }
+    assert source_acquirer["volumes"] == [
+        "${SF_CANONICAL_SOURCE_ROOT:?set SF_CANONICAL_SOURCE_ROOT}:/app/data/source/nhl",
+    ]
+    assert archive_sync["profiles"] == ["operational-sync"]
+    assert archive_sync["entrypoint"] == [
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "sports_forecast.deploy.archive_sync_cli",
+    ]
+    assert archive_sync["volumes"] == [
+        "${SF_OPERATIONAL_ARCHIVE_ROOT:?set SF_OPERATIONAL_ARCHIVE_ROOT}:/app/archive:ro",
+        "${SF_ARCHIVE_SYNC_STATE_ROOT:?set SF_ARCHIVE_SYNC_STATE_ROOT}:/app/sync-state",
+    ]
+    assert "SF_OBJECT_STORAGE_ACCESS_KEY_ID" in cast(dict[str, str], archive_sync["environment"])
     assert "serving_data" not in cast(dict[str, object], compose["volumes"])
 
 
@@ -136,6 +190,8 @@ def test_systemd_scheduler_has_profile_cadence_lock_timeout_retry_and_safe_run_i
     assert "RestartSec=5m" in service
     assert "flock -n" in service
     assert "canonical_full_refresh_cli" in runner
+    assert "source_snapshot_cli" in runner
+    assert runner.index("source_snapshot_cli") < runner.index("canonical_full_refresh_cli")
     assert "uuidgen" in runner
     assert "SF_WORKER_RUN_ID" in runner
     assert "last successful run is stored in worker_executions" in runner
@@ -168,6 +224,4 @@ def test_runtime_healthcheck_uses_readiness_and_persistent_state_is_declared() -
     assert services["db"]["healthcheck"]
     assert services["api"]["depends_on"] == {"db": {"condition": "service_healthy"}}
     assert "curl -f http://localhost:8000/ready" in dockerfile
-    assert {"pg_data", "runtime_models", "caddy_data", "caddy_config"}.issubset(
-        cast(dict[str, object], compose["volumes"])
-    )
+    assert {"pg_data", "runtime_models"}.issubset(cast(dict[str, object], compose["volumes"]))

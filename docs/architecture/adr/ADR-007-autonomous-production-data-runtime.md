@@ -4,6 +4,8 @@
 > **Дата:** 2026-08-14
 > **Связанное требование:** [REQ-007](../../product/requirements/REQ-007-production-data-runtime.md)
 
+> **Delivery/rollout уточнение:** [ADR-008](ADR-008-reliable-delivery-and-private-rollout.md).
+
 ## Контекст и критерии выбора
 
 `v1.0.1` подготовил serving-контур, но его Worker материализует только заранее

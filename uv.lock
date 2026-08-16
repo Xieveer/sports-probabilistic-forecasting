@@ -2669,6 +2669,9 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+archive-sync = [
+    { name = "boto3" },
+]
 dev = [
     { name = "cookiecutter" },
     { name = "dvc" },
@@ -2707,6 +2710,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+archive-sync = [{ name = "boto3", specifier = ">=1.41.5" }]
 dev = [
     { name = "cookiecutter", specifier = ">=2.6.0" },
     { name = "dvc" },

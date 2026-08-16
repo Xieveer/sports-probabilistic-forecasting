@@ -35,4 +35,7 @@
 | TASK-007-3 | done | high | [NHL full-history refresh, inference и publish](tasks/TASK-007-3-full-history-refresh-and-publish.md) |
 | TASK-007-4 | done | high | [Immutable operational snapshot sync](tasks/TASK-007-4-operational-snapshot-sync.md) |
 | TASK-007-5 | done | high | [Production topology, scheduler и доступы](tasks/TASK-007-5-production-runtime-topology.md) |
-| TASK-007-6 | in_progress | high | [Measurement, DevOps handoff и готовность 1.1.0](tasks/TASK-007-6-measurement-devops-handoff-and-release.md) |
+| TASK-007-6 | blocked | high | [Measurement, DevOps handoff и готовность 1.1.0](tasks/TASK-007-6-measurement-devops-handoff-and-release.md) |
+| TASK-007-7 | done | high | [Автономный source snapshot и odds observations](tasks/TASK-007-7-autonomous-source-and-odds.md) |
+| TASK-007-8 | done | high | [Проверяемый archive sync и local training import](tasks/TASK-007-8-verified-archive-sync.md) |
+| TASK-007-9 | done | high | [Private ingress и tag-only release artifacts](tasks/TASK-007-9-private-ingress-and-tag-release.md) |

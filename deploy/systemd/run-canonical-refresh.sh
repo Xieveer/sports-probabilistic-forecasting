@@ -15,6 +15,10 @@ fi
 : "${SF_FEATURES:?нужен SF_FEATURES}"
 
 export SF_WORKER_RUN_ID="${profile}-$(date -u +%Y%m%dT%H%M%SZ)-$(uuidgen)"
+/usr/bin/docker compose -f docker-compose.prod.yml --profile source-acquisition run --rm --no-deps source-acquirer \
+  uv run python -m sports_forecast.orchestration.source_snapshot_cli \
+  --tournament "${SF_TOURNAMENT}"
+
 # The last successful run is stored in worker_executions by canonical_full_refresh_cli.
 exec /usr/bin/docker compose -f docker-compose.prod.yml --profile worker run --rm --no-deps worker \
   uv run python -m sports_forecast.orchestration.canonical_full_refresh_cli \

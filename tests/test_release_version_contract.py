@@ -27,8 +27,8 @@ def test_package_and_fastapi_publish_same_release_version() -> None:
     assert HealthResponse(timestamp=datetime.now()).version == RELEASE_VERSION
 
 
-def test_release_workflow_publishes_semver_and_sha_image_tags() -> None:
-    """Release по Git-тегу публикует SemVer и traceable SHA теги всех образов."""
+def test_release_workflow_publishes_only_exact_semver_image_tag() -> None:
+    """Release публикует только exact SemVer tag, а runtime identity — digest."""
     workflow_path = PROJECT_ROOT / ".github" / "workflows" / "docker.yml"
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
 
@@ -43,7 +43,8 @@ def test_release_workflow_publishes_semver_and_sha_image_tags() -> None:
     metadata_step = next(step for step in steps if step.get("id") == "meta")
     tags = metadata_step["with"]["tags"]
     assert "type=semver,pattern={{version}}" in tags
-    assert "type=sha,prefix=" in tags
+    assert "type=sha,prefix=" not in tags
+    assert "type=raw,value=latest" not in tags
 
 
 def test_docker_publish_waits_for_security_gates_and_attests_digest() -> None:

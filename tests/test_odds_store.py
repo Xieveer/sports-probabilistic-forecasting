@@ -19,6 +19,7 @@ from sports_forecast.data.providers.odds.store import (
     save_odds_store,
     upsert_odds_store,
     upsert_odds_store_file,
+    upsert_t15_reference_store_file,
 )
 
 
@@ -347,3 +348,38 @@ def test_roundtrip_v3_preserves_close_timings_and_totals(tmp_path) -> None:
     assert float(got["pinnacle_total_withOT_line_close"].iloc[0]) == 5.0
     assert float(got["onexbet_total_under_close"].iloc[0]) == 1.9
     assert float(got["close_minutes_before"].iloc[0]) == 60.0
+
+
+def test_t15_upsert_preserves_existing_close_values(tmp_path) -> None:
+    """Reference backfill изменяет только поля T−15, а legacy close остаётся исходным."""
+    path = tmp_path / "o.parquet"
+    existing = pd.DataFrame(
+        [
+            {
+                "game_date": "2024-03-01",
+                "home_team_norm": "H",
+                "away_team_norm": "A",
+                "pinnacle_winner_withOT_home_close": 1.8,
+                "fetched_at": "2024-03-01T00:00:00+00:00",
+            }
+        ]
+    )
+    save_odds_store(existing, path)
+    reference = pd.DataFrame(
+        [
+            {
+                "game_date": "2024-03-01",
+                "home_team_norm": "H",
+                "away_team_norm": "A",
+                "pinnacle_winner_withOT_home_t15": 1.95,
+                "t15_provider_observed_at": "2024-03-01T19:45:00Z",
+                "t15_retrieved_at": "2026-08-16T10:00:00+00:00",
+            }
+        ]
+    )
+
+    upsert_t15_reference_store_file(reference, path)
+
+    got = load_odds_store(path).iloc[0]
+    assert float(got["pinnacle_winner_withOT_home_close"]) == 1.8
+    assert float(got["pinnacle_winner_withOT_home_t15"]) == 1.95

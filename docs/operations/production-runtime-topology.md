@@ -11,11 +11,12 @@ Operations Agent.
 | `api` | `SF_API_DATABASE_URL`, read-only витрина | нет | нет |
 | `telegram-bot` | нет, только внутренний API | нет | нет |
 | `worker` | `SF_WORKER_DATABASE_URL`, canonical refresh/write | immutable `runtime_models`, source snapshot read-only, archive staging read-write | нет |
+| `archive-sync` | нет | archive staging read-only, отдельный sync state read-write | write/read verify только `operational-archive/*` |
 
 Роли `sf_api_reader` и `sf_refresh_writer` создаёт Operations Agent после
 migrations и ограничивает соответствующими таблицами/операциями. `worker` не
 получает DVC, MLflow или Object Storage credentials. Отдельная Operations sync
-учётная запись имеет write только к `operational-archive/`; local training
+учётная запись имеет write/read-verify только к `operational-archive/`; local training
 читает snapshot отдельной read-only учётной записью и prefix.
 
 ## Scheduler profile

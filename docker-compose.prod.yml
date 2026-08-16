@@ -1,7 +1,7 @@
 # Минимальный production serving-контур. Запускать этот файл самостоятельно:
 #   docker compose -f docker-compose.prod.yml up -d
 #
-# В состав входят только API, PostgreSQL, Telegram bot, Caddy и одноразовый
+# В состав входят только API, PostgreSQL, Telegram bot и одноразовые
 # Worker. Airflow, MLflow, DVC, Prometheus, Grafana и node-exporter остаются
 # вне production Compose. Alloy управляется инфраструктурным репозиторием.
 
@@ -58,6 +58,22 @@ services:
     mem_limit: 384m
     logging: *prod_logging
 
+  source-acquirer:
+    image: ${SF_WORKER_IMAGE:?set SF_WORKER_IMAGE to an immutable ghcr image digest}
+    pull_policy: always
+    environment:
+      SF_CANONICAL_SOURCE_SNAPSHOT: /app/data/source/nhl/current.csv
+      ODDS_API_KEY_FREE: ${ODDS_API_KEY_FREE:?set ODDS_API_KEY_FREE}
+      ODDS_API_KEY_20K: ${ODDS_API_KEY_20K:?set ODDS_API_KEY_20K}
+      ODDS_API_KEY_100K: ${ODDS_API_KEY_100K:?set ODDS_API_KEY_100K}
+      ODDS_API_KEY: ${ODDS_API_KEY:?set ODDS_API_KEY}
+    volumes:
+      - ${SF_CANONICAL_SOURCE_ROOT:?set SF_CANONICAL_SOURCE_ROOT}:/app/data/source/nhl
+    profiles: ["source-acquisition"]
+    cpus: "1.0"
+    mem_limit: 1024m
+    logging: *prod_logging
+
   worker:
     image: ${SF_WORKER_IMAGE:?set SF_WORKER_IMAGE to an immutable ghcr image digest}
     pull_policy: always
@@ -66,41 +82,38 @@ services:
       SF_WORKER_RUN_ID: ${SF_WORKER_RUN_ID:?set a scheduler-generated id}
       SF_MODEL_RUNTIME_ROOT: /app/models
       SF_APP_VERSION: ${SF_APP_VERSION:?set SF_APP_VERSION}
-      SF_CANONICAL_SOURCE_CSV: /app/source/current.csv
+      SF_CANONICAL_SOURCE_CSV: /app/data/source/nhl/current.csv
       SF_OPERATIONAL_ARCHIVE_ROOT: /app/archive
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - runtime_models:/app/models:ro
-      - ${SF_CANONICAL_SOURCE_ROOT:?set SF_CANONICAL_SOURCE_ROOT}:/app/source:ro
+      - ${SF_CANONICAL_SOURCE_ROOT:?set SF_CANONICAL_SOURCE_ROOT}:/app/data/source/nhl:ro
       - ${SF_OPERATIONAL_ARCHIVE_ROOT:?set SF_OPERATIONAL_ARCHIVE_ROOT}:/app/archive
     profiles: ["worker"]
     cpus: "2.0"
     mem_limit: 3g
     logging: *prod_logging
 
-  caddy:
-    image: ${SF_CADDY_IMAGE:?set SF_CADDY_IMAGE to an immutable caddy digest}
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
+  archive-sync:
+    image: ${SF_ARCHIVE_SYNC_IMAGE:?set SF_ARCHIVE_SYNC_IMAGE to an immutable sync image digest}
+    pull_policy: always
+    entrypoint: ["uv", "run", "python", "-m", "sports_forecast.deploy.archive_sync_cli"]
     environment:
-      SF_API_DOMAIN: ${SF_API_DOMAIN:?set SF_API_DOMAIN}
+      SF_OBJECT_STORAGE_ENDPOINT: ${SF_OBJECT_STORAGE_ENDPOINT:?set SF_OBJECT_STORAGE_ENDPOINT}
+      SF_OBJECT_STORAGE_BUCKET: ${SF_OBJECT_STORAGE_BUCKET:?set SF_OBJECT_STORAGE_BUCKET}
+      SF_OBJECT_STORAGE_ACCESS_KEY_ID: ${SF_OBJECT_STORAGE_ACCESS_KEY_ID:?set SF_OBJECT_STORAGE_ACCESS_KEY_ID}
+      SF_OBJECT_STORAGE_SECRET_ACCESS_KEY: ${SF_OBJECT_STORAGE_SECRET_ACCESS_KEY:?set SF_OBJECT_STORAGE_SECRET_ACCESS_KEY}
+      SF_OPERATIONAL_ARCHIVE_PREFIX: ${SF_OPERATIONAL_ARCHIVE_PREFIX:-operational-archive}
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      api:
-        condition: service_started
-    cpus: "0.25"
-    mem_limit: 128m
+      - ${SF_OPERATIONAL_ARCHIVE_ROOT:?set SF_OPERATIONAL_ARCHIVE_ROOT}:/app/archive:ro
+      - ${SF_ARCHIVE_SYNC_STATE_ROOT:?set SF_ARCHIVE_SYNC_STATE_ROOT}:/app/sync-state
+    profiles: ["operational-sync"]
+    cpus: "0.5"
+    mem_limit: 512m
     logging: *prod_logging
 
 volumes:
   pg_data:
   runtime_models:
-  caddy_data:
-  caddy_config:

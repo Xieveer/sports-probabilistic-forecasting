@@ -4,7 +4,7 @@
 > **Приоритет:** high
 > **Владелец:** главный агент
 > **Требование:** [REQ-007](../product/requirements/REQ-007-production-data-runtime.md)
-> **ADR:** [ADR-007](../architecture/adr/ADR-007-autonomous-production-data-runtime.md) (`accepted`)
+> **ADR:** [ADR-007](../architecture/adr/ADR-007-autonomous-production-data-runtime.md) и [ADR-008](../architecture/adr/ADR-008-reliable-delivery-and-private-rollout.md) (`accepted`)
 
 ## Цель и границы
 
@@ -24,7 +24,10 @@ stateful EWM.
 | [TASK-007-3](tasks/TASK-007-3-full-history-refresh-and-publish.md) | NHL full-history features/inference и publication semantics | 007-1, 007-2 | end-to-end fixture + API visibility | done |
 | [TASK-007-4](tasks/TASK-007-4-operational-snapshot-sync.md) | VPS-to-local immutable snapshot sync | 007-1 | archive/import contract tests | done |
 | [TASK-007-5](tasks/TASK-007-5-production-runtime-topology.md) | Compose, scheduler contract и least-privilege S3 topology | 007-1…007-4 | compose/static/security tests | done |
-| [TASK-007-6](tasks/TASK-007-6-measurement-devops-handoff-and-release.md) | Measurements, DevOps runbooks/handoff и `1.1.0` release readiness | 007-3…007-5 | full-data evidence + production-check | in_progress |
+| [TASK-007-6](tasks/TASK-007-6-measurement-devops-handoff-and-release.md) | Measurements, DevOps runbooks/handoff и `1.1.0` release readiness | 007-3…007-5, 007-7…007-9 | full-data evidence + production-check | blocked |
+| [TASK-007-7](tasks/TASK-007-7-autonomous-source-and-odds.md) | Autonomous source snapshot и odds provenance | ADR-008 | provider/odds failure tests | done |
+| [TASK-007-8](tasks/TASK-007-8-verified-archive-sync.md) | Verified archive sync и local import | 007-7 | upload/retry/corruption tests | done |
+| [TASK-007-9](tasks/TASK-007-9-private-ingress-and-tag-release.md) | Private candidate Compose и tag-only artifacts | 007-8 | Compose/workflow tests | done |
 
 ## Критерии → задачи → доказательства
 

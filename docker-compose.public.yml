@@ -1,0 +1,28 @@
+# Явный opt-in public ingress. Использовать вместе с private base Compose.
+services:
+  caddy:
+    image: ${SF_CADDY_IMAGE:?set SF_CADDY_IMAGE to an immutable caddy digest}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SF_API_DOMAIN: ${SF_API_DOMAIN:?set SF_API_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_started
+    cpus: "0.25"
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy_data:
+  caddy_config:

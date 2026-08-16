@@ -1,0 +1,85 @@
+"""Контракт отдельного verified sync operational archive."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from sports_forecast.deploy.archive_sync import (
+    ArchiveSyncError,
+    pull_verified_archive,
+    sync_operational_archive,
+)
+from sports_forecast.deploy.serving_data import archive_snapshot
+
+
+class _FakeStorage:
+    def __init__(self, *, fail_upload: bool = False, corrupt_download: bool = False) -> None:
+        self.objects: dict[str, bytes] = {}
+        self.fail_upload = fail_upload
+        self.corrupt_download = corrupt_download
+
+    def upload(self, source: Path, key: str) -> None:
+        if self.fail_upload:
+            raise OSError("network unavailable")
+        self.objects[key] = source.read_bytes()
+
+    def download(self, key: str, destination: Path) -> None:
+        value = self.objects[key]
+        destination.write_bytes(
+            b"corrupt" if self.corrupt_download and key.endswith("data.json") else value
+        )
+
+
+def test_sync_failure_keeps_staging_and_writes_retryable_state(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.json").write_text("{}", encoding="utf-8")
+    artifact = archive_snapshot(source, tmp_path / "staging")
+
+    with pytest.raises(ArchiveSyncError):
+        sync_operational_archive(artifact.path, tmp_path / "state", _FakeStorage(fail_upload=True))
+
+    assert artifact.path.exists()
+    assert '"status": "failed"' in (tmp_path / "state" / f"{artifact.artifact_id}.json").read_text()
+
+
+def test_sync_remote_verifies_all_files_before_success(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.json").write_text("{}", encoding="utf-8")
+    artifact = archive_snapshot(source, tmp_path / "staging")
+    storage = _FakeStorage()
+
+    result = sync_operational_archive(artifact.path, tmp_path / "state", storage)
+
+    assert result.status == "verified"
+    assert f"operational-archive/{artifact.artifact_id}/manifest.json" in storage.objects
+
+
+def test_remote_corruption_keeps_staging_and_failed_state(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.json").write_text("{}", encoding="utf-8")
+    artifact = archive_snapshot(source, tmp_path / "staging")
+    state_root = tmp_path / "state"
+
+    with pytest.raises(ArchiveSyncError, match="differs"):
+        sync_operational_archive(artifact.path, state_root, _FakeStorage(corrupt_download=True))
+
+    assert artifact.path.exists()
+    assert '"status": "failed"' in (state_root / f"{artifact.artifact_id}.json").read_text()
+
+
+def test_local_pull_verifies_before_creating_training_import(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.json").write_text("{}", encoding="utf-8")
+    artifact = archive_snapshot(source, tmp_path / "staging")
+    storage = _FakeStorage()
+    sync_operational_archive(artifact.path, tmp_path / "sync-state", storage)
+
+    pulled = pull_verified_archive(artifact.artifact_id, tmp_path / "downloads", storage)
+
+    assert (pulled / "data.json").read_text(encoding="utf-8") == "{}"

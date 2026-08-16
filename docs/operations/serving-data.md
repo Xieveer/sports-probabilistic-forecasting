@@ -39,10 +39,25 @@ uv run python -m sports_forecast.deploy.serving_data archive \
   --archive-root /var/lib/sf/archive-staging
 ```
 
-После проверки manifest синхронизируйте получившийся `operational-archive/`
-prefix штатным S3-инструментом Operations Agent. Только после подтверждённой
-загрузки допустим cleanup: `prune --older-than-days 7`. Cloud archive не
-удаляется автоматически.
+После проверки manifest отдельный sync process с write-only service account
+загружает и remote-verify-ит получившийся `operational-archive/` prefix:
+
+```bash
+docker compose -f docker-compose.prod.yml --profile operational-sync run --rm archive-sync \
+  sync \
+  --archive /app/archive/operational-archive/sha256:<content-hash> \
+  --state-root /app/sync-state \
+  --prefix operational-archive
+```
+
+Он сохраняет durable `<artifact-id>.json` со статусом `failed` или `verified`.
+Только `verified` разрешает cleanup staging/старых runtime snapshots; failure
+оставляет artifact для retry. Cloud archive не удаляется автоматически.
+
+Service account sync получает только `PutObject`/`GetObject` в
+`operational-archive/*`; он не получает DVC prefix, DB, Telegram или model
+bundle secrets. Эти четыре Object Storage переменные задаются только profile
+sync process, не Worker: endpoint, bucket, access key ID, secret access key.
 
 Локально сначала верифицируйте и дедуплицируйте archive:
 
@@ -50,6 +65,18 @@ prefix штатным S3-инструментом Operations Agent. Только
 uv run python -m sports_forecast.deploy.serving_data import \
   --archive /srv/archive/operational-archive/sha256:<content-hash> \
   --import-root data/archive-imports
+```
+
+Для read-only pull прямо из Object Storage используйте отдельную локальную
+учётную запись и CLI `pull-training-input`: он создаёт тот же descriptor, но
+не вызывает DVC.
+
+```bash
+uv run python -m sports_forecast.deploy.archive_sync_cli pull-training-input \
+  --artifact-id sha256:<content-hash> \
+  --download-root data/archive-downloads \
+  --import-root data/archive-imports \
+  --descriptor data/training-inputs/nhl-latest.json
 ```
 
 Лишь успешно созданный staging может стать входом явной DVC-команды оператора;

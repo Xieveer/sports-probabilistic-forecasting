@@ -14,6 +14,7 @@ from sports_forecast.data.providers.odds import backfill as backfill_mod
 from sports_forecast.data.providers.odds.backfill import (
     _close_t_minus_minutes_from_config,
     backfill_day_frames,
+    backfill_t15_reference_day_frames,
     default_odds_store_path,
     last_n_season_windows,
     main,
@@ -24,7 +25,10 @@ from sports_forecast.data.providers.odds.client import (
     OddsApiQuotaSnapshot,
     QuotaBudgetError,
 )
-from sports_forecast.data.providers.odds.snapshot_discovery import CloseSnapshotPlan
+from sports_forecast.data.providers.odds.snapshot_discovery import (
+    CloseSnapshotPlan,
+    T15ReferenceSnapshot,
+)
 
 
 def _minimal_bookmaker_node(
@@ -476,6 +480,48 @@ def test_backfill_day_frames_discover_close_adds_timing_and_uses_config(
     assert "bookmaker_profiles" in last_book_cfg
 
 
+def test_t15_reference_day_frames_uses_distinct_t15_columns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Новый historical pass заполняет только T−15 поля, не legacy close."""
+    reference = T15ReferenceSnapshot(
+        event_id="game",
+        event={"id": "game", "commence_time": "2024-01-15T22:00:00Z"},
+        payload={"timestamp": "2024-01-15T21:45:00Z"},
+        snapshot_iso="2024-01-15T21:45:00Z",
+        commence_time_utc="2024-01-15T22:00:00Z",
+        minutes_before=15,
+    )
+    monkeypatch.setattr(
+        "sports_forecast.data.providers.odds.backfill.discover_t15_reference_snapshots_for_day",
+        lambda *_args, **_kwargs: [reference],
+    )
+    monkeypatch.setattr(
+        "sports_forecast.data.providers.odds.backfill.events_to_odds_frame",
+        lambda *_args, **_kwargs: pd.DataFrame(
+            [
+                {
+                    "game_date": "2024-01-15",
+                    "home_team_norm": "h",
+                    "away_team_norm": "a",
+                    "pinnacle_winner_withOT_home_close": 1.95,
+                }
+            ]
+        ),
+    )
+
+    df = backfill_t15_reference_day_frames(
+        object(),  # type: ignore[arg-type]
+        "icehockey_nhl",
+        date(2024, 1, 15),
+        _minimal_bookmaker_node(seasons_nhl=[]),
+    )
+
+    assert float(df["pinnacle_winner_withOT_home_t15"].iloc[0]) == 1.95
+    assert pd.isna(df["pinnacle_winner_withOT_home_close"].iloc[0])
+    assert df["t15_provider_observed_at"].iloc[0] == "2024-01-15T21:45:00Z"
+
+
 def test_close_t_minus_from_book_yaml() -> None:
     assert (
         _close_t_minus_minutes_from_config(
@@ -551,3 +597,25 @@ def test_main_passes_legacy_timestamps(
     )
     assert rc == 0
     assert captured.get("legacy") is True
+
+
+def test_main_passes_t15_reference_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CLI передаёт отдельный режим T−15 в programmatic backfill."""
+    monkeypatch.setenv("ODDS_API_KEY", "x")
+    captured: dict[str, bool] = {}
+
+    def _rb(*, t15_reference, **kwargs):  # noqa: ANN003
+        captured["t15_reference"] = bool(t15_reference)
+
+    monkeypatch.setattr(backfill_mod, "run_backfill", _rb)
+    rc = main(
+        [
+            "--from",
+            "2024-01-01",
+            "--to",
+            "2024-01-01",
+            "--t15-reference",
+        ]
+    )
+    assert rc == 0
+    assert captured["t15_reference"] is True
