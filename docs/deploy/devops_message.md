@@ -41,7 +41,7 @@ Forecasting `1.1.0` для NHL. Application team передаёт runtime-кон
 
 После reviewed merge в `main` и отдельного разрешения владельца на release:
 
-1. создать tag `v1.1.0`, совпадающий с версией в `pyproject.toml`;
+1. создать security tag `v1.1.1`, совпадающий с версией в `pyproject.toml`;
 2. запустить release pipeline для этого exact commit;
 3. передать для API, Worker и bot по одному полному `image@sha256:<digest>`;
 4. приложить GitHub CI result, build provenance attestation и результаты

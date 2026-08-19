@@ -55,7 +55,7 @@ images/digests.
   [#22](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/22)
   готов к review и содержит `57b683a`; PR CI успешно прошёл lint/test, dependency audit и
   filesystem/secret scan. **NO-GO** для tag/rollout, пока reviewer не одобрит
-  и не merge-ит PR, tag CI не создаст четыре новых digest/scan/provenance, а
+  и не merge-ит PR, tag `v1.1.1` CI не создаст четыре новых digest/scan/provenance, а
   Operations не подтвердит host user/mount ownership.
 - Commit/push: `57b683a` опубликован в `agent/release-1-0-1`; `main.py` не
   входит в commit, потому что это несвязанное пользовательское изменение.

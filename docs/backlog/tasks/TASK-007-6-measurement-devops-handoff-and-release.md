@@ -21,7 +21,7 @@ release acceptance. Подготовить `1.1.0`, но не создавать
   provenance, но не secrets/payloads.
 - [ ] Обновлены production handoff, bootstrap/sync/rollback runbooks, Compose
   env contract, observability и DevOps-first explanation data flow.
-- [ ] `v1.1.0` version bump, immutable GHCR digest/provenance и final gates
+- [ ] security version bump `v1.1.1`, immutable GHCR digest/provenance и final gates
   описаны как последовательность release подготовки; реальный выпуск остаётся
   отдельным authorized action.
 - [ ] Выполнены `make production-check` и минимально достаточные tests/review/
@@ -64,7 +64,7 @@ images, но не deployment.
    external image scans, production DB/S3 access evidence, backup RPO/RTO и
    scheduler/rollback owner. Подробный запрос передан в
    [devops_message.md](../../deploy/devops_message.md).
-3. После выполнения пунктов 1–2 разрешены tag `v1.1.0` и публикация образов
+3. После выполнения пунктов 1–2 разрешены tag `v1.1.1` и публикация образов
    для итогового `main`; rollout остаётся отдельным authorized action.
 
 Полное measurement evidence находится в
