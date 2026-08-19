@@ -13,7 +13,7 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Идентификация и ответственность
 
-- Название сервиса: Sports Probabilistic Forecasting 1.1.0.
+- Название сервиса: Sports Probabilistic Forecasting 1.1.2.
 - Репозиторий и основной branch: SportsProbabilisticForecasting, `main`.
 - Владелец приложения: пользователь.
 - Владелец решения о production-развёртывании: пользователь.
@@ -155,6 +155,13 @@ rollout и rollback в репозитории управления инфрас�
 - Способ доказать происхождение артефакта: итоговый commit SHA, Git tag
   `v1.1.2`, совпадающий с `pyproject.toml`, CI provenance attestation и
   отдельный digest каждого runtime image.
+- Release evidence `v1.1.2`: tag указывает на `eadbdb4bfe979cfdb37b31bd64975d0cfd5ad556`;
+  [GitHub Actions run 32239173166](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/32239173166)
+  успешно завершил release gates, published-image scans и provenance для:
+  - API: `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:e613ba9c05d4040530ea138b6e6cc36169445ef331ce515c0dc796b7ebf38096`.
+  - Worker: `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:5731b374e02f544e35f8884d45c81dfed9086c95620387e1f66123ee71d0d926`.
+  - Telegram bot: `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:30dff19e339d79632ee83d5f046edf45145eef2e4c9046320a19bcb245dc3bf4`.
+  - Archive-sync: `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:17dbba8452ab1fa0eeeb6df0ae338ac6be54da5fddbdac42cd1fd3afcc86e3f3`.
 - Предыдущая исправная версия: определяется Operations Agent из последнего работоспособного immutable image.
 - Model delivery bundle: перед rollout Operations получает путь/immutable
   `bundle_id`, manifest checksum, `app_version` и source commit; `current` и
@@ -166,11 +173,11 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Нерешённые вопросы
 
-- До отдельного разрешения не выполняется deployment; после `v1.1.2` Operations
-  Agent получает новые digests, GitHub/GHCR scan/provenance evidence, scheduler
-  owner, backup RPO/RTO, read-only acceptance DB role и VPS evidence. До
-  release нужны подтверждённые worker memory limit не менее 3 GiB и успешный
-  refresh с актуальными upcoming матчами provider.
+- Deployment не выполнялся. Operations Agent получает выше новые digests и
+  GitHub/GHCR scan/provenance evidence, после чего подтверждает scheduler owner,
+  backup RPO/RTO, read-only acceptance DB role, worker memory limit не менее
+  3 GiB, успешный refresh с актуальными upcoming матчами provider и VPS mount
+  ownership для `sf-runtime:10001:10001`.
 
 ## Граница ответственности
 
