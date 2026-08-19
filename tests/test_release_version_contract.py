@@ -13,7 +13,7 @@ from sports_forecast.service.schemas import HealthResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.1.0"
+RELEASE_VERSION = "1.1.1"
 
 
 def test_package_and_fastapi_publish_same_release_version() -> None:

@@ -131,14 +131,14 @@ rollout и rollback в репозитории управления инфрас�
   [строгий handoff gate](../../tests/test_production_readiness_validation.py),
   [worker measurement](worker-measurement-evidence.md), [migration/recovery](database-migrations.md),
   [signals](observability.md), [model bundle](model-bundle.md), [serving data](serving-data.md).
-- Release `v1.1.0` создаётся только после успешных checks на итоговом `main`.
+- Security release `v1.1.1` создаётся только после успешных checks на итоговом `main`.
   До его создания не использовать прежние image digests или mutable tags:
   они относятся к другому commit и запрещены для production. После tag pipeline
   обязан зафиксировать новые GitHub CI, dependency/filesystem/image scans, GHCR
   provenance и published immutable image digests (api, worker, telegram-bot и archive-sync). Production DB role, external
   Telegram/API connectivity и VPS rollout подтверждает внешний server operations
   agent.
-- Для устранения security blocker runtime UID/GID новый `v1.1.0` tag обязан
+- Для устранения security blocker runtime UID/GID новый `v1.1.1` tag обязан
   соответствовать commit с `sf=10001:10001`; Operations не использует старые
   images или их digests. Требуются четыре новых immutable digests (api, worker,
   telegram-bot, archive-sync), успешный CI, image scans и provenance каждого
@@ -150,10 +150,10 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Артефакт и откат
 
-- Registry и неизменяемый идентификатор image: после `v1.1.0` использовать
+- Registry и неизменяемый идентификатор image: после `v1.1.1` использовать
   только новые GHCR `image@sha256:digest`; SemVer tag не является runtime ID.
 - Способ доказать происхождение артефакта: итоговый commit SHA, Git tag
-  `v1.1.0`, совпадающий с `pyproject.toml`, CI provenance attestation и
+  `v1.1.1`, совпадающий с `pyproject.toml`, CI provenance attestation и
   отдельный digest каждого runtime image.
 - Предыдущая исправная версия: определяется Operations Agent из последнего работоспособного immutable image.
 - Model delivery bundle: перед rollout Operations получает путь/immutable
@@ -166,7 +166,7 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Нерешённые вопросы
 
-- До отдельного разрешения не выполняется deployment; после `v1.1.0` Operations
+- До отдельного разрешения не выполняется deployment; после `v1.1.1` Operations
   Agent получает новые digests, GitHub/GHCR scan/provenance evidence, scheduler
   owner, backup RPO/RTO, read-only acceptance DB role и VPS evidence. До
   release нужны подтверждённые worker memory limit не менее 3 GiB и успешный

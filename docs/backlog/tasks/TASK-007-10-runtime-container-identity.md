@@ -41,7 +41,7 @@ VPS, host users, mounts, release tag, registry или deployment.
 ## Handoff и отчёт
 
 - Отчёт выполнения: [TASK-007-10](../../changes/done/TASK-007-10-runtime-container-identity.md).
-- Follow-up / findings: выпуск `v1.1.0` и VPS mount ownership — Operations.
+- Follow-up / findings: security-выпуск `v1.1.1` и VPS mount ownership — Operations.
 - Review: PR [#22](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/22)
   готов к независимому review; merge и tag требуют его одобрения.
 - Commit/push: `57b683a` опубликован в `agent/release-1-0-1`; не входит
