@@ -42,6 +42,7 @@ VPS, host users, mounts, release tag, registry или deployment.
 
 - Отчёт выполнения: [TASK-007-10](../../changes/done/TASK-007-10-runtime-container-identity.md).
 - Follow-up / findings: выпуск `v1.1.0` и VPS mount ownership — Operations.
-- Review: выполнен self-contained security/release review; независимый reviewer
-  обязателен до commit/push.
-- Commit/push: ожидает reviewer после чистого review.
+- Review: PR [#22](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/22)
+  открыт draft; независимый reviewer обязателен до merge и tag.
+- Commit/push: `57b683a` опубликован в `agent/release-1-0-1`; не входит
+  несвязанное изменение `main.py`.

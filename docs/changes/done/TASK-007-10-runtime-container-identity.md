@@ -51,10 +51,14 @@ images/digests.
 - Security review: устранён достижимый риск совпадения container UID/GID с host
   `zabbix:systemd-journal`. До замены image старые digests остаются небезопасными
   для bind mounts; CI image scan/provenance не заменяются локальным audit.
-- Release review: **NO-GO** для tag/rollout, пока независимый reviewer не
-  подготовит commit/push, GitHub CI не создаст четыре новых digest, не пройдут
-  scans и provenance, а Operations не подтвердит host user/mount ownership.
-- Commit/push: ожидает независимого reviewer после чистого review.
+- Release review: **CONDITIONAL GO** для независимого review: draft PR
+  [#22](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/22)
+  содержит `57b683a`; PR CI успешно прошёл lint/test, dependency audit и
+  filesystem/secret scan. **NO-GO** для tag/rollout, пока reviewer не одобрит
+  и не merge-ит PR, tag CI не создаст четыре новых digest/scan/provenance, а
+  Operations не подтвердит host user/mount ownership.
+- Commit/push: `57b683a` опубликован в `agent/release-1-0-1`; `main.py` не
+  входит в commit, потому что это несвязанное пользовательское изменение.
 - Follow-up: Operations создаёт `sf-runtime:10001:10001`, назначает права лишь
   source/archive mounts и использует только новые immutable digests.
 
