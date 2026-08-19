@@ -126,7 +126,7 @@ ai-validate:
 
 security:
 	uv export --locked --no-dev --no-emit-project --output-file requirements-audit.txt
-	uvx --from pip-audit pip-audit --requirement requirements-audit.txt
+	uvx --from pip-audit pip-audit --requirement $(CURDIR)/requirements-audit.txt
 	@rm -f requirements-audit.txt
 
 production-check:
