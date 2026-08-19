@@ -29,6 +29,12 @@ rollout и rollback в репозитории управления инфрас�
 - Runtime dependency boundary: `uv sync --frozen --no-dev` устанавливает только
   serving-зависимости. DVC, DVC S3, MLflow и Optuna находятся в dev-группе для
   local training/control plane и не должны попадать в API, Worker или bot image.
+- Runtime identity boundary: API, Worker, Telegram bot и archive-sync запускаются
+  как непривилегированный container user `sf` с UID/GID `10001:10001`. До
+  rollout Operations создаёт на VPS отдельного host user `sf-runtime` с теми же
+  UID/GID, подтверждает отсутствие коллизии и назначает его владельцем только
+  требуемых source/archive bind mounts. UID/GID `999:999` запрещён: на
+  `ops-prod-01` он занят `zabbix:systemd-journal`.
 - Переменные окружения (значения хранятся только в secret store):
   `POSTGRES_PASSWORD` — пароль PostgreSQL; `SF_API_DATABASE_URL` — scoped
   read-only URL API; `SF_WORKER_DATABASE_URL` — scoped write URL refresh;
@@ -132,6 +138,11 @@ rollout и rollback в репозитории управления инфрас�
   provenance и published immutable image digests (api, worker, telegram-bot и archive-sync). Production DB role, external
   Telegram/API connectivity и VPS rollout подтверждает внешний server operations
   agent.
+- Для устранения security blocker runtime UID/GID новый `v1.1.0` tag обязан
+  соответствовать commit с `sf=10001:10001`; Operations не использует старые
+  images или их digests. Требуются четыре новых immutable digests (api, worker,
+  telegram-bot, archive-sync), успешный CI, image scans и provenance каждого
+  образа до изменения host mount ownership или rollout.
 - Локальный `make security` на 2026-08-09 успешно выполнил `pip-audit` для
   locked production runtime dependencies: `No known vulnerabilities found`.
   Он не заменяет dependency/filesystem/image scans опубликованных образов и

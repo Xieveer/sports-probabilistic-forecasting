@@ -69,6 +69,13 @@ def test_docker_publish_waits_for_security_gates_and_attests_digest() -> None:
     assert workflow["permissions"]["id-token"] == "write"
 
 
+def test_release_dependency_audit_uses_an_absolute_requirements_path() -> None:
+    """CI audit не теряет exported requirements при создании временного venv."""
+    makefile = (PROJECT_ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert "pip-audit --requirement $(CURDIR)/requirements-audit.txt" in makefile
+
+
 def test_docker_workflow_normalizes_ghcr_image_owner_for_all_release_steps() -> None:
     """GHCR reference всегда lowercase для build, scan, attestation и evidence."""
     workflow_path = PROJECT_ROOT / ".github" / "workflows" / "docker.yml"

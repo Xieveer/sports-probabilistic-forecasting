@@ -28,6 +28,7 @@ stateful EWM.
 | [TASK-007-7](tasks/TASK-007-7-autonomous-source-and-odds.md) | Autonomous source snapshot и odds provenance | ADR-008 | provider/odds failure tests | done |
 | [TASK-007-8](tasks/TASK-007-8-verified-archive-sync.md) | Verified archive sync и local import | 007-7 | upload/retry/corruption tests | done |
 | [TASK-007-9](tasks/TASK-007-9-private-ingress-and-tag-release.md) | Private candidate Compose и tag-only artifacts | 007-8 | Compose/workflow tests | done |
+| [TASK-007-10](tasks/TASK-007-10-runtime-container-identity.md) | Выделенный UID/GID runtime-образов | security blocker ops-prod-01 | Dockerfile identity static test, CI image evidence | done |
 
 ## Критерии → задачи → доказательства
 
@@ -38,6 +39,7 @@ stateful EWM.
 | full-history NHL refresh и atomic visibility | 007-3 | full pipeline fixture, repeated run test |
 | immutable VPS-to-local snapshot | 007-4 | manifest/hash/import/dedup tests |
 | autonomous safe operations | 007-5 | Compose/scheduler/S3 permission contracts |
+| изоляция host bind mounts от системных UID | 007-10 | fixed UID/GID Dockerfile contract, новые CI image evidence |
 | full-dataset evidence и DevOps documentation | 007-6 | measurement report, runbook dry-run, handoff gate |
 
 ## Риски и rollout
@@ -60,4 +62,5 @@ archive sync, private/public Compose, tag-only workflow и release handoff.
 
 EPIC остаётся `in_progress`: TASK-007-6 сохраняет статус `blocked` до успешного
 refresh на актуальном provider snapshot и внешних GHCR/IAM/backup/scheduler
-evidence. Git tag, image publication, PR и deployment этим review не выполнялись.
+evidence, а TASK-007-10 закрывает security blocker runtime UID/GID. Git tag,
+image publication, PR и deployment этим review не выполнялись.

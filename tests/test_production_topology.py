@@ -106,6 +106,19 @@ def test_worker_image_does_not_embed_training_data_or_models() -> None:
     assert "COPY --chown=sf:sf models/ ./models/" not in dockerfile
 
 
+def test_runtime_images_use_fixed_non_root_identity() -> None:
+    """Все runtime targets используют выделенные непривилегированные UID/GID."""
+    dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "groupadd --system --gid 10001 sf" in dockerfile
+    assert "useradd --system --uid 10001 --gid sf" in dockerfile
+
+    for target in ("api", "worker", "telegram-bot", "archive-sync"):
+        stage = dockerfile.split(f"FROM base AS {target}", maxsplit=1)[1]
+        stage_body = stage.split("\nFROM ", maxsplit=1)[0]
+        assert "\nUSER sf\n" in stage_body
+
+
 def test_production_dependencies_exclude_local_training_control_plane() -> None:
     """Runtime image не устанавливает DVC, MLflow и Optuna из базовой группы."""
     pyproject = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
