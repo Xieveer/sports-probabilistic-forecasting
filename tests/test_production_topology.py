@@ -119,6 +119,17 @@ def test_runtime_images_use_fixed_non_root_identity() -> None:
         assert "\nUSER sf\n" in stage_body
 
 
+def test_runtime_base_applies_available_os_security_updates() -> None:
+    """Runtime image получает fixed Debian packages до установки системных deps."""
+    dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    assert (
+        "apt-get update && \\\n"
+        "    apt-get upgrade -y --no-install-recommends && \\\n"
+        "    apt-get install"
+    ) in dockerfile
+
+
 def test_production_dependencies_exclude_local_training_control_plane() -> None:
     """Runtime image не устанавливает DVC, MLflow и Optuna из базовой группы."""
     pyproject = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))

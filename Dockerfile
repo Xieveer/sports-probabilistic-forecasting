@@ -17,6 +17,7 @@ RUN groupadd --system --gid 10001 sf && \
 
 # System deps
 RUN apt-get update && \
+    apt-get upgrade -y --no-install-recommends && \
     apt-get install -y --no-install-recommends \
         build-essential libpq-dev curl && \
     rm -rf /var/lib/apt/lists/*

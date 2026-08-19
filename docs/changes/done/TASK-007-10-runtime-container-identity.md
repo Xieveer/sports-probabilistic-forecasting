@@ -10,15 +10,19 @@ Dockerfile создаёт `sf` с UID/GID `10001:10001`; API, Worker, Telegram b
 archive-sync остаются запущенными как `sf`. Static contract test фиксирует
 числа и покрывает каждый runtime target. Production handoff передаёт Operations
 обязательство создать `sf-runtime` с теми же UID/GID и не использовать старые
-images/digests.
+images/digests. После неуспешного image scan `v1.1.1` base layer дополнительно
+применяет доступные Debian security updates; security release переведён на
+`v1.1.2`, не переписывая существующие tags.
 
 ## Изменённые границы
 
 | Путь | Назначение |
 |---|---|
 | `Dockerfile` | Fixed непривилегированная runtime identity `10001:10001`. |
+| `Dockerfile` | Применяет доступные OS security updates до установки runtime deps. |
 | `Makefile` | Dependency audit передаёт `pip-audit` абсолютный путь, поэтому release CI не теряет exported requirements. |
 | `tests/test_production_topology.py` | Контракт numeric UID/GID и четырёх runtime stages. |
+| `tests/test_production_topology.py` | Контракт обновления Debian security packages в base layer. |
 | `tests/test_release_version_contract.py` | Контракт абсолютного requirements path для release dependency audit. |
 | `docs/product/requirements/REQ-010-runtime-container-identity.md` | Подтверждённые security requirements. |
 | `docs/backlog/EPIC-007-autonomous-production-data-runtime.md` | Security blocker добавлен в декомпозицию эпика. |
@@ -38,6 +42,7 @@ images/digests.
 | Команда / наблюдение | Результат |
 |---|---|
 | `uv run pytest tests/test_production_topology.py -q` | 12 passed. |
+| `uv run pytest tests/test_production_topology.py tests/test_release_version_contract.py -q` | 18 passed для `v1.1.2`. |
 | `make lint` | `ruff check` passed. |
 | `uv run pre-commit run mypy --all-files` | passed. |
 | `make production-check` | `Production handoff is valid.` |
@@ -55,12 +60,15 @@ images/digests.
   [#22](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/22)
   готов к review и содержит `57b683a`; PR CI успешно прошёл lint/test, dependency audit и
   filesystem/secret scan. **NO-GO** для tag/rollout, пока reviewer не одобрит
-  и не merge-ит PR, tag `v1.1.1` CI не создаст четыре новых digest/scan/provenance, а
+  и не merge-ит PR, tag `v1.1.2` CI не создаст четыре новых digest/scan/provenance, а
   Operations не подтвердит host user/mount ownership.
 - Commit/push: `57b683a` опубликован в `agent/release-1-0-1`; `main.py` не
   входит в commit, потому что это несвязанное пользовательское изменение.
 - Review finding P2: синхронизация статуса TASK-007-10 в EPIC-007 исправлена
   отдельным documentation-only commit после комментария к PR #22.
+- Release finding: tag `v1.1.1` immutable и не прошёл image scan из-за fixed
+  HIGH CVE-2026-53615 в Debian base; `v1.1.2` добавляет `apt-get upgrade` и
+  ожидает новый scan/provenance evidence.
 - Follow-up: Operations создаёт `sf-runtime:10001:10001`, назначает права лишь
   source/archive mounts и использует только новые immutable digests.
 
