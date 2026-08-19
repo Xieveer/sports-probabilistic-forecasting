@@ -51,9 +51,9 @@ images/digests.
 - Security review: устранён достижимый риск совпадения container UID/GID с host
   `zabbix:systemd-journal`. До замены image старые digests остаются небезопасными
   для bind mounts; CI image scan/provenance не заменяются локальным audit.
-- Release review: **CONDITIONAL GO** для независимого review: draft PR
+- Release review: **CONDITIONAL GO** для независимого review: PR
   [#22](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/22)
-  содержит `57b683a`; PR CI успешно прошёл lint/test, dependency audit и
+  готов к review и содержит `57b683a`; PR CI успешно прошёл lint/test, dependency audit и
   filesystem/secret scan. **NO-GO** для tag/rollout, пока reviewer не одобрит
   и не merge-ит PR, tag CI не создаст четыре новых digest/scan/provenance, а
   Operations не подтвердит host user/mount ownership.
