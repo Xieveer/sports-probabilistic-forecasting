@@ -59,6 +59,8 @@ images/digests.
   Operations не подтвердит host user/mount ownership.
 - Commit/push: `57b683a` опубликован в `agent/release-1-0-1`; `main.py` не
   входит в commit, потому что это несвязанное пользовательское изменение.
+- Review finding P2: синхронизация статуса TASK-007-10 в EPIC-007 исправлена
+  отдельным documentation-only commit после комментария к PR #22.
 - Follow-up: Operations создаёт `sf-runtime:10001:10001`, назначает права лишь
   source/archive mounts и использует только новые immutable digests.
 

@@ -28,7 +28,7 @@ stateful EWM.
 | [TASK-007-7](tasks/TASK-007-7-autonomous-source-and-odds.md) | Autonomous source snapshot и odds provenance | ADR-008 | provider/odds failure tests | done |
 | [TASK-007-8](tasks/TASK-007-8-verified-archive-sync.md) | Verified archive sync и local import | 007-7 | upload/retry/corruption tests | done |
 | [TASK-007-9](tasks/TASK-007-9-private-ingress-and-tag-release.md) | Private candidate Compose и tag-only artifacts | 007-8 | Compose/workflow tests | done |
-| [TASK-007-10](tasks/TASK-007-10-runtime-container-identity.md) | Выделенный UID/GID runtime-образов | security blocker ops-prod-01 | Dockerfile identity static test, CI image evidence | in_progress |
+| [TASK-007-10](tasks/TASK-007-10-runtime-container-identity.md) | Выделенный UID/GID runtime-образов | security blocker ops-prod-01 | Dockerfile identity static test, CI image evidence | done |
 
 ## Критерии → задачи → доказательства
 
