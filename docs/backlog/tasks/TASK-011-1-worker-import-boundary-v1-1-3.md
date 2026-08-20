@@ -1,6 +1,6 @@
 # TASK-011-1 — Import-граница Worker и release-gate v1.1.3
 
-> **Статус:** in_progress
+> **Статус:** done
 > **Владелец:** implementer + devops-reviewer
 > **Эпик:** [EPIC-011](../EPIC-011-worker-import-boundary-v1-1-3.md)
 > **Требование:** [REQ-011](../../product/requirements/REQ-011-worker-import-boundary-v1-1-3.md)

@@ -39,7 +39,7 @@
 | TASK-007-7 | done | high | [Автономный source snapshot и odds observations](tasks/TASK-007-7-autonomous-source-and-odds.md) |
 | TASK-007-8 | done | high | [Проверяемый archive sync и local training import](tasks/TASK-007-8-verified-archive-sync.md) |
 | TASK-007-9 | done | high | [Private ingress и tag-only release artifacts](tasks/TASK-007-9-private-ingress-and-tag-release.md) |
-| EPIC-011 | in_progress | critical | [Patch-релиз v1.1.3: import-граница Worker](EPIC-011-worker-import-boundary-v1-1-3.md) |
-| TASK-011-1 | in_progress | critical | [Import-граница Worker и release-gate v1.1.3](tasks/TASK-011-1-worker-import-boundary-v1-1-3.md) |
+| EPIC-011 | done | critical | [Patch-релиз v1.1.3: import-граница Worker](EPIC-011-worker-import-boundary-v1-1-3.md) |
+| TASK-011-1 | done | critical | [Import-граница Worker и release-gate v1.1.3](tasks/TASK-011-1-worker-import-boundary-v1-1-3.md) |
 | EPIC-009 | done | high | [Проверяемые gates процесса Codex-агентов](EPIC-009-agent-workflow-gates.md) |
 | TASK-009-1 | done | high | [Проверяемые gates workflow агентов](tasks/TASK-009-1-enforce-agent-workflow-gates.md) |

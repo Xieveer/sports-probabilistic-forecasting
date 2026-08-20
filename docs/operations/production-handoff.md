@@ -161,8 +161,13 @@ rollout и rollback в репозитории управления инфрас�
   - Worker: `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:5731b374e02f544e35f8884d45c81dfed9086c95620387e1f66123ee71d0d926`.
   - Telegram bot: `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:30dff19e339d79632ee83d5f046edf45145eef2e4c9046320a19bcb245dc3bf4`.
   - Archive-sync: `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:17dbba8452ab1fa0eeeb6df0ae338ac6be54da5fddbdac42cd1fd3afcc86e3f3`.
-- Release evidence v1.1.3: появится только в authorised tag pipeline после
-  Worker import gate; Operations не подставляет вместо него v1.1.2 digest.
+- Release evidence v1.1.3: tag указывает на `3f67aa8c8e28bc4311b2c1146662b12f9a9e8055`;
+  [GitHub Actions run 32395043783](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/32395043783)
+  успешно выполнил release gates, Worker import gate, image scans и provenance:
+  - API: `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:fbe16fd5f6381fcfb81ef79c8817831addd02d1becb699b066fc03e9b550bd04`.
+  - Worker: `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:0c2b6db2bbbbee03d79100a89b2389003de8df112b22f035389881063e34c9e5`.
+  - Telegram bot: `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:bef3ab26a848e839b126886277144123dac808a0cf23e97817bbbb03aa293016`.
+  - Archive-sync: `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:8dbf8582f36bb3516422c59a4db0f899718083e68c304742ce5f913b59ac4a49`.
 - Model delivery bundle для v1.1.3: Operations пересобирает и публикует тот же
   bundle из тех же трёх файлов с `app_version=1.1.3`; identity/checksum и
   source commit передаются вместе с новыми image digests.
