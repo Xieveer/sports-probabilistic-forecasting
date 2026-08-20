@@ -13,7 +13,7 @@ from sports_forecast.service.schemas import HealthResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.1.3"
+RELEASE_VERSION = "1.1.4"
 
 
 def test_package_and_fastapi_publish_same_release_version() -> None:
@@ -67,6 +67,22 @@ def test_docker_publish_waits_for_security_gates_and_attests_digest() -> None:
     assert "Attest build provenance" in step_names
     assert workflow["permissions"]["attestations"] == "write"
     assert workflow["permissions"]["id-token"] == "write"
+
+
+def test_tag_gate_requires_static_release_docs_and_forbids_evidence_commit() -> None:
+    """Документация проверяется из tag commit; CI не создаёт post-tag commit."""
+    workflow_path = PROJECT_ROOT / ".github" / "workflows" / "docker.yml"
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    verify_steps = workflow["jobs"]["verify"]["steps"]
+    gate = next(
+        step
+        for step in verify_steps
+        if step.get("name") == "Verify release documentation is in tagged commit"
+    )
+    command = gate["run"]
+    assert "REQ-012-nhl-source-state-archive.md" in command
+    assert "git status --porcelain" in command
+    assert "git commit" not in "\n".join(step.get("run", "") for step in verify_steps)
 
 
 def test_release_gate_imports_model_bundle_inside_worker_image() -> None:

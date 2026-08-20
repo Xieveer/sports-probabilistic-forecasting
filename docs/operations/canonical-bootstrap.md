@@ -1,6 +1,6 @@
 # Initial canonical bootstrap NHL
 
-Этот runbook относится к `TASK-007-1` и будущему release `1.1.0`. Он позволяет
+Этот runbook относится к `TASK-007-1` и source-state части `TASK-012-1`. Он позволяет
 один раз доставить уже собранную локальную NHL-историю на VPS без повторного
 обращения к NHL API. Выполнение не является разрешением на deployment.
 
@@ -18,6 +18,19 @@
 
 ## Локальная сборка
 
+Соберите полный source-state bundle:
+
+```bash
+uv run python -m sports_forecast.deploy.source_state_cli build \
+  --source-csv data/source/nhl/source.csv \
+  --odds-store data/source/nhl/odds/pinnacle_odds.parquet \
+  --checkpoint data/source/nhl/odds/refresh_state.json \
+  --bundle-root /srv/sf-bootstrap-staging
+```
+
+Bundle содержит `source.csv`, `odds/pinnacle_odds.parquet`,
+`odds/refresh_state.json` и `manifest.json`. `current.csv` не архивируется.
+
 Полный локальный файл должен отвечать NHL source contract из
 `docs/cursor/source_data/nhl.md` и содержать как минимум `id`, `datetime` и
 `match_is_end`.
@@ -33,6 +46,18 @@ uv run python -m sports_forecast.deploy.canonical_bootstrap build-nhl \
 DVC remote credentials или модельные файлы.
 
 ## VPS import
+
+До первого scheduler run выполните verify/install:
+
+```bash
+uv run python -m sports_forecast.deploy.source_state_cli install \
+  --bundle /srv/sf-bootstrap/operational-archive/nhl-source-state/v1/sha256:<id> \
+  --source-root /srv/sports-forecast/source/nhl
+```
+
+Команда сначала проверяет manifest, затем идемпотентно устанавливает
+source/odds/checkpoint и атомарно создаёт `current.csv` из проверенного
+`source.csv`.
 
 После успешной миграции и доставки immutable каталога задаётся только обычный
 `DATABASE_URL` из secret environment и выполняется:

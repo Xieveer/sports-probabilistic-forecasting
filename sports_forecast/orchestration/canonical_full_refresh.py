@@ -22,6 +22,7 @@ from sports_forecast.data.clean import process_tournament
 from sports_forecast.deploy.canonical_bootstrap import refresh_nhl_canonical_from_csv
 from sports_forecast.deploy.canonical_snapshot import export_canonical_snapshot
 from sports_forecast.deploy.model_bundle import BundleVerificationError, load_current_model_bundle
+from sports_forecast.deploy.source_state import export_nhl_source_state
 from sports_forecast.features.features_build import process_tournament_new
 from sports_forecast.materialize import materialize_predictions
 from sports_forecast.service.db.engine import get_session
@@ -234,6 +235,8 @@ def run_full_refresh(
                     config_id=_provenance_id(cfg),
                     source="nhl_web_api",
                 )
+            if source_csv is not None:
+                export_nhl_source_state(source_csv, archive_root, run_id=run_id)
         return result
     except BundleVerificationError:
         logger.exception("Full refresh отклонён: immutable model bundle не прошёл проверку")

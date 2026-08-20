@@ -9,6 +9,8 @@ import pytest
 
 from sports_forecast.deploy.archive_sync import (
     ArchiveSyncError,
+    Boto3ObjectStorage,
+    pull_latest_verified_archive,
     pull_verified_archive,
     sync_operational_archive,
 )
@@ -31,6 +33,34 @@ class _FakeStorage:
         destination.write_bytes(
             b"corrupt" if self.corrupt_download and key.endswith("data.json") else value
         )
+
+    def list_keys(self, prefix: str) -> list[str]:
+        return sorted(key for key in self.objects if key.startswith(prefix))
+
+
+def test_boto_listing_follows_continuation_tokens() -> None:
+    class _PagedClient:
+        def __init__(self) -> None:
+            self.calls: list[str | None] = []
+
+        def list_objects_v2(self, **kwargs: str) -> dict[str, object]:
+            token = kwargs.get("ContinuationToken")
+            self.calls.append(token)
+            if token is None:
+                return {
+                    "Contents": [{"Key": "a"}],
+                    "IsTruncated": True,
+                    "NextContinuationToken": "next",
+                }
+            return {"Contents": [{"Key": "b"}], "IsTruncated": False}
+
+    client = _PagedClient()
+    storage = object.__new__(Boto3ObjectStorage)
+    storage._bucket = "bucket"
+    storage._client = client
+
+    assert storage.list_keys("prefix/") == ["a", "b"]
+    assert client.calls == [None, "next"]
 
 
 def test_sync_failure_keeps_staging_and_writes_retryable_state(tmp_path: Path) -> None:
@@ -104,3 +134,37 @@ def test_local_pull_rejects_manifest_path_outside_staging(tmp_path: Path) -> Non
         pull_verified_archive(artifact_id, tmp_path / "downloads", storage)
 
     assert victim.read_text(encoding="utf-8") == "safe"
+
+
+def test_latest_source_state_skips_corrupt_newest_and_imports_previous(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.json").write_text("old", encoding="utf-8")
+    old = archive_snapshot(source, tmp_path / "archive")
+    storage = _FakeStorage()
+    sync_operational_archive(
+        old.path,
+        tmp_path / "sync-state",
+        storage,
+        prefix="operational-archive/nhl-source-state/v1",
+    )
+    (source / "data.json").write_text("new", encoding="utf-8")
+    newest = archive_snapshot(source, tmp_path / "archive")
+    sync_operational_archive(
+        newest.path,
+        tmp_path / "sync-state",
+        storage,
+        prefix="operational-archive/nhl-source-state/v1",
+    )
+    storage.objects[f"operational-archive/nhl-source-state/v1/{newest.artifact_id}/data.json"] = (
+        b"corrupt"
+    )
+
+    pulled = pull_latest_verified_archive(
+        tmp_path / "downloads",
+        storage,
+        prefix="operational-archive/nhl-source-state/v1",
+    )
+
+    assert pulled.name == old.artifact_id
+    assert (pulled / "data.json").read_text(encoding="utf-8") == "old"

@@ -216,6 +216,9 @@ def test_systemd_scheduler_has_profile_cadence_lock_timeout_retry_and_safe_run_i
     assert "canonical_full_refresh_cli" in runner
     assert "source_snapshot_cli" in runner
     assert runner.index("source_snapshot_cli") < runner.index("canonical_full_refresh_cli")
+    assert "archive-sync" in runner
+    assert runner.index("canonical_full_refresh_cli") < runner.index("archive-sync")
+    assert "SF_NHL_SOURCE_STATE_PREFIX" in runner
     assert "uuidgen" in runner
     assert "SF_WORKER_RUN_ID" in runner
     assert "last successful run is stored in worker_executions" in runner

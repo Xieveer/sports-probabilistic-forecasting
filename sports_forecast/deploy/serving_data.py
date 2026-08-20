@@ -129,6 +129,7 @@ def archive_snapshot(
     *,
     created_at: datetime | None = None,
     provenance: dict[str, str] | None = None,
+    directory_name: str = _ARCHIVE_DIRECTORY,
 ) -> ArchiveArtifact:
     """Архивировать snapshot в immutable content-addressed layout.
 
@@ -142,7 +143,7 @@ def archive_snapshot(
         возвращает существующий archive без перезаписи.
     """
     return _create_artifact(
-        snapshot, archive_root, _ARCHIVE_DIRECTORY, created_at=created_at, provenance=provenance
+        snapshot, archive_root, directory_name, created_at=created_at, provenance=provenance
     )
 
 

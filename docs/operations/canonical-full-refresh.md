@@ -20,7 +20,7 @@ Runbook относится к `TASK-007-3`. Он описывает один bou
 export SF_CANONICAL_SOURCE_CSV=/srv/sports-forecast/source/nhl/source.csv
 export SF_WORKER_RUN_ID=nhl-20260815T100000Z
 export SF_MODEL_RUNTIME_ROOT=/srv/sports-forecast/models
-export SF_APP_VERSION=1.1.0
+export SF_APP_VERSION=1.1.4
 export SF_OPERATIONAL_ARCHIVE_ROOT=/srv/sports-forecast/archive-staging
 
 uv run python -m sports_forecast.orchestration.canonical_full_refresh_cli \
@@ -33,11 +33,29 @@ Run применяет source snapshot к canonical store, проверяет ф
 временной директории и публикует predictions вместе с run/data/feature/model
 provenance одной DB-транзакцией.
 
-Только после успешного commit runner создаёт immutable artifact в
-`$SF_OPERATIONAL_ARCHIVE_ROOT/operational-archive/`. Operations Agent
-синхронизирует этот already-verified prefix в Object Storage отдельным
-least-privilege credential; runtime не получает DVC или Object Storage
-credentials.
+Только после успешного acquisition и canonical commit runner создаёт canonical
+snapshot и полный source-state в
+`$SF_OPERATIONAL_ARCHIVE_ROOT/operational-archive/nhl-source-state/v1/`.
+Source-state содержит `source.csv`, OddsStore и checkpoint; `current.csv` не
+архивируется. Затем scheduler вызывает отдельный `archive-sync`, который
+remote-verify-ит каждый manifest/file. Failure provider/odds, canonical refresh
+или upload оставляет предыдущий valid state и не заменяет последний verified
+artifact.
+
+Локальный read-only import последнего verified source-state выполняется
+отдельным training-reader credential:
+
+```bash
+uv run python -m sports_forecast.deploy.archive_sync_cli pull-latest-source-state \
+  --download-root /srv/sf-local/source-state-downloads \
+  --import-root /srv/sf-local/training-inputs \
+  --descriptor /srv/sf-local/training-inputs/latest.json \
+  --prefix operational-archive/nhl-source-state/v1
+```
+
+Команда сначала получает manifest/files, проверяет checksum и только затем
+создаёт local descriptor. DVC/training не запускаются автоматически; descriptor
+содержит `odds/pinnacle_odds.parquet`, доступный betting-валидации.
 
 ## Failure и восстановление
 
@@ -49,6 +67,10 @@ credentials.
   feature rebuild не запускаются.
 - Для повреждённой модели используйте проверенный rollback bundle согласно
   `docs/operations/model-bundle.md`, затем создайте новый `run_id`.
+- Для восстановления source-state выберите последний verified artifact через
+  read-only local command, проверьте manifest/checksums и установите его
+  командой из [canonical-bootstrap.md](canonical-bootstrap.md). Только после
+  этого разрешается первый scheduler run.
 
 Логи и DB state содержат только safe failure codes и identifiers; provider
 payload, credentials и exception text не должны передаваться в Telegram.
