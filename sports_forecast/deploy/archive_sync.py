@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,7 @@ from sports_forecast.utils.log_config import get_logger
 
 
 logger = get_logger(__name__)
+_ARTIFACT_ID_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 class ArchiveSyncError(RuntimeError):
@@ -30,6 +32,8 @@ class ObjectStorage(Protocol):
     def upload(self, source: Path, key: str) -> None: ...
 
     def download(self, key: str, destination: Path) -> None: ...
+
+    def list_keys(self, prefix: str) -> list[str]: ...
 
 
 @dataclass(frozen=True)
@@ -82,6 +86,27 @@ class Boto3ObjectStorage:
 
     def download(self, key: str, destination: Path) -> None:
         self._client.download_file(self._bucket, key, str(destination))
+
+    def list_keys(self, prefix: str) -> list[str]:
+        keys: list[str] = []
+        request: dict[str, str] = {"Bucket": self._bucket, "Prefix": prefix}
+        while True:
+            response = self._client.list_objects_v2(**request)
+            keys.extend(str(item["Key"]) for item in response.get("Contents", []) if "Key" in item)
+            if not response.get("IsTruncated"):
+                return keys
+            token = response.get("NextContinuationToken")
+            if not isinstance(token, str) or not token:
+                raise ArchiveSyncError(
+                    "Object Storage вернул truncated listing без continuation token"
+                )
+            request["ContinuationToken"] = token
+
+
+def _validate_artifact_id(artifact_id: str) -> None:
+    """Отклонить ID, который может выйти за пределы local download root."""
+    if not _ARTIFACT_ID_RE.fullmatch(artifact_id):
+        raise ArchiveSyncError("Небезопасный artifact_id")
 
 
 def _state_path(state_root: Path, artifact_id: str) -> Path:
@@ -143,6 +168,7 @@ def pull_verified_archive(
     prefix: str = "operational-archive",
 ) -> Path:
     """Read-only скачать один artifact по ID и проверить его до local import/DVC."""
+    _validate_artifact_id(artifact_id)
     destination = download_root / artifact_id
     if destination.exists():
         verify_archive(destination)
@@ -167,3 +193,37 @@ def pull_verified_archive(
                 raise
             raise ArchiveSyncError(f"Local archive pull failed: {type(exc).__name__}") from exc
     return destination
+
+
+def pull_latest_verified_archive(
+    download_root: Path,
+    storage: ObjectStorage,
+    *,
+    prefix: str = "operational-archive/nhl-source-state/v1",
+) -> Path:
+    """Получить последний проверяемый source-state без remote mutable pointer.
+
+    Неполный или повреждённый newest artifact пропускается; выбирается
+    предыдущий manifest, прошедший полную checksum-проверку.
+    """
+    base = prefix.rstrip("/")
+    manifests = [key for key in storage.list_keys(f"{base}/") if key.endswith("/manifest.json")]
+    candidates: list[tuple[str, str]] = []
+    for key in manifests:
+        artifact_id = key[len(base) + 1 : -len("/manifest.json")]
+        if artifact_id:
+            with tempfile.TemporaryDirectory(prefix="archive-latest-manifest-") as raw_tmp:
+                manifest_path = Path(raw_tmp) / "manifest.json"
+                try:
+                    storage.download(key, manifest_path)
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    created_at = str(manifest.get("created_at", ""))
+                except (OSError, ValueError, json.JSONDecodeError):
+                    continue
+            candidates.append((created_at, artifact_id))
+    for _created_at, artifact_id in sorted(candidates, reverse=True):
+        try:
+            return pull_verified_archive(artifact_id, download_root, storage, prefix=prefix)
+        except (ArchiveSyncError, OSError, ValueError):
+            continue
+    raise ArchiveSyncError(f"Нет verified source-state artifact под prefix={prefix}")

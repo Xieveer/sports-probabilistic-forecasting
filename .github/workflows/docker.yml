@@ -45,6 +45,17 @@ jobs:
       - name: Dependency audit
         run: make security
 
+      - name: Verify release documentation is in tagged commit
+        if: github.ref_type == 'tag'
+        run: |
+          test -f docs/product/requirements/REQ-012-nhl-source-state-archive.md
+          test -f docs/architecture/adr/ADR-012-nhl-source-state-archive.md
+          test -f docs/operations/canonical-bootstrap.md
+          test -f docs/operations/production-handoff.md
+          test -f docs/backlog/tasks/TASK-012-1-nhl-source-state-contract.md
+          test -z "$(git status --porcelain)"
+          ! git log -1 --format=%s | grep -Eiq 'release evidence|image evidence'
+
       - name: Filesystem and secret scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

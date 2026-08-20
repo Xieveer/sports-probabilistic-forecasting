@@ -13,7 +13,7 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Идентификация и ответственность
 
-- Название сервиса: Sports Probabilistic Forecasting 1.1.3.
+- Название сервиса: Sports Probabilistic Forecasting 1.1.4.
 - Репозиторий и основной branch: SportsProbabilisticForecasting, `main`.
 - Владелец приложения: пользователь.
 - Владелец решения о production-развёртывании: пользователь.
@@ -48,7 +48,7 @@ rollout и rollback в репозитории управления инфрас�
   provider snapshot; `SF_OPERATIONAL_ARCHIVE_ROOT` — persistent local staging;
   `SF_OBJECT_STORAGE_ENDPOINT`,
   `SF_OBJECT_STORAGE_BUCKET`, `SF_OBJECT_STORAGE_ACCESS_KEY_ID`,
-  `SF_OBJECT_STORAGE_SECRET_ACCESS_KEY`, `SF_OPERATIONAL_ARCHIVE_PREFIX`,
+  `SF_OBJECT_STORAGE_SECRET_ACCESS_KEY`, `SF_OPERATIONAL_ARCHIVE_PREFIX`, `SF_NHL_SOURCE_STATE_PREFIX`,
   `SF_SERVING_DATA_PREFIX` — archive/bundle; `MLFLOW_TRACKING_URI` — только
   local training. Acceptance использует отдельные operator-only
   `SF_ACCEPTANCE_BASE_URL`, `SF_ACCEPTANCE_PREDICTION_PATH`,
@@ -96,8 +96,11 @@ rollout и rollback в репозитории управления инфрас�
   inference и атомарную публикацию; production всё равно требует повтора на
   актуальном provider snapshot.
 - Retention: на VPS `runtime_data` не более 7 дней, current/previous model и
-  serving-data bundles сохраняются для rollback; operational archive в Object
-  Storage не удаляется автоматически, стоимость и целостность проверяет Operations Agent.
+  serving-data bundles сохраняются для rollback. Object Storage lifecycle
+  удаляет только `operational-archive/nhl-source-state/` старше 90 дней;
+  приложение и его service accounts не имеют DeleteObject. Перед включением
+  lifecycle Operations измеряет первый artifact и прогноз storage. Object Lock
+  и versioning shared bucket не включаются.
 
 ## Acceptance и release evidence
 
@@ -131,11 +134,17 @@ rollout и rollback в репозитории управления инфрас�
   [строгий handoff gate](../../tests/test_production_readiness_validation.py),
   [worker measurement](worker-measurement-evidence.md), [migration/recovery](database-migrations.md),
   [signals](observability.md), [model bundle](model-bundle.md), [serving data](serving-data.md).
+- Source-state evidence: initial bundle → verify → VPS install, successful
+  incremental odds refresh, export → Object Storage → local read-only import /
+  checksum и failure preservation. Static handoff/runbook/Compose/systemd
+  changes входят в commit до release tag; после tag Git commit запрещён.
+  Image digests/provenance передаются из CI/GHCR evidence без post-tag commit.
 - v1.1.2 уже опубликован и остаётся immutable historical evidence, но имеет
   production-blocker: Worker не может импортировать verifier bundle без MLflow.
   Запрещено перепубликовывать image, переносить tag или менять любой digest
   v1.1.2: это разрушит связь version → commit → digest, rollback и audit trail.
-- Только v1.1.3 после успешных checks на итоговом `main` может быть candidate.
+- Только следующий patch release `v1.1.4` после успешных checks на итоговом
+  `main` может быть candidate.
   Его pipeline до push обязан собрать Worker и выполнить `python -c "from
   sports_forecast.deploy.model_bundle import verify_model_bundle"` внутри image.
   После этого pipeline фиксирует новые GitHub CI, dependency/filesystem/image
@@ -148,10 +157,10 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Артефакт и откат
 
-- Registry и неизменяемый идентификатор image: для v1.1.3 использовать только
+- Registry и неизменяемый идентификатор image: для v1.1.4 использовать только
   новые GHCR `image@sha256:digest`; SemVer tag не является runtime ID.
 - Способ доказать происхождение артефакта: итоговый commit SHA, Git tag
-  `v1.1.3`, совпадающий с `pyproject.toml`, CI provenance attestation и
+  `v1.1.4`, совпадающий с `pyproject.toml`, CI provenance attestation и
   отдельный digest каждого runtime image.
 - Release evidence v1.1.2 (только historical evidence, не использовать для
   rollout): tag указывает на `eadbdb4bfe979cfdb37b31bd64975d0cfd5ad556`;
@@ -161,15 +170,15 @@ rollout и rollback в репозитории управления инфрас�
   - Worker: `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:5731b374e02f544e35f8884d45c81dfed9086c95620387e1f66123ee71d0d926`.
   - Telegram bot: `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:30dff19e339d79632ee83d5f046edf45145eef2e4c9046320a19bcb245dc3bf4`.
   - Archive-sync: `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:17dbba8452ab1fa0eeeb6df0ae338ac6be54da5fddbdac42cd1fd3afcc86e3f3`.
-- Release evidence v1.1.3: tag указывает на `3f67aa8c8e28bc4311b2c1146662b12f9a9e8055`;
+- Release evidence v1.1.3 (historical; не candidate): tag указывает на `3f67aa8c8e28bc4311b2c1146662b12f9a9e8055`;
   [GitHub Actions run 32395043783](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/32395043783)
   успешно выполнил release gates, Worker import gate, image scans и provenance:
   - API: `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:fbe16fd5f6381fcfb81ef79c8817831addd02d1becb699b066fc03e9b550bd04`.
   - Worker: `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:0c2b6db2bbbbee03d79100a89b2389003de8df112b22f035389881063e34c9e5`.
   - Telegram bot: `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:bef3ab26a848e839b126886277144123dac808a0cf23e97817bbbb03aa293016`.
   - Archive-sync: `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:8dbf8582f36bb3516422c59a4db0f899718083e68c304742ce5f913b59ac4a49`.
-- Model delivery bundle для v1.1.3: Operations пересобирает и публикует тот же
-  bundle из тех же трёх файлов с `app_version=1.1.3`; identity/checksum и
+- Model delivery bundle для v1.1.4: Operations пересобирает и публикует тот же
+  bundle из тех же трёх файлов с `app_version=1.1.4`; identity/checksum и
   source commit передаются вместе с новыми image digests.
 - Предыдущая исправная версия: определяется Operations Agent из последнего
   работоспособного immutable image; v1.1.2 не является rollback-кандидатом.
