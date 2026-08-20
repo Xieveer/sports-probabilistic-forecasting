@@ -19,6 +19,13 @@ import yaml
 from sports_forecast.deploy.promoter import CandidateModel, ModelPromoter
 
 
+def test_deploy_package_lazily_exposes_model_promoter() -> None:
+    """Local control plane сохраняет публичный import ModelPromoter."""
+    from sports_forecast import deploy
+
+    assert deploy.ModelPromoter is ModelPromoter
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures
 # ─────────────────────────────────────────────────────────────────────────────

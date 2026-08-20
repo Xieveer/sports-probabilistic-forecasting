@@ -55,6 +55,11 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
+      - name: Verify Worker runtime import boundary
+        run: |
+          docker build --target worker --tag sports-forecast-worker-release-gate .
+          docker run --rm sports-forecast-worker-release-gate python -c 'from sports_forecast.deploy.model_bundle import verify_model_bundle'
+
   build-push:
     needs: [verify]
     runs-on: ubuntu-latest

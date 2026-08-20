@@ -1,4 +1,4 @@
-# Передача release-candidate `1.1.0` в Operations Agent
+# Передача patch release-candidate `1.1.3` в Operations Agent
 
 > **Статус:** подготовка production-кандидата; deployment этим сообщением не
 > разрешается.
@@ -12,7 +12,7 @@
 ## Цель передачи
 
 Нужно подготовить проверяемый production-кандидат Sports Probabilistic
-Forecasting `1.1.0` для NHL. Application team передаёт runtime-контракт и
+Forecasting `1.1.3` для NHL. Application team передаёт runtime-контракт и
 локальные evidence; Operations Agent проверяет реальное окружение и готовит
 изменения инфраструктуры. Ни tag, ни публикация образов, ни rollout не должны
 быть выполнены без последующей явной авторизации владельца.
@@ -41,15 +41,21 @@ Forecasting `1.1.0` для NHL. Application team передаёт runtime-кон
 
 После reviewed merge в `main` и отдельного разрешения владельца на release:
 
-1. создать security tag `v1.1.2`, совпадающий с версией в `pyproject.toml`;
+1. создать patch tag `v1.1.3`, совпадающий с версией в `pyproject.toml`;
 2. запустить release pipeline для этого exact commit;
-3. передать для API, Worker и bot по одному полному `image@sha256:<digest>`;
-4. приложить GitHub CI result, build provenance attestation и результаты
+3. подтвердить успешный Worker import gate внутри image: `python -c "from
+   sports_forecast.deploy.model_bundle import verify_model_bundle"`;
+4. передать для API, Worker, bot и archive-sync по одному полному
+   `image@sha256:<digest>`;
+5. приложить GitHub CI result, build provenance attestation и результаты
    dependency, filesystem, secret и image scans;
-5. подтвердить связь каждого digest с tag и commit SHA.
+6. подтвердить связь каждого digest с tag и commit SHA.
 
-Не использовать mutable tag (`latest` или SemVer tag) как runtime identifier и
-не переносить digests более раннего commit в Compose candidate.
+Не использовать mutable tag (`latest` или SemVer tag) как runtime identifier.
+v1.1.2 и его published digests не перепубликовывать, не переносить и не
+подменять: они остаются immutable historical evidence заблокированного релиза.
+После v1.1.3 Operations пересобирает и публикует тот же model bundle из тех же
+трёх файлов с `app_version=1.1.3`.
 
 ### 2. Подготовить production runtime без запуска rollout
 

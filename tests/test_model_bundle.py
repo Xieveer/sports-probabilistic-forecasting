@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -14,6 +16,34 @@ from sports_forecast.deploy.model_bundle import (
     rollback_model_bundle,
     verify_model_bundle,
 )
+
+
+def test_model_bundle_import_does_not_require_mlflow() -> None:
+    """Worker может загрузить verifier без зависимости local control plane."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "\n".join(
+                (
+                    "import builtins",
+                    "original_import = builtins.__import__",
+                    "def deny_mlflow(name, *args, **kwargs):",
+                    "    if name == 'mlflow' or name.startswith('mlflow.'):",
+                    "        raise ModuleNotFoundError(\"No module named 'mlflow'\")",
+                    "    return original_import(name, *args, **kwargs)",
+                    "builtins.__import__ = deny_mlflow",
+                    "from sports_forecast.deploy.model_bundle import verify_model_bundle",
+                    "assert callable(verify_model_bundle)",
+                )
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_model_bundle_has_immutable_id_and_rejects_tampered_model(tmp_path: Path) -> None:

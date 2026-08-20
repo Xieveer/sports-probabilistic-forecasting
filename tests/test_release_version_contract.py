@@ -13,7 +13,7 @@ from sports_forecast.service.schemas import HealthResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.1.2"
+RELEASE_VERSION = "1.1.3"
 
 
 def test_package_and_fastapi_publish_same_release_version() -> None:
@@ -67,6 +67,21 @@ def test_docker_publish_waits_for_security_gates_and_attests_digest() -> None:
     assert "Attest build provenance" in step_names
     assert workflow["permissions"]["attestations"] == "write"
     assert workflow["permissions"]["id-token"] == "write"
+
+
+def test_release_gate_imports_model_bundle_inside_worker_image() -> None:
+    """Release до push проверяет runtime import без MLflow внутри Worker image."""
+    workflow_path = PROJECT_ROOT / ".github" / "workflows" / "docker.yml"
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+
+    verify_steps = workflow["jobs"]["verify"]["steps"]
+    gate = next(
+        step for step in verify_steps if step.get("name") == "Verify Worker runtime import boundary"
+    )
+    command = gate["run"]
+    assert "docker build --target worker --tag sports-forecast-worker-release-gate ." in command
+    assert "docker run --rm sports-forecast-worker-release-gate" in command
+    assert "from sports_forecast.deploy.model_bundle import verify_model_bundle" in command
 
 
 def test_release_dependency_audit_uses_an_absolute_requirements_path() -> None:
