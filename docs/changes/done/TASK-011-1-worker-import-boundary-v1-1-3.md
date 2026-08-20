@@ -1,6 +1,6 @@
 # TASK-011-1 — отчёт реализации
 
-> **Статус задачи:** in_progress
+> **Статус задачи:** done
 > **Дата:** 2026-08-20
 > **Задача:** [TASK-011-1](../../backlog/tasks/TASK-011-1-worker-import-boundary-v1-1-3.md)
 
@@ -45,17 +45,18 @@ provenance, после чего Operations пересобирает тот же 
 | `make docs` | Успешно; один существующий warning Sphinx о отсутствующем `_static`. |
 | `make ai-validate` | Успешно. |
 | `make production-check` | Успешно. |
-| `docker build --target worker --tag sports-forecast-worker-import-gate .` | Не выполнен: Docker не разрешил `registry-1.docker.io` по DNS до начала сборки. |
-| Ручной review diff | Blocking findings не обнаружены; независимый reviewer ещё не назначен. |
+| `docker build --target worker --tag sports-forecast-worker-import-gate .` | Локально не выполнен из-за DNS Docker Hub; GitHub tag pipeline успешно выполнил тот же gate внутри Worker image. |
+| GitHub Actions run `32395043783` | Успешно: release gates, четыре build/push, image scans и provenance v1.1.3. |
+| Review diff | P2 о stale `1.1.0` в Operations исправлен до merge; blocking findings нет. |
 
 ## Документация, review и follow-up
 
 - Документация: [REQ-011](../../product/requirements/REQ-011-worker-import-boundary-v1-1-3.md), [ADR-011](../../architecture/adr/ADR-011-lazy-deploy-control-plane-import.md), [handoff](../../operations/production-handoff.md), [сообщение Operations](../../deploy/devops_message.md).
-- Review / security: review 2026-08-20 обнаружил P2: [devops_message.md](../../deploy/devops_message.md) называл candidate `1.1.0`, хотя заголовок и команды задают `1.1.3`; finding исправлен. Независимый reviewer обязателен до commit/push.
-- Commit/push: не выполнялись.
-- Follow-up: reviewer подтверждает diff; после reviewed merge и отдельной авторизации release manager создаёт exact tag `v1.1.3`. CI должен успешно выполнить Worker import gate до publication, затем Operations получает новые digests/provenance и пересобирает bundle.
+- Review / security: P2 в [devops_message.md](../../deploy/devops_message.md) исправлен до merge; PR [#26](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/26) прошёл CI/security checks.
+- Commit/push: `47974f6` слит в `main` как `3f67aa8c8e28bc4311b2c1146662b12f9a9e8055`; annotated tag `v1.1.3` опубликован на этом exact commit.
+- Follow-up: Operations получает digests/provenance из [production handoff](../../operations/production-handoff.md) и пересобирает bundle из тех же трёх файлов с `app_version=1.1.3`; rollout требует отдельного разрешения владельца.
 
 ## Остаточные риски
 
-- Локальная Docker-проверка не состоялась из-за DNS Docker Hub; source/workflow contracts не заменяют успешный container gate в tag CI.
-- v1.1.3 digests, provenance и bundle с обновлённой `app_version` ещё не опубликованы, поэтому текущий статус production release — NO-GO.
+- Локальная Docker-проверка не состоялась из-за DNS Docker Hub, но mandatory tag CI успешно выполнил container gate до publication.
+- v1.1.3 images/digests/provenance опубликованы; Operations ещё должен пересобрать и опубликовать compatible bundle. Rollout не выполнялся и требует отдельного разрешения владельца.
