@@ -13,7 +13,7 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Идентификация и ответственность
 
-- Название сервиса: Sports Probabilistic Forecasting 1.1.2.
+- Название сервиса: Sports Probabilistic Forecasting 1.1.3.
 - Репозиторий и основной branch: SportsProbabilisticForecasting, `main`.
 - Владелец приложения: пользователь.
 - Владелец решения о production-развёртывании: пользователь.
@@ -131,18 +131,16 @@ rollout и rollback в репозитории управления инфрас�
   [строгий handoff gate](../../tests/test_production_readiness_validation.py),
   [worker measurement](worker-measurement-evidence.md), [migration/recovery](database-migrations.md),
   [signals](observability.md), [model bundle](model-bundle.md), [serving data](serving-data.md).
-- Security release `v1.1.2` создаётся только после успешных checks на итоговом `main`.
-  До его создания не использовать прежние image digests или mutable tags:
-  они относятся к другому commit и запрещены для production. После tag pipeline
-  обязан зафиксировать новые GitHub CI, dependency/filesystem/image scans, GHCR
-  provenance и published immutable image digests (api, worker, telegram-bot и archive-sync). Production DB role, external
-  Telegram/API connectivity и VPS rollout подтверждает внешний server operations
-  agent.
-- Для устранения security blocker runtime UID/GID новый `v1.1.2` tag обязан
-  соответствовать commit с `sf=10001:10001`; Operations не использует старые
-  images или их digests. Требуются четыре новых immutable digests (api, worker,
-  telegram-bot, archive-sync), успешный CI, image scans и provenance каждого
-  образа до изменения host mount ownership или rollout.
+- v1.1.2 уже опубликован и остаётся immutable historical evidence, но имеет
+  production-blocker: Worker не может импортировать verifier bundle без MLflow.
+  Запрещено перепубликовывать image, переносить tag или менять любой digest
+  v1.1.2: это разрушит связь version → commit → digest, rollback и audit trail.
+- Только v1.1.3 после успешных checks на итоговом `main` может быть candidate.
+  Его pipeline до push обязан собрать Worker и выполнить `python -c "from
+  sports_forecast.deploy.model_bundle import verify_model_bundle"` внутри image.
+  После этого pipeline фиксирует новые GitHub CI, dependency/filesystem/image
+  scans, GHCR provenance и четыре published immutable digests (api, worker,
+  telegram-bot и archive-sync). До этих фактов release и rollout — NO-GO.
 - Локальный `make security` на 2026-08-09 успешно выполнил `pip-audit` для
   locked production runtime dependencies: `No known vulnerabilities found`.
   Он не заменяет dependency/filesystem/image scans опубликованных образов и
@@ -150,19 +148,26 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Артефакт и откат
 
-- Registry и неизменяемый идентификатор image: после `v1.1.2` использовать
-  только новые GHCR `image@sha256:digest`; SemVer tag не является runtime ID.
+- Registry и неизменяемый идентификатор image: для v1.1.3 использовать только
+  новые GHCR `image@sha256:digest`; SemVer tag не является runtime ID.
 - Способ доказать происхождение артефакта: итоговый commit SHA, Git tag
-  `v1.1.2`, совпадающий с `pyproject.toml`, CI provenance attestation и
+  `v1.1.3`, совпадающий с `pyproject.toml`, CI provenance attestation и
   отдельный digest каждого runtime image.
-- Release evidence `v1.1.2`: tag указывает на `eadbdb4bfe979cfdb37b31bd64975d0cfd5ad556`;
+- Release evidence v1.1.2 (только historical evidence, не использовать для
+  rollout): tag указывает на `eadbdb4bfe979cfdb37b31bd64975d0cfd5ad556`;
   [GitHub Actions run 32239173166](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/32239173166)
   успешно завершил release gates, published-image scans и provenance для:
   - API: `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:e613ba9c05d4040530ea138b6e6cc36169445ef331ce515c0dc796b7ebf38096`.
   - Worker: `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:5731b374e02f544e35f8884d45c81dfed9086c95620387e1f66123ee71d0d926`.
   - Telegram bot: `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:30dff19e339d79632ee83d5f046edf45145eef2e4c9046320a19bcb245dc3bf4`.
   - Archive-sync: `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:17dbba8452ab1fa0eeeb6df0ae338ac6be54da5fddbdac42cd1fd3afcc86e3f3`.
-- Предыдущая исправная версия: определяется Operations Agent из последнего работоспособного immutable image.
+- Release evidence v1.1.3: появится только в authorised tag pipeline после
+  Worker import gate; Operations не подставляет вместо него v1.1.2 digest.
+- Model delivery bundle для v1.1.3: Operations пересобирает и публикует тот же
+  bundle из тех же трёх файлов с `app_version=1.1.3`; identity/checksum и
+  source commit передаются вместе с новыми image digests.
+- Предыдущая исправная версия: определяется Operations Agent из последнего
+  работоспособного immutable image; v1.1.2 не является rollback-кандидатом.
 - Model delivery bundle: перед rollout Operations получает путь/immutable
   `bundle_id`, manifest checksum, `app_version` и source commit; `current` и
   `previous` устанавливаются только через [model-bundle.md](model-bundle.md).
