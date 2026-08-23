@@ -54,6 +54,9 @@ REQ, ADR, epic/task и отчёта выполнения; `docs/cursor/refactor/
 | `security-reviewer` | Затронуты ввод, сеть, секреты, зависимости, Docker, CI или доступ | Модель угроз в границах изменения и проверяемые меры защиты |
 | `documentation-writer` | Изменилось поведение, команда, конфигурация или публичный контракт | Актуальные русскоязычные документы и примеры |
 | `devops-reviewer` | Меняются CI, Docker, сборка или подготовка выпуска | Проверка воспроизводимости, production-контракта и готовности к передаче Operations Agent |
+| `research-scientist` | Пользователь явно запустил Research Mode с целью при неизвестном способе | Фальсифицируемая гипотеза и ожидаемый information gain |
+| `data-researcher` | Research Loop должен изучить публичный источник данных | Typed Data Source Catalog record, risks и EngineeringRequest при необходимости |
+| `research-evaluator` | Harness вычислил raw metrics Research Mode | Независимая интерпретация и caveats, не изменяющие PASS/FAIL/INVALID |
 
 Не используй роль как отдельную «личность» ради церемонии. Один AI-агент может
 последовательно принять несколько ролей. Если платформа поддерживает несколько агентов,
@@ -72,6 +75,8 @@ REQ, ADR, epic/task и отчёта выполнения; `docs/cursor/refactor/
 | `devops-reviewer` | `gpt-5.6-terra` | `high` | Техническая проверка с повышенным вниманием к рискам |
 | `test-designer` | `gpt-5.6-terra` | `medium` | Узкая работа по подтверждённой спецификации |
 | `documentation-writer` | `gpt-5.6-terra` | `low` | Ясная повторяемая текстовая задача |
+| `research-scientist`, `research-evaluator` | `gpt-5.6-sol` | `high` | Научные гипотезы и независимая интерпретация evidence |
+| `data-researcher` | `gpt-5.6-terra` | `medium` | Точное обследование доступного информационного пространства |
 
 Sol обозначается идентификатором `gpt-5.6-sol`. Явно указанная при запуске модель
 может переопределить общий default, но настройки конкретного custom agent имеют приоритет.
@@ -177,6 +182,18 @@ reviewer фиксирует его в EPIC отдельным evidence-комм�
 развёртывает сервис и не угадывает его runtime-контракт. Заполненный документ передаётся
 DevOps Operations Agent, который отвечает за серверную часть и запрашивает отдельное
 одобрение на production-развёртывание.
+
+## Opt-in Research Mode
+
+Engineering Mode остаётся default: известное изменение продукта проходит существующую цепочку
+ролей. Research Mode применяется только при явном `GoalContract`, когда способ достижения
+исследовательской цели неизвестен. Его state machine программно вызывает research-роли и
+передаёт `EngineeringRequest` обратно в обычный workflow; она не создаёт parallel team.
+
+Подробные contracts, durable memory, каталог источников, locked holdout и ограничения
+context packages находятся в [`docs/research/research-mode.md`](../research/research-mode.md).
+Даже если Codex runtime изменит режим наследования контекста, следующий этап обязан
+восстанавливаться из `Goal + State + Canonical Knowledge + Relevant Findings + Current Task`.
 
 ## Проверка AI-слоя
 
