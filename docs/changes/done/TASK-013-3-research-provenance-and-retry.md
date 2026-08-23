@@ -57,7 +57,7 @@ scope TASK-013-4 отменён пользователем.
   обязательных metrics и Engineering receipt, sanitation external payload и cancellation scope.
   Повторный review нашёл P1 на stale ExperimentResult; добавлена fail-closed проверка
   `experiment_id` и `temporal_validation`. Финальный review: P0/P1/P2 findings нет.
-- Commit/push: проверенный commit `VERIFY_COMMIT_PENDING`; hash фиксируется отдельным
+- Commit/push: проверенный commit `889147f447eda37ee713d7ab893f494418be8cf3`; hash фиксируется отдельным
   documentation-only evidence-коммитом reviewer.
 - Follow-up: TASK-013-4 `cancelled` пользователем 2026-08-24: runtime/API adapter и durable
   multi-process storage не реализуются.

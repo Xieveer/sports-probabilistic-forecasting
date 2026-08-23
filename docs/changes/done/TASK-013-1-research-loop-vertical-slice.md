@@ -53,7 +53,7 @@ DVC, Airflow или MLflow. Версия проекта не менялась.
   [Data Source Catalog](../../research/data-source-catalog.md), [ADR-013](../../architecture/adr/ADR-013-research-mode-state-machine.md).
 - Review / security: независимый финальный review завершён без P0/P1/P2 findings после
   исправления fail-closed и safe logging сценариев.
-- Commit/push: проверенный commit `VERIFY_COMMIT_PENDING`; hash фиксируется отдельным
+- Commit/push: проверенный commit `889147f447eda37ee713d7ab893f494418be8cf3`; hash фиксируется отдельным
   documentation-only evidence-коммитом reviewer.
 - Follow-up: TASK-013-2 и TASK-013-3 завершены; TASK-013-4 отменён пользователем.
 

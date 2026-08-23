@@ -45,4 +45,4 @@ JSON storage — документированы как non-scope, а не как
 Фактически выполнены: `make test` (935 passed), целевой mypy hook (Passed), `make lint`
 (Passed), `make ai-validate` (`AI layer is valid.`), `make docs` (успешно с одним существующим
 warning о `_static`) и `git diff --check` (успешно).
-Хеш проверенного коммита: `VERIFY_COMMIT_PENDING`.
+Хеш проверенного коммита: `889147f447eda37ee713d7ab893f494418be8cf3`.

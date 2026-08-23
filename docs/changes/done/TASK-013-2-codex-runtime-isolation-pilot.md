@@ -50,7 +50,7 @@ Evaluator получил только нормализованный package и 
   [ADR-013](../../architecture/adr/ADR-013-research-mode-state-machine.md).
 - Review / security: независимый финальный review завершён без P0/P1/P2 findings; проверялись
   только synthetic packages, без секретов, сети и external data.
-- Commit/push: проверенный commit `VERIFY_COMMIT_PENDING`; hash фиксируется отдельным
+- Commit/push: проверенный commit `889147f447eda37ee713d7ab893f494418be8cf3`; hash фиксируется отдельным
   documentation-only evidence-коммитом reviewer.
 - Follow-up: `TASK-013-3` в [EPIC-013](../../backlog/EPIC-013-research-mode.md) для
   `schema_version` / `as_of` / provenance и structured-output retry; programmatic adapter
