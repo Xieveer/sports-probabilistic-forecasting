@@ -46,3 +46,7 @@
 | TASK-012-2 | done | critical | [Release documentation gate и recovery runbook](tasks/TASK-012-2-release-documentation-gate.md) |
 | EPIC-009 | done | high | [Проверяемые gates процесса Codex-агентов](EPIC-009-agent-workflow-gates.md) |
 | TASK-009-1 | done | high | [Проверяемые gates workflow агентов](tasks/TASK-009-1-enforce-agent-workflow-gates.md) |
+| EPIC-014 | in_progress | high | [Проверяемый каталог спортивных API для Research Mode](EPIC-014-research-api-catalog.md) |
+| TASK-014-1 | done | high | [Строгий контракт каталога API](tasks/TASK-014-1-api-catalog-contract.md) |
+| TASK-014-2 | in_progress | high | [Полный каталог NHL Web API](tasks/TASK-014-2-nhl-api-catalog.md) |
+| TASK-014-3 | in_progress | high | [Полный каталог Smart Tables API](tasks/TASK-014-3-smart-tables-api-catalog.md) |

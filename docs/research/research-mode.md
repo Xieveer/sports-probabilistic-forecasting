@@ -15,7 +15,11 @@ experiment/compute/API budgets. Нет автоматической LLM-клас
 `ResearchRepository` сохраняет `runs/<run_id>/state.json`, а каталог источников —
 `data-sources/<source_id>.json` в переданном workspace. Workspace выбирает оператор; он не
 является сервисной БД и не коммитится по умолчанию. Следующий вызов создаёт новый orchestrator
-и восстанавливает run только из durable state.
+и восстанавливает run только из durable state. Для глубоко исследованного API карточка имеет
+`catalog_completeness="complete"`: endpoint и field-level contract с JSON path, типом,
+семантикой, доступностью во времени и evidence. Краткая legacy-card (`partial`) не считается
+доказательством схемы и не должна быть основанием для реализации или научной гипотезы без
+повторной Data Researcher-проверки.
 
 ## State machine
 

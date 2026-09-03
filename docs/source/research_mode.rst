@@ -7,3 +7,4 @@ Opt-in Research Loop отделён от Engineering Workflow и не подкл
 
 * :download:`research-mode.md <../research/research-mode.md>`
 * :download:`data-source-catalog.md <../research/data-source-catalog.md>`
+* :download:`REQ-014 API catalog <../product/requirements/REQ-014-research-api-catalog.md>`

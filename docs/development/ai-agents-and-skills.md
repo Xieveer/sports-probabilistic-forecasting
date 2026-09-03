@@ -71,14 +71,16 @@ REQ, ADR, epic/task и отчёта выполнения; `docs/cursor/refactor/
 | Роли | Модель | Усилие | Причина |
 |---|---|---|---|
 | `product-analyst`, `architect`, `reviewer`, `security-reviewer` | `gpt-5.6-sol` | `high` | Неоднозначные решения и анализ рисков |
-| `implementer` | `gpt-5.6-terra` | `medium` | Обычная ограниченная реализация |
+| `implementer` | `gpt-5.6-luna` | `medium` | Обычная ограниченная реализация |
 | `devops-reviewer` | `gpt-5.6-terra` | `high` | Техническая проверка с повышенным вниманием к рискам |
 | `test-designer` | `gpt-5.6-terra` | `medium` | Узкая работа по подтверждённой спецификации |
-| `documentation-writer` | `gpt-5.6-terra` | `low` | Ясная повторяемая текстовая задача |
-| `research-scientist`, `research-evaluator` | `gpt-5.6-sol` | `high` | Научные гипотезы и независимая интерпретация evidence |
+| `documentation-writer` | `gpt-5.6-luna` | `medium` | Ясная повторяемая текстовая задача |
+| `research-scientist` | `gpt-5.6-sol` | `medium` | Фальсифицируемые гипотезы при заданном Research Mode scope |
+| `research-evaluator` | `gpt-5.6-terra` | `high` | Независимая интерпретация evidence |
 | `data-researcher` | `gpt-5.6-terra` | `medium` | Точное обследование доступного информационного пространства |
 
-Sol обозначается идентификатором `gpt-5.6-sol`. Явно указанная при запуске модель
+Sol, Terra и Luna обозначаются идентификаторами `gpt-5.6-sol`, `gpt-5.6-terra` и
+`gpt-5.6-luna`. Явно указанная при запуске модель
 может переопределить общий default, но настройки конкретного custom agent имеют приоритет.
 
 ## Когда использовать skills
