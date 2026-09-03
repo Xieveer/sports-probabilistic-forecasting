@@ -12,7 +12,7 @@ from typing import Any
 REQUIRED_SKILL_SECTIONS = {"Нельзя сокращать", "Red flags", "Проверка"}
 REQUIRED_ROLE_SECTIONS = {"Цель", "Scope", "Результат", "Composition"}
 REQUIRED_AGENT_FIELDS = {"name", "description", "developer_instructions", "model"}
-SUPPORTED_AGENT_MODELS = {"gpt-5.6-sol", "gpt-5.6-terra"}
+SUPPORTED_AGENT_MODELS = {"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}
 FRONTMATTER_PATTERN = re.compile(
     r"\A---\nname: ([a-z0-9-]+)\ndescription: (.+?)\n---\n",
     re.DOTALL,

@@ -12,6 +12,7 @@ MLOps-система вероятностного прогнозирования
    quickstart
    feature_selection_workflow
    walk_forward
+   research_mode
 
 .. toctree::
    :maxdepth: 2

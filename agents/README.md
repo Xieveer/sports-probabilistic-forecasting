@@ -4,6 +4,11 @@
 проектными playbooks, а соответствующие профили `.codex/agents/*.toml` делают их именованными
 custom agents в Codex и закрепляют подходящие модель, reasoning effort и sandbox.
 
+Для opt-in исследований дополнительно доступны `research-scientist`, `data-researcher` и
+`research-evaluator`. Их программно вызывает только Research Orchestrator; они не заменяют
+engineering-роли и не вызывают друг друга. Контракт режима —
+[`docs/research/research-mode.md`](../docs/research/research-mode.md).
+
 | Роль | Результат |
 |---|---|
 | Product analyst | Подтверждённые требования |

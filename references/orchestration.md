@@ -38,3 +38,14 @@ test-designer ──────┘
 - несколько implementers меняют одну область;
 - параллельный review без единого merge этапа;
 - persona используется вместо подходящего skill.
+
+## Opt-in Research Loop
+
+Research Orchestrator — исключение только в том смысле, что это детерминированный код, а не
+роль: он сам вызывает `research-scientist`, `data-researcher` и `research-evaluator` согласно
+state machine. Эти роли по-прежнему не вызывают друг друга. При необходимости изменений
+orchestrator создаёт `EngineeringRequest`; его исполнение принадлежит существующей цепочке
+`architect → test-designer → implementer → reviewer`, а research experiment ждёт verified TASK.
+
+Контекст role call должен быть восстановимым `ContextPackage`, не историей чата. См.
+[`docs/research/research-mode.md`](../docs/research/research-mode.md).
