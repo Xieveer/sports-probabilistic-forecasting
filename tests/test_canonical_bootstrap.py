@@ -12,6 +12,7 @@ from sports_forecast.deploy.canonical_bootstrap import (
     build_nhl_bootstrap_bundle,
     import_nhl_bootstrap_bundle,
     refresh_nhl_canonical_from_csv,
+    verify_nhl_bootstrap_bundle,
 )
 from sports_forecast.deploy.serving_data import ArchiveVerificationError
 from sports_forecast.service.db.models import (
@@ -61,6 +62,15 @@ def test_verified_nhl_bootstrap_imports_canonical_history_once(tmp_path: Path) -
         assert watermark.snapshot_id == bundle.artifact_id
     finally:
         session.close()
+
+
+def test_verified_nhl_bootstrap_can_be_checked_without_database_write(tmp_path: Path) -> None:
+    """Release gate валидирует fixture до import и без database connection."""
+    source_csv = tmp_path / "source.csv"
+    _write_nhl_source_csv(source_csv)
+    bundle = build_nhl_bootstrap_bundle(source_csv, tmp_path / "bundles")
+
+    assert verify_nhl_bootstrap_bundle(bundle.path).artifact_id == bundle.artifact_id
 
 
 def test_tampered_bootstrap_bundle_does_not_write_partial_history(tmp_path: Path) -> None:

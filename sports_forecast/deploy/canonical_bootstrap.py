@@ -191,6 +191,19 @@ def _load_verified_events(bundle_path: Path) -> tuple[ArchiveArtifact, list[dict
     return artifact, events
 
 
+def verify_nhl_bootstrap_bundle(bundle_path: Path) -> ArchiveArtifact:
+    """Проверить immutable NHL canonical bootstrap без записи в БД.
+
+    Args:
+        bundle_path: Content-addressed каталог bootstrap bundle.
+
+    Returns:
+        Проверенный archive artifact.
+    """
+    artifact, _events = _load_verified_events(bundle_path)
+    return artifact
+
+
 def import_nhl_bootstrap_bundle(bundle_path: Path, session: Session) -> BootstrapImportResult:
     """Импортировать проверенный NHL bundle одной DB-транзакцией.
 

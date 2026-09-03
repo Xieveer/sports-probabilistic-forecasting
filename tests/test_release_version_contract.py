@@ -13,7 +13,7 @@ from sports_forecast.service.schemas import HealthResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.1.4"
+RELEASE_VERSION = "1.1.5"
 
 
 def test_package_and_fastapi_publish_same_release_version() -> None:
@@ -81,6 +81,8 @@ def test_tag_gate_requires_static_release_docs_and_forbids_evidence_commit() -> 
     )
     command = gate["run"]
     assert "REQ-012-nhl-source-state-archive.md" in command
+    assert "REQ-015-worker-runtime-dependency-v1-1-5.md" in command
+    assert "TASK-012-3-worker-runtime-dependency-v1-1-5.md" in command
     assert "git status --porcelain" in command
     assert "git commit" not in "\n".join(step.get("run", "") for step in verify_steps)
 
@@ -96,8 +98,46 @@ def test_release_gate_imports_model_bundle_inside_worker_image() -> None:
     )
     command = gate["run"]
     assert "docker build --target worker --tag sports-forecast-worker-release-gate ." in command
-    assert "docker run --rm sports-forecast-worker-release-gate" in command
+    assert "--entrypoint python sports-forecast-worker-release-gate" in command
     assert "from sports_forecast.deploy.model_bundle import verify_model_bundle" in command
+
+
+def test_worker_release_gate_uses_final_runtime_and_validates_fixture_bundles() -> None:
+    """Worker image проверяется bare Python, identity и штатными validators."""
+    workflow_path = PROJECT_ROOT / ".github" / "workflows" / "docker.yml"
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    verify_steps = workflow["jobs"]["verify"]["steps"]
+    gate = next(
+        step for step in verify_steps if step.get("name") == "Verify Worker runtime import boundary"
+    )
+    command = gate["run"]
+
+    assert "--read-only" in command
+    assert "--network none" in command
+    assert "--user 10001:10001" in command
+    assert "--entrypoint python" in command
+    assert "--mount type=bind" in command
+    for module in (
+        "sports_forecast.deploy.source_state",
+        "sports_forecast.deploy.canonical_bootstrap",
+        "sports_forecast.deploy.model_bundle",
+        "sports_forecast.deploy.archive_sync",
+    ):
+        assert module in command
+    assert "verify_nhl_source_state_bundle" in command
+    assert "verify_nhl_bootstrap_bundle" in command
+    assert "scripts/build_worker_runtime_gate_fixtures.py" in command
+    assert 'find_spec("mlflow") is None' in command
+
+
+def test_worker_runtime_dependencies_are_explicit_and_visible_to_bare_python() -> None:
+    """Runtime import не зависит от неявного выбора ``uv run`` окружения."""
+    pyproject = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    dependencies = pyproject["project"]["dependencies"]
+    dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    assert any(str(dependency).startswith("omegaconf") for dependency in dependencies)
+    assert 'ENV PATH="/app/.venv/bin:$PATH"' in dockerfile
 
 
 def test_release_dependency_audit_uses_an_absolute_requirements_path() -> None:

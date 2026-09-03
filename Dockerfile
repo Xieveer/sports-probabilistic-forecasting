@@ -12,6 +12,10 @@ FROM python:3.12-slim AS base
 
 WORKDIR /app
 
+# CI и Operations выполняют smoke-gates через bare ``python``. Зависимости
+# остаются в изолированном uv-venv, но должны быть видимы этому интерпретатору.
+ENV PATH="/app/.venv/bin:$PATH"
+
 RUN groupadd --system --gid 10001 sf && \
     useradd --system --uid 10001 --gid sf --home-dir /app --shell /usr/sbin/nologin sf
 

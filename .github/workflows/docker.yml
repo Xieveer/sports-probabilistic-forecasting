@@ -49,10 +49,12 @@ jobs:
         if: github.ref_type == 'tag'
         run: |
           test -f docs/product/requirements/REQ-012-nhl-source-state-archive.md
+          test -f docs/product/requirements/REQ-015-worker-runtime-dependency-v1-1-5.md
           test -f docs/architecture/adr/ADR-012-nhl-source-state-archive.md
           test -f docs/operations/canonical-bootstrap.md
           test -f docs/operations/production-handoff.md
           test -f docs/backlog/tasks/TASK-012-1-nhl-source-state-contract.md
+          test -f docs/backlog/tasks/TASK-012-3-worker-runtime-dependency-v1-1-5.md
           test -z "$(git status --porcelain)"
           ! git log -1 --format=%s | grep -Eiq 'release evidence|image evidence'
 
@@ -69,7 +71,34 @@ jobs:
       - name: Verify Worker runtime import boundary
         run: |
           docker build --target worker --tag sports-forecast-worker-release-gate .
-          docker run --rm sports-forecast-worker-release-gate python -c 'from sports_forecast.deploy.model_bundle import verify_model_bundle'
+          fixture_root="${RUNNER_TEMP}/worker-runtime-gate"
+          uv run python scripts/build_worker_runtime_gate_fixtures.py --output-root "$fixture_root"
+          source_bundle="$(find "$fixture_root/source-state" -type d -name 'sha256:*' -print -quit)"
+          bootstrap_bundle="$(find "$fixture_root/canonical-bootstrap" -type d -name 'sha256:*' -print -quit)"
+          test -n "$source_bundle"
+          test -n "$bootstrap_bundle"
+          docker run --rm --read-only --network none --user 10001:10001 \
+            --entrypoint id sports-forecast-worker-release-gate -u | grep -Fx '10001'
+          docker run --rm --read-only --network none --user 10001:10001 \
+            --mount type=bind,src="$source_bundle",dst="/fixtures/source-state/${source_bundle##*/}",readonly \
+            --mount type=bind,src="$bootstrap_bundle",dst="/fixtures/canonical-bootstrap/${bootstrap_bundle##*/}",readonly \
+            --entrypoint python sports-forecast-worker-release-gate -c '
+          from pathlib import Path
+          from importlib.util import find_spec
+          from sports_forecast.deploy.archive_sync import sync_operational_archive
+          from sports_forecast.deploy.canonical_bootstrap import verify_nhl_bootstrap_bundle
+          from sports_forecast.deploy.model_bundle import verify_model_bundle
+          from sports_forecast.deploy.source_state import verify_nhl_source_state_bundle
+          source_bundle = next(Path("/fixtures/source-state").iterdir())
+          bootstrap_bundle = next(Path("/fixtures/canonical-bootstrap").iterdir())
+          assert verify_nhl_source_state_bundle(source_bundle).artifact_id == source_bundle.name
+          assert verify_nhl_bootstrap_bundle(bootstrap_bundle).artifact_id == bootstrap_bundle.name
+          assert callable(verify_model_bundle)
+          assert callable(sync_operational_archive)
+          assert find_spec("mlflow") is None
+          assert find_spec("dvc") is None
+          assert find_spec("optuna") is None
+          '
 
   build-push:
     needs: [verify]

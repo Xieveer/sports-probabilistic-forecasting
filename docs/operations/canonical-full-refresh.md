@@ -20,7 +20,7 @@ Runbook относится к `TASK-007-3`. Он описывает один bou
 export SF_CANONICAL_SOURCE_CSV=/srv/sports-forecast/source/nhl/source.csv
 export SF_WORKER_RUN_ID=nhl-20260815T100000Z
 export SF_MODEL_RUNTIME_ROOT=/srv/sports-forecast/models
-export SF_APP_VERSION=1.1.4
+export SF_APP_VERSION=1.1.5
 export SF_OPERATIONAL_ARCHIVE_ROOT=/srv/sports-forecast/archive-staging
 
 uv run python -m sports_forecast.orchestration.canonical_full_refresh_cli \

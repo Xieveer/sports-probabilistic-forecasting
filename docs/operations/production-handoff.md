@@ -13,7 +13,7 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Идентификация и ответственность
 
-- Название сервиса: Sports Probabilistic Forecasting 1.1.4.
+- Название сервиса: Sports Probabilistic Forecasting 1.1.5.
 - Репозиторий и основной branch: SportsProbabilisticForecasting, `main`.
 - Владелец приложения: пользователь.
 - Владелец решения о production-развёртывании: пользователь.
@@ -143,10 +143,15 @@ rollout и rollback в репозитории управления инфрас�
   production-blocker: Worker не может импортировать verifier bundle без MLflow.
   Запрещено перепубликовывать image, переносить tag или менять любой digest
   v1.1.2: это разрушит связь version → commit → digest, rollback и audit trail.
-- Только следующий patch release `v1.1.4` после успешных checks на итоговом
-  `main` может быть candidate.
-  Его pipeline до push обязан собрать Worker и выполнить `python -c "from
-  sports_forecast.deploy.model_bundle import verify_model_bundle"` внутри image.
+- `v1.1.4` остаётся immutable historical blocker: Worker image не видел
+  `omegaconf`, потому что bare `python` не выбирал uv-venv. Запрещено менять его
+  tag или digest. Только следующий patch release `v1.1.5` после успешных checks
+  на итоговом `main` может быть candidate. Его pipeline до push обязан собрать
+  Worker и через bare `python` в final image проверить imports source-state,
+  canonical-bootstrap, model-bundle и archive-sync, UID/GID `10001:10001`, а
+  также bind-mounted content-addressed source-state/canonical-bootstrap fixtures
+  штатными validators. Gate использует `--read-only`, `--network none` и
+  `--mount type=bind`; он не запускает install/import в БД или scheduler.
   После этого pipeline фиксирует новые GitHub CI, dependency/filesystem/image
   scans, GHCR provenance и четыре published immutable digests (api, worker,
   telegram-bot и archive-sync). До этих фактов release и rollout — NO-GO.
@@ -157,10 +162,10 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Артефакт и откат
 
-- Registry и неизменяемый идентификатор image: для v1.1.4 использовать только
+- Registry и неизменяемый идентификатор image: для v1.1.5 использовать только
   новые GHCR `image@sha256:digest`; SemVer tag не является runtime ID.
 - Способ доказать происхождение артефакта: итоговый commit SHA, Git tag
-  `v1.1.4`, совпадающий с `pyproject.toml`, CI provenance attestation и
+  `v1.1.5`, совпадающий с `pyproject.toml`, CI provenance attestation и
   отдельный digest каждого runtime image.
 - Release evidence v1.1.2 (только historical evidence, не использовать для
   rollout): tag указывает на `eadbdb4bfe979cfdb37b31bd64975d0cfd5ad556`;
@@ -177,9 +182,15 @@ rollout и rollback в репозитории управления инфрас�
   - Worker: `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:0c2b6db2bbbbee03d79100a89b2389003de8df112b22f035389881063e34c9e5`.
   - Telegram bot: `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:bef3ab26a848e839b126886277144123dac808a0cf23e97817bbbb03aa293016`.
   - Archive-sync: `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:8dbf8582f36bb3516422c59a4db0f899718083e68c304742ce5f913b59ac4a49`.
-- Model delivery bundle для v1.1.4: Operations пересобирает и публикует тот же
-  bundle из тех же трёх файлов с `app_version=1.1.4`; identity/checksum и
-  source commit передаются вместе с новыми image digests.
+- Staged initial source-state
+  `sha256:0bca266747aac0f0050271c231f61a0c22d5e553b9219d8760795663d56421c4`
+  и canonical bootstrap
+  `sha256:bb8f3ac446e9599a8b24b96eeb279a0fc540af3e86b4e089900761ab5e1effb1`
+  для `v1.1.4` сохраняются immutable: их не пересобирать, если v1.1.5 не
+  меняет contract. Operations сначала повторяет только verify в новом Worker
+  image. Model delivery bundle для v1.1.5 при необходимости собирается из тех
+  же трёх файлов с `app_version=1.1.5`; identity/checksum и source commit
+  передаются вместе с новыми image digests.
 - Предыдущая исправная версия: определяется Operations Agent из последнего
   работоспособного immutable image; v1.1.2 не является rollback-кандидатом.
 - Model delivery bundle: перед rollout Operations получает путь/immutable
