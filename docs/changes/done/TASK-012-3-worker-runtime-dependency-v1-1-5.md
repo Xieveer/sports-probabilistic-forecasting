@@ -36,3 +36,10 @@ bootstrap artifacts не изменялись. Не выполнялись tag/p
 GHCR scan/provenance, VPS validation, PostgreSQL, migration, bundle install или
 scheduler. До release остаются независимый review, commit/evidence commit,
 release tag и CI evidence четырёх immutable digests.
+
+## Review evidence
+
+Review не выявил P0–P2 findings: проверены runtime PATH, минимальный dependency
+set, read-only bind-mount permissions, CI permissions и отсутствие секретов в
+fixtures. Проверенный implementation commit: `39ccae9f52532638d188ad21216820ae0948186b`.
+Тег release ставится только на следующий documentation-only evidence commit.
