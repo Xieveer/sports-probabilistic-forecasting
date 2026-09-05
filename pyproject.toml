@@ -44,7 +44,7 @@ dev = [
     "ruff>=0.14.8",
     "sphinx>=7.3.0",
     "sphinx-autobuild>=2024.4.0",
-    "sphinx-rtd-theme>=2.0.0",
+    "sphinx-rtd-theme>=3.1.0",
     "pytest-cov>=4.0.0",
     "dvc",
     "dvc-s3>=3.2.2",
