@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 
 from sports_forecast.deploy.canonical_bootstrap import build_nhl_bootstrap_bundle
+from sports_forecast.deploy.model_bundle import build_model_bundle, install_model_bundle
 from sports_forecast.deploy.source_state import build_nhl_source_state_bundle
 
 
@@ -19,14 +20,14 @@ def _make_readable_for_runtime(bundle_path: Path) -> None:
     bundle_path.chmod(0o755)
 
 
-def build_fixtures(output_root: Path) -> tuple[Path, Path]:
-    """Создать source-state и canonical bootstrap fixtures с content-addressed именами.
+def build_fixtures(output_root: Path, *, app_version: str) -> tuple[Path, Path, Path]:
+    """Создать runtime fixtures штатными builders и installers.
 
     Args:
         output_root: Временный каталог, передаваемый Docker через bind mount.
 
     Returns:
-        Пути двух проверенных immutable bundles.
+        Пути source-state, canonical bootstrap и runtime model root.
     """
     output_root.mkdir(parents=True, exist_ok=True)
     # Fixture не содержит секретов; final Worker запускается как UID 10001 и
@@ -54,19 +55,37 @@ def build_fixtures(output_root: Path) -> tuple[Path, Path]:
     canonical_bootstrap = build_nhl_bootstrap_bundle(
         source_csv, output_root / "canonical-bootstrap"
     )
+    model_source = output_root / "model-source"
+    model_source.mkdir()
+    (model_source / "fixture-model.bin").write_bytes(b"fixture-model-v1")
+    runtime_models = output_root / "runtime_models"
+    model_bundle = build_model_bundle(
+        model_source,
+        runtime_models / "bundles",
+        model_identity="fixture-model",
+        app_version=app_version,
+        source_commit="fixture-commit",
+        release=f"v{app_version}",
+    )
+    install_model_bundle(model_bundle.path, runtime_models, app_version=app_version)
     _make_readable_for_runtime(source_state.path)
     _make_readable_for_runtime(canonical_bootstrap.path)
-    return source_state.path, canonical_bootstrap.path
+    _make_readable_for_runtime(runtime_models)
+    return source_state.path, canonical_bootstrap.path, runtime_models
 
 
 def main() -> None:
     """Создать fixtures и вывести shell-совместимые пути без чувствительных данных."""
     parser = argparse.ArgumentParser(description="Fixtures для Worker runtime release gate")
     parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument("--app-version", required=True)
     args = parser.parse_args()
-    source_state, canonical_bootstrap = build_fixtures(args.output_root)
+    source_state, canonical_bootstrap, runtime_models = build_fixtures(
+        args.output_root, app_version=args.app_version
+    )
     print(f"source_state={source_state}")  # noqa: T201
     print(f"canonical_bootstrap={canonical_bootstrap}")  # noqa: T201
+    print(f"runtime_models={runtime_models}")  # noqa: T201
 
 
 if __name__ == "__main__":

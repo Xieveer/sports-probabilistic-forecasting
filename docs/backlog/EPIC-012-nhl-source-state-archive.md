@@ -20,6 +20,7 @@ release documentation → final commit → tag. Эпик не выдаёт IAM �
 | [TASK-012-1](tasks/TASK-012-1-nhl-source-state-contract.md) | Bundle/install/export/import contract, orchestration и tests | ADR-012 accepted | bootstrap-refresh-sync failure tests | in_progress |
 | [TASK-012-2](tasks/TASK-012-2-release-documentation-gate.md) | Runbooks, IAM/retention contract и pre-tag documentation gate | 012-1 | docs/handoff/release workflow tests | done |
 | [TASK-012-3](tasks/TASK-012-3-worker-runtime-dependency-v1-1-5.md) | Worker runtime dependency и final-image fixture gate | 012-1, 012-2 | bare Python import + mounted bundle validators | done |
+| [TASK-012-4](tasks/TASK-012-4-production-compose-contract-v1-1-6.md) | Model host bind mount и rendered/final-image v1.1.6 gates | 012-3, ADR-015 | rendered Compose + final Worker model mount | in_progress |
 
 ## Риски и rollout
 

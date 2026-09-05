@@ -97,6 +97,7 @@ def test_install_and_rollback_keep_verified_current_and_previous(tmp_path: Path)
 
     assert rolled_back.bundle_id == first.bundle_id
     assert (runtime / "current").resolve().name == first.bundle_id
+    assert not (runtime / "current").readlink().is_absolute()
 
 
 def test_loader_fails_fast_when_current_bundle_is_missing_or_incompatible(tmp_path: Path) -> None:

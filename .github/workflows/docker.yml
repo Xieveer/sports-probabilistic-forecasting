@@ -50,11 +50,14 @@ jobs:
         run: |
           test -f docs/product/requirements/REQ-012-nhl-source-state-archive.md
           test -f docs/product/requirements/REQ-015-worker-runtime-dependency-v1-1-5.md
+          test -f docs/product/requirements/REQ-016-production-compose-contract-v1-1-6.md
           test -f docs/architecture/adr/ADR-012-nhl-source-state-archive.md
+          test -f docs/architecture/adr/ADR-015-production-compose-model-bind-mount.md
           test -f docs/operations/canonical-bootstrap.md
           test -f docs/operations/production-handoff.md
           test -f docs/backlog/tasks/TASK-012-1-nhl-source-state-contract.md
           test -f docs/backlog/tasks/TASK-012-3-worker-runtime-dependency-v1-1-5.md
+          test -f docs/backlog/tasks/TASK-012-4-production-compose-contract-v1-1-6.md
           test -z "$(git status --porcelain)"
           ! git log -1 --format=%s | grep -Eiq 'release evidence|image evidence'
 
@@ -68,32 +71,63 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
-      - name: Verify Worker runtime import boundary
+      - name: Verify rendered production Compose contract
+        run: |
+          fixture_root="${RUNNER_TEMP}/production-compose-gate"
+          app_version="$(uv run python -c 'import tomllib; from pathlib import Path; print(tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"])')"
+          uv run python scripts/build_production_compose_env_fixture.py \
+            --output "$fixture_root/production.env" \
+            --root "$fixture_root" \
+            --app-version "$app_version"
+          docker compose --env-file "$fixture_root/production.env" -f docker-compose.prod.yml --profile worker --profile source-acquisition --profile operational-sync config --quiet
+          docker compose --env-file "$fixture_root/production.env" -f docker-compose.prod.yml --profile worker --profile source-acquisition --profile operational-sync config > "$fixture_root/rendered.yml"
+          uv run python scripts/verify_production_compose_contract.py \
+            --rendered "$fixture_root/rendered.yml" \
+            --model-runtime-root "$fixture_root/runtime_models"
+
+      - name: Verify final Worker model mount and staged artifacts
         run: |
           docker build --target worker --tag sports-forecast-worker-release-gate .
           fixture_root="${RUNNER_TEMP}/worker-runtime-gate"
-          uv run python scripts/build_worker_runtime_gate_fixtures.py --output-root "$fixture_root"
+          app_version="$(uv run python -c 'import tomllib; from pathlib import Path; print(tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"])')"
+          uv run python scripts/build_worker_runtime_gate_fixtures.py \
+            --output-root "$fixture_root" --app-version "$app_version"
           source_bundle="$(find "$fixture_root/source-state" -type d -name 'sha256:*' -print -quit)"
           bootstrap_bundle="$(find "$fixture_root/canonical-bootstrap" -type d -name 'sha256:*' -print -quit)"
+          model_runtime_root="$fixture_root/runtime_models"
           test -n "$source_bundle"
           test -n "$bootstrap_bundle"
+          test -L "$model_runtime_root/current"
           docker run --rm --read-only --network none --user 10001:10001 \
             --entrypoint id sports-forecast-worker-release-gate -u | grep -Fx '10001'
           docker run --rm --read-only --network none --user 10001:10001 \
+            --entrypoint id sports-forecast-worker-release-gate -g | grep -Fx '10001'
+          docker run --rm --read-only --network none --user 10001:10001 \
             --mount type=bind,src="$source_bundle",dst="/fixtures/source-state/${source_bundle##*/}",readonly \
             --mount type=bind,src="$bootstrap_bundle",dst="/fixtures/canonical-bootstrap/${bootstrap_bundle##*/}",readonly \
+            --mount type=bind,src="$model_runtime_root",dst=/app/models,readonly \
+            --env "SF_APP_VERSION=$app_version" \
             --entrypoint python sports-forecast-worker-release-gate -c '
           from pathlib import Path
           from importlib.util import find_spec
           from sports_forecast.deploy.archive_sync import sync_operational_archive
           from sports_forecast.deploy.canonical_bootstrap import verify_nhl_bootstrap_bundle
-          from sports_forecast.deploy.model_bundle import verify_model_bundle
+          from sports_forecast.deploy.model_bundle import load_current_model_bundle
           from sports_forecast.deploy.source_state import verify_nhl_source_state_bundle
           source_bundle = next(Path("/fixtures/source-state").iterdir())
           bootstrap_bundle = next(Path("/fixtures/canonical-bootstrap").iterdir())
+          runtime_models = Path("/app/models")
           assert verify_nhl_source_state_bundle(source_bundle).artifact_id == source_bundle.name
           assert verify_nhl_bootstrap_bundle(bootstrap_bundle).artifact_id == bootstrap_bundle.name
-          assert callable(verify_model_bundle)
+          assert (runtime_models / "current").is_symlink()
+          assert (runtime_models / "current").resolve().parent.name == "bundles"
+          assert load_current_model_bundle(runtime_models, app_version=__import__("os").environ["SF_APP_VERSION"]).bundle_id == (runtime_models / "current").resolve().name
+          try:
+              (runtime_models / "write-probe").write_text("forbidden", encoding="utf-8")
+          except OSError:
+              pass
+          else:
+              raise AssertionError("model mount must be read-only")
           assert callable(sync_operational_archive)
           assert find_spec("mlflow") is None
           assert find_spec("dvc") is None

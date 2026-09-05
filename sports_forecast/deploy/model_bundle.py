@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 from argparse import ArgumentParser
 from dataclasses import dataclass
@@ -130,7 +131,7 @@ def _set_pointer(pointer: Path, target: Path) -> None:
     """Атомарно заменить локальный symbolic pointer на verified bundle."""
     temporary = pointer.with_name(f".{pointer.name}.tmp")
     temporary.unlink(missing_ok=True)
-    temporary.symlink_to(target)
+    temporary.symlink_to(os.path.relpath(target, start=pointer.parent))
     temporary.replace(pointer)
 
 

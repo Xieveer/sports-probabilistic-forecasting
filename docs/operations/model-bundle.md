@@ -17,15 +17,18 @@ release. В состав не входят training data, secrets или MLflow 
 
 ```bash
 uv run python -m sports_forecast.deploy.model_bundle install \
-  --bundle /srv/production-models/sha256:<bundle-id> \
-  --runtime-root /srv/sports-forecast/models \
-  --app-version 1.1.0
+  --bundle /srv/sports-forecast/runtime_models/bundles/sha256:<bundle-id> \
+  --runtime-root /srv/sports-forecast/runtime_models \
+  --app-version 1.1.6
 ```
 
 Команда не обучает модель и не получает artifact из MLflow/DVC. VPS Worker/API
 пользуются только `load_current_model_bundle()` и при checksum или compatibility
 mismatch завершаются до inference и записи predictions. Read-only доступ VPS к
-approved bundles остаётся обязательным согласно ADR-005.
+approved bundles остаётся обязательным согласно ADR-005. Production Worker
+получает exact host root только как `${SF_MODEL_RUNTIME_ROOT}:/app/models:ro`;
+`/app/models` внутри контейнера не меняется. Первый install не обязан создавать
+`previous`.
 
 ## Откат
 
@@ -35,8 +38,8 @@ approved bundles остаётся обязательным согласно ADR-
 
 ```bash
 uv run python -m sports_forecast.deploy.model_bundle rollback \
-  --runtime-root /srv/sports-forecast/models \
-  --app-version 1.1.0
+  --runtime-root /srv/sports-forecast/runtime_models \
+  --app-version 1.1.6
 ```
 
 При отсутствующем, повреждённом или несовместимом bundle команда завершается с

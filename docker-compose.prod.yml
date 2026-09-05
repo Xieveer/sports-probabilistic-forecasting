@@ -88,7 +88,7 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - runtime_models:/app/models:ro
+      - ${SF_MODEL_RUNTIME_ROOT:?set SF_MODEL_RUNTIME_ROOT}:/app/models:ro
       - ${SF_CANONICAL_SOURCE_ROOT:?set SF_CANONICAL_SOURCE_ROOT}:/app/data/source/nhl:ro
       - ${SF_OPERATIONAL_ARCHIVE_ROOT:?set SF_OPERATIONAL_ARCHIVE_ROOT}:/app/archive
     profiles: ["worker"]
@@ -117,4 +117,3 @@ services:
 
 volumes:
   pg_data:
-  runtime_models:

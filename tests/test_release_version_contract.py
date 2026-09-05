@@ -13,7 +13,7 @@ from sports_forecast.service.schemas import HealthResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.1.5"
+RELEASE_VERSION = "1.1.6"
 
 
 def test_package_and_fastapi_publish_same_release_version() -> None:
@@ -81,8 +81,8 @@ def test_tag_gate_requires_static_release_docs_and_forbids_evidence_commit() -> 
     )
     command = gate["run"]
     assert "REQ-012-nhl-source-state-archive.md" in command
-    assert "REQ-015-worker-runtime-dependency-v1-1-5.md" in command
-    assert "TASK-012-3-worker-runtime-dependency-v1-1-5.md" in command
+    assert "REQ-016-production-compose-contract-v1-1-6.md" in command
+    assert "TASK-012-4-production-compose-contract-v1-1-6.md" in command
     assert "git status --porcelain" in command
     assert "git commit" not in "\n".join(step.get("run", "") for step in verify_steps)
 
@@ -94,12 +94,14 @@ def test_release_gate_imports_model_bundle_inside_worker_image() -> None:
 
     verify_steps = workflow["jobs"]["verify"]["steps"]
     gate = next(
-        step for step in verify_steps if step.get("name") == "Verify Worker runtime import boundary"
+        step
+        for step in verify_steps
+        if step.get("name") == "Verify final Worker model mount and staged artifacts"
     )
     command = gate["run"]
     assert "docker build --target worker --tag sports-forecast-worker-release-gate ." in command
     assert "--entrypoint python sports-forecast-worker-release-gate" in command
-    assert "from sports_forecast.deploy.model_bundle import verify_model_bundle" in command
+    assert "from sports_forecast.deploy.model_bundle import load_current_model_bundle" in command
 
 
 def test_worker_release_gate_uses_final_runtime_and_validates_fixture_bundles() -> None:
@@ -108,7 +110,9 @@ def test_worker_release_gate_uses_final_runtime_and_validates_fixture_bundles() 
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
     verify_steps = workflow["jobs"]["verify"]["steps"]
     gate = next(
-        step for step in verify_steps if step.get("name") == "Verify Worker runtime import boundary"
+        step
+        for step in verify_steps
+        if step.get("name") == "Verify final Worker model mount and staged artifacts"
     )
     command = gate["run"]
 
@@ -127,7 +131,25 @@ def test_worker_release_gate_uses_final_runtime_and_validates_fixture_bundles() 
     assert "verify_nhl_source_state_bundle" in command
     assert "verify_nhl_bootstrap_bundle" in command
     assert "scripts/build_worker_runtime_gate_fixtures.py" in command
+    assert "install_model_bundle" not in command
+    assert "load_current_model_bundle" in command
+    assert "dst=/app/models,readonly" in command
     assert 'find_spec("mlflow") is None' in command
+
+
+def test_release_gate_renders_and_validates_production_compose_contract() -> None:
+    """Publish ждёт rendered Compose contract с безопасным fixture."""
+    workflow = yaml.safe_load((PROJECT_ROOT / ".github" / "workflows" / "docker.yml").read_text())
+    steps = workflow["jobs"]["verify"]["steps"]
+    gate = next(
+        step for step in steps if step.get("name") == "Verify rendered production Compose contract"
+    )
+    command = gate["run"]
+
+    assert "build_production_compose_env_fixture.py" in command
+    assert "docker compose --env-file" in command
+    assert "config --quiet" in command
+    assert "verify_production_compose_contract.py" in command
 
 
 def test_worker_runtime_dependencies_are_explicit_and_visible_to_bare_python() -> None:

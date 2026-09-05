@@ -10,7 +10,7 @@ Operations Agent.
 |---|---|---|---|
 | `api` | `SF_API_DATABASE_URL`, read-only витрина | нет | нет |
 | `telegram-bot` | нет, только внутренний API | нет | нет |
-| `worker` | `SF_WORKER_DATABASE_URL`, canonical refresh/write | immutable `runtime_models`, source snapshot read-only, archive staging read-write | нет |
+| `worker` | `SF_WORKER_DATABASE_URL`, canonical refresh/write | `${SF_MODEL_RUNTIME_ROOT}:/app/models:ro`, source snapshot read-only, archive staging read-write | нет |
 | `archive-sync` | нет | archive staging read-only, отдельный sync state read-write | write/read verify только `operational-archive/*`, включая `nhl-source-state/v1/` |
 
 Роли `sf_api_reader` и `sf_refresh_writer` создаёт Operations Agent после
@@ -20,6 +20,11 @@ migrations и ограничивает соответствующими табл
 читает snapshot отдельной read-only учётной записью и prefix. `DeleteObject` этим
 аккаунтам не выдаётся; lifecycle удаляет только source-state artifacts старше
 90 дней.
+
+`SF_MODEL_RUNTIME_ROOT=/srv/sports-forecast/runtime_models` — host state, не
+Docker volume. До запуска Worker Operations убеждается, что `current` — symlink
+на `bundles/sha256:<id>`, путь и содержимое доступны `10001:10001` только для
+чтения. В base Compose единственный persistent named volume — `pg_data`.
 
 ## Scheduler profile
 

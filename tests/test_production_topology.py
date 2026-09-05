@@ -169,7 +169,7 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
         "SF_OPERATIONAL_ARCHIVE_ROOT": "/app/archive",
     }
     assert worker["volumes"] == [
-        "runtime_models:/app/models:ro",
+        "${SF_MODEL_RUNTIME_ROOT:?set SF_MODEL_RUNTIME_ROOT}:/app/models:ro",
         "${SF_CANONICAL_SOURCE_ROOT:?set SF_CANONICAL_SOURCE_ROOT}:/app/data/source/nhl:ro",
         "${SF_OPERATIONAL_ARCHIVE_ROOT:?set SF_OPERATIONAL_ARCHIVE_ROOT}:/app/archive",
     ]
@@ -197,7 +197,7 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
         "${SF_ARCHIVE_SYNC_STATE_ROOT:?set SF_ARCHIVE_SYNC_STATE_ROOT}:/app/sync-state",
     ]
     assert "SF_OBJECT_STORAGE_ACCESS_KEY_ID" in cast(dict[str, str], archive_sync["environment"])
-    assert "serving_data" not in cast(dict[str, object], compose["volumes"])
+    assert set(cast(dict[str, object], compose["volumes"])) == {"pg_data"}
 
 
 def test_systemd_scheduler_has_profile_cadence_lock_timeout_retry_and_safe_run_id() -> None:
@@ -251,4 +251,4 @@ def test_runtime_healthcheck_uses_readiness_and_persistent_state_is_declared() -
     assert services["db"]["healthcheck"]
     assert services["api"]["depends_on"] == {"db": {"condition": "service_healthy"}}
     assert "curl -f http://localhost:8000/ready" in dockerfile
-    assert {"pg_data", "runtime_models"}.issubset(cast(dict[str, object], compose["volumes"]))
+    assert set(cast(dict[str, object], compose["volumes"])) == {"pg_data"}

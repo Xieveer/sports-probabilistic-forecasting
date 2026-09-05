@@ -13,7 +13,7 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Идентификация и ответственность
 
-- Название сервиса: Sports Probabilistic Forecasting 1.1.5.
+- Название сервиса: Sports Probabilistic Forecasting 1.1.6.
 - Репозиторий и основной branch: SportsProbabilisticForecasting, `main`.
 - Владелец приложения: пользователь.
 - Владелец решения о production-развёртывании: пользователь.
@@ -45,7 +45,8 @@ rollout и rollback в репозитории управления инфрас�
   `BOT_API_BASE_URL` — Telegram и внутренний API; `ODDS_API_KEY_FREE`,
   `ODDS_API_KEY_20K`, `ODDS_API_KEY_100K`, `ODDS_API_KEY` — ключи Odds API;
   `DATABASE_URL` — только host CLI; `SF_CANONICAL_SOURCE_ROOT` — read-only
-  provider snapshot; `SF_OPERATIONAL_ARCHIVE_ROOT` — persistent local staging;
+  provider snapshot; `SF_MODEL_RUNTIME_ROOT=/srv/sports-forecast/runtime_models`
+  — read-only Worker model root; `SF_OPERATIONAL_ARCHIVE_ROOT` — persistent local staging;
   `SF_OBJECT_STORAGE_ENDPOINT`,
   `SF_OBJECT_STORAGE_BUCKET`, `SF_OBJECT_STORAGE_ACCESS_KEY_ID`,
   `SF_OBJECT_STORAGE_SECRET_ACCESS_KEY`, `SF_OPERATIONAL_ARCHIVE_PREFIX`, `SF_NHL_SOURCE_STATE_PREFIX`,
@@ -70,10 +71,11 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Данные и совместимость
 
-- Постоянные данные и mounts: PostgreSQL и `runtime_models` (current/previous
-  model bundles), read-only provider snapshot и write-only archive staging
-  Worker, archive-sync state и (только public overlay) Caddy volumes. API и bot не монтируют models/data; фактические пути
-  проверяет Operations Agent.
+- Постоянные данные и mounts: `pg_data` — единственный Docker named volume.
+  `SF_MODEL_RUNTIME_ROOT` — host bind mount Worker только для чтения;
+  canonical source-state — read-only bind mount; archive staging Worker —
+  read-write, archive-sync — read-only; sync state — отдельный host bind mount.
+  API и bot не монтируют models/data; фактические пути проверяет Operations Agent.
 - Scheduler/topology: [production-runtime-topology.md](production-runtime-topology.md).
 - Runbook serving-data/archive: [serving-data.md](serving-data.md).
 - Миграции и порядок их выполнения: после успешного backup и до API/Worker выполнить `docker compose -f docker-compose.prod.yml run --rm --no-deps api uv run alembic -c alembic.ini upgrade head`, затем проверить `/ready` и только после этого запускать Worker. API и Worker не выполняют DDL при старте.
@@ -155,6 +157,11 @@ rollout и rollback в репозитории управления инфрас�
   После этого pipeline фиксирует новые GitHub CI, dependency/filesystem/image
   scans, GHCR provenance и четыре published immutable digests (api, worker,
   telegram-bot и archive-sync). До этих фактов release и rollout — NO-GO.
+- `v1.1.5` также остаётся immutable historical evidence и не переписывается.
+  Candidate следующего patch — только `v1.1.6`: до его tag CI обязан выполнить
+  rendered-Compose gate и final Worker model-mount gate. Их output, четыре
+  image@digest, commit SHA и provenance передаются Operations из CI после tag;
+  до этого v1.1.6 не имеет разрешения на rollout.
 - Локальный `make security` на 2026-08-09 успешно выполнил `pip-audit` для
   locked production runtime dependencies: `No known vulnerabilities found`.
   Он не заменяет dependency/filesystem/image scans опубликованных образов и
@@ -162,10 +169,10 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Артефакт и откат
 
-- Registry и неизменяемый идентификатор image: для v1.1.5 использовать только
+- Registry и неизменяемый идентификатор image: для v1.1.6 использовать только
   новые GHCR `image@sha256:digest`; SemVer tag не является runtime ID.
 - Способ доказать происхождение артефакта: итоговый commit SHA, Git tag
-  `v1.1.5`, совпадающий с `pyproject.toml`, CI provenance attestation и
+  `v1.1.6`, совпадающий с `pyproject.toml`, CI provenance attestation и
   отдельный digest каждого runtime image.
 - Release evidence v1.1.2 (только historical evidence, не использовать для
   rollout): tag указывает на `eadbdb4bfe979cfdb37b31bd64975d0cfd5ad556`;
@@ -200,6 +207,25 @@ rollout и rollback в репозитории управления инфрас�
   предыдущими image digests; destructive migration downgrade запрещён.
 - Процедура и допустимое время отката: до migration вернуть Compose на предыдущий immutable image; после additive migration использовать forward-fix либо восстановить проверенный backup — destructive downgrade запрещён. После действия проверить `/ready`; целевое время определяет Operations Agent.
 - Критерии остановки rollout: health не 200, DB недоступна, crash loop или рост ошибок refresh.
+
+## Pre-release review v1.1.6
+
+| Boundary | Статус и обязательное подтверждение до rollout |
+|---|---|
+| Host paths | **Ожидает server-side validation:** все host bind paths существуют, принадлежат `10001:10001`, model/source read-only, archive/sync state имеют минимальные права. CI проверяет только rendered topology. |
+| Runtime identity | **Подтверждено в final-image gate:** application images используют `sf=10001:10001`; Operations подтверждает отсутствие host UID collision. |
+| Secrets | **Подтверждено contract review:** env files вне Git/image/logs; fixture содержит только placeholders; Operations разделяет model-reader и runtime/archive credentials. |
+| Object Storage | **Ожидает IAM evidence:** model reader получает только read `production-models/*`; archive identity не получает model credentials. |
+| Database | **Ожидает owner approval:** migrations additive, bootstrap только после backup evidence, startup DDL не выполняет. Ни один DB command не запускался этой задачей. |
+| Resource budget | **Подтверждено rendered contract:** base (`db+api+bot`) и один bounded job одновременно дают максимум 6.375 GiB; gate требует минимум 1.4 GiB резерва на 8 GiB VPS для host/Docker/Alloy. Operations подтверждает фактическое потребление до запуска. |
+| Networking | **Подтверждено rendered contract:** base Compose не публикует ports; Telegram использует long polling. |
+| Scheduler | **Ожидает owner approval:** timer остаётся disabled до initial DB bootstrap, bounded refresh и отдельного решения владельца. |
+| Recovery | **Подтверждено документацией:** rollback source-state/model pointer/images/DB описан; первый model install допускает отсутствие `previous`. |
+| Observability | **Ожидает server-side validation:** labels, dashboard/alert contract и scrubbed telemetry должны быть готовы до runtime start. |
+
+DevOps handoff для tag `v1.1.6`: передать exact four `image@sha256:digest`,
+tag, commit SHA, CI run URL и результаты `rendered Compose`, `final model mount`
+и `staged artifacts` gates. До получения этих dynamic evidence решение — NO-GO.
 
 ## Нерешённые вопросы
 
