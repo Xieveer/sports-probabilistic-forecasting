@@ -54,10 +54,10 @@ jobs:
       - name: Load prebuilt runtime images into an immutable local registry
         run: |
           docker run -d --name sf-rollout-registry -p 127.0.0.1:5000:5000 registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
-          docker load --input artifacts/release-oci/api.oci.tar
-          docker load --input artifacts/release-oci/worker.oci.tar
-          docker load --input artifacts/release-oci/telegram-bot.oci.tar
-          docker load --input artifacts/release-oci/archive-sync.oci.tar
+          docker load --input artifacts/release-oci/api.docker.tar
+          docker load --input artifacts/release-oci/worker.docker.tar
+          docker load --input artifacts/release-oci/telegram-bot.docker.tar
+          docker load --input artifacts/release-oci/archive-sync.docker.tar
           docker tag sf-rollout-api:${GITHUB_SHA} localhost:5000/sf-rollout-api:${GITHUB_SHA}
           docker tag sf-rollout-worker:${GITHUB_SHA} localhost:5000/sf-rollout-worker:${GITHUB_SHA}
           docker tag sf-rollout-telegram-bot:${GITHUB_SHA} localhost:5000/sf-rollout-bot:${GITHUB_SHA}

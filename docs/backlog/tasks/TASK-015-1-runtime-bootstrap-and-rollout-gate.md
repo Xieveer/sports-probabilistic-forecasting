@@ -85,8 +85,9 @@ Workflow исправлен и покрыт release-contract test; новый im
 `v1.1.8`. TASK остаётся `in_progress` до его tag CI.
 
 Tag CI `v1.1.8` прошёл Compose gate, но остановился до OCI build на read-only
-Worker gate: отсутствовал writable `/tmp` для Matplotlib. Candidate `v1.1.9`
-добавляет `tmpfs /tmp`, как в runtime Compose; TASK ожидает review/tag CI.
+Candidate `v1.1.9` подтвердил writable `/tmp`, но first-rollout остановился:
+OCI layout не загружается через `docker load`. Candidate `v1.1.10` заменяет
+его единым Docker archive для проверки и publication; TASK ожидает review/tag CI.
 
 Candidate diff прошёл independent review 2026-09-07 без blocking
 findings и зафиксирован в commit

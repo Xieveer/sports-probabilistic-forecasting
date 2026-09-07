@@ -89,5 +89,6 @@ review release evidence.
 
 Tag CI `v1.1.8` прошёл Compose gate, но fail-closed остановился на Worker
 runtime gate: read-only container не получил writable `/tmp` для Matplotlib.
-OCI build, first-rollout и publication не запускались. Candidate `v1.1.9`
-добавляет tmpfs, соответствующий production Compose, и ожидает review/tag CI.
+Tag CI `v1.1.9` подтвердил tmpfs gate и OCI build, но fail-closed остановился
+на first-rollout: OCI layout несовместим с `docker load`. Candidate `v1.1.10`
+передаёт один Docker archive через build, rollout и publication.

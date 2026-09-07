@@ -116,6 +116,19 @@ candidate `v1.1.9` gate получает `--tmpfs /tmp:rw,noexec,nosuid,size=512
 с v1.1.9. Tag CI, OCI digests, scans, provenance и production rollout не
 выполнялись и остаются обязательными внешними gates.
 
+### CI remediation candidate v1.1.10
+
+Tag CI `v1.1.9` ([run 34102058697](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34102058697)) прошёл release gates и собрал
+все четыре prebuilt image artifact, но fail-closed остановился на first-rollout:
+`docker load` не принимает OCI layout (`blobs/json` отсутствует). Никакие image
+digest, provenance или publication не были созданы. Candidate `v1.1.10`
+использует Docker archive от build до first-rollout и exact publication; contract
+test не допускает рассинхронизации exporter-а и consumer-ов.
+
+Локально для v1.1.10 прошли 43 targeted release/rollout/topology tests,
+`make lint`, `make type-check`, `make production-check`, `make docs`,
+`make test-unit` (988 passed) и `git diff --check`.
+
 ### Review evidence Compose remediation
 
 Independent review 2026-09-07 не выявило blocking findings.

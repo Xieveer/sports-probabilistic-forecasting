@@ -122,7 +122,7 @@ def _clean_worktree_issues(status: str) -> list[str]:
     return [
         line
         for line in status.splitlines()
-        if not (line.startswith("?? artifacts/release-oci/") and line.endswith(".oci.tar"))
+        if not (line.startswith("?? artifacts/release-oci/") and line.endswith(".docker.tar"))
     ]
 
 

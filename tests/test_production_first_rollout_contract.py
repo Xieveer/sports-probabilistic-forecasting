@@ -146,8 +146,8 @@ def test_first_rollout_runner_and_tag_gate_are_checked_in() -> None:
     assert "workflow_dispatch:" not in docker_workflow
 
 
-def test_first_rollout_tests_prebuilt_oci_artifacts_before_exact_publish() -> None:
-    """Rollout и publication используют один OCI artifact, без повторной сборки."""
+def test_first_rollout_tests_prebuilt_image_archives_before_exact_publish() -> None:
+    """Rollout и publication используют один Docker archive без повторной сборки."""
     rollout = yaml.safe_load(
         (PROJECT_ROOT / ".github/workflows/production-first-rollout-contract.yml").read_text(
             encoding="utf-8"
@@ -173,12 +173,23 @@ def test_first_rollout_tests_prebuilt_oci_artifacts_before_exact_publish() -> No
 
     assert docker["jobs"]["first-rollout"]["needs"] == ["verify", "build-artifacts"]
     artifact_build = docker["jobs"]["build-artifacts"]
-    assert any(
-        "type=oci" in step.get("with", {}).get("outputs", "") for step in artifact_build["steps"]
+    build_step = next(
+        step
+        for step in artifact_build["steps"]
+        if step.get("name") == "Build Docker image archive once"
     )
+    assert "type=docker" in build_step["with"]["outputs"]
+    assert ".docker.tar" in build_step["with"]["outputs"]
+    assert "docker load --input artifacts/release-oci/api.docker.tar" in rollout_text
+
     publish_steps = docker["jobs"]["build-push"]["steps"]
     assert not any("build-push-action" in step.get("uses", "") for step in publish_steps)
     assert any("TESTED_DIGEST" in step.get("run", "") for step in publish_steps)
+    assert any(
+        "docker load --input artifacts/release-oci/${{ matrix.target }}.docker.tar"
+        in step.get("run", "")
+        for step in publish_steps
+    )
 
 
 def test_migration_runbook_uses_file_backed_migration_profile() -> None:
@@ -208,8 +219,8 @@ def test_handoff_describes_compose_secrets_as_file_paths() -> None:
 
 def test_clean_worktree_permits_only_downloaded_oci_artifacts() -> None:
     """OCI download не маскирует изменения tracked files либо другие untracked paths."""
-    assert _clean_worktree_issues("?? artifacts/release-oci/api.oci.tar\n") == []
-    assert _clean_worktree_issues(" M Dockerfile\n?? artifacts/release-oci/api.oci.tar\n") == [
+    assert _clean_worktree_issues("?? artifacts/release-oci/api.docker.tar\n") == []
+    assert _clean_worktree_issues(" M Dockerfile\n?? artifacts/release-oci/api.docker.tar\n") == [
         " M Dockerfile"
     ]
     assert _clean_worktree_issues("?? artifacts/production-first-rollout.json\n") == [

@@ -68,7 +68,10 @@ filesystem/secret scan, но остановился на rendered Compose contra
 
 Tag CI `v1.1.8` прошёл rendered Compose contract, но Worker gate остановился
 до OCI build: read-only container не получил writable `/tmp` для Matplotlib.
-Новый candidate `v1.1.9` добавляет тот же tmpfs contract, что есть у runtime Compose.
+Tag CI `v1.1.9` прошёл все release gates и собрал четыре prebuilt OCI image
+artifacts, но fail-closed остановился на first-rollout: OCI layout нельзя
+загрузить через `docker load`. Candidate `v1.1.10` использует один Docker
+archive для build, first-rollout и exact publication.
 
 ## Риски и предположения
 
