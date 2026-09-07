@@ -13,7 +13,7 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Идентификация и ответственность
 
-- Название сервиса: Sports Probabilistic Forecasting 1.1.6.
+- Название сервиса: Sports Probabilistic Forecasting 1.1.7.
 - Репозиторий и основной branch: SportsProbabilisticForecasting, `main`.
 - Владелец приложения: пользователь.
 - Владелец решения о production-развёртывании: пользователь.
@@ -165,10 +165,20 @@ rollout и rollback в репозитории управления инфрас�
   scans, GHCR provenance и четыре published immutable digests (api, worker,
   telegram-bot и archive-sync). До этих фактов release и rollout — NO-GO.
 - `v1.1.5` также остаётся immutable historical evidence и не переписывается.
-  Candidate следующего patch — только `v1.1.6`: до его tag CI обязан выполнить
+  История `v1.1.6` quarantined и запрещена для rollout: ранний запуск
+  [33961438667](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/33961438667)
+  на прежнем binding `7f8b86f` успешно публиковал образы, после чего тег был
+  перепривязан к `2772b93a198573f354643b242ae9a60493020f97`. Новый запуск
+  [34093047138](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34093047138)
+  остановился до сборки и публикации на dependency audit: `pip-audit` обнаружил
+  `PYSEC-2026-113` в `pyarrow 22.0.0`. Ни один artifact обоих binding `v1.1.6`
+  не является candidate или разрешённым образом для rollout. По явному решению
+  владельца следующий candidate — только `v1.1.7`: resolution обновляет
+  `pyarrow` до `25.0.1` (минимально допустимая версия `23.0.1`) и связанные
+  transitive packages. До его tag CI обязан выполнить dependency audit,
   rendered-Compose gate и final Worker model-mount gate. Их output, четыре
   image@digest, commit SHA и provenance передаются Operations из CI после tag;
-  до этого v1.1.6 не имеет разрешения на rollout.
+  до этого v1.1.7 не имеет разрешения на rollout.
 - Локальный `make security` на 2026-08-09 успешно выполнил `pip-audit` для
   locked production runtime dependencies: `No known vulnerabilities found`.
   Он не заменяет dependency/filesystem/image scans опубликованных образов и
@@ -176,10 +186,10 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Артефакт и откат
 
-- Registry и неизменяемый идентификатор image: для v1.1.6 использовать только
+- Registry и неизменяемый идентификатор image: для v1.1.7 использовать только
   новые GHCR `image@sha256:digest`; SemVer tag не является runtime ID.
 - Способ доказать происхождение артефакта: итоговый commit SHA, Git tag
-  `v1.1.6`, совпадающий с `pyproject.toml`, CI provenance attestation и
+  `v1.1.7`, совпадающий с `pyproject.toml`, CI provenance attestation и
   отдельный digest каждого runtime image.
 - Release evidence v1.1.2 (только historical evidence, не использовать для
   rollout): tag указывает на `eadbdb4bfe979cfdb37b31bd64975d0cfd5ad556`;
@@ -215,7 +225,7 @@ rollout и rollback в репозитории управления инфрас�
 - Процедура и допустимое время отката: до migration вернуть Compose на предыдущий immutable image; после additive migration использовать forward-fix либо восстановить проверенный backup — destructive downgrade запрещён. После действия проверить `/ready`; целевое время определяет Operations Agent.
 - Критерии остановки rollout: health не 200, DB недоступна, crash loop или рост ошибок refresh.
 
-## Pre-release review v1.1.6
+## Pre-release review v1.1.7
 
 | Boundary | Статус и обязательное подтверждение до rollout |
 |---|---|
@@ -230,7 +240,7 @@ rollout и rollback в репозитории управления инфрас�
 | Recovery | **Подтверждено документацией:** rollback source-state/model pointer/images/DB описан; первый model install допускает отсутствие `previous`. |
 | Observability | **Ожидает server-side validation:** labels, dashboard/alert contract и scrubbed telemetry должны быть готовы до runtime start. |
 
-DevOps handoff для tag `v1.1.6`: передать exact four `image@sha256:digest`,
+DevOps handoff для tag `v1.1.7`: передать exact four `image@sha256:digest`,
 tag, commit SHA, CI run URL и результаты `rendered Compose`, `final model mount`
 и `staged artifacts` gates. До получения этих dynamic evidence решение — NO-GO.
 

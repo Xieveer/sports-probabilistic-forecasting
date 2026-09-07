@@ -44,6 +44,20 @@ host mounts до healthy API и bot, с проверяемым откатом. �
   digest, health, resource и rollback полями.
 - [ ] Required tag workflow блокирует image publication и production handoff,
   если runner не завершился успешно.
+- [ ] Locked runtime resolution содержит `pyarrow>=23.0.1`, а `make security`
+  завершается без известных уязвимостей до создания release candidate.
+
+## Security remediation v1.1.7
+
+После перепривязки `v1.1.6` запуск
+[34093047138](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34093047138)
+остановился на dependency audit до создания OCI artifacts и публикации образов:
+`pip-audit` обнаружил `PYSEC-2026-113` в `pyarrow 22.0.0`. Ранний binding
+`7f8b86f` уже запускал успешный pipeline `33961438667` и публиковал образы;
+все его артефакты, как и новый binding, quarantined и не используются для
+rollout. Владелец подтвердил обновление полного совместимого dependency
+resolution для отдельного immutable candidate `v1.1.7`. Минимальная допустимая
+версия PyArrow — `23.0.1`; lock фиксирует разрешённую версию и проходит security gate.
 
 ## Риски и предположения
 

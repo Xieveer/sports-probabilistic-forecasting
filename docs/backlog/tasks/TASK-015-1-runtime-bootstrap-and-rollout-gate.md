@@ -61,6 +61,16 @@ findings. Проверенный diff зафиксирован в commit
 `2772b93a198573f354643b242ae9a60493020f97`. TASK остаётся `in_progress`
 до tag CI, создающего официальный evidence artifact.
 
+### Security remediation candidate v1.1.7 (2026-09-07)
+
+После перепривязки `v1.1.6` запуск `34093047138` остановился в `make security`
+до OCI build/publish: audit зафиксировал `PYSEC-2026-113` для `pyarrow 22.0.0`.
+Ранний запуск `33961438667` на прежнем binding `7f8b86f` публиковал образы;
+обе версии binding и их артефакты quarantined и запрещены для rollout. По явному
+решению владельца constraint повышен до `pyarrow>=23.0.1`, lock пересоздан
+resolver-ом, а новый candidate выпускается только отдельным immutable tag
+`v1.1.7`. Требуются повторные независимое review и tag CI.
+
 ### Independent review (2026-09-07)
 
 - Blocking findings: не обнаружены.

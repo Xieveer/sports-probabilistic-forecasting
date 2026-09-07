@@ -53,3 +53,14 @@ warning об `_static`.
 EPIC остаётся `in_progress` до tag CI с official release evidence.
 После него потребуется terminal EPIC review доказательств и внешняя
 проверка владельцем: required first-rollout check и tag protection в GitHub.
+
+## Security remediation candidate v1.1.7
+
+После перепривязки `v1.1.6` к implementation commit запуск `34093047138`
+завершился ошибкой dependency audit до build, publication и first-rollout
+evidence: `pyarrow 22.0.0` затронут `PYSEC-2026-113`. Ранний запуск `33961438667`
+на прежнем binding `7f8b86f` публиковал образы; оба binding и все их артефакты
+quarantined и запрещены для rollout. По явному одобрению владельца runtime
+constraint повышен до `pyarrow>=23.0.1`, а lock обновлён полным совместимым
+resolver output. Новый immutable candidate — `v1.1.7`; он ожидает независимое
+review и успешный tag CI.

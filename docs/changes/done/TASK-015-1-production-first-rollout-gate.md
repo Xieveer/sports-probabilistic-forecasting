@@ -64,6 +64,18 @@ tag CI должен повторить его с реальным commit и OCI 
 GitHub required check для release tags должен быть назначен владельцем репозитория;
 это не изменяется локальным кодом.
 
+## Security remediation candidate v1.1.7
+
+После перепривязки `v1.1.6` запуск `34093047138` не прошёл dependency audit до
+сборки OCI artifacts и публикации: `pip-audit` обнаружил `PYSEC-2026-113` для
+`pyarrow 22.0.0`. Ранний запуск `33961438667` на прежнем binding `7f8b86f`
+публиковал образы; оба binding и их артефакты quarantined и запрещены для
+rollout. По явному одобрению владельца constraint повышен до `pyarrow>=23.0.1`;
+lock обновлён resolver-ом до `pyarrow 25.0.1` и совместимых transitive
+dependencies. Локальный `make security` завершился `No known vulnerabilities
+found`. Новый candidate должен выпускаться только тегом `v1.1.7` после
+независимого review.
+
 ## Необходимая следующая remediation
 
 Канонический список P1 и критерии повторного review:
