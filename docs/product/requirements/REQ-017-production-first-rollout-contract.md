@@ -44,7 +44,7 @@ host mounts до healthy API и bot, с проверяемым откатом. �
   digest, health, resource и rollback полями.
 - [ ] Required tag workflow блокирует image publication и production handoff,
   если runner не завершился успешно.
-- [ ] Locked runtime resolution содержит `pyarrow>=23.0.1`, а `make security`
+- [x] Locked runtime resolution содержит `pyarrow>=23.0.1`, а `make security`
   завершается без известных уязвимостей до создания release candidate.
 
 ## Security remediation v1.1.7

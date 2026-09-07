@@ -71,6 +71,13 @@ findings. Проверенный diff зафиксирован в commit
 resolver-ом, а новый candidate выпускается только отдельным immutable tag
 `v1.1.7`. Требуются повторные независимое review и tag CI.
 
+Security remediation прошла повторное independent review без
+blocking findings. Проверенный diff зафиксирован в commit
+`7ab69362a5f55a7965b7b4398b748853ed5da09d`. Подтверждены frozen lock,
+`pyarrow 25.0.1`, `make security`, 988 unit tests, release contract, mypy,
+lint, production-check, docs и quarantine narrative для обоих binding
+`v1.1.6`. TASK остаётся `in_progress` до tag CI `v1.1.7`.
+
 ### Independent review (2026-09-07)
 
 - Blocking findings: не обнаружены.

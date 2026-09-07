@@ -64,3 +64,11 @@ quarantined и запрещены для rollout. По явному одобре
 constraint повышен до `pyarrow>=23.0.1`, а lock обновлён полным совместимым
 resolver output. Новый immutable candidate — `v1.1.7`; он ожидает независимое
 review и успешный tag CI.
+
+Security-release diff прошёл independent review 2026-09-07 без
+blocking findings и зафиксирован в commit
+`7ab69362a5f55a7965b7b4398b748853ed5da09d`. Reviewer проверил frozen
+dependency resolution, security audit, unit/version/type gates, Operations
+handoff и явный quarantine обоих исторических binding `v1.1.6`.
+EPIC остаётся `in_progress` до успешного tag CI `v1.1.7` и terminal
+review его release evidence.

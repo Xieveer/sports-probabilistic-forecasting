@@ -76,6 +76,16 @@ dependencies. Локальный `make security` завершился `No known 
 found`. Новый candidate должен выпускаться только тегом `v1.1.7` после
 независимого review.
 
+### Review evidence security remediation
+
+Повторное independent review 2026-09-07 не выявило blocking findings.
+Проверенный security-release diff: commit
+`7ab69362a5f55a7965b7b4398b748853ed5da09d`. Independently проверены
+frozen lock и installed versions, `make security`, 988 unit tests, 10 release
+contract tests, mypy, lint, production-check, docs и `git diff --check`.
+Sphinx сохранил одно существующее warning об `_static`; tag CI ещё
+не выполнялся.
+
 ## Необходимая следующая remediation
 
 Канонический список P1 и критерии повторного review:
