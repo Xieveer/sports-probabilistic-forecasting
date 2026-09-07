@@ -5,7 +5,7 @@
 его как входные данные, но самостоятельно проверяет сервер, секреты, Compose, мониторинг,
 rollout и rollback в репозитории управления инфраструктурой.
 
-- Статус подготовки: `candidate`
+- Статус подготовки: `draft`
 
 `draft` означает, что контракт ещё заполняется и развёртывание не разрешено. Перед передачей
 в эксплуатацию установите `candidate`, замените все шаблонные пометки и выполните
@@ -36,20 +36,24 @@ rollout и rollback в репозитории управления инфрас�
   требуемых source/archive bind mounts. UID/GID `999:999` запрещён: на
   `ops-prod-01` он занят `zabbix:systemd-journal`.
 - Переменные окружения (значения хранятся только в secret store):
-  `POSTGRES_PASSWORD` — пароль PostgreSQL; `SF_API_DATABASE_URL` — scoped
-  read-only URL API; `SF_WORKER_DATABASE_URL` — scoped write URL refresh;
+  file-backed `SF_POSTGRES_PASSWORD_FILE`, `SF_MIGRATOR_DATABASE_URL_FILE`,
+  `SF_API_DATABASE_URL_FILE`, `SF_WORKER_DATABASE_URL_FILE` и role-password
+  files; API получает scoped read-only URL, Worker — scoped write URL;
   `SF_API_IMAGE`, `SF_WORKER_IMAGE`, `SF_BOT_IMAGE`, `SF_POSTGRES_IMAGE`,
   `SF_ARCHIVE_SYNC_IMAGE` — точные `image@sha256:digest`; `SF_CADDY_IMAGE` и
   `SF_API_DOMAIN` нужны только public overlay; `SF_APP_VERSION` — версия
-  приложения; `SF_WORKER_RUN_ID` — уникальный scheduler ID; `BOT_TOKEN`, `BOT_ALLOWED_USER_IDS`, `BOT_ADMIN_USER_IDS`,
-  `BOT_API_BASE_URL` — Telegram и внутренний API; `ODDS_API_KEY_FREE`,
-  `ODDS_API_KEY_20K`, `ODDS_API_KEY_100K`, `ODDS_API_KEY` — ключи Odds API;
-  `DATABASE_URL` — только host CLI; `SF_CANONICAL_SOURCE_ROOT` — read-only
+  приложения; `SF_WORKER_RUN_ID` — уникальный scheduler ID;
+  `SF_BOT_TOKEN_FILE`, `BOT_ALLOWED_USER_IDS`, `BOT_ADMIN_USER_IDS`,
+  `BOT_API_BASE_URL` — Telegram и внутренний API; `ODDS_API_KEY_FREE_FILE`,
+  `ODDS_API_KEY_20K_FILE`, `ODDS_API_KEY_100K_FILE`, `ODDS_API_KEY_FILE` —
+  пути к ключам Odds API;
+  Для runtime Compose передаются только `*_FILE` paths; значения URL/password
+  не задаются в env. `SF_CANONICAL_SOURCE_ROOT` — read-only
   provider snapshot; `SF_MODEL_RUNTIME_ROOT=/srv/sports-forecast/runtime_models`
   — read-only Worker model root; `SF_OPERATIONAL_ARCHIVE_ROOT` — persistent local staging;
   `SF_OBJECT_STORAGE_ENDPOINT`,
-  `SF_OBJECT_STORAGE_BUCKET`, `SF_OBJECT_STORAGE_ACCESS_KEY_ID`,
-  `SF_OBJECT_STORAGE_SECRET_ACCESS_KEY`, `SF_OPERATIONAL_ARCHIVE_PREFIX`, `SF_NHL_SOURCE_STATE_PREFIX`,
+  `SF_OBJECT_STORAGE_BUCKET`, `SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE`,
+  `SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE`, `SF_OPERATIONAL_ARCHIVE_PREFIX`, `SF_NHL_SOURCE_STATE_PREFIX`,
   `SF_SERVING_DATA_PREFIX` — archive/bundle; `MLFLOW_TRACKING_URI` — только
   local training. Acceptance использует отдельные operator-only
   `SF_ACCEPTANCE_BASE_URL`, `SF_ACCEPTANCE_PREDICTION_PATH`,
@@ -78,7 +82,10 @@ rollout и rollback в репозитории управления инфрас�
   API и bot не монтируют models/data; фактические пути проверяет Operations Agent.
 - Scheduler/topology: [production-runtime-topology.md](production-runtime-topology.md).
 - Runbook serving-data/archive: [serving-data.md](serving-data.md).
-- Миграции и порядок их выполнения: после успешного backup и до API/Worker выполнить `docker compose -f docker-compose.prod.yml run --rm --no-deps api uv run alembic -c alembic.ini upgrade head`, затем проверить `/ready` и только после этого запускать Worker. API и Worker не выполняют DDL при старте.
+- Миграции и порядок их выполнения: после backup и до API/Worker выполнить
+  `role-bootstrap`, затем `migrator` с profile `migration`; подробная
+  воспроизводимая команда приведена в `database-migrations.md`. API и Worker
+  не выполняют DDL при старте.
 - Runbook migration/recovery: [database-migrations.md](database-migrations.md).
 - Совместимость новой версии с предыдущей: rollback выполняется immutable предыдущим образом; миграции не удаляют данные в этом выпуске.
 - Требования к резервному копированию и восстановлению: Operations Agent делает backup PostgreSQL и persistent volumes до rollout и проверяет restore.

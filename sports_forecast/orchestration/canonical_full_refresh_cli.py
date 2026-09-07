@@ -30,6 +30,11 @@ def main(cfg: DictConfig) -> None:
         source_csv=source_csv,
         archive_root=Path(os.environ["SF_OPERATIONAL_ARCHIVE_ROOT"]),
     )
+    if result.already_finished:
+        logger.info(
+            "Canonical full refresh уже завершён для run_id=%s", os.environ["SF_WORKER_RUN_ID"]
+        )
+        return
     if not result.published:
         logger.error("Canonical full refresh не опубликован: %s", result.failure_code)
         raise SystemExit(1)

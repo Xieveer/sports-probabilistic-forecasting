@@ -12,9 +12,11 @@ services:
     environment:
       POSTGRES_DB: sports_forecast
       POSTGRES_USER: sf_user
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     volumes:
       - pg_data:/var/lib/postgresql/data
+    secrets:
+      - postgres_password
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sf_user -d sports_forecast"]
       interval: 10s
@@ -34,12 +36,17 @@ services:
     pull_policy: always
     restart: unless-stopped
     environment:
-      DATABASE_URL: ${SF_API_DATABASE_URL:?set SF_API_DATABASE_URL}
+      DATABASE_URL_FILE: /run/secrets/api_database_url
+    secrets:
+      - api_database_url
     depends_on:
       db:
         condition: service_healthy
     cpus: "1.5"
     mem_limit: 1536m
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
     logging: *prod_logging
 
   telegram-bot:
@@ -47,15 +54,21 @@ services:
     pull_policy: always
     restart: unless-stopped
     environment:
-      BOT_TOKEN: ${BOT_TOKEN:?set BOT_TOKEN}
+      BOT_TOKEN_FILE: /run/secrets/bot_token
       BOT_ALLOWED_USER_IDS: ${BOT_ALLOWED_USER_IDS:-}
       BOT_ADMIN_USER_IDS: ${BOT_ADMIN_USER_IDS:-}
       BOT_API_BASE_URL: http://api:8000
+      BOT_TELEGRAM_API_BASE_URL: ${BOT_TELEGRAM_API_BASE_URL:-}
     depends_on:
       api:
         condition: service_started
+    secrets:
+      - bot_token
     cpus: "0.5"
     mem_limit: 384m
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
     logging: *prod_logging
 
   source-acquirer:
@@ -63,22 +76,31 @@ services:
     pull_policy: always
     environment:
       SF_CANONICAL_SOURCE_SNAPSHOT: /app/data/source/nhl/current.csv
-      ODDS_API_KEY_FREE: ${ODDS_API_KEY_FREE:-}
-      ODDS_API_KEY_20K: ${ODDS_API_KEY_20K:-}
-      ODDS_API_KEY_100K: ${ODDS_API_KEY_100K:-}
-      ODDS_API_KEY: ${ODDS_API_KEY:-}
+      ODDS_API_KEY_FREE_FILE: /run/secrets/odds_api_key_free
+      ODDS_API_KEY_20K_FILE: /run/secrets/odds_api_key_20k
+      ODDS_API_KEY_100K_FILE: /run/secrets/odds_api_key_100k
+      ODDS_API_KEY_FILE: /run/secrets/odds_api_key
+    command: ["/app/.venv/bin/python", "-m", "sports_forecast.orchestration.source_snapshot_cli", "--tournament", "nhl"]
     volumes:
       - ${SF_CANONICAL_SOURCE_ROOT:?set SF_CANONICAL_SOURCE_ROOT}:/app/data/source/nhl
+    secrets:
+      - odds_api_key_free
+      - odds_api_key_20k
+      - odds_api_key_100k
+      - odds_api_key
     profiles: ["source-acquisition"]
     cpus: "1.0"
     mem_limit: 1024m
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=128m"]
     logging: *prod_logging
 
   worker:
     image: ${SF_WORKER_IMAGE:?set SF_WORKER_IMAGE to an immutable ghcr image digest}
     pull_policy: always
     environment:
-      DATABASE_URL: ${SF_WORKER_DATABASE_URL:?set SF_WORKER_DATABASE_URL}
+      DATABASE_URL_FILE: /run/secrets/worker_database_url
       SF_WORKER_RUN_ID: ${SF_WORKER_RUN_ID:?set a scheduler-generated id}
       SF_MODEL_RUNTIME_ROOT: /app/models
       SF_APP_VERSION: ${SF_APP_VERSION:?set SF_APP_VERSION}
@@ -91,29 +113,114 @@ services:
       - ${SF_MODEL_RUNTIME_ROOT:?set SF_MODEL_RUNTIME_ROOT}:/app/models:ro
       - ${SF_CANONICAL_SOURCE_ROOT:?set SF_CANONICAL_SOURCE_ROOT}:/app/data/source/nhl:ro
       - ${SF_OPERATIONAL_ARCHIVE_ROOT:?set SF_OPERATIONAL_ARCHIVE_ROOT}:/app/archive
+    secrets:
+      - worker_database_url
     profiles: ["worker"]
     cpus: "2.0"
     mem_limit: 3g
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=512m"]
     logging: *prod_logging
 
   archive-sync:
     image: ${SF_ARCHIVE_SYNC_IMAGE:?set SF_ARCHIVE_SYNC_IMAGE to an immutable sync image digest}
     pull_policy: always
-    entrypoint: ["uv", "run", "python", "-m", "sports_forecast.deploy.archive_sync_cli"]
     environment:
       SF_OBJECT_STORAGE_ENDPOINT: ${SF_OBJECT_STORAGE_ENDPOINT:?set SF_OBJECT_STORAGE_ENDPOINT}
       SF_OBJECT_STORAGE_BUCKET: ${SF_OBJECT_STORAGE_BUCKET:?set SF_OBJECT_STORAGE_BUCKET}
-      SF_OBJECT_STORAGE_ACCESS_KEY_ID: ${SF_OBJECT_STORAGE_ACCESS_KEY_ID:?set SF_OBJECT_STORAGE_ACCESS_KEY_ID}
-      SF_OBJECT_STORAGE_SECRET_ACCESS_KEY: ${SF_OBJECT_STORAGE_SECRET_ACCESS_KEY:?set SF_OBJECT_STORAGE_SECRET_ACCESS_KEY}
+      SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE: /run/secrets/object_storage_access_key
+      SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE: /run/secrets/object_storage_secret_key
       SF_OPERATIONAL_ARCHIVE_PREFIX: ${SF_OPERATIONAL_ARCHIVE_PREFIX:-operational-archive}
       SF_NHL_SOURCE_STATE_PREFIX: ${SF_NHL_SOURCE_STATE_PREFIX:-operational-archive/nhl-source-state/v1}
     volumes:
       - ${SF_OPERATIONAL_ARCHIVE_ROOT:?set SF_OPERATIONAL_ARCHIVE_ROOT}:/app/archive:ro
       - ${SF_ARCHIVE_SYNC_STATE_ROOT:?set SF_ARCHIVE_SYNC_STATE_ROOT}:/app/sync-state
+    secrets:
+      - object_storage_access_key
+      - object_storage_secret_key
     profiles: ["operational-sync"]
     cpus: "0.5"
     mem_limit: 512m
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    logging: *prod_logging
+
+  migrator:
+    image: ${SF_API_IMAGE:?set SF_API_IMAGE to an immutable ghcr image digest}
+    pull_policy: always
+    command: ["/bin/sh", "-c", "/app/.venv/bin/alembic -c /app/alembic.ini upgrade head && /app/.venv/bin/python -m sports_forecast.deploy.database_roles"]
+    environment:
+      DATABASE_URL_FILE: /run/secrets/migrator_database_url
+    secrets:
+      - migrator_database_url
+    depends_on:
+      role-bootstrap:
+        condition: service_completed_successfully
+    profiles: ["migration"]
+    cpus: "0.5"
+    mem_limit: 512m
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    logging: *prod_logging
+
+  role-bootstrap:
+    image: ${SF_POSTGRES_IMAGE:?set SF_POSTGRES_IMAGE to an immutable postgres digest}
+    entrypoint: ["/bin/sh", "/bootstrap/init-roles.sh"]
+    environment:
+      SF_POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      SF_API_DB_PASSWORD_FILE: /run/secrets/api_db_password
+      SF_WORKER_DB_PASSWORD_FILE: /run/secrets/worker_db_password
+      SF_MIGRATOR_DB_PASSWORD_FILE: /run/secrets/migrator_db_password
+    volumes:
+      - ./deploy/postgres/init-roles.sh:/bootstrap/init-roles.sh:ro
+    secrets:
+      - postgres_password
+      - api_db_password
+      - worker_db_password
+      - migrator_db_password
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["migration"]
+    restart: "no"
+    cpus: "0.25"
+    mem_limit: 128m
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
     logging: *prod_logging
 
 volumes:
   pg_data:
+
+secrets:
+  odds_api_key_free:
+    file: ${ODDS_API_KEY_FREE_FILE:?set ODDS_API_KEY_FREE_FILE}
+  odds_api_key_20k:
+    file: ${ODDS_API_KEY_20K_FILE:?set ODDS_API_KEY_20K_FILE}
+  odds_api_key_100k:
+    file: ${ODDS_API_KEY_100K_FILE:?set ODDS_API_KEY_100K_FILE}
+  odds_api_key:
+    file: ${ODDS_API_KEY_FILE:?set ODDS_API_KEY_FILE}
+  postgres_password:
+    file: ${SF_POSTGRES_PASSWORD_FILE:?set SF_POSTGRES_PASSWORD_FILE}
+  api_db_password:
+    file: ${SF_API_DB_PASSWORD_FILE:?set SF_API_DB_PASSWORD_FILE}
+  worker_db_password:
+    file: ${SF_WORKER_DB_PASSWORD_FILE:?set SF_WORKER_DB_PASSWORD_FILE}
+  migrator_db_password:
+    file: ${SF_MIGRATOR_DB_PASSWORD_FILE:?set SF_MIGRATOR_DB_PASSWORD_FILE}
+  api_database_url:
+    file: ${SF_API_DATABASE_URL_FILE:?set SF_API_DATABASE_URL_FILE}
+  worker_database_url:
+    file: ${SF_WORKER_DATABASE_URL_FILE:?set SF_WORKER_DATABASE_URL_FILE}
+  migrator_database_url:
+    file: ${SF_MIGRATOR_DATABASE_URL_FILE:?set SF_MIGRATOR_DATABASE_URL_FILE}
+  bot_token:
+    file: ${SF_BOT_TOKEN_FILE:?set SF_BOT_TOKEN_FILE}
+  object_storage_access_key:
+    file: ${SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE:?set SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE}
+  object_storage_secret_key:
+    file: ${SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE:?set SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE}

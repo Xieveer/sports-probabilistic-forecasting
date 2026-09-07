@@ -18,7 +18,6 @@ from typing import Any
 from omegaconf import DictConfig
 
 from sports_forecast.training.base import BaseModel, BaseSingleModel
-from sports_forecast.training.ensembles.stacking import StackingEnsemble
 from sports_forecast.training.models.catboost import CatBoostModel
 from sports_forecast.training.models.dummy import DummyModel
 from sports_forecast.training.models.lgbm import LGBMModel
@@ -77,7 +76,7 @@ class ModelFactory:
         )
 
     @staticmethod
-    def _create_stacking_ensemble(algorithm_cfg: DictConfig) -> StackingEnsemble:
+    def _create_stacking_ensemble(algorithm_cfg: DictConfig) -> BaseModel:
         """Создать Stacking Ensemble.
 
         Base models передаются через CLI/Hydra::
@@ -93,6 +92,8 @@ class ModelFactory:
         Raises:
             ValueError: Если ``base_models`` не указаны в конфигурации.
         """
+        from sports_forecast.training.ensembles.stacking import StackingEnsemble
+
         base_model_configs = algorithm_cfg.get("base_models", [])
         if not base_model_configs:
             raise ValueError(

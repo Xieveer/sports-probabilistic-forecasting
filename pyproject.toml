@@ -10,6 +10,7 @@ dependencies = [
     "omegaconf>=2.3.0",
     "numpy>=2.2.6",
     "pandas>=2.3.3",
+    "pyarrow>=18.0.0",
     "requests>=2.32.5",
     "scikit-learn",
     "lightgbm>=4.0.0",
@@ -50,4 +51,6 @@ dev = [
     "dvc-s3>=3.2.2",
     "mlflow",
     "optuna>=3.0.0",
+    "mypy==1.18.2",
+    "types-pyyaml>=6.0.12.20260906",
 ]

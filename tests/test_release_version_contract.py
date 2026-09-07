@@ -40,15 +40,15 @@ def test_release_workflow_publishes_only_exact_semver_image_tag() -> None:
     assert validation_step["if"] == "github.ref_type == 'tag'"
     assert "pyproject.toml" in validation_step["run"]
 
-    metadata_step = next(step for step in steps if step.get("id") == "meta")
-    tags = metadata_step["with"]["tags"]
-    assert "type=semver,pattern={{version}}" in tags
-    assert "type=sha,prefix=" not in tags
-    assert "type=raw,value=latest" not in tags
+    publish_step = next(
+        step for step in steps if step.get("name") == "Load, publish and verify tested artifact"
+    )
+    assert '"${IMAGE_NAME}:${GITHUB_REF_NAME#v}"' in publish_step["run"]
+    assert "latest" not in publish_step["run"]
 
 
-def test_docker_publish_waits_for_security_gates_and_attests_digest() -> None:
-    """Публикация образа выполняется после gates и создаёт provenance по digest."""
+def test_docker_publish_waits_for_security_rollout_gates_and_attests_digest() -> None:
+    """Публикация образа ждёт security и clean first-rollout gate, затем attests digest."""
     workflow_path = PROJECT_ROOT / ".github" / "workflows" / "docker.yml"
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
 
@@ -61,7 +61,11 @@ def test_docker_publish_waits_for_security_gates_and_attests_digest() -> None:
     assert any(step.get("with", {}).get("scan-type") == "fs" for step in verify_steps)
 
     build_push = workflow["jobs"]["build-push"]
-    assert build_push["needs"] == ["verify"]
+    assert build_push["needs"] == ["verify", "build-artifacts", "first-rollout"]
+    assert (
+        workflow["jobs"]["first-rollout"]["uses"]
+        == "./.github/workflows/production-first-rollout-contract.yml"
+    )
     step_names = {step.get("name") for step in build_push["steps"]}
     assert "Scan pushed image" in step_names
     assert "Attest build provenance" in step_names
@@ -179,12 +183,10 @@ def test_docker_workflow_normalizes_ghcr_image_owner_for_all_release_steps() -> 
     assert "${GITHUB_REPOSITORY_OWNER,,}" in image_name_step["run"]
 
     image_name = "${{ steps.image-name.outputs.value }}"
-    metadata_step = next(step for step in steps if step.get("id") == "meta")
     scan_step = next(step for step in steps if step.get("name") == "Scan pushed image")
     attestation_step = next(step for step in steps if step.get("name") == "Attest build provenance")
     evidence_step = next(step for step in steps if step.get("name") == "Publish release evidence")
 
-    assert image_name in metadata_step["with"]["images"]
     assert image_name in scan_step["with"]["image-ref"]
     assert image_name in attestation_step["with"]["subject-name"]
     assert image_name in evidence_step["env"]["IMAGE_NAME"]

@@ -8,9 +8,9 @@ Operations Agent.
 
 | Контейнер | Доступ к БД | Mounts | Object Storage |
 |---|---|---|---|
-| `api` | `SF_API_DATABASE_URL`, read-only витрина | нет | нет |
+| `api` | `SF_API_DATABASE_URL_FILE`, read-only витрина | нет | нет |
 | `telegram-bot` | нет, только внутренний API | нет | нет |
-| `worker` | `SF_WORKER_DATABASE_URL`, canonical refresh/write | `${SF_MODEL_RUNTIME_ROOT}:/app/models:ro`, source snapshot read-only, archive staging read-write | нет |
+| `worker` | `SF_WORKER_DATABASE_URL_FILE`, canonical refresh/write | `${SF_MODEL_RUNTIME_ROOT}:/app/models:ro`, source snapshot read-only, archive staging read-write | нет |
 | `archive-sync` | нет | archive staging read-only, отдельный sync state read-write | write/read verify только `operational-archive/*`, включая `nhl-source-state/v1/` |
 
 Роли `sf_api_reader` и `sf_refresh_writer` создаёт Operations Agent после

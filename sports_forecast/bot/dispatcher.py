@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import os
+
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
 from aiogram.enums import ParseMode
 from omegaconf import DictConfig
 
@@ -21,7 +25,17 @@ def build_dispatcher(cfg: DictConfig, token: str) -> tuple[Bot, Dispatcher]:
     Returns:
         Пара ``(Bot, Dispatcher)``.
     """
-    bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    telegram_base_url = os.getenv("BOT_TELEGRAM_API_BASE_URL", "").strip()
+    session = (
+        AiohttpSession(api=TelegramAPIServer.from_base(telegram_base_url))
+        if telegram_base_url
+        else None
+    )
+    bot = Bot(
+        token=token,
+        session=session,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
     dp = Dispatcher()
     allowed = {int(x) for x in (cfg.bot.get("allowed_user_ids") or []) if x is not None}
     if not allowed:

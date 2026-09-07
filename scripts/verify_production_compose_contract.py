@@ -9,7 +9,7 @@ import yaml
 
 
 APPLICATION_SERVICES = {"api", "telegram-bot", "source-acquirer", "worker", "archive-sync"}
-EXPECTED_SERVICES = APPLICATION_SERVICES | {"db"}
+EXPECTED_SERVICES = APPLICATION_SERVICES | {"db", "migrator", "role-bootstrap"}
 FORBIDDEN_SERVICES = {"caddy", "mlflow", "prometheus", "grafana", "airflow", "dvc", "node-exporter"}
 
 
@@ -67,6 +67,22 @@ def verify_contract(rendered_path: Path, *, model_runtime_root: Path) -> None:
             isinstance(image, str) and "@sha256:" in image,
             f"{name}: image должен быть immutable digest",
         )
+
+    _require(
+        services["api"].get("environment")
+        == {"DATABASE_URL_FILE": "/run/secrets/api_database_url"},
+        "api: DB URL должен передаваться только secret file",
+    )
+    migration_dependency = services["migrator"].get("depends_on", {}).get("role-bootstrap", {})
+    _require(
+        migration_dependency.get("condition") == "service_completed_successfully",
+        "migrator должен ждать idempotent role bootstrap",
+    )
+    _require(
+        services["migrator"].get("environment")
+        == {"DATABASE_URL_FILE": "/run/secrets/migrator_database_url"},
+        "migrator: DB URL должен передаваться только secret file",
+    )
 
     for name in ("db", "api", "telegram-bot"):
         _require(services[name].get("restart") == "unless-stopped", f"{name}: restart contract")

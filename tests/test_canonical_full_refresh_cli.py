@@ -32,3 +32,22 @@ def test_cli_passes_scheduler_inputs_to_runner(
     assert captured["run_id"] == "daily-1"
     assert captured["source_csv"] == tmp_path / "source.csv"
     assert captured["archive_root"] == tmp_path / "archive"
+
+
+def test_cli_treats_repeated_finished_run_as_success(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Повтор scheduler run_id не является ошибкой публикации."""
+    monkeypatch.setenv("SF_CANONICAL_SOURCE_CSV", str(tmp_path / "source.csv"))
+    monkeypatch.setenv("SF_WORKER_RUN_ID", "daily-1")
+    monkeypatch.setenv("SF_MODEL_RUNTIME_ROOT", str(tmp_path / "runtime"))
+    monkeypatch.setenv("SF_APP_VERSION", "1.1.0")
+    monkeypatch.setenv("SF_OPERATIONAL_ARCHIVE_ROOT", str(tmp_path / "archive"))
+    monkeypatch.setattr(
+        cli,
+        "run_full_refresh",
+        lambda *_args, **_kwargs: FullRefreshResult(published=False, already_finished=True),
+    )
+    monkeypatch.setattr(cli, "configure_logging", lambda **_: None)
+
+    cli.main.__wrapped__(OmegaConf.create({"logging": {"level": "INFO"}}))

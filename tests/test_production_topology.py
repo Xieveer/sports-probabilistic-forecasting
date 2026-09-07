@@ -10,7 +10,16 @@ import yaml
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-PRODUCTION_SERVICES = {"api", "db", "telegram-bot", "source-acquirer", "worker", "archive-sync"}
+PRODUCTION_SERVICES = {
+    "api",
+    "db",
+    "telegram-bot",
+    "source-acquirer",
+    "worker",
+    "archive-sync",
+    "migrator",
+    "role-bootstrap",
+}
 SYSTEMD_DIR = PROJECT_ROOT / "deploy" / "systemd"
 
 
@@ -154,14 +163,15 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     source_acquirer = services["source-acquirer"]
     archive_sync = services["archive-sync"]
 
-    assert api["environment"] == {
-        "DATABASE_URL": "${SF_API_DATABASE_URL:?set SF_API_DATABASE_URL}",
-    }
+    assert api["environment"] == {"DATABASE_URL_FILE": "/run/secrets/api_database_url"}
     assert "volumes" not in api
     assert "volumes" not in bot
     assert "DATABASE_URL" not in cast(dict[str, str], bot["environment"])
+    bot_environment = cast(dict[str, str], bot["environment"])
+    assert bot_environment["BOT_TOKEN_FILE"] == "/run/secrets/bot_token"
+    assert bot_environment["BOT_TELEGRAM_API_BASE_URL"] == "${BOT_TELEGRAM_API_BASE_URL:-}"
     assert worker["environment"] == {
-        "DATABASE_URL": "${SF_WORKER_DATABASE_URL:?set SF_WORKER_DATABASE_URL}",
+        "DATABASE_URL_FILE": "/run/secrets/worker_database_url",
         "SF_WORKER_RUN_ID": "${SF_WORKER_RUN_ID:?set a scheduler-generated id}",
         "SF_MODEL_RUNTIME_ROOT": "/app/models",
         "SF_APP_VERSION": "${SF_APP_VERSION:?set SF_APP_VERSION}",
@@ -176,27 +186,26 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     assert "SF_OBJECT_STORAGE_ACCESS_KEY_ID" not in cast(dict[str, str], worker["environment"])
     assert source_acquirer["environment"] == {
         "SF_CANONICAL_SOURCE_SNAPSHOT": "/app/data/source/nhl/current.csv",
-        "ODDS_API_KEY_FREE": "${ODDS_API_KEY_FREE:-}",
-        "ODDS_API_KEY_20K": "${ODDS_API_KEY_20K:-}",
-        "ODDS_API_KEY_100K": "${ODDS_API_KEY_100K:-}",
-        "ODDS_API_KEY": "${ODDS_API_KEY:-}",
+        "ODDS_API_KEY_FREE_FILE": "/run/secrets/odds_api_key_free",
+        "ODDS_API_KEY_20K_FILE": "/run/secrets/odds_api_key_20k",
+        "ODDS_API_KEY_100K_FILE": "/run/secrets/odds_api_key_100k",
+        "ODDS_API_KEY_FILE": "/run/secrets/odds_api_key",
     }
     assert source_acquirer["volumes"] == [
         "${SF_CANONICAL_SOURCE_ROOT:?set SF_CANONICAL_SOURCE_ROOT}:/app/data/source/nhl",
     ]
     assert archive_sync["profiles"] == ["operational-sync"]
-    assert archive_sync["entrypoint"] == [
-        "uv",
-        "run",
-        "python",
-        "-m",
-        "sports_forecast.deploy.archive_sync_cli",
-    ]
+    assert "entrypoint" not in archive_sync
     assert archive_sync["volumes"] == [
         "${SF_OPERATIONAL_ARCHIVE_ROOT:?set SF_OPERATIONAL_ARCHIVE_ROOT}:/app/archive:ro",
         "${SF_ARCHIVE_SYNC_STATE_ROOT:?set SF_ARCHIVE_SYNC_STATE_ROOT}:/app/sync-state",
     ]
-    assert "SF_OBJECT_STORAGE_ACCESS_KEY_ID" in cast(dict[str, str], archive_sync["environment"])
+    assert (
+        cast(dict[str, str], archive_sync["environment"])["SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE"]
+        == "/run/secrets/object_storage_access_key"
+    )
+    assert services["migrator"]["profiles"] == ["migration"]
+    assert services["role-bootstrap"]["profiles"] == ["migration"]
     assert set(cast(dict[str, object], compose["volumes"])) == {"pg_data"}
 
 
@@ -233,13 +242,43 @@ def test_scheduler_profile_template_keeps_schedule_and_secrets_outside_repositor
     schedule = (SYSTEMD_DIR / "schedule.conf.example").read_text(encoding="utf-8")
     runtime = (SYSTEMD_DIR / "runtime.conf.example").read_text(encoding="utf-8")
 
-    assert "SF_WORKER_DATABASE_URL=" in profile
+    assert "SF_WORKER_DATABASE_URL_FILE=" in profile
     assert "SF_CANONICAL_SOURCE_ROOT=" in profile
     assert "SF_OPERATIONAL_ARCHIVE_ROOT=" in profile
-    assert "SF_API_DATABASE_URL=" in profile
-    assert "SF_OBJECT_STORAGE_SECRET_ACCESS_KEY" not in profile
+    assert "SF_API_DATABASE_URL_FILE=" in profile
+    assert "SF_OBJECT_STORAGE_SECRET_ACCESS_KEY=" not in profile
     assert "OnCalendar=*-*-* 10:00:00 Europe/Moscow" in schedule
     assert "TimeoutStartSec=90m" in runtime
+
+
+def test_scheduler_profile_provides_every_production_compose_input() -> None:
+    """Scheduler profile не должен падать на interpolation inactive Compose services."""
+    profile = (SYSTEMD_DIR / "refresh-profile.env.example").read_text(encoding="utf-8")
+    names = {
+        line.split("=", maxsplit=1)[0]
+        for line in profile.splitlines()
+        if line and not line.startswith("#") and "=" in line
+    }
+
+    assert {
+        "SF_POSTGRES_PASSWORD_FILE",
+        "SF_API_DB_PASSWORD_FILE",
+        "SF_WORKER_DB_PASSWORD_FILE",
+        "SF_MIGRATOR_DB_PASSWORD_FILE",
+        "SF_MIGRATOR_DATABASE_URL_FILE",
+        "SF_BOT_TOKEN_FILE",
+        "ODDS_API_KEY_FREE_FILE",
+        "ODDS_API_KEY_20K_FILE",
+        "ODDS_API_KEY_100K_FILE",
+        "ODDS_API_KEY_FILE",
+        "SF_ARCHIVE_SYNC_IMAGE",
+        "SF_ARCHIVE_SYNC_STATE_ROOT",
+        "SF_OBJECT_STORAGE_ENDPOINT",
+        "SF_OBJECT_STORAGE_BUCKET",
+        "SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE",
+        "SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE",
+        "SF_WORKER_RUN_ID",
+    }.issubset(names)
 
 
 def test_runtime_healthcheck_uses_readiness_and_persistent_state_is_declared() -> None:
