@@ -78,3 +78,11 @@ Compose contract: workflow не включал профиль `migration`, хо�
 проверяет полный набор services. OCI build, first-rollout и publication не
 запускались; `v1.1.7` запрещён для rollout. Исправленный immutable candidate —
 `v1.1.8`; EPIC остаётся `in_progress` до его успешного tag CI и terminal review evidence.
+
+Candidate `v1.1.8` прошёл independent code/documentation review
+2026-09-07 без blocking findings. Проверенный commit:
+`c6c258bf3d6f9c9cad1e33d75dd38ea9666d6648`. Exact local rendered Compose
+gate с profiles `migration`, `worker`, `source-acquisition`, `operational-sync`
+и verifier завершился успешно; version/docs/type/lock gates также
+прошли. EPIC остаётся `in_progress` до tag CI `v1.1.8` и terminal
+review release evidence.

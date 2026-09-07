@@ -97,6 +97,16 @@ first-rollout и publication не запускались. Workflow теперь 
 verification прошли. Новый immutable candidate — `v1.1.8`; предыдущий tag
 запрещён для rollout.
 
+### Review evidence Compose remediation
+
+Independent review 2026-09-07 не выявило blocking findings.
+Проверенный candidate diff: commit
+`c6c258bf3d6f9c9cad1e33d75dd38ea9666d6648`. Независимо выполнен
+exact rendered Compose workflow gate со всеми четырьмя profiles и
+verifier, release contract — 10 passed, mypy, docs, frozen lock и
+`git diff --check`. Sphinx сохранил одно существующее warning об `_static`;
+tag CI ещё не выполнялся.
+
 ## Необходимая следующая remediation
 
 Канонический список P1 и критерии повторного review:
