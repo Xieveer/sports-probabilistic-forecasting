@@ -59,6 +59,13 @@ rollout. Владелец подтвердил обновление полног
 resolution для отдельного immutable candidate `v1.1.7`. Минимальная допустимая
 версия PyArrow — `23.0.1`; lock фиксирует разрешённую версию и проходит security gate.
 
+Tag CI `v1.1.7` прошёл lint, unit tests, dependency audit, documentation и
+filesystem/secret scan, но остановился на rendered Compose contract: workflow
+активировал runtime profiles, не активировав `migration`, хотя verifier требует
+полный сервисный contract. OCI artifacts, first-rollout и publication не
+запускались. Исправленный отдельный candidate — `v1.1.8`; `v1.1.7` запрещён
+для rollout.
+
 ## Риски и предположения
 
 - Для локального test Object Storage используется отдельный ephemeral endpoint;

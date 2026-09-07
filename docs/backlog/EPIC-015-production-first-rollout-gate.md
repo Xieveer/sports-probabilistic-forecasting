@@ -72,3 +72,9 @@ dependency resolution, security audit, unit/version/type gates, Operations
 handoff и явный quarantine обоих исторических binding `v1.1.6`.
 EPIC остаётся `in_progress` до успешного tag CI `v1.1.7` и terminal
 review его release evidence.
+
+Tag CI `v1.1.7` прошёл security и static gates, но остановился на rendered
+Compose contract: workflow не включал профиль `migration`, хотя verifier
+проверяет полный набор services. OCI build, first-rollout и publication не
+запускались; `v1.1.7` запрещён для rollout. Исправленный immutable candidate —
+`v1.1.8`; EPIC остаётся `in_progress` до его успешного tag CI и terminal review evidence.

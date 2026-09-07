@@ -78,6 +78,12 @@ blocking findings. Проверенный diff зафиксирован в commi
 lint, production-check, docs и quarantine narrative для обоих binding
 `v1.1.6`. TASK остаётся `in_progress` до tag CI `v1.1.7`.
 
+Tag CI `v1.1.7` прошёл security и static gates, но остановился до OCI build,
+first-rollout и publication: rendered Compose workflow включал runtime profiles,
+но не профиль `migration`, хотя verifier требует полный service contract.
+Workflow исправлен и покрыт release-contract test; новый immutable candidate —
+`v1.1.8`. TASK остаётся `in_progress` до его tag CI.
+
 ### Independent review (2026-09-07)
 
 - Blocking findings: не обнаружены.

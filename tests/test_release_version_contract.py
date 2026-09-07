@@ -13,7 +13,7 @@ from sports_forecast.service.schemas import HealthResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.1.7"
+RELEASE_VERSION = "1.1.8"
 
 
 def test_package_and_fastapi_publish_same_release_version() -> None:
@@ -152,6 +152,7 @@ def test_release_gate_renders_and_validates_production_compose_contract() -> Non
 
     assert "build_production_compose_env_fixture.py" in command
     assert "docker compose --env-file" in command
+    assert "--profile migration" in command
     assert "config --quiet" in command
     assert "verify_production_compose_contract.py" in command
 

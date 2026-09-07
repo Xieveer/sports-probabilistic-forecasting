@@ -78,8 +78,8 @@ jobs:
             --output "$fixture_root/production.env" \
             --root "$fixture_root" \
             --app-version "$app_version"
-          docker compose --env-file "$fixture_root/production.env" -f docker-compose.prod.yml --profile worker --profile source-acquisition --profile operational-sync config --quiet
-          docker compose --env-file "$fixture_root/production.env" -f docker-compose.prod.yml --profile worker --profile source-acquisition --profile operational-sync config > "$fixture_root/rendered.yml"
+          docker compose --env-file "$fixture_root/production.env" -f docker-compose.prod.yml --profile migration --profile worker --profile source-acquisition --profile operational-sync config --quiet
+          docker compose --env-file "$fixture_root/production.env" -f docker-compose.prod.yml --profile migration --profile worker --profile source-acquisition --profile operational-sync config > "$fixture_root/rendered.yml"
           uv run python scripts/verify_production_compose_contract.py \
             --rendered "$fixture_root/rendered.yml" \
             --model-runtime-root "$fixture_root/runtime_models"

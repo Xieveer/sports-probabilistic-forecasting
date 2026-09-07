@@ -86,6 +86,17 @@ contract tests, mypy, lint, production-check, docs и `git diff --check`.
 Sphinx сохранил одно существующее warning об `_static`; tag CI ещё
 не выполнялся.
 
+## Compose remediation candidate v1.1.8
+
+Tag CI `v1.1.7` прошёл lint, unit tests, dependency audit, documentation и
+filesystem/secret scan, но fail-closed остановился на rendered Compose contract:
+workflow активировал `worker`, `source-acquisition` и `operational-sync`, не
+активировав `migration`, хотя verifier ожидает полный набор services. OCI build,
+first-rollout и publication не запускались. Workflow теперь добавляет профиль
+`migration`; воспроизводящий release-contract test и локальная rendered Compose
+verification прошли. Новый immutable candidate — `v1.1.8`; предыдущий tag
+запрещён для rollout.
+
 ## Необходимая следующая remediation
 
 Канонический список P1 и критерии повторного review:
