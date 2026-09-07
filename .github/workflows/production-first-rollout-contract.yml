@@ -1,0 +1,100 @@
+name: Production first-rollout contract
+
+on:
+  workflow_call:
+    outputs:
+      api_digest:
+        description: Digest API-образа, прошедшего first-rollout.
+        value: ${{ jobs.first-rollout.outputs.api_digest }}
+      worker_digest:
+        description: Digest Worker-образа, прошедшего first-rollout.
+        value: ${{ jobs.first-rollout.outputs.worker_digest }}
+      bot_digest:
+        description: Digest Telegram-образа, прошедшего first-rollout.
+        value: ${{ jobs.first-rollout.outputs.bot_digest }}
+      archive_digest:
+        description: Digest archive-sync образа, прошедшего first-rollout.
+        value: ${{ jobs.first-rollout.outputs.archive_digest }}
+
+permissions:
+  contents: read
+
+jobs:
+  first-rollout:
+    name: production-first-rollout-contract
+    runs-on: ubuntu-latest
+    outputs:
+      api_digest: ${{ steps.tested-images.outputs.api_digest }}
+      worker_digest: ${{ steps.tested-images.outputs.worker_digest }}
+      bot_digest: ${{ steps.tested-images.outputs.bot_digest }}
+      archive_digest: ${{ steps.tested-images.outputs.archive_digest }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - name: Verify clean checkout before OCI download
+        run: test -z "$(git status --porcelain)"
+      - name: Download prebuilt OCI images
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: release-oci-*
+          path: artifacts/release-oci
+          merge-multiple: true
+      - name: Verify release identity
+        id: release
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          project_version="$(uv run python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
+          test "$tag_version" = "$project_version"
+          echo "version=$project_version" >> "$GITHUB_OUTPUT"
+      - run: uv sync --frozen --python 3.12 --group dev
+      - name: Static contract
+        run: uv run pytest tests/test_production_first_rollout_contract.py tests/test_production_topology.py -q
+      - name: Verify first-rollout runner interface
+        run: uv run python scripts/run_production_first_rollout.py --help
+      - name: Load prebuilt runtime images into an immutable local registry
+        run: |
+          docker run -d --name sf-rollout-registry -p 127.0.0.1:5000:5000 registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+          docker load --input artifacts/release-oci/api.docker.tar
+          docker load --input artifacts/release-oci/worker.docker.tar
+          docker load --input artifacts/release-oci/telegram-bot.docker.tar
+          docker load --input artifacts/release-oci/archive-sync.docker.tar
+          docker tag sf-rollout-api:${GITHUB_SHA} localhost:5000/sf-rollout-api:${GITHUB_SHA}
+          docker tag sf-rollout-worker:${GITHUB_SHA} localhost:5000/sf-rollout-worker:${GITHUB_SHA}
+          docker tag sf-rollout-telegram-bot:${GITHUB_SHA} localhost:5000/sf-rollout-bot:${GITHUB_SHA}
+          docker tag sf-rollout-archive-sync:${GITHUB_SHA} localhost:5000/sf-rollout-archive:${GITHUB_SHA}
+          docker push localhost:5000/sf-rollout-api:${GITHUB_SHA}
+          docker push localhost:5000/sf-rollout-worker:${GITHUB_SHA}
+          docker push localhost:5000/sf-rollout-bot:${GITHUB_SHA}
+          docker push localhost:5000/sf-rollout-archive:${GITHUB_SHA}
+      - name: Record tested local-registry digests
+        id: tested-images
+        run: |
+          echo "api_digest=$(docker image inspect --format='{{index .RepoDigests 0}}' localhost:5000/sf-rollout-api:${GITHUB_SHA} | cut -d@ -f2)" >> "$GITHUB_OUTPUT"
+          echo "worker_digest=$(docker image inspect --format='{{index .RepoDigests 0}}' localhost:5000/sf-rollout-worker:${GITHUB_SHA} | cut -d@ -f2)" >> "$GITHUB_OUTPUT"
+          echo "bot_digest=$(docker image inspect --format='{{index .RepoDigests 0}}' localhost:5000/sf-rollout-bot:${GITHUB_SHA} | cut -d@ -f2)" >> "$GITHUB_OUTPUT"
+          echo "archive_digest=$(docker image inspect --format='{{index .RepoDigests 0}}' localhost:5000/sf-rollout-archive:${GITHUB_SHA} | cut -d@ -f2)" >> "$GITHUB_OUTPUT"
+      - name: Execute clean first-rollout path
+        run: |
+          fixture_root="$(mktemp -d)"
+          trap 'test -z "$fixture_root" || rm -rf "$fixture_root"' EXIT
+          postgres_image="postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94"
+          docker pull "$postgres_image"
+          api_image="$(docker image inspect --format='{{index .RepoDigests 0}}' localhost:5000/sf-rollout-api:${GITHUB_SHA})"
+          worker_image="$(docker image inspect --format='{{index .RepoDigests 0}}' localhost:5000/sf-rollout-worker:${GITHUB_SHA})"
+          bot_image="$(docker image inspect --format='{{index .RepoDigests 0}}' localhost:5000/sf-rollout-bot:${GITHUB_SHA})"
+          archive_image="$(docker image inspect --format='{{index .RepoDigests 0}}' localhost:5000/sf-rollout-archive:${GITHUB_SHA})"
+          uv run python scripts/build_production_compose_env_fixture.py \
+            --output "$fixture_root/production.env" --root "$fixture_root" --app-version "${{ steps.release.outputs.version }}" \
+            --postgres-image "$postgres_image" --api-image "$api_image" --worker-image "$worker_image" \
+            --bot-image "$bot_image" --archive-sync-image "$archive_image"
+          uv run python scripts/run_production_first_rollout.py \
+            --env-file "$fixture_root/production.env" \
+            --evidence artifacts/production-first-rollout.json --app-version "${{ steps.release.outputs.version }}"
+          rm -rf "$fixture_root"
+          fixture_root=""
+      - name: Publish redacted first-rollout evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: production-first-rollout-evidence
+          path: artifacts/production-first-rollout.json
+          if-no-files-found: error

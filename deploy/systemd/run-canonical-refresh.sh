@@ -16,12 +16,12 @@ fi
 
 export SF_WORKER_RUN_ID="${profile}-$(date -u +%Y%m%dT%H%M%SZ)-$(uuidgen)"
 /usr/bin/docker compose -f docker-compose.prod.yml --profile source-acquisition run --rm --no-deps source-acquirer \
-  uv run python -m sports_forecast.orchestration.source_snapshot_cli \
+  /app/.venv/bin/python -m sports_forecast.orchestration.source_snapshot_cli \
   --tournament "${SF_TOURNAMENT}"
 
 # The last successful run is stored in worker_executions by canonical_full_refresh_cli.
 /usr/bin/docker compose -f docker-compose.prod.yml --profile worker run --rm --no-deps worker \
-  uv run python -m sports_forecast.orchestration.canonical_full_refresh_cli \
+  /app/.venv/bin/python -m sports_forecast.orchestration.canonical_full_refresh_cli \
   "tournament=${SF_TOURNAMENT}" "market=${SF_MARKET}" \
   "market_spec=${SF_MARKET_SPEC}" "algorithm=${SF_ALGORITHM}" "features=${SF_FEATURES}"
 

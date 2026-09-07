@@ -6,10 +6,47 @@ import os
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from alembic.ddl.postgresql import PostgresqlImpl
+from sqlalchemy import (
+    Column,
+    MetaData,
+    PrimaryKeyConstraint,
+    String,
+    Table,
+    engine_from_config,
+    inspect,
+    pool,
+)
 
 from sports_forecast.service.db.engine import get_database_url
 from sports_forecast.service.db.models import Base
+
+
+class SportsForecastPostgresqlImpl(PostgresqlImpl):
+    """Расширяет Alembic version table для длинных исторических revision IDs."""
+
+    __dialect__ = "postgresql"
+
+    def version_table_impl(
+        self,
+        *,
+        version_table: str,
+        version_table_schema: str | None,
+        version_table_pk: bool,
+        **_kwargs: object,
+    ) -> Table:
+        """Создать PostgreSQL `alembic_version` с запасом для revision identity."""
+        version_table_object = Table(
+            version_table,
+            MetaData(),
+            Column("version_num", String(64), nullable=False),
+            schema=version_table_schema,
+        )
+        if version_table_pk:
+            version_table_object.append_constraint(
+                PrimaryKeyConstraint("version_num", name=f"{version_table}_pkc")
+            )
+        return version_table_object
 
 
 config = context.config
@@ -43,6 +80,15 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        if connection.dialect.name == "postgresql" and inspect(connection).has_table(
+            "alembic_version"
+        ):
+            connection.exec_driver_sql(
+                "ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(64)"
+            )
+        # `inspect()` начинает implicit transaction в PostgreSQL. Зафиксировать
+        # preflight до Alembic, иначе outer rollback отменит весь fresh upgrade.
+        connection.commit()
         context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():

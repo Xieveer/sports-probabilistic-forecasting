@@ -11,8 +11,6 @@
 """
 
 from sports_forecast.training.base import BaseModel, BaseSingleModel
-from sports_forecast.training.model_factory import ModelFactory
-from sports_forecast.training.trainer import SingleExperimentRunner
 
 
 __all__ = [
@@ -21,3 +19,16 @@ __all__ = [
     "ModelFactory",
     "SingleExperimentRunner",
 ]
+
+
+def __getattr__(name: str) -> object:
+    """Лениво загружать training control-plane вне runtime inference пути."""
+    if name == "ModelFactory":
+        from sports_forecast.training.model_factory import ModelFactory
+
+        return ModelFactory
+    if name == "SingleExperimentRunner":
+        from sports_forecast.training.trainer import SingleExperimentRunner
+
+        return SingleExperimentRunner
+    raise AttributeError(name)

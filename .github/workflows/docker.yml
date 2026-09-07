@@ -5,7 +5,6 @@ name: Docker
 on:
   push:
     tags: ["v*.*.*"]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -23,9 +22,9 @@ jobs:
     name: Release gates
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.2
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -79,8 +78,8 @@ jobs:
             --output "$fixture_root/production.env" \
             --root "$fixture_root" \
             --app-version "$app_version"
-          docker compose --env-file "$fixture_root/production.env" -f docker-compose.prod.yml --profile worker --profile source-acquisition --profile operational-sync config --quiet
-          docker compose --env-file "$fixture_root/production.env" -f docker-compose.prod.yml --profile worker --profile source-acquisition --profile operational-sync config > "$fixture_root/rendered.yml"
+          docker compose --env-file "$fixture_root/production.env" -f docker-compose.prod.yml --profile migration --profile worker --profile source-acquisition --profile operational-sync config --quiet
+          docker compose --env-file "$fixture_root/production.env" -f docker-compose.prod.yml --profile migration --profile worker --profile source-acquisition --profile operational-sync config > "$fixture_root/rendered.yml"
           uv run python scripts/verify_production_compose_contract.py \
             --rendered "$fixture_root/rendered.yml" \
             --model-runtime-root "$fixture_root/runtime_models"
@@ -103,6 +102,7 @@ jobs:
           docker run --rm --read-only --network none --user 10001:10001 \
             --entrypoint id sports-forecast-worker-release-gate -g | grep -Fx '10001'
           docker run --rm --read-only --network none --user 10001:10001 \
+            --tmpfs /tmp:rw,noexec,nosuid,size=512m \
             --mount type=bind,src="$source_bundle",dst="/fixtures/source-state/${source_bundle##*/}",readonly \
             --mount type=bind,src="$bootstrap_bundle",dst="/fixtures/canonical-bootstrap/${bootstrap_bundle##*/}",readonly \
             --mount type=bind,src="$model_runtime_root",dst=/app/models,readonly \
@@ -114,6 +114,9 @@ jobs:
           from sports_forecast.deploy.canonical_bootstrap import verify_nhl_bootstrap_bundle
           from sports_forecast.deploy.model_bundle import load_current_model_bundle
           from sports_forecast.deploy.source_state import verify_nhl_source_state_bundle
+          from sports_forecast.predict import load_model_from_path
+          from omegaconf import OmegaConf
+          import pandas as pd
           source_bundle = next(Path("/fixtures/source-state").iterdir())
           bootstrap_bundle = next(Path("/fixtures/canonical-bootstrap").iterdir())
           runtime_models = Path("/app/models")
@@ -122,6 +125,9 @@ jobs:
           assert (runtime_models / "current").is_symlink()
           assert (runtime_models / "current").resolve().parent.name == "bundles"
           assert load_current_model_bundle(runtime_models, app_version=__import__("os").environ["SF_APP_VERSION"]).bundle_id == (runtime_models / "current").resolve().name
+          model_dir = runtime_models / "current"
+          model = load_model_from_path(OmegaConf.load("/app/conf/algorithm/catboost_reg.yaml"), model_dir / "fixture_prod.cbm")
+          assert model.predict_proba(pd.DataFrame({"weekday": [1]})).shape == (1, 2)
           try:
               (runtime_models / "write-probe").write_text("forbidden", encoding="utf-8")
           except OSError:
@@ -134,7 +140,13 @@ jobs:
           assert find_spec("optuna") is None
           '
 
-  build-push:
+  first-rollout:
+    needs: [verify, build-artifacts]
+    uses: ./.github/workflows/production-first-rollout-contract.yml
+    permissions:
+      contents: read
+
+  build-artifacts:
     needs: [verify]
     runs-on: ubuntu-latest
     strategy:
@@ -146,7 +158,43 @@ jobs:
           - target: telegram-bot
           - target: archive-sync
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.0.0
+      - name: Build Docker image archive once
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.0.0
+        with:
+          context: .
+          file: ./Dockerfile
+          target: ${{ matrix.target }}
+          outputs: type=docker,dest=/tmp/${{ matrix.target }}.docker.tar,name=sf-rollout-${{ matrix.target }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Upload Docker image archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-oci-${{ matrix.target }}
+          path: /tmp/${{ matrix.target }}.docker.tar
+          if-no-files-found: error
+
+  build-push:
+    needs: [verify, build-artifacts, first-rollout]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: api
+            tested_digest: ${{ needs.first-rollout.outputs.api_digest }}
+          - target: worker
+            tested_digest: ${{ needs.first-rollout.outputs.worker_digest }}
+          - target: telegram-bot
+            tested_digest: ${{ needs.first-rollout.outputs.bot_digest }}
+          - target: archive-sync
+            tested_digest: ${{ needs.first-rollout.outputs.archive_digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.2
 
       - name: Validate release tag matches package version
         if: github.ref_type == 'tag'
@@ -156,11 +204,14 @@ jobs:
           package_version="$(python -c 'import tomllib; from pathlib import Path; print(tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"])')"
           test "$RELEASE_TAG" = "v$package_version"
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Download tested Docker image archive
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-oci-${{ matrix.target }}
+          path: artifacts/release-oci
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.0.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -172,32 +223,23 @@ jobs:
           echo "value=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_BASENAME}-${{ matrix.target }}"
           >> "$GITHUB_OUTPUT"
 
-      - name: Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{ steps.image-name.outputs.value }}
-          tags: |
-            type=semver,pattern={{version}}
-
-      - name: Build and push
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          target: ${{ matrix.target }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Load, publish and verify tested artifact
+        id: publish
+        env:
+          IMAGE_NAME: ${{ steps.image-name.outputs.value }}
+          TESTED_DIGEST: ${{ matrix.tested_digest }}
+        run: |
+          docker load --input artifacts/release-oci/${{ matrix.target }}.docker.tar
+          docker tag sf-rollout-${{ matrix.target }}:${GITHUB_SHA} "${IMAGE_NAME}:${GITHUB_REF_NAME#v}"
+          docker push "${IMAGE_NAME}:${GITHUB_REF_NAME#v}"
+          published_digest="$(docker image inspect --format='{{index .RepoDigests 0}}' "${IMAGE_NAME}:${GITHUB_REF_NAME#v}" | cut -d@ -f2)"
+          test "$published_digest" = "$TESTED_DIGEST"
+          echo "digest=$published_digest" >> "$GITHUB_OUTPUT"
 
       - name: Scan pushed image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ steps.image-name.outputs.value }}@${{ steps.build.outputs.digest }}
+          image-ref: ${{ steps.image-name.outputs.value }}@${{ steps.publish.outputs.digest }}
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
@@ -206,13 +248,13 @@ jobs:
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-name: ${{ steps.image-name.outputs.value }}
-          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-digest: ${{ steps.publish.outputs.digest }}
           push-to-registry: true
 
       - name: Publish release evidence
         env:
           IMAGE_NAME: ${{ steps.image-name.outputs.value }}
-          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE_DIGEST: ${{ steps.publish.outputs.digest }}
         run: |
           {
             echo "### Release image evidence"

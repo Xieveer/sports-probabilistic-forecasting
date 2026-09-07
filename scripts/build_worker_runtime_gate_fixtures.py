@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+from catboost import CatBoostClassifier
 
 from sports_forecast.deploy.canonical_bootstrap import build_nhl_bootstrap_bundle
 from sports_forecast.deploy.model_bundle import build_model_bundle, install_model_bundle
@@ -57,7 +58,15 @@ def build_fixtures(output_root: Path, *, app_version: str) -> tuple[Path, Path, 
     )
     model_source = output_root / "model-source"
     model_source.mkdir()
-    (model_source / "fixture-model.bin").write_bytes(b"fixture-model-v1")
+    # Маленькая, но реально загружаемая модель: release gate не принимает
+    # checksum-only placeholder вместо promoted inference contract.
+    model = CatBoostClassifier(iterations=2, depth=2, verbose=False, random_seed=1)
+    model.fit(pd.DataFrame({"weekday": [1, 2, 3, 4]}), [0, 1, 0, 1])
+    model.save_model(str(model_source / "fixture_prod.cbm"))
+    (model_source / "features.txt").write_text("weekday\n", encoding="utf-8")
+    (model_source / "deploy.yaml").write_text(
+        "model:\n  algorithm: catboost_reg\n  featureset: advanced\n", encoding="utf-8"
+    )
     runtime_models = output_root / "runtime_models"
     model_bundle = build_model_bundle(
         model_source,

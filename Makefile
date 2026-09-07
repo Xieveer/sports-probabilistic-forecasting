@@ -108,6 +108,10 @@ install:
 lint:
 	uv run ruff check $(SRC) $(TESTS)
 
+# Воспроизводимый type gate для production-кода, scripts и tests.
+type-check:
+	uv run pre-commit run mypy --all-files
+
 # Форматирование кода (ruff format)
 format:
 	uv run ruff format $(SRC) $(TESTS)

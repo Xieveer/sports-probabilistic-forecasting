@@ -12,11 +12,16 @@ Schema PostgreSQL изменяет только Alembic. API и Worker не вы
      pg_dump -U sf_user -Fc sports_forecast > sports_forecast-pre-migration.dump
    ```
 
-2. Примените migration одноразовым API-контейнером до запуска API и Worker:
+2. Запустите идемпотентный bootstrap ролей и migration profile до API и Worker.
+   PostgreSQL init создаёт owner `sf_user`; `role-bootstrap` создаёт
+   `sf_migrator`, `sf_api_reader` и `sf_refresh_writer`, а `migrator` применяет
+   Alembic от `sf_migrator` и выдаёт grants. URL передаются только secrets.
 
    ```bash
-   docker compose -f docker-compose.prod.yml run --rm --no-deps api \
-     uv run alembic -c alembic.ini upgrade head
+  docker compose --env-file /etc/sf/production.env -f docker-compose.prod.yml \
+    --profile migration run --rm role-bootstrap
+  docker compose --env-file /etc/sf/production.env -f docker-compose.prod.yml \
+    --profile migration run --rm migrator
    ```
 
    Для локальной базы эквивалентная команда: `make db-migrate`.
@@ -29,8 +34,8 @@ Schema PostgreSQL изменяет только Alembic. API и Worker не вы
 Перед изменением или после прерванной операции узнайте состояние revision:
 
 ```bash
-docker compose -f docker-compose.prod.yml run --rm --no-deps api \
-  uv run alembic -c alembic.ini current
+docker compose --env-file /etc/sf/production.env -f docker-compose.prod.yml \
+  --profile migration run --rm migrator /app/.venv/bin/alembic -c /app/alembic.ini current
 ```
 
 Alembic хранит revision в `alembic_version`: отсутствие expected revision или
