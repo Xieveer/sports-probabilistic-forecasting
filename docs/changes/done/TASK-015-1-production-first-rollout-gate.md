@@ -1,6 +1,6 @@
 # TASK-015-1 — отчёт production first-rollout gate
 
-> **Статус задачи:** superseded by final review remediation
+> **Статус задачи:** reviewed; awaiting tag CI evidence
 > **Дата:** 2026-09-06
 > **Задача:** [TASK-015-1](../../backlog/tasks/TASK-015-1-runtime-bootstrap-and-rollout-gate.md)
 
@@ -48,6 +48,16 @@ tag CI должен повторить его с реальным commit и OCI 
 - `uv run mypy --follow-imports=skip --ignore-missing-imports scripts/run_production_first_rollout.py` — successful.
 - `make type-check`, `make lint`, `make production-check`, `git diff --check` — successful.
 - `make test-unit` — 974 passed, 8 deselected.
+
+## Independent review evidence
+
+Повторное independent review 2026-09-07 не выявило blocking findings.
+Проверенный implementation diff зафиксирован в commit
+`2772b93a198573f354643b242ae9a60493020f97`.
+
+Независимо выполнены mypy, 48 targeted tests, `make production-check`,
+`make lint`, `make docs` и `git diff --check`; все gates завершились
+успешно. Sphinx сохранил одно существующее warning об `_static`.
 
 ## Остаточный внешний шаг
 

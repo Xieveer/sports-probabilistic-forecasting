@@ -56,8 +56,20 @@ clean Docker scenario. Не запускать production deployment/tag/publica
 - [x] Синхронизировать handoff с Compose и `.env.example`: передавать paths
   `*_FILE`, а не secret values в env.
 
-P1 remediation ожидает повторного independent review. TASK остаётся `in_progress`
-до commit/tag CI, создающего официальный evidence artifact.
+P1 remediation прошла повторное independent review без blocking
+findings. Проверенный diff зафиксирован в commit
+`2772b93a198573f354643b242ae9a60493020f97`. TASK остаётся `in_progress`
+до tag CI, создающего официальный evidence artifact.
+
+### Independent review (2026-09-07)
+
+- Blocking findings: не обнаружены.
+- Проверены correctness, least-privilege grants, OCI provenance,
+  file-backed secrets, operations profile, tests и каноническая документация.
+- Independent gates: mypy passed; targeted pytest — 48 passed;
+  `make production-check`, `make lint`, `make docs`, `git diff --check` — passed.
+- `make docs` сохранил одно существующее warning об отсутствующем
+  `html_static_path` `_static`.
 
 ## План реализации
 
@@ -75,6 +87,7 @@ P1 remediation ожидает повторного independent review. TASK ос
 ## Handoff и отчёт
 
 - Отчёт выполнения: [TASK-015-1-production-first-rollout-gate.md](../../changes/done/TASK-015-1-production-first-rollout-gate.md).
-- Review: финальный independent review выявил четыре P1; затем нужен новый
-  independent review. GitHub required check/tag protection остаётся внешней
-  обязанностью владельца.
+- Review: remediation commit
+  `2772b93a198573f354643b242ae9a60493020f97` прошёл independent review без
+  blocking findings. GitHub required check/tag protection и tag CI evidence
+  остаются незавершёнными внешними шагами.

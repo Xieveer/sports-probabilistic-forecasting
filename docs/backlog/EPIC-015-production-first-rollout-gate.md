@@ -43,7 +43,13 @@ release tags назначается владельцем репозитория 
 
 ## Полное EPIC review
 
-Финальный reviewer выявил четыре P1, зафиксированные в TASK-015-1. Их remediation
-ожидает повторного independent review и tag CI с official evidence, поэтому EPIC
-остаётся `in_progress`. После clean final review потребуется внешняя проверка
-владельцем: назначить required first-rollout check и tag protection в GitHub.
+Четыре P1 финального review устранены. Повторное independent review
+2026-09-07 не выявило blocking findings в implementation diff; проверенный
+commit: `2772b93a198573f354643b242ae9a60493020f97`. Independent gates:
+mypy passed, targeted pytest — 48 passed, `make production-check`, `make lint`,
+`make docs` и `git diff --check` — passed. Sphinx выдал одно существующее
+warning об `_static`.
+
+EPIC остаётся `in_progress` до tag CI с official release evidence.
+После него потребуется terminal EPIC review доказательств и внешняя
+проверка владельцем: required first-rollout check и tag protection в GitHub.
