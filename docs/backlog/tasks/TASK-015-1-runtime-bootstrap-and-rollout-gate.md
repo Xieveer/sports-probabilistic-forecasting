@@ -135,6 +135,12 @@ runtime images, создаваемые tag CI. TASK остаётся `in_progres
 immutable candidate и его успешного first-rollout, scan, provenance и
 publication evidence.
 
+Попытка local full runner после сборки всех четырёх runtime images была начата
+на commit `2c6941a`, но остановилась до Compose-сценария: Docker не смог
+получить pinned PostgreSQL image из Docker Hub (`network is unreachable`).
+Local registry был остановлен, JSON evidence не создан. Это внешнее ограничение
+не считается подтверждением cleanup и не меняет статус `NO-GO`.
+
 ### Independent review (2026-09-07)
 
 - Blocking findings: не обнаружены.

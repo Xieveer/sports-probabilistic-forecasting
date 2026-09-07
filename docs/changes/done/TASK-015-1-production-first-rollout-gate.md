@@ -206,6 +206,12 @@ passed. `make docs` имеет одно существующее предупр�
 immutable images из tag CI. Решение для rollout остаётся **NO-GO** до нового
 candidate tag с успешными first-rollout, image scans, provenance и publication.
 
+После локальной сборки всех четырёх runtime images был начат полный isolated
+runner на commit `2c6941a`. Он остановился до Compose-сценария, потому что
+Docker не смог скачать pinned PostgreSQL image из Docker Hub: `network is
+unreachable`. Созданный local registry остановлен, JSON evidence не создан.
+Это external failure не является зелёным cleanup evidence и не меняет verdict.
+
 ### Review evidence Compose remediation
 
 Independent review 2026-09-07 не выявило blocking findings.
