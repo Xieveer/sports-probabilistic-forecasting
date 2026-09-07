@@ -126,6 +126,28 @@ def _clean_worktree_issues(status: str) -> list[str]:
     ]
 
 
+def _restore_runtime_root_ownership(runtime_root: Path, *, image: str) -> None:
+    """Вернуть ownership временного bind mount пользователю CI перед его удалением."""
+    _run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--user",
+            "0:0",
+            "--mount",
+            f"type=bind,src={runtime_root},dst=/runtime-root",
+            "--entrypoint",
+            "/bin/chown",
+            image,
+            "-R",
+            f"{os.getuid()}:{os.getgid()}",
+            "/runtime-root",
+        ],
+        timeout=180,
+    )
+
+
 def _service_status(compose: list[str]) -> list[dict[str, Any]]:
     """Сохранить redacted health/restart status без логов и environment."""
     output = _run([*compose, "ps", "--format", "json"]).stdout.strip()
@@ -1037,6 +1059,7 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
                 ["docker", "rm", "-f", f"{project_name}-minio"], capture_output=True, check=False
             )
             _run([*compose, "down", "--volumes", "--remove-orphans"], timeout=180)
+            _restore_runtime_root_ownership(runtime_root, image=refs["SF_WORKER_IMAGE"])
     evidence["elapsed_seconds"] = round(time.monotonic() - started, 3)
     evidence_path.parent.mkdir(parents=True, exist_ok=True)
     evidence_path.write_text(

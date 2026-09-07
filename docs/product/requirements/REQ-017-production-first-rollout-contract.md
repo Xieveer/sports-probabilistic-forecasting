@@ -74,8 +74,11 @@ artifacts, но fail-closed остановился на first-rollout: OCI layou
 archive для build, first-rollout и exact publication. Tag CI `v1.1.10` успешно
 загрузил эти archive, но затем остановился на clean-tree gate: обычный
 `git status --porcelain` свернул untracked directory и не позволил строго
-сопоставить четыре archive. Candidate `v1.1.11` перечисляет untracked files
-поимённо и разрешает только ожидаемые `*.docker.tar`.
+сопоставить четыре archive. Tag CI `v1.1.11` подтвердил это исправление, но
+сценарий остановился при cleanup: контейнеры создали файлы с UID, недоступным
+runner для удаления temporary root. Candidate `v1.1.12` после остановки
+Compose возвращает ownership только временного bind mount пользователю CI;
+runtime containers сохраняют non-root identity.
 
 ## Риски и предположения
 

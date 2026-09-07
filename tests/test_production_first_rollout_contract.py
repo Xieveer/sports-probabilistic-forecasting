@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from scripts.run_production_first_rollout import (
     _disk_usage_delta,
     _parse_df_disk_usage,
     _parse_memory_usage_bytes,
+    _restore_runtime_root_ownership,
 )
 
 
@@ -226,6 +228,38 @@ def test_clean_worktree_permits_only_downloaded_docker_archives() -> None:
     ]
     assert _clean_worktree_issues("?? artifacts/production-first-rollout.json\n") == [
         "?? artifacts/production-first-rollout.json"
+    ]
+
+
+def test_cleanup_restores_runner_ownership_after_runtime_containers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Cleanup временного root не зависит от UID файлов, созданных контейнером."""
+    commands: list[list[str]] = []
+
+    def record(command: list[str], **_: object) -> None:
+        commands.append(command)
+
+    monkeypatch.setattr("scripts.run_production_first_rollout._run", record)
+
+    _restore_runtime_root_ownership(tmp_path, image="fixture-worker@sha256:test")
+
+    assert commands == [
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--user",
+            "0:0",
+            "--mount",
+            f"type=bind,src={tmp_path},dst=/runtime-root",
+            "--entrypoint",
+            "/bin/chown",
+            "fixture-worker@sha256:test",
+            "-R",
+            f"{os.getuid()}:{os.getgid()}",
+            "/runtime-root",
+        ]
     ]
 
 

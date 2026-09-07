@@ -97,3 +97,8 @@ Tag CI `v1.1.10` подтвердил загрузку Docker archive, но ос
 short porcelain status свернул untracked artifact directory, из-за чего
 fail-closed clean-tree gate отверг его. Candidate `v1.1.11` запрашивает
 поимённый список untracked files и разрешает только четыре ожидаемых archive.
+
+Tag CI `v1.1.11` успешно прошёл clean-tree и загрузку archive, но завершился
+ошибкой только при удалении временного bind mount с файлами runtime UID.
+Candidate `v1.1.12` возвращает ownership temporary root пользователю CI после
+остановки Compose, не изменяя least-privilege runtime boundary.

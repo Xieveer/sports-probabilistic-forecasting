@@ -146,6 +146,21 @@ digest, provenance или publication для `v1.1.10` не были созда�
 существующих предупреждений Sphinx; exact Buildx exporter и внешний tag CI
 пока не выполнялись.
 
+### CI remediation candidate v1.1.12
+
+Tag CI `v1.1.11` ([run 34109926618](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34109926618)) прошёл все release gates, собрал четыре
+Docker archive, загрузил их в local registry и выполнил first-rollout до
+teardown. Он fail-closed завершился при удалении temporary root: runtime
+containers оставили файлы с UID, недоступным GitHub runner. Publication,
+provenance и image digests поэтому не созданы. Candidate `v1.1.12` после
+`compose down` запускает root one-shot только для temporary bind mount и
+возвращает ownership UID/GID runner; public runtime boundary не меняется.
+
+Локально для `v1.1.12` прошли 44 targeted release/rollout/topology tests,
+`make lint`, `make type-check`, `make production-check`, `make test-unit`
+(989 passed), `make docs` и `git diff --check`. `make docs` сохранил 155
+существующих предупреждений Sphinx; внешний tag CI пока не выполнялся.
+
 ### Review evidence Compose remediation
 
 Independent review 2026-09-07 не выявило blocking findings.

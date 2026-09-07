@@ -95,6 +95,12 @@ untracked artifact directory. Candidate `v1.1.11` использует
 `--untracked-files=all`, поэтому whitelist проверяет точные имена четырёх
 `*.docker.tar`, не разрешая посторонние файлы или tracked изменения.
 
+Tag CI `v1.1.11` прошёл этот clean-tree gate, загрузил archive и выполнил
+сценарий до teardown, но runner не смог удалить UID-owned файлы temporary root.
+Candidate `v1.1.12` после `compose down` запускает одноразовый root cleanup
+только для этого temporary bind mount и возвращает ownership UID/GID runner;
+runtime images и Compose services не получают root.
+
 Candidate diff прошёл independent review 2026-09-07 без blocking
 findings и зафиксирован в commit
 `c6c258bf3d6f9c9cad1e33d75dd38ea9666d6648`. Reviewer повторил exact
