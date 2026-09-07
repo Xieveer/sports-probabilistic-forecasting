@@ -185,12 +185,15 @@ rollout и rollback в репозитории управления инфрас�
   `docker load`. Tag CI `v1.1.10` успешно загрузил Docker archive, но остановился
   на clean-tree gate: short porcelain status свернул untracked artifact directory.
   Tag CI `v1.1.11` прошёл этот gate и Docker load, но остановился при cleanup
-  temporary bind mount, созданного runtime UID. Следующий candidate — только
-  `v1.1.12`; до его tag CI
+  temporary bind mount, созданного runtime UID. Tag CI `v1.1.12`
+  ([run 34112802577](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34112802577)) повторил teardown failure: root one-shot после `compose down`
+  не восстановил удаляемость дочерних temporary bind paths. `v1.1.12` запрещён
+  для rollout; следующий candidate не назначен до воспроизводящего исправления.
+  Новый tag после исправления
   обязан выполнить dependency audit,
   rendered-Compose gate и final Worker model-mount gate. Их output, четыре
   image@digest, commit SHA и provenance передаются Operations из CI после tag;
-  до этого v1.1.12 не имеет разрешения на rollout.
+  до этого ни один новый candidate не имеет разрешения на rollout.
 - Локальный `make security` на 2026-08-09 успешно выполнил `pip-audit` для
   locked production runtime dependencies: `No known vulnerabilities found`.
   Он не заменяет dependency/filesystem/image scans опубликованных образов и
@@ -198,11 +201,13 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Артефакт и откат
 
-- Registry и неизменяемый идентификатор image: для v1.1.12 использовать только
-  новые GHCR `image@sha256:digest`; SemVer tag не является runtime ID.
-- Способ доказать происхождение артефакта: итоговый commit SHA, Git tag
-  `v1.1.12`, совпадающий с `pyproject.toml`, CI provenance attestation и
-  отдельный digest каждого runtime image.
+- `v1.1.12` не имеет runtime image: CI не дошёл до `build-push`, image scans,
+  provenance или publication. Не использовать этот SemVer tag, local-registry
+  digest либо archive как rollout artifact.
+- Для будущего candidate registry identity — только новые GHCR
+  `image@sha256:digest`; SemVer tag не является runtime ID. Происхождение
+  доказывают совпадающие commit SHA/tag/version, CI provenance и отдельный
+  digest каждого runtime image.
 - Release evidence v1.1.2 (только historical evidence, не использовать для
   rollout): tag указывает на `eadbdb4bfe979cfdb37b31bd64975d0cfd5ad556`;
   [GitHub Actions run 32239173166](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/32239173166)
@@ -237,7 +242,7 @@ rollout и rollback в репозитории управления инфрас�
 - Процедура и допустимое время отката: до migration вернуть Compose на предыдущий immutable image; после additive migration использовать forward-fix либо восстановить проверенный backup — destructive downgrade запрещён. После действия проверить `/ready`; целевое время определяет Operations Agent.
 - Критерии остановки rollout: health не 200, DB недоступна, crash loop или рост ошибок refresh.
 
-## Pre-release review v1.1.12
+## Pre-release review v1.1.12 — historical failure
 
 | Boundary | Статус и обязательное подтверждение до rollout |
 |---|---|
@@ -252,9 +257,10 @@ rollout и rollback в репозитории управления инфрас�
 | Recovery | **Подтверждено документацией:** rollback source-state/model pointer/images/DB описан; первый model install допускает отсутствие `previous`. |
 | Observability | **Ожидает server-side validation:** labels, dashboard/alert contract и scrubbed telemetry должны быть готовы до runtime start. |
 
-DevOps handoff для tag `v1.1.12`: передать exact four `image@sha256:digest`,
-tag, commit SHA, CI run URL и результаты `rendered Compose`, `final model mount`
-и `staged artifacts` gates. До получения этих dynamic evidence решение — NO-GO.
+DevOps handoff для `v1.1.12` отсутствует: CI остановился на first-rollout,
+поэтому four `image@sha256:digest`, provenance и scan evidence не существуют.
+Решение — NO-GO. Для нового candidate передать эти dynamic evidence только
+после успешного полного tag CI.
 
 ## Нерешённые вопросы
 

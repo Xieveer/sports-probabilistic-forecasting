@@ -101,6 +101,14 @@ Candidate `v1.1.12` после `compose down` запускает однораз�
 только для этого temporary bind mount и возвращает ownership UID/GID runner;
 runtime images и Compose services не получают root.
 
+Tag CI `v1.1.12` ([run 34112802577](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34112802577)) прошёл все release gates, archive,
+local-registry `docker load` и запуск clean scenario, но снова остановился при
+teardown: дочерние temporary bind paths остались неудаляемыми (`Permission
+denied`). Root one-shot не является доказанным исправлением фактической
+ownership/mount topology. `v1.1.12` immutable и запрещён для rollout; publication,
+provenance и published image digests не создавались. TASK остаётся `in_progress`
+до воспроизводящего теста удаляемости дочерних mount paths и нового candidate.
+
 Candidate diff прошёл independent review 2026-09-07 без blocking
 findings и зафиксирован в commit
 `c6c258bf3d6f9c9cad1e33d75dd38ea9666d6648`. Reviewer повторил exact

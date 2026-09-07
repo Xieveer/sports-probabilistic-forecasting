@@ -80,6 +80,13 @@ runner для удаления temporary root. Candidate `v1.1.12` после о
 Compose возвращает ownership только временного bind mount пользователю CI;
 runtime containers сохраняют non-root identity.
 
+Tag CI `v1.1.12` подтвердил все release gates, Docker archive, `docker load`
+и запуск first-rollout, но root one-shot не устранил teardown failure:
+дочерние temporary bind paths вновь остались неудаляемыми (`Permission denied`).
+Тег immutable и запрещён для rollout; publication, provenance и published image
+digests не создавались. Следующая remediation обязана воспроизвести фактическую
+ownership/mount topology и доказать удаляемость дочерних путей до нового tag.
+
 ## Риски и предположения
 
 - Для локального test Object Storage используется отдельный ephemeral endpoint;

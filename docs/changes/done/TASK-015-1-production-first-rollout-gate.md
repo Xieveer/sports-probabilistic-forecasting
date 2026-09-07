@@ -161,6 +161,32 @@ provenance и image digests поэтому не созданы. Candidate `v1.1.
 (989 passed), `make docs` и `git diff --check`. `make docs` сохранил 155
 существующих предупреждений Sphinx; внешний tag CI пока не выполнялся.
 
+### Immutable tag CI chronology v1.1.7–v1.1.12
+
+| Tag | Изменение и цель | Фактический итог CI | Почему тег запрещён для rollout |
+|---|---|---|---|
+| `v1.1.7` | Обновить dependency resolution для `PYSEC-2026-113`. | Dependency/static gates прошли; Compose остановился до build. | Нет artifacts, first-rollout или publication. |
+| `v1.1.8` | Включить обязательный Compose profile `migration`. | Compose прошёл; Worker gate остановился до build. | Read-only Worker не получил writable `/tmp`. |
+| `v1.1.9` | Передать Worker ограниченный tmpfs `/tmp`. | Все release gates и OCI build прошли; first-rollout остановился. | OCI layout несовместим с `docker load`; publication/digests нет. |
+| `v1.1.10` | Перевести build, rollout и publication на Docker archive. | Archive загрузились; clean-tree gate остановил rollout. | Short porcelain скрывал имена archive; publication/digests нет. |
+| `v1.1.11` | Перечислять untracked files поимённо для strict whitelist. | Clean-tree и Docker load прошли; teardown остановился. | Runtime UID оставил неудаляемые temporary files; publication/digests нет. |
+| `v1.1.12` | Вернуть ownership temporary mount runner после `compose down`. | Все gates, archive, `docker load` и clean scenario прошли до teardown; teardown снова завершился `Permission denied`. | Root cleanup не доказал удаляемость фактических bind paths; `build-push`, scans, provenance и publication пропущены. |
+
+### CI result v1.1.12 and required next remediation
+
+Tag CI `v1.1.12` ([run 34112802577](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34112802577)) подтвердил выпускные gates, четыре Docker archive,
+local-registry `docker load` и запуск first-rollout. В финальном cleanup он
+снова не смог удалить файлы `runtime_models`, `source`, `archive` и
+`sync-state` из temporary root (`Permission denied`). Добавленный root one-shot
+не является подтверждённым исправлением. `v1.1.12` нельзя использовать ни как
+runtime tag, ни как handoff artifact: published image digest, image scan,
+provenance и release evidence не созданы.
+
+Следующая remediation должна: (1) воспроизвести UID/GID и permissions всех
+дочерних bind paths после `compose down`; (2) проверить удаляемость, а не только
+состав cleanup-команды; (3) ограничить cleanup exact temporary paths; (4)
+создать новый immutable candidate только после зелёных локальных проверок.
+
 ### Review evidence Compose remediation
 
 Independent review 2026-09-07 не выявило blocking findings.

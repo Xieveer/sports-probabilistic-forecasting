@@ -102,3 +102,10 @@ Tag CI `v1.1.11` успешно прошёл clean-tree и загрузку arch
 ошибкой только при удалении временного bind mount с файлами runtime UID.
 Candidate `v1.1.12` возвращает ownership temporary root пользователю CI после
 остановки Compose, не изменяя least-privilege runtime boundary.
+
+Tag CI `v1.1.12` ([run 34112802577](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34112802577)) подтвердил все release gates, archive и старт
+first-rollout, но teardown снова завершился `Permission denied` для дочерних
+temporary bind paths. Root one-shot не восстановил удаляемость фактических
+mount paths. Immutable tag запрещён для rollout; `build-push`, scans,
+provenance и published digests не запускались. EPIC остаётся `in_progress` до
+воспроизведения topology и нового candidate tag.
