@@ -97,6 +97,25 @@ first-rollout и publication не запускались. Workflow теперь 
 verification прошли. Новый immutable candidate — `v1.1.8`; предыдущий tag
 запрещён для rollout.
 
+Tag CI `v1.1.8` прошёл Compose gate, но Worker image gate остановился до OCI
+build: read-only container не получил writable `/tmp` для Matplotlib. В
+candidate `v1.1.9` gate получает `--tmpfs /tmp:rw,noexec,nosuid,size=512m`,
+как production Worker; локальная проверка runtime image и release-contract прошли.
+
+### Local release evidence v1.1.9
+
+Проверка 2026-09-07 на candidate worktree завершилась успешно:
+
+- targeted release/rollout/topology contracts — 43 passed;
+- rendered Compose gate с profiles `migration`, `worker`, `source-acquisition`,
+  `operational-sync` и final Worker image gate — successful;
+- `make lint`, `make test-unit` (988 passed), `make security`, `make type-check`,
+  `make production-check`, `make docs` и `git diff --check` — successful.
+
+`make docs` сохранил 155 существующих предупреждений Sphinx; ни одно не связано
+с v1.1.9. Tag CI, OCI digests, scans, provenance и production rollout не
+выполнялись и остаются обязательными внешними gates.
+
 ### Review evidence Compose remediation
 
 Independent review 2026-09-07 не выявило blocking findings.

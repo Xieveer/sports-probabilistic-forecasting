@@ -86,3 +86,8 @@ gate с profiles `migration`, `worker`, `source-acquisition`, `operational-sync`
 и verifier завершился успешно; version/docs/type/lock gates также
 прошли. EPIC остаётся `in_progress` до tag CI `v1.1.8` и terminal
 review release evidence.
+
+Tag CI `v1.1.8` прошёл Compose gate, но fail-closed остановился на Worker
+runtime gate: read-only container не получил writable `/tmp` для Matplotlib.
+OCI build, first-rollout и publication не запускались. Candidate `v1.1.9`
+добавляет tmpfs, соответствующий production Compose, и ожидает review/tag CI.

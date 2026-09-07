@@ -66,6 +66,10 @@ filesystem/secret scan, но остановился на rendered Compose contra
 запускались. Исправленный отдельный candidate — `v1.1.8`; `v1.1.7` запрещён
 для rollout.
 
+Tag CI `v1.1.8` прошёл rendered Compose contract, но Worker gate остановился
+до OCI build: read-only container не получил writable `/tmp` для Matplotlib.
+Новый candidate `v1.1.9` добавляет тот же tmpfs contract, что есть у runtime Compose.
+
 ## Риски и предположения
 
 - Для локального test Object Storage используется отдельный ephemeral endpoint;

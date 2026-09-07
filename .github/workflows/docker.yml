@@ -102,6 +102,7 @@ jobs:
           docker run --rm --read-only --network none --user 10001:10001 \
             --entrypoint id sports-forecast-worker-release-gate -g | grep -Fx '10001'
           docker run --rm --read-only --network none --user 10001:10001 \
+            --tmpfs /tmp:rw,noexec,nosuid,size=512m \
             --mount type=bind,src="$source_bundle",dst="/fixtures/source-state/${source_bundle##*/}",readonly \
             --mount type=bind,src="$bootstrap_bundle",dst="/fixtures/canonical-bootstrap/${bootstrap_bundle##*/}",readonly \
             --mount type=bind,src="$model_runtime_root",dst=/app/models,readonly \

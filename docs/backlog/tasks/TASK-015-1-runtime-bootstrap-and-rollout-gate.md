@@ -84,6 +84,10 @@ first-rollout и publication: rendered Compose workflow включал runtime p
 Workflow исправлен и покрыт release-contract test; новый immutable candidate —
 `v1.1.8`. TASK остаётся `in_progress` до его tag CI.
 
+Tag CI `v1.1.8` прошёл Compose gate, но остановился до OCI build на read-only
+Worker gate: отсутствовал writable `/tmp` для Matplotlib. Candidate `v1.1.9`
+добавляет `tmpfs /tmp`, как в runtime Compose; TASK ожидает review/tag CI.
+
 Candidate diff прошёл independent review 2026-09-07 без blocking
 findings и зафиксирован в commit
 `c6c258bf3d6f9c9cad1e33d75dd38ea9666d6648`. Reviewer повторил exact

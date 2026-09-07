@@ -13,7 +13,7 @@ from sports_forecast.service.schemas import HealthResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.1.8"
+RELEASE_VERSION = "1.1.9"
 
 
 def test_package_and_fastapi_publish_same_release_version() -> None:
@@ -121,6 +121,7 @@ def test_worker_release_gate_uses_final_runtime_and_validates_fixture_bundles() 
     command = gate["run"]
 
     assert "--read-only" in command
+    assert "--tmpfs /tmp:rw,noexec,nosuid,size=512m" in command
     assert "--network none" in command
     assert "--user 10001:10001" in command
     assert "--entrypoint python" in command
