@@ -89,6 +89,12 @@ Candidate `v1.1.9` подтвердил writable `/tmp`, но first-rollout ос
 OCI layout не загружается через `docker load`. Candidate `v1.1.10` заменяет
 его единым Docker archive для проверки и publication; TASK ожидает review/tag CI.
 
+Tag CI `v1.1.10` успешно прошёл `docker load`, но fail-closed остановился на
+clean-tree gate до запуска rollout: default `git status --porcelain` свернул
+untracked artifact directory. Candidate `v1.1.11` использует
+`--untracked-files=all`, поэтому whitelist проверяет точные имена четырёх
+`*.docker.tar`, не разрешая посторонние файлы или tracked изменения.
+
 Candidate diff прошёл independent review 2026-09-07 без blocking
 findings и зафиксирован в commit
 `c6c258bf3d6f9c9cad1e33d75dd38ea9666d6648`. Reviewer повторил exact

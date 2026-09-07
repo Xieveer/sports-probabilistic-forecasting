@@ -118,7 +118,7 @@ def _env_values(env_file: Path) -> dict[str, str]:
 
 
 def _clean_worktree_issues(status: str) -> list[str]:
-    """Вернуть все изменения кроме OCI download, разрешённого только CI gate."""
+    """Вернуть все изменения кроме Docker archive, разрешённого только CI gate."""
     return [
         line
         for line in status.splitlines()
@@ -382,7 +382,9 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
     внешнего fixture endpoint; несостоявшийся Docker command остаётся failure.
     """
     started = time.monotonic()
-    worktree_issues = _clean_worktree_issues(_run(["git", "status", "--porcelain"]).stdout)
+    worktree_issues = _clean_worktree_issues(
+        _run(["git", "status", "--porcelain", "--untracked-files=all"]).stdout
+    )
     if worktree_issues:
         raise RuntimeError("release evidence требует clean Git worktree")
     head_commit = _run(["git", "rev-parse", "HEAD"]).stdout.strip()

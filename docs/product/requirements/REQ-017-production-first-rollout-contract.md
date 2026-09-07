@@ -71,7 +71,11 @@ Tag CI `v1.1.8` прошёл rendered Compose contract, но Worker gate ост�
 Tag CI `v1.1.9` прошёл все release gates и собрал четыре prebuilt OCI image
 artifacts, но fail-closed остановился на first-rollout: OCI layout нельзя
 загрузить через `docker load`. Candidate `v1.1.10` использует один Docker
-archive для build, first-rollout и exact publication.
+archive для build, first-rollout и exact publication. Tag CI `v1.1.10` успешно
+загрузил эти archive, но затем остановился на clean-tree gate: обычный
+`git status --porcelain` свернул untracked directory и не позволил строго
+сопоставить четыре archive. Candidate `v1.1.11` перечисляет untracked files
+поимённо и разрешает только ожидаемые `*.docker.tar`.
 
 ## Риски и предположения
 

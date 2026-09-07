@@ -92,3 +92,8 @@ runtime gate: read-only container не получил writable `/tmp` для Mat
 Tag CI `v1.1.9` подтвердил tmpfs gate и OCI build, но fail-closed остановился
 на first-rollout: OCI layout несовместим с `docker load`. Candidate `v1.1.10`
 передаёт один Docker archive через build, rollout и publication.
+
+Tag CI `v1.1.10` подтвердил загрузку Docker archive, но остановился до rollout:
+short porcelain status свернул untracked artifact directory, из-за чего
+fail-closed clean-tree gate отверг его. Candidate `v1.1.11` запрашивает
+поимённый список untracked files и разрешает только четыре ожидаемых archive.

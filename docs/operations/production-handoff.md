@@ -13,7 +13,7 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Идентификация и ответственность
 
-- Название сервиса: Sports Probabilistic Forecasting 1.1.10.
+- Название сервиса: Sports Probabilistic Forecasting 1.1.11.
 - Репозиторий и основной branch: SportsProbabilisticForecasting, `main`.
 - Владелец приложения: пользователь.
 - Владелец решения о production-развёртывании: пользователь.
@@ -182,11 +182,13 @@ rollout и rollback в репозитории управления инфрас�
   ему не был передан writable `/tmp`, требуемый Matplotlib cache. Этот тег также
   запрещён для rollout. Tag CI `v1.1.9` прошёл release gates и OCI build, но
   остановился до publication на first-rollout: OCI layout несовместим с
-  `docker load`. Следующий candidate — только `v1.1.10`; до его tag CI
+  `docker load`. Tag CI `v1.1.10` успешно загрузил Docker archive, но остановился
+  на clean-tree gate: short porcelain status свернул untracked artifact directory.
+  Следующий candidate — только `v1.1.11`; до его tag CI
   обязан выполнить dependency audit,
   rendered-Compose gate и final Worker model-mount gate. Их output, четыре
   image@digest, commit SHA и provenance передаются Operations из CI после tag;
-  до этого v1.1.10 не имеет разрешения на rollout.
+  до этого v1.1.11 не имеет разрешения на rollout.
 - Локальный `make security` на 2026-08-09 успешно выполнил `pip-audit` для
   locked production runtime dependencies: `No known vulnerabilities found`.
   Он не заменяет dependency/filesystem/image scans опубликованных образов и
@@ -194,10 +196,10 @@ rollout и rollback в репозитории управления инфрас�
 
 ## Артефакт и откат
 
-- Registry и неизменяемый идентификатор image: для v1.1.10 использовать только
+- Registry и неизменяемый идентификатор image: для v1.1.11 использовать только
   новые GHCR `image@sha256:digest`; SemVer tag не является runtime ID.
 - Способ доказать происхождение артефакта: итоговый commit SHA, Git tag
-  `v1.1.10`, совпадающий с `pyproject.toml`, CI provenance attestation и
+  `v1.1.11`, совпадающий с `pyproject.toml`, CI provenance attestation и
   отдельный digest каждого runtime image.
 - Release evidence v1.1.2 (только historical evidence, не использовать для
   rollout): tag указывает на `eadbdb4bfe979cfdb37b31bd64975d0cfd5ad556`;
@@ -233,7 +235,7 @@ rollout и rollback в репозитории управления инфрас�
 - Процедура и допустимое время отката: до migration вернуть Compose на предыдущий immutable image; после additive migration использовать forward-fix либо восстановить проверенный backup — destructive downgrade запрещён. После действия проверить `/ready`; целевое время определяет Operations Agent.
 - Критерии остановки rollout: health не 200, DB недоступна, crash loop или рост ошибок refresh.
 
-## Pre-release review v1.1.10
+## Pre-release review v1.1.11
 
 | Boundary | Статус и обязательное подтверждение до rollout |
 |---|---|
@@ -248,7 +250,7 @@ rollout и rollback в репозитории управления инфрас�
 | Recovery | **Подтверждено документацией:** rollback source-state/model pointer/images/DB описан; первый model install допускает отсутствие `previous`. |
 | Observability | **Ожидает server-side validation:** labels, dashboard/alert contract и scrubbed telemetry должны быть готовы до runtime start. |
 
-DevOps handoff для tag `v1.1.10`: передать exact four `image@sha256:digest`,
+DevOps handoff для tag `v1.1.11`: передать exact four `image@sha256:digest`,
 tag, commit SHA, CI run URL и результаты `rendered Compose`, `final model mount`
 и `staged artifacts` gates. До получения этих dynamic evidence решение — NO-GO.
 

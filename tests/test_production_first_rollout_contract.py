@@ -136,6 +136,7 @@ def test_first_rollout_runner_and_tag_gate_are_checked_in() -> None:
     assert "has_table_privilege" in runner_source
     assert "rollout_restore_sentinel" in runner_source
     assert "_clean_worktree_issues" in runner_source
+    assert '"--untracked-files=all"' in runner_source
     assert "runtime_identity_probes" in runner_source
     assert "run_production_first_rollout.py" in workflow
     assert "workflow_call:" in workflow
@@ -217,8 +218,8 @@ def test_handoff_describes_compose_secrets_as_file_paths() -> None:
     assert "SF_POSTGRES_PASSWORD_FILE=" in systemd_profile
 
 
-def test_clean_worktree_permits_only_downloaded_oci_artifacts() -> None:
-    """OCI download не маскирует изменения tracked files либо другие untracked paths."""
+def test_clean_worktree_permits_only_downloaded_docker_archives() -> None:
+    """Загрузка archive не маскирует tracked files либо другие untracked paths."""
     assert _clean_worktree_issues("?? artifacts/release-oci/api.docker.tar\n") == []
     assert _clean_worktree_issues(" M Dockerfile\n?? artifacts/release-oci/api.docker.tar\n") == [
         " M Dockerfile"

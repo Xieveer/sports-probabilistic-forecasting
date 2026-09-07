@@ -129,6 +129,23 @@ test не допускает рассинхронизации exporter-а и con
 `make lint`, `make type-check`, `make production-check`, `make docs`,
 `make test-unit` (988 passed) и `git diff --check`.
 
+### CI remediation candidate v1.1.11
+
+Tag CI `v1.1.10` ([run 34104153452](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34104153452)) прошёл release gates и загрузил все
+четыре Docker archive; следовательно, несовместимость OCI layout устранена.
+Runner затем fail-closed остановился до rollout с `release evidence требует clean
+Git worktree`: `git status --porcelain` свернул untracked artifact directory и
+не выдал имена archive для строгого whitelist. Candidate `v1.1.11` добавляет
+`--untracked-files=all`; разрешены только exact `artifacts/release-oci/*.docker.tar`,
+а tracked и прочие untracked paths по-прежнему являются ошибкой. Никакие image
+digest, provenance или publication для `v1.1.10` не были созданы.
+
+Локально для `v1.1.11` прошли 43 targeted release/rollout/topology tests,
+`make lint`, `make type-check`, `make production-check`, `make test-unit`
+(988 passed), `make docs` и `git diff --check`. `make docs` сохранил 155
+существующих предупреждений Sphinx; exact Buildx exporter и внешний tag CI
+пока не выполнялись.
+
 ### Review evidence Compose remediation
 
 Independent review 2026-09-07 не выявило blocking findings.
