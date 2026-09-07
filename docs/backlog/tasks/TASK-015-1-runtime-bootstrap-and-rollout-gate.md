@@ -115,6 +115,26 @@ findings и зафиксирован в commit
 fixture → Compose `migration/worker/source-acquisition/operational-sync` →
 verifier gate, release contract, mypy, docs, frozen lock и `git diff --check`.
 
+### Remediation cleanup topology (2026-09-07)
+
+Локальная remediation исправляет подтверждённую причину `v1.1.12`: прежний
+root one-shot возвращал ownership внутреннего `TemporaryDirectory` runner, а
+не четырёх дочерних fixture bind mounts, которые фактически изменяют runtime
+containers. Cleanup теперь получает только exact mounts `runtime_models`,
+`canonical_source`, `operational_archive` и `archive_sync_state`, возвращает
+их ownership UID/GID runner после `compose down`, а workflow явно выполняет
+`rm -rf` временного fixture root до завершения шага. Таким образом удаляемость
+проверяется как часть CI-команды, а не неявным `trap` после неё.
+
+Локально выполнены: targeted first-rollout/topology tests (35 passed),
+`make test-unit` (990 passed), `make lint`, `make type-check`,
+`make production-check`, `make security`, `make docs` и `git diff --check`.
+Sphinx сохранил одно известное предупреждение об отсутствующем `_static`.
+Полный сценарий намеренно не запускался локально: он требует exact immutable
+runtime images, создаваемые tag CI. TASK остаётся `in_progress` до нового
+immutable candidate и его успешного first-rollout, scan, provenance и
+publication evidence.
+
 ### Independent review (2026-09-07)
 
 - Blocking findings: не обнаружены.

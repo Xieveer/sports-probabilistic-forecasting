@@ -194,6 +194,12 @@ rollout и rollback в репозитории управления инфрас�
   rendered-Compose gate и final Worker model-mount gate. Их output, четыре
   image@digest, commit SHA и provenance передаются Operations из CI после tag;
   до этого ни один новый candidate не имеет разрешения на rollout.
+- Локальная remediation после `v1.1.12` возвращает ownership не внутреннего
+  temporary root runner, а exact дочерних fixture bind paths (`runtime_models`,
+  `canonical_source`, `operational_archive`, `archive_sync_state`) и явно
+  удаляет fixture root в CI-шаге. Это ещё не release evidence: новый immutable
+  tag обязан подтвердить полный cleanup, затем image scans, provenance и
+  publication до заполнения handoff в `candidate`.
 - Локальный `make security` на 2026-08-09 успешно выполнил `pip-audit` для
   locked production runtime dependencies: `No known vulnerabilities found`.
   Он не заменяет dependency/filesystem/image scans опубликованных образов и

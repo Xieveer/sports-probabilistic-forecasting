@@ -148,6 +148,33 @@ def _restore_runtime_root_ownership(runtime_root: Path, *, image: str) -> None:
     )
 
 
+def _restore_fixture_mount_ownership(mounts: dict[str, Path], *, image: str) -> None:
+    """Вернуть ownership точных fixture bind mount пользователю CI перед удалением."""
+    required_mounts = (
+        "runtime_models",
+        "canonical_source",
+        "operational_archive",
+        "archive_sync_state",
+    )
+    if tuple(mounts) != required_mounts:
+        raise ValueError("cleanup должен получить точный набор runtime fixture mounts")
+
+    command = ["docker", "run", "--rm", "--user", "0:0"]
+    for name in required_mounts:
+        command.extend(["--mount", f"type=bind,src={mounts[name]},dst=/cleanup/{name}"])
+    command.extend(
+        [
+            "--entrypoint",
+            "/bin/chown",
+            image,
+            "-R",
+            f"{os.getuid()}:{os.getgid()}",
+            "/cleanup",
+        ]
+    )
+    _run(command, timeout=180)
+
+
 def _service_status(compose: list[str]) -> list[dict[str, Any]]:
     """Сохранить redacted health/restart status без логов и environment."""
     output = _run([*compose, "ps", "--format", "json"]).stdout.strip()
@@ -468,6 +495,12 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
             encoding="utf-8",
         )
         verify_contract(rendered, model_runtime_root=Path(values["SF_MODEL_RUNTIME_ROOT"]))
+        fixture_mounts = {
+            "runtime_models": fixtures["runtime_models"],
+            "canonical_source": Path(values["SF_CANONICAL_SOURCE_ROOT"]),
+            "operational_archive": Path(values["SF_OPERATIONAL_ARCHIVE_ROOT"]),
+            "archive_sync_state": Path(values["SF_ARCHIVE_SYNC_STATE_ROOT"]),
+        }
         evidence["model_bundle_id"] = (fixtures["runtime_models"] / "current").resolve().name
         evidence["bootstrap_id"] = fixtures["bootstrap"].name
         evidence["source_state_id"] = fixtures["source_state"].name
@@ -1059,6 +1092,7 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
                 ["docker", "rm", "-f", f"{project_name}-minio"], capture_output=True, check=False
             )
             _run([*compose, "down", "--volumes", "--remove-orphans"], timeout=180)
+            _restore_fixture_mount_ownership(fixture_mounts, image=refs["SF_WORKER_IMAGE"])
             _restore_runtime_root_ownership(runtime_root, image=refs["SF_WORKER_IMAGE"])
     evidence["elapsed_seconds"] = round(time.monotonic() - started, 3)
     evidence_path.parent.mkdir(parents=True, exist_ok=True)

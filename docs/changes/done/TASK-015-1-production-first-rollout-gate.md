@@ -187,6 +187,25 @@ provenance и release evidence не созданы.
 состав cleanup-команды; (3) ограничить cleanup exact temporary paths; (4)
 создать новый immutable candidate только после зелёных локальных проверок.
 
+### Cleanup topology remediation (2026-09-07)
+
+Исправлена доказанная причина teardown failure: cleanup `v1.1.12` монтировал
+внутренний temporary root runner, тогда как runtime ownership менял четыре
+отдельных fixture bind mounts. Новый cleanup монтирует и рекурсивно возвращает
+ownership только `runtime_models`, `canonical_source`, `operational_archive`
+и `archive_sync_state`; после runner явно удаляет fixture root в самом шаге
+workflow. Unit-контракт фиксирует exact mounts, а workflow-контракт — явное
+удаление до exit, поэтому разрешение на cleanup измеряется CI, а не зависит от
+срабатывания shell trap.
+
+Выполненные проверки: targeted first-rollout/topology tests — 35 passed;
+`make test-unit` — 990 passed; `make lint`, `make type-check`,
+`make production-check`, `make security`, `make docs`, `git diff --check` —
+passed. `make docs` имеет одно существующее предупреждение об `_static`.
+Полный Docker rollout не запускался локально, поскольку ему необходимы exact
+immutable images из tag CI. Решение для rollout остаётся **NO-GO** до нового
+candidate tag с успешными first-rollout, image scans, provenance и publication.
+
 ### Review evidence Compose remediation
 
 Independent review 2026-09-07 не выявило blocking findings.

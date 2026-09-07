@@ -16,6 +16,7 @@ from scripts.run_production_first_rollout import (
     _disk_usage_delta,
     _parse_df_disk_usage,
     _parse_memory_usage_bytes,
+    _restore_fixture_mount_ownership,
     _restore_runtime_root_ownership,
 )
 
@@ -263,6 +264,50 @@ def test_cleanup_restores_runner_ownership_after_runtime_containers(
     ]
 
 
+def test_cleanup_restores_exact_fixture_mounts_owned_by_runtime(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Cleanup возвращает ownership только путей, переданных в Compose."""
+    commands: list[list[str]] = []
+    mounts = {
+        "runtime_models": tmp_path / "runtime_models",
+        "canonical_source": tmp_path / "source" / "nhl",
+        "operational_archive": tmp_path / "archive",
+        "archive_sync_state": tmp_path / "sync-state",
+    }
+
+    def record(command: list[str], **_: object) -> None:
+        commands.append(command)
+
+    monkeypatch.setattr("scripts.run_production_first_rollout._run", record)
+
+    _restore_fixture_mount_ownership(mounts, image="fixture-worker@sha256:test")
+
+    assert commands == [
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--user",
+            "0:0",
+            "--mount",
+            f"type=bind,src={mounts['runtime_models']},dst=/cleanup/runtime_models",
+            "--mount",
+            f"type=bind,src={mounts['canonical_source']},dst=/cleanup/canonical_source",
+            "--mount",
+            f"type=bind,src={mounts['operational_archive']},dst=/cleanup/operational_archive",
+            "--mount",
+            f"type=bind,src={mounts['archive_sync_state']},dst=/cleanup/archive_sync_state",
+            "--entrypoint",
+            "/bin/chown",
+            "fixture-worker@sha256:test",
+            "-R",
+            f"{os.getuid()}:{os.getgid()}",
+            "/cleanup",
+        ]
+    ]
+
+
 def test_workflow_checks_clean_checkout_before_oci_download() -> None:
     """Downloaded artifact не может скрыть исходную грязь checkout."""
     workflow = (PROJECT_ROOT / ".github/workflows/production-first-rollout-contract.yml").read_text(
@@ -272,6 +317,8 @@ def test_workflow_checks_clean_checkout_before_oci_download() -> None:
     assert workflow.index("Verify clean checkout before OCI download") < workflow.index(
         "Download prebuilt OCI images"
     )
+    assert 'rm -rf "$fixture_root"' in workflow
+    assert 'fixture_root=""' in workflow
 
 
 def test_log_redaction_gate_rejects_fixture_secret(tmp_path: Path) -> None:

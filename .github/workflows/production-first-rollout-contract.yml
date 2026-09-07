@@ -76,7 +76,7 @@ jobs:
       - name: Execute clean first-rollout path
         run: |
           fixture_root="$(mktemp -d)"
-          trap 'rm -rf "$fixture_root"' EXIT
+          trap 'test -z "$fixture_root" || rm -rf "$fixture_root"' EXIT
           postgres_image="postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94"
           docker pull "$postgres_image"
           api_image="$(docker image inspect --format='{{index .RepoDigests 0}}' localhost:5000/sf-rollout-api:${GITHUB_SHA})"
@@ -90,6 +90,8 @@ jobs:
           uv run python scripts/run_production_first_rollout.py \
             --env-file "$fixture_root/production.env" \
             --evidence artifacts/production-first-rollout.json --app-version "${{ steps.release.outputs.version }}"
+          rm -rf "$fixture_root"
+          fixture_root=""
       - name: Publish redacted first-rollout evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
