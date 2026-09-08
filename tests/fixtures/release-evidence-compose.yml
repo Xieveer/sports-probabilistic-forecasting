@@ -1,0 +1,25 @@
+services:
+  db:
+    image: postgres@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  api:
+    image: ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    user: "10001:10001"
+    command: ["api"]
+  telegram-bot:
+    image: ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    user: "10001:10001"
+  source-acquirer:
+    image: ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    user: "10001:10001"
+  worker:
+    image: ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    user: "10001:10001"
+  archive-sync:
+    image: ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    user: "10001:10001"
+  migrator:
+    image: ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    user: "10001:10001"
+    command: ["alembic", "upgrade", "head"]
+  role-bootstrap:
+    image: postgres@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb

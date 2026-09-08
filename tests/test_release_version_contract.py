@@ -13,7 +13,7 @@ from sports_forecast.service.schemas import HealthResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.1.13"
+RELEASE_VERSION = "1.1.14"
 
 
 def test_package_and_fastapi_publish_same_release_version() -> None:
@@ -45,6 +45,33 @@ def test_release_workflow_publishes_only_exact_semver_image_tag() -> None:
     )
     assert '"${IMAGE_NAME}:${GITHUB_REF_NAME#v}"' in publish_step["run"]
     assert "latest" not in publish_step["run"]
+
+
+def test_evidence_workflow_is_manual_and_keeps_dynamic_facts_outside_application_tag() -> None:
+    """Evidence проверяется отдельным manual gate после application pipeline."""
+    workflow = yaml.safe_load(
+        (PROJECT_ROOT / ".github" / "workflows" / "release-evidence.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert set(workflow[True]) == {"workflow_dispatch"}
+    command = workflow["jobs"]["verify-evidence"]["steps"][-1]["run"]
+    assert "verify_release_evidence.py" in command
+    assert "release-manifest.json" in command
+    assert 'mkdir -p "$fixture_root"' in command
+    assert '"$source_path/scripts/verify_release_evidence.py"' in command
+    assert '"$source_path/scripts/build_production_compose_env_fixture.py"' in command
+    assert 'source_path="$GITHUB_WORKSPACE/source"' in command
+    assert 'evidence_path="$GITHUB_WORKSPACE/evidence"' in command
+    checkouts = [step for step in workflow["jobs"]["verify-evidence"]["steps"] if "uses" in step]
+    assert checkouts[1]["with"]["ref"] == "v1.1.14"
+    handoff = (PROJECT_ROOT / "docs" / "operations" / "production-handoff.md").read_text(
+        encoding="utf-8"
+    )
+    assert "- Статус подготовки: `draft`" in handoff
+    assert "v1.1.12" not in handoff
+    assert "v1.1.14-evidence.1" in handoff
+    assert "--handoff docs/operations/production-handoff.md" in handoff
 
 
 def test_docker_publish_waits_for_security_rollout_gates_and_attests_digest() -> None:

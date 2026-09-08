@@ -136,6 +136,10 @@ security:
 production-check:
 	uv run python scripts/validate_production_readiness.py
 
+# Проверка evidence branch до создания immutable evidence tag. Аргументы задаёт release owner.
+verify-release-evidence:
+	uv run python scripts/verify_release_evidence.py $(EVIDENCE_GATE_ARGS)
+
 # Non-mutating acceptance уже запущенного candidate; все значения задаёт оператор.
 acceptance-check:
 	uv run python scripts/acceptance_check.py \

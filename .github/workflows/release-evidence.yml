@@ -1,0 +1,75 @@
+name: Release evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      evidence_ref:
+        description: "Immutable evidence commit или защищённая evidence branch"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.2
+        with:
+          ref: ${{ inputs.evidence_ref }}
+          path: evidence
+          fetch-depth: 0
+
+      - name: Read source tag without executing evidence code
+        id: manifest
+        run: |
+          source_tag="$(jq --exit-status --raw-output '.source_tag | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))' evidence/deploy/release-manifest.json)"
+          echo "source_tag=$source_tag" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.2
+        with:
+          ref: v1.1.14
+          path: source
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: source/uv.lock
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --directory source --frozen --python 3.12 --group dev
+
+      - name: Verify candidate handoff and immutable release evidence
+        run: |
+          source_path="$GITHUB_WORKSPACE/source"
+          evidence_path="$GITHUB_WORKSPACE/evidence"
+          manifest="$evidence_path/deploy/release-manifest.json"
+          handoff="$evidence_path/docs/operations/production-handoff.md"
+          test -f "$manifest"
+          source_tag="v1.1.14"
+          test "$(jq --raw-output '.source_tag' "$manifest")" = "$source_tag"
+          app_version="$(uv run --directory "$source_path" python -c 'import tomllib; from pathlib import Path; print(tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"])')"
+          fixture_root="${RUNNER_TEMP}/release-evidence"
+          mkdir -p "$fixture_root"
+          uv run --directory "$source_path" python "$source_path/scripts/build_production_compose_env_fixture.py" \
+            --output "$fixture_root/production.env" \
+            --root "$fixture_root" \
+            --app-version "$app_version" \
+            --postgres-image "$(jq --raw-output '.images.postgres' "$manifest")" \
+            --api-image "$(jq --raw-output '.images.api' "$manifest")" \
+            --worker-image "$(jq --raw-output '.images.worker' "$manifest")" \
+            --bot-image "$(jq --raw-output '.images.telegram_bot' "$manifest")" \
+            --archive-sync-image "$(jq --raw-output '.images.archive_sync' "$manifest")"
+          docker compose --env-file "$fixture_root/production.env" -f "$source_path/docker-compose.prod.yml" --profile migration --profile worker --profile source-acquisition --profile operational-sync config > "$fixture_root/rendered.yml"
+          uv run --directory "$source_path" python "$source_path/scripts/verify_release_evidence.py" \
+            --manifest "$manifest" \
+            --rendered-compose "$fixture_root/rendered.yml" \
+            --repository-root "$source_path" \
+            --source-tag "$source_tag" \
+            --version "$app_version" \
+            --handoff "$handoff"
