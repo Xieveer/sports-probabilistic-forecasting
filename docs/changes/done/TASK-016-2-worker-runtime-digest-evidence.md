@@ -45,6 +45,7 @@ Deployment не выполнялся.
 
 ## External finalization и риски
 
-Annotated tag `v1.1.14-evidence.2` создаётся только после final manual gate exact evidence
-commit. Existing CI/Security/Docker/first-rollout URLs остаются в handoff; deployment,
-migrations, bootstrap import, scheduler и secrets не затрагивались.
+`v1.1.14-evidence.2` сохранён immutable после успешного runtime gate. Revision
+`v1.1.14-evidence.3` добавляет required production-handoff structure и создаётся только после
+final manual gate exact evidence commit. Existing CI/Security/Docker/first-rollout URLs остаются
+в handoff; deployment, migrations, bootstrap import, scheduler и secrets не затрагивались.

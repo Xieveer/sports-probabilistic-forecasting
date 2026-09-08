@@ -6,11 +6,48 @@
 - Владелец приложения и решения о rollout: пользователь.
 - source_tag: `v1.1.14`
 - source_commit: `9daf2d5bb040a5b8860961a12cb81a48997eaeac`
-- evidence_tag: `v1.1.14-evidence.2`
+- evidence_tag: `v1.1.14-evidence.3`
 
 Evidence tag создаётся только после успешного evidence gate и является annotated,
 immutable указателем на этот evidence commit. Его commit SHA намеренно не записан
 в самого себя: Operations получает tag и разрешает его externally, без self-reference.
+
+## Идентификация и ответственность
+
+Контракт относится только к candidate `v1.1.14`; владелец rollout — пользователь.
+Operations не меняет source tag, image references или scope без нового evidence revision.
+
+## Runtime и конфигурация
+
+Compose получает только pinned references из manifest и secrets через ранее настроенные
+server-side files. Значения secrets в handoff не записываются; application services используют
+UID/GID `10001:10001`.
+
+## Healthcheck и smoke-проверка
+
+После отдельного approval Operations выполняет только `/health`, `/ready`, `/docs` и выбранную
+known prediction. До production rollout acceptance-команда не запускается: `make acceptance-check`
+выполняется Operations только с approved runtime inputs.
+
+## Данные и совместимость
+
+До migration проверяются source-state, canonical bootstrap и current model bundle. Migration
+выполняет только отдельный migrator после verified PostgreSQL backup.
+
+## Наблюдаемость
+
+Перед запуском Operations проверяет telemetry, active incidents и доступность логов. Stop criteria
+содержат crash loop, DB failure и неуспешные readiness/health probes.
+
+## Артефакт и откат
+
+Rollback до migration допускается только на предшествующие immutable references; после additive
+migration применяется forward-fix либо verified backup restore. Destructive downgrade запрещён.
+
+## Нерешённые вопросы
+
+Production rollout, migrations, bootstrap import, scheduler и Telegram delivery не одобрены и не
+выполнялись. Protected-tag policy и серверные preflight checks остаются обязанностью Operations.
 
 ## Подтверждённые gates
 

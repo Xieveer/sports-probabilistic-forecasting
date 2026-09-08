@@ -78,7 +78,7 @@ def test_evidence_workflow_is_manual_and_keeps_dynamic_facts_outside_application
     )
     assert "- Статус подготовки: `candidate`" in handoff
     assert "v1.1.12" not in handoff
-    assert "v1.1.14-evidence.2" in handoff
+    assert "v1.1.14-evidence.3" in handoff
     assert "--handoff docs/operations/production-handoff.md" in handoff
 
 
