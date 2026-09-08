@@ -11,9 +11,11 @@
 runnable Worker manifest
 `sha256:3f802d34f6673afa7a3df74e6fa89554a77170856108ef2347306e752ee89325`.
 
-В `deploy/release-manifest.json` для evidence.2 заменён только `images.worker`.
-Application `v1.1.14`, source commit `9daf2d5bb040a5b8860961a12cb81a48997eaeac`
-и остальные четыре runtime references не изменены. Deployment не выполнялся.
+В `deploy/release-manifest.json` для evidence.2 сначала заменён `images.worker`. External
+gate затем доказал тот же provenance-referrer defect у API, Telegram bot и archive-sync;
+их references также заменены на runnable subject manifests. Application `v1.1.14`, source
+commit `9daf2d5bb040a5b8860961a12cb81a48997eaeac` и PostgreSQL reference не изменены.
+Deployment не выполнялся.
 
 ## Изменённые границы
 

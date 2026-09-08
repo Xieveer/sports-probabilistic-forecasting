@@ -31,10 +31,10 @@ CI-контуре с local registry и redacted evidence. Новый Docker run 
 ## Immutable runtime references
 
 - SF_POSTGRES_IMAGE: `postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94`
-- api: published; linux/amd64; image scan; provenance; `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:736a96cb4ece6f5dfe369462851f757e47ba847ea94e1e827969106439870176`
+- api: published; linux/amd64; image scan; provenance; `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:b685fcf6218a8df39a2083282eda3c0285c9d258a681e14ea2cd1a009ab2498c`
 - worker: published; linux/amd64; image scan; provenance; `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:3f802d34f6673afa7a3df74e6fa89554a77170856108ef2347306e752ee89325`
-- telegram_bot: published; linux/amd64; image scan; provenance; `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:dc442b3c3f227b16884adff696d6afded982cf049b83a6abd91b305f175c3fba`
-- archive_sync: published; linux/amd64; image scan; provenance; `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:1db2271fd8690dc83c04aae40a0936602f654b3f7b2209b61d2098ca0d936c2d`
+- telegram_bot: published; linux/amd64; image scan; provenance; `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:b96c98c7a16f3e9104d6b862cc76c01b7df79dd21683a7ef249e0c17bf4a31ba`
+- archive_sync: published; linux/amd64; image scan; provenance; `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:3faa489816edf7cf123e390ff1da23992f183faa3a2ac8d6521c69e67944f833`
 
 `deploy/release-manifest.json` из этого commit является единственным декларативным
 источником runtime references; manifest не содержит secrets, credentials, IDs,
@@ -49,9 +49,10 @@ identifiers.
 
 В `v1.1.14-evidence.1` был записан `sha256:c963ed…`, то есть Sigstore/SLSA
 provenance referrer с пустым OCI config, а не его subject image. Поэтому Docker
-production-сервера не мог разрешить из него `linux/amd64`. В evidence.2 только
-`images.worker` заменён на runnable subject manifest `sha256:3f802d…`; остальные
-четыре immutable references сохранены. Docker pipeline теперь получает digest из
+production-сервера не мог разрешить из него `linux/amd64`. Независимый mandatory gate
+показал тот же referrer defect у API, Telegram bot и archive-sync, поэтому evidence.2
+заменяет все четыре application references на их runnable subject manifests; PostgreSQL
+reference сохранён. Docker pipeline теперь получает digest из
 tagged remote manifest, проверяет его через `docker buildx imagetools inspect` на
 `linux/amd64`, а для Worker выполняет pull, image inspect и non-root read-only
 runtime import smoke по exact reference.
