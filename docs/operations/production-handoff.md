@@ -18,6 +18,7 @@ immutable указателем на этот evidence commit. Его commit SHA 
 - Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34231526630
 - Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34231529542
 - first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34231529542
+- evidence.2 runtime gate: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34244384888
 
 CI и Security относятся к review/evidence-base commit
 `c50ec4073ec88b6de833626a977965122bfaa942`; Docker и first-rollout относятся к

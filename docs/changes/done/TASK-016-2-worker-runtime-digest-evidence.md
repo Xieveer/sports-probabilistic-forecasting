@@ -39,11 +39,12 @@ Deployment не выполнялся.
 - **Evidence:** fixture Compose render и `scripts/verify_release_evidence.py` завершились
   без ошибок.
 - **Quality:** `make lint`, `make type-check` и `git diff --check` прошли.
+- **External gate:** [Release evidence run 34244384888](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34244384888)
+  успешно проверил четыре application manifests на `linux/amd64`, exact Worker pull,
+  image inspect и non-root read-only import smoke.
 
 ## External finalization и риски
 
-Новый GitHub manual evidence run, annotated tag `v1.1.14-evidence.2`, remote protection tag
-и final CI/Security/Docker/scan/provenance URLs ещё не созданы этой рабочей копией: GitHub CLI
-не смог получить credentials из keyring (`Timeout trying to log in`). Нельзя создавать tag до
-успешного manual gate. Production deployment, migrations, bootstrap import, scheduler и secrets
-не затрагивались.
+Annotated tag `v1.1.14-evidence.2` создаётся только после final manual gate exact evidence
+commit. Existing CI/Security/Docker/first-rollout URLs остаются в handoff; deployment,
+migrations, bootstrap import, scheduler и secrets не затрагивались.
