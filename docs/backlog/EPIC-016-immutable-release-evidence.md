@@ -24,5 +24,11 @@ migration и first deployment остаются обязанностью Operatio
 
 ## Полное EPIC review
 
-Ожидает external pipeline evidence, independent review и проверенный commit. Evidence commit/tag
+Independent review локального scope завершено без blocking findings. Reviewer
+независимо выполнил `make type-check`, targeted release tests (18 passed) и
+`git diff --check`. Проверенный commit:
+`9daf2d5bb040a5b8860961a12cb81a48997eaeac`.
+
+Полное EPIC review и статус `done` ожидают external CI/Security/Docker/first-rollout
+evidence, publication/scans/provenance/Linux amd64 и protected tag policy. Evidence commit/tag
 создаётся только после successful application tag pipeline.

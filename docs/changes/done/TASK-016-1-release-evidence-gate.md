@@ -32,7 +32,7 @@ self-referential/dynamic evidence, а отдельный evidence commit до с
 
 | Команда / наблюдение | Результат |
 |---|---|
-| `uv run pytest tests/test_release_evidence.py tests/test_release_version_contract.py tests/test_production_readiness_validation.py -q` | 17 passed. |
+| `uv run pytest tests/test_release_evidence.py tests/test_release_version_contract.py tests/test_production_readiness_validation.py -q` | 18 passed. |
 | `make production-check` | passed. |
 | `make lint` | passed. |
 | `make type-check` | passed (pinned pre-commit mypy 1.11.2). |
@@ -45,8 +45,11 @@ self-referential/dynamic evidence, а отдельный evidence commit до с
 - Документация: [handoff](../../operations/production-handoff.md),
   [REQ-018](../../product/requirements/REQ-018-immutable-release-evidence-v1-1-14.md),
   [ADR-017](../../architecture/adr/ADR-017-two-phase-release-evidence.md).
-- Review / security: не выполнялось независимо.
-- Commit/push: ожидает reviewer; tags не создавались.
+- Independent review / security: blocking findings по trusted execution, exact image
+  repositories, completeness handoff, evidence tag binding и documented command закрыты
+  через TDD; повторное review не нашло blocking findings.
+- Проверенный commit: `9daf2d5bb040a5b8860961a12cb81a48997eaeac`.
+- Push и tags не выполнялись.
 - Follow-up: successful application tag pipeline, protected tag policy, evidence commit/tag и
   independent review EPIC-016.
 
