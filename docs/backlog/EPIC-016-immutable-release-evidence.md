@@ -16,6 +16,7 @@
 | Задача | Результат | Зависимости | Проверка | Статус |
 |---|---|---|---|---|
 | [TASK-016-1](tasks/TASK-016-1-release-evidence-gate.md) | Validator, workflow, static handoff и release docs | ADR-017 | targeted tests + Compose render | done |
+| [TASK-016-2](tasks/TASK-016-2-worker-runtime-digest-evidence.md) | Runnable Worker digest, platform/runtime gate и evidence.2 | ADR-017 | targeted tests + exact registry smoke | in_progress |
 
 ## Риски и rollout
 

@@ -70,6 +70,25 @@ def test_evidence_manifest_validates_release_identity_and_rendered_compose(tmp_p
     assert errors == []
 
 
+def test_evidence_accepts_next_immutable_revision_for_same_application_release(
+    tmp_path: Path,
+) -> None:
+    """Evidence.2 исправляет evidence, не меняя application release identity."""
+    manifest = _manifest()
+    manifest["evidence_tag"] = "v1.1.14-evidence.2"
+    manifest_path = tmp_path / "release-manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    errors = validate_evidence(
+        manifest_path,
+        expected_version="1.1.14",
+        expected_source_commit=SOURCE_COMMIT,
+        rendered_compose_path=PROJECT_ROOT / "tests" / "fixtures" / "release-evidence-compose.yml",
+    )
+
+    assert errors == []
+
+
 def test_evidence_requires_candidate_handoff_with_source_binding(tmp_path: Path) -> None:
     """Evidence handoff не может заменить candidate или скрыть source identity."""
     manifest_path = tmp_path / "release-manifest.json"

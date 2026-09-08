@@ -114,7 +114,8 @@ def validate_evidence(
         errors,
     )
     _error_if(
-        evidence_tag != f"v{expected_version}-evidence.1",
+        not isinstance(evidence_tag, str)
+        or not re.fullmatch(rf"v{re.escape(expected_version)}-evidence\.[1-9][0-9]*", evidence_tag),
         "release manifest: evidence_tag не совпадает с version",
         errors,
     )

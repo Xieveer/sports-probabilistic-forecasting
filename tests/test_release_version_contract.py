@@ -63,14 +63,16 @@ def test_evidence_workflow_is_manual_and_keeps_dynamic_facts_outside_application
     assert '"$source_path/scripts/build_production_compose_env_fixture.py"' in command
     assert 'source_path="$GITHUB_WORKSPACE/source"' in command
     assert 'evidence_path="$GITHUB_WORKSPACE/evidence"' in command
+    assert 'docker buildx imagetools inspect "$image_ref"' in command
+    assert "--platform linux/amd64 --network none --read-only --user 10001:10001" in command
     checkouts = [step for step in workflow["jobs"]["verify-evidence"]["steps"] if "uses" in step]
     assert checkouts[1]["with"]["ref"] == "v1.1.14"
     handoff = (PROJECT_ROOT / "docs" / "operations" / "production-handoff.md").read_text(
         encoding="utf-8"
     )
-    assert "- Статус подготовки: `draft`" in handoff
+    assert "- Статус подготовки: `candidate`" in handoff
     assert "v1.1.12" not in handoff
-    assert "v1.1.14-evidence.1" in handoff
+    assert "v1.1.14-evidence.2" in handoff
     assert "--handoff docs/operations/production-handoff.md" in handoff
 
 
@@ -96,6 +98,22 @@ def test_docker_publish_waits_for_security_rollout_gates_and_attests_digest() ->
     step_names = {step.get("name") for step in build_push["steps"]}
     assert "Scan pushed image" in step_names
     assert "Attest build provenance" in step_names
+    runtime_gate = next(
+        step
+        for step in build_push["steps"]
+        if step.get("name") == "Verify published runtime manifest platform"
+    )
+    assert 'docker buildx imagetools inspect "$image_ref"' in runtime_gate["run"]
+    assert '"linux"' in runtime_gate["run"]
+    assert '"amd64"' in runtime_gate["run"]
+    worker_smoke = next(
+        step for step in build_push["steps"] if step.get("name") == "Smoke Worker runtime reference"
+    )
+    assert worker_smoke["if"] == "matrix.target == 'worker'"
+    assert (
+        "--platform linux/amd64 --network none --read-only --user 10001:10001"
+        in worker_smoke["run"]
+    )
     assert workflow["permissions"]["attestations"] == "write"
     assert workflow["permissions"]["id-token"] == "write"
 
