@@ -103,11 +103,4 @@ jobs:
           docker pull "$worker_image"
           test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$worker_image")" = 'linux/amd64'
           docker run --rm --platform linux/amd64 --network none --read-only --user 10001:10001 \
-            --entrypoint python "$worker_image" -c '
-              from sports_forecast.deploy.archive_sync import sync_operational_archive
-              from sports_forecast.deploy.canonical_bootstrap import verify_nhl_bootstrap_bundle
-              from sports_forecast.deploy.source_state import verify_nhl_source_state_bundle
-              assert callable(sync_operational_archive)
-              assert callable(verify_nhl_bootstrap_bundle)
-              assert callable(verify_nhl_source_state_bundle)
-            '
+            --entrypoint python "$worker_image" -c 'from sports_forecast.deploy.archive_sync import sync_operational_archive; from sports_forecast.deploy.canonical_bootstrap import verify_nhl_bootstrap_bundle; from sports_forecast.deploy.source_state import verify_nhl_source_state_bundle; assert callable(sync_operational_archive); assert callable(verify_nhl_bootstrap_bundle); assert callable(verify_nhl_source_state_bundle)'
