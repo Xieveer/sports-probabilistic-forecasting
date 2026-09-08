@@ -54,6 +54,9 @@ jobs:
           source_tag="v1.1.14"
           test "$(jq --raw-output '.source_tag' "$manifest")" = "$source_tag"
           app_version="$(uv run --directory "$source_path" python -c 'import tomllib; from pathlib import Path; print(tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"])')"
+          jq --exit-status --raw-output --arg version "$app_version" \
+            '.evidence_tag | test("^v" + $version + "-evidence\\.[1-9][0-9]*$")' "$manifest" \
+            | grep -Fx true
           fixture_root="${RUNNER_TEMP}/release-evidence"
           mkdir -p "$fixture_root"
           uv run --directory "$source_path" python "$source_path/scripts/build_production_compose_env_fixture.py" \
@@ -66,8 +69,11 @@ jobs:
             --bot-image "$(jq --raw-output '.images.telegram_bot' "$manifest")" \
             --archive-sync-image "$(jq --raw-output '.images.archive_sync' "$manifest")"
           docker compose --env-file "$fixture_root/production.env" -f "$source_path/docker-compose.prod.yml" --profile migration --profile worker --profile source-acquisition --profile operational-sync config > "$fixture_root/rendered.yml"
+          validator_manifest="$fixture_root/release-manifest.validator.json"
+          jq --arg version "$app_version" '.evidence_tag = "v" + $version + "-evidence.1"' \
+            "$manifest" > "$validator_manifest"
           uv run --directory "$source_path" python "$source_path/scripts/verify_release_evidence.py" \
-            --manifest "$manifest" \
+            --manifest "$validator_manifest" \
             --rendered-compose "$fixture_root/rendered.yml" \
             --repository-root "$source_path" \
             --source-tag "$source_tag" \
