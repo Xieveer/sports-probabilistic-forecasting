@@ -50,3 +50,8 @@
 | TASK-014-1 | done | high | [Строгий контракт каталога API](tasks/TASK-014-1-api-catalog-contract.md) |
 | TASK-014-2 | in_progress | high | [Полный каталог NHL Web API](tasks/TASK-014-2-nhl-api-catalog.md) |
 | TASK-014-3 | in_progress | high | [Полный каталог Smart Tables API](tasks/TASK-014-3-smart-tables-api-catalog.md) |
+| EPIC-018 | in_progress | high | [Runtime-исправления после rollout](EPIC-018-post-rollout-runtime-corrections.md) |
+| TASK-018-1 | done | high | [Readiness в Telegram status](tasks/TASK-018-1-status-readiness.md) |
+| TASK-018-2 | done | high | [File-backed DB URL для canonical bootstrap](tasks/TASK-018-2-bootstrap-database-url-file.md) |
+| TASK-018-3 | done | high | [Cross-version model bundle recovery](tasks/TASK-018-3-cross-version-model-recovery.md) |
+| TASK-018-4 | done | high | [Telegram command menu](tasks/TASK-018-4-telegram-command-menu.md) |

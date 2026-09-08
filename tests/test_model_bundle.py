@@ -162,6 +162,40 @@ def test_install_rejects_incompatible_bundle_without_changing_current(tmp_path: 
     assert load_current_model_bundle(runtime, app_version="1").bundle_id == first.bundle_id
 
 
+def test_cross_version_install_preserves_verified_current_for_release_recovery(
+    tmp_path: Path,
+) -> None:
+    """Previous сохраняет old release bundle без проверки against target version."""
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "model.bin").write_bytes(b"v1")
+    old_bundle = build_model_bundle(
+        source,
+        tmp_path / "bundles",
+        model_identity="pool:x:winner:old",
+        app_version="1",
+        source_commit="a" * 40,
+        release="v1",
+    )
+    runtime = tmp_path / "runtime"
+    install_model_bundle(old_bundle.path, runtime, app_version="1")
+    (source / "model.bin").write_bytes(b"v2")
+    target_bundle = build_model_bundle(
+        source,
+        tmp_path / "bundles",
+        model_identity="pool:x:winner:target",
+        app_version="2",
+        source_commit="b" * 40,
+        release="v2",
+    )
+
+    installed = install_model_bundle(target_bundle.path, runtime, app_version="2")
+
+    assert installed.bundle_id == target_bundle.bundle_id
+    assert (runtime / "current").resolve() == target_bundle.path
+    assert (runtime / "previous").resolve() == old_bundle.path
+
+
 def test_install_does_not_preserve_unverified_current_as_previous(tmp_path: Path) -> None:
     """Следующая promotion не превращает повреждённый current в rollback target."""
     source = tmp_path / "source"

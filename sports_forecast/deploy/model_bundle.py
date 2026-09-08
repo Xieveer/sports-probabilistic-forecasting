@@ -84,7 +84,7 @@ def verify_model_bundle(path: Path, *, app_version: str) -> ModelBundle:
         raise BundleVerificationError("compatibility mismatch")
     bundle_id = manifest.get("bundle_id")
     files = manifest.get("files")
-    required_text_fields = ("model_identity", "source_commit", "release")
+    required_text_fields = ("app_version", "model_identity", "source_commit", "release")
     if (
         manifest.get("schema_version") != 1
         or not isinstance(bundle_id, str)
@@ -127,6 +127,18 @@ def verify_model_bundle(path: Path, *, app_version: str) -> ModelBundle:
     return ModelBundle(bundle_id=bundle_id, path=path)
 
 
+def _verify_model_bundle_integrity(path: Path) -> ModelBundle:
+    """Проверить immutable bundle без compatibility с будущим runtime release."""
+    try:
+        manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise BundleVerificationError("manifest недоступен") from exc
+    app_version = manifest.get("app_version") if isinstance(manifest, dict) else None
+    if not isinstance(app_version, str) or not app_version.strip():
+        raise BundleVerificationError("manifest некорректен")
+    return verify_model_bundle(path, app_version=app_version)
+
+
 def _set_pointer(pointer: Path, target: Path) -> None:
     """Атомарно заменить локальный symbolic pointer на verified bundle."""
     temporary = pointer.with_name(f".{pointer.name}.tmp")
@@ -142,7 +154,7 @@ def install_model_bundle(bundle_path: Path, runtime_root: Path, *, app_version: 
     current = runtime_root / "current"
     previous = runtime_root / "previous"
     if current.is_symlink():
-        active = verify_model_bundle(current.resolve(), app_version=app_version)
+        active = _verify_model_bundle_integrity(current.resolve())
         _set_pointer(previous, active.path)
     _set_pointer(current, bundle.path)
     return bundle

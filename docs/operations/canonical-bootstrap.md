@@ -59,8 +59,10 @@ uv run python -m sports_forecast.deploy.source_state_cli install \
 source/odds/checkpoint и атомарно создаёт `current.csv` из проверенного
 `source.csv`.
 
-После успешной миграции и доставки immutable каталога задаётся только обычный
-`DATABASE_URL` из secret environment и выполняется:
+После успешной миграции и доставки immutable каталога задаётся
+`DATABASE_URL_FILE` с путём к secret file (предпочтительно) либо обычный
+`DATABASE_URL`; пустой или недоступный file останавливает import и не допускает
+SQLite fallback. Затем выполняется:
 
 ```bash
 uv run python -m sports_forecast.deploy.canonical_bootstrap import-nhl \

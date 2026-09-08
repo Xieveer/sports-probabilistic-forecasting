@@ -11,7 +11,7 @@ import hydra
 from dotenv import load_dotenv
 from omegaconf import DictConfig, OmegaConf
 
-from sports_forecast.bot.dispatcher import build_dispatcher
+from sports_forecast.bot.dispatcher import build_dispatcher, register_commands
 from sports_forecast.bot.heartbeat import write_heartbeat
 from sports_forecast.config.loaders import PROJECT_ROOT
 from sports_forecast.utils.log_config import configure_logging, get_logger
@@ -54,6 +54,7 @@ async def _async_main(cfg: DictConfig, token: str) -> None:
     heartbeat_path = Path(os.getenv("SF_BOT_HEARTBEAT_PATH", "/tmp/sf-bot-heartbeat.json"))
     heartbeat = asyncio.create_task(_heartbeat_loop(bot, api_url, heartbeat_path))
     try:
+        await register_commands(bot, cfg)
         await dp.start_polling(bot)
     finally:
         heartbeat.cancel()

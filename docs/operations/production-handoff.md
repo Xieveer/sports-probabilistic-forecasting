@@ -23,6 +23,10 @@ Compose получает только pinned references из manifest и secrets
 server-side files. Значения secrets в handoff не записываются; application services используют
 UID/GID `10001:10001`.
 
+Operations передаёт в Compose только `*_FILE` paths; значения DB URL, token и паролей не
+становятся значениями environment. Direct host CLI получает тот же DB URL через
+`DATABASE_URL_FILE`.
+
 ## Healthcheck и smoke-проверка
 
 После отдельного approval Operations выполняет только `/health`, `/ready`, `/docs` и выбранную
@@ -43,6 +47,8 @@ known prediction. До production rollout acceptance-команда не зап�
 
 Rollback до migration допускается только на предшествующие immutable references; после additive
 migration применяется forward-fix либо verified backup restore. Destructive downgrade запрещён.
+При cross-version model activation pointer `previous` — recovery artifact предыдущего release:
+его использование требует rollback application release до совместимой версии manifest.
 
 ## Нерешённые вопросы
 
