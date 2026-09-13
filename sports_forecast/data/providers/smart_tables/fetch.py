@@ -6,6 +6,10 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
+from sports_forecast.data.providers.smart_tables.bronze_manifest import (
+    BronzeProfile,
+    record_attempt,
+)
 from sports_forecast.data.providers.smart_tables.client import SmartTablesApiClient
 from sports_forecast.data.providers.smart_tables.constants import (
     MATCH_CARD_RELATED_ENTITIES,
@@ -27,14 +31,38 @@ def _read_or_fetch(
     fetch_fn,
     *,
     use_network: bool,
+    validate_cached: bool = False,
+    attempt_dir: Path | None = None,
+    component_name: str | None = None,
 ) -> dict[str, Any]:
     if cache_path.is_file():
-        return cast(dict[str, Any], json.loads(cache_path.read_text(encoding="utf-8")))
+        try:
+            cached = cast(dict[str, Any], json.loads(cache_path.read_text(encoding="utf-8")))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            if not use_network or not validate_cached:
+                raise
+        else:
+            if not validate_cached or cached.get("success") is True:
+                return cached
+            if not use_network:
+                return {}
     if not use_network:
         return {}
-    payload = cast(dict[str, Any], fetch_fn())
+    try:
+        payload = cast(dict[str, Any], fetch_fn())
+    except Exception:
+        if attempt_dir is not None and component_name is not None:
+            record_attempt(
+                attempt_dir,
+                component_name,
+                status="failed",
+                error_kind="request_failed",
+            )
+        raise
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    if attempt_dir is not None and component_name is not None:
+        record_attempt(attempt_dir, component_name, status="complete", error_kind=None)
     return payload
 
 
@@ -78,6 +106,8 @@ def fetch_match_bronze(
     raw_root: Path,
     *,
     use_network: bool = True,
+    profile: BronzeProfile | None = None,
+    include_optional: bool = True,
 ) -> dict[str, Any]:
     """Загрузить (или прочитать из кэша) все bronze-файлы матча.
 
@@ -86,45 +116,77 @@ def fetch_match_bronze(
         match_id: PK матча ST.
         raw_root: ``data/source/football_nationals/raw``.
         use_network: При отсутствии кэша — запрос к API.
+        profile: Opt-in профиль completeness. При заданном профиле повреждённый
+            или неуспешный cached envelope запрашивается повторно.
+        include_optional: При ``False`` и заданном ``profile`` запрашиваются только
+            required-компоненты; default backfill не меняется.
 
     Returns:
         Словарь с ключами ``card``, ``stat_{period}``, ``chart_{period}``, ``similar``.
     """
     mdir = match_raw_dir(raw_root, match_id)
     out: dict[str, Any] = {}
-
-    out["card"] = _read_or_fetch(
-        mdir / "card.json",
-        lambda: client.get_json(
-            f"matches/{match_id}",
-            params={"relatedEntities": MATCH_CARD_RELATED_ENTITIES},
-        ),
-        use_network=use_network,
+    component_names = (
+        profile.components
+        if profile is not None and include_optional
+        else profile.required_components
+        if profile is not None
+        else (
+            "card.json",
+            *(f"{kind}_{period}.json" for period in PERIODS_API for kind in ("stat", "chart")),
+            "similar.json",
+        )
     )
+    validate_cached = profile is not None
+
+    if "card.json" in component_names:
+        out["card"] = _read_or_fetch(
+            mdir / "card.json",
+            lambda: client.get_json(
+                f"matches/{match_id}",
+                params={"relatedEntities": MATCH_CARD_RELATED_ENTITIES},
+            ),
+            use_network=use_network,
+            validate_cached=validate_cached,
+            attempt_dir=mdir if profile is not None else None,
+            component_name="card.json",
+        )
 
     for period in PERIODS_API:
-        out[f"stat_{period}"] = _read_or_fetch(
-            mdir / f"stat_{period}.json",
-            lambda p=period: client.get_json(
-                f"matches/{match_id}/stat",
-                params={"period": p},
-            ),
-            use_network=use_network,
-        )
-        out[f"chart_{period}"] = _read_or_fetch(
-            mdir / f"chart_{period}.json",
-            lambda p=period: client.get_json(
-                f"matches/{match_id}/chart",
-                params={"period": p, "stat": "goals"},
-            ),
-            use_network=use_network,
-        )
+        if f"stat_{period}.json" in component_names:
+            out[f"stat_{period}"] = _read_or_fetch(
+                mdir / f"stat_{period}.json",
+                lambda p=period: client.get_json(
+                    f"matches/{match_id}/stat",
+                    params={"period": p},
+                ),
+                use_network=use_network,
+                validate_cached=validate_cached,
+                attempt_dir=mdir if profile is not None else None,
+                component_name=f"stat_{period}.json",
+            )
+        if f"chart_{period}.json" in component_names:
+            out[f"chart_{period}"] = _read_or_fetch(
+                mdir / f"chart_{period}.json",
+                lambda p=period: client.get_json(
+                    f"matches/{match_id}/chart",
+                    params={"period": p, "stat": "goals"},
+                ),
+                use_network=use_network,
+                validate_cached=validate_cached,
+                attempt_dir=mdir if profile is not None else None,
+                component_name=f"chart_{period}.json",
+            )
 
-    out["similar"] = _read_or_fetch(
-        mdir / "similar.json",
-        lambda: client.get_json(f"matches/{match_id}/similar"),
-        use_network=use_network,
-    )
+    if "similar.json" in component_names:
+        out["similar"] = _read_or_fetch(
+            mdir / "similar.json",
+            lambda: client.get_json(f"matches/{match_id}/similar"),
+            use_network=use_network,
+            validate_cached=validate_cached,
+            attempt_dir=mdir if profile is not None else None,
+            component_name="similar.json",
+        )
     return out
 
 

@@ -12,6 +12,7 @@ import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 
 from sports_forecast.data.providers.base import SourceFetchError
+from sports_forecast.data.providers.smart_tables.bronze_manifest import WINNER_BASELINE_PROFILE
 from sports_forecast.data.providers.smart_tables.catalog import (
     filter_national_competitions,
     load_competition_catalog,
@@ -56,6 +57,7 @@ class AssemblerConfig:
     progress_log_every: int
     mode: str
     use_network: bool
+    bronze_profile: str
 
 
 def _env_int(name: str) -> int | None:
@@ -110,6 +112,13 @@ def load_assembler_config(provider_cfg: DictConfig) -> AssemblerConfig:
 
     ml_ck = c.get("matches_list_checkpoint")
     ck = c.get("checkpoint_file")
+    bronze_profile = os.getenv(
+        "SF_SMART_TABLES_BRONZE_PROFILE", str(c.get("bronze_profile", "full"))
+    ).strip()
+    if bronze_profile not in {"full", "winner_baseline_required"}:
+        raise SourceFetchError(
+            "SF_SMART_TABLES_BRONZE_PROFILE: ожидается full или winner_baseline_required"
+        )
 
     return AssemblerConfig(
         catalog_path=str(c.get("catalog_path", "")),
@@ -125,6 +134,7 @@ def load_assembler_config(provider_cfg: DictConfig) -> AssemblerConfig:
         progress_log_every=progress_every,
         mode=str(c.get("mode", "backfill")),
         use_network=bool(c.get("use_network", True)),
+        bronze_profile=bronze_profile,
     )
 
 
@@ -236,7 +246,9 @@ def _parse_chart_payload(payload: dict[str, Any], prefix: str) -> dict[str, Any]
     }
 
 
-def bronze_to_row(bronze: dict[str, Any]) -> dict[str, Any] | None:
+def bronze_to_row(
+    bronze: dict[str, Any], *, national_teams_only: bool = True
+) -> dict[str, Any] | None:
     """Преобразовать bronze JSON одного матча в wide-строку ``football.md``.
 
     Args:
@@ -260,7 +272,7 @@ def bronze_to_row(bronze: dict[str, Any]) -> dict[str, Any] | None:
 
     home_nat = int(_team_field(home_team, "is_national", 0) or 0)
     away_nat = int(_team_field(away_team, "is_national", 0) or 0)
-    if home_nat != 1 or away_nat != 1:
+    if national_teams_only and (home_nat != 1 or away_nat != 1):
         return None
 
     competition = item.get("competition") if isinstance(item.get("competition"), dict) else {}
@@ -350,8 +362,10 @@ def _refresh_prev_rows(prev_rows: list[dict[str, Any]], raw_root: Path) -> list[
     return refreshed
 
 
-def rebuild_rows_from_bronze(raw_root: Path) -> list[dict[str, Any]]:
-    """Собрать все national-строки из каталогов ``raw/{match_id}/``."""
+def rebuild_rows_from_bronze(
+    raw_root: Path, *, national_teams_only: bool = True
+) -> list[dict[str, Any]]:
+    """Собрать строки из каталогов ``raw/{match_id}/``."""
     rows: list[dict[str, Any]] = []
     if not raw_root.is_dir():
         return rows
@@ -363,7 +377,7 @@ def rebuild_rows_from_bronze(raw_root: Path) -> list[dict[str, Any]]:
         if not (mdir / "card.json").is_file():
             continue
         bronze = load_match_bronze_from_cache(raw_root, int(mdir.name))
-        row = bronze_to_row(bronze)
+        row = bronze_to_row(bronze, national_teams_only=national_teams_only)
         if row is not None:
             rows.append(row)
     return rows
@@ -374,6 +388,7 @@ def rebuild_dataframe_from_bronze(
     output_csv_path: Path,
     *,
     raw_cache_dir: str = "raw",
+    national_teams_only: bool = True,
 ) -> pd.DataFrame:
     """Полная пересборка ``source.csv`` из bronze-кэша (без сети).
 
@@ -386,7 +401,7 @@ def rebuild_dataframe_from_bronze(
         DataFrame записанных строк.
     """
     raw_root = storage_dir / raw_cache_dir
-    rows = rebuild_rows_from_bronze(raw_root)
+    rows = rebuild_rows_from_bronze(raw_root, national_teams_only=national_teams_only)
     if not rows:
         logger.warning("Smart Tables rebuild: нет строк из bronze в %s", raw_root)
         return pd.DataFrame()
@@ -464,8 +479,14 @@ class SmartTablesDataAssembler:
                 mid,
                 raw_root,
                 use_network=self._cfg.use_network,
+                profile=(
+                    WINNER_BASELINE_PROFILE
+                    if self._cfg.bronze_profile == "winner_baseline_required"
+                    else None
+                ),
+                include_optional=self._cfg.bronze_profile != "winner_baseline_required",
             )
-            row = bronze_to_row(bronze)
+            row = bronze_to_row(bronze, national_teams_only=self._cfg.national_teams_only)
             if row is not None:
                 rid = str(row.get("match_id"))
                 if rid not in seen_row_ids:

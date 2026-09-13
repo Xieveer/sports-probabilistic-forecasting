@@ -12,7 +12,7 @@ import pytest
 from omegaconf import OmegaConf
 
 import sports_forecast.data.clean as clean_mod
-from sports_forecast.config.loaders import load_tournament_config
+from sports_forecast.config.loaders import load_source_config, load_tournament_config
 from sports_forecast.data.clean import process_tournament as clean_tournament
 from sports_forecast.data.providers import SmartTablesSourceProvider, get_provider
 from sports_forecast.data.providers.smart_tables.assembler import (
@@ -195,6 +195,32 @@ def test_national_filter_rejects_club_teams() -> None:
     card["home_team_with_coach"]["is_national"] = 0
     bronze["card"]["data"]["item"] = card
     assert bronze_to_row(bronze) is None
+
+
+def test_club_pool_config_accepts_only_requested_competitions() -> None:
+    """Клубный pool не смешивается со сборными и принимает клубную карточку."""
+    source_cfg = load_source_config("football_top_leagues")
+    tournament_cfg = load_tournament_config("football_top_leagues")
+
+    assert source_cfg.provider.national_teams_only is False
+    assert set(source_cfg.provider.competition_codes) == {
+        "ENG1",
+        "SPA1",
+        "GER1",
+        "ITA1",
+        "FRA1",
+        "RUS1",
+        "RUS2",
+        "UCL",
+        "UEL",
+    }
+    assert tournament_cfg.name == "football_top_leagues"
+
+    bronze = _load_bronze_fixture()
+    card = bronze["card"]["data"]["item"]
+    card["home_team_with_coach"]["is_national"] = 0
+    card["away_team_with_coach"]["is_national"] = 0
+    assert bronze_to_row(bronze, national_teams_only=False) is not None
 
 
 def test_match_importance_tiers() -> None:

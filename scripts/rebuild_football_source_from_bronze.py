@@ -116,6 +116,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Не проверять пороги после rebuild",
     )
+    parser.add_argument(
+        "--include-clubs",
+        action="store_true",
+        help="Не отбрасывать клубные команды при rebuild.",
+    )
     args = parser.parse_args(argv)
 
     storage_dir: Path = args.storage_dir
@@ -132,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
             storage_dir,
             output_csv,
             raw_cache_dir=args.raw_cache_dir,
+            national_teams_only=not args.include_clubs,
         )
         logger.info("Rebuild complete: %d rows → %s", len(df), output_csv)
 

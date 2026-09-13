@@ -1,0 +1,10 @@
+# Smart Tables club pool для исследования 1X2; состав турниров — REQ-021.
+
+defaults:
+  - smart_tables
+
+name: football_top_leagues
+
+provider:
+  national_teams_only: false
+  competition_codes: [ENG1, SPA1, GER1, ITA1, FRA1, RUS1, RUS2, UCL, UEL]

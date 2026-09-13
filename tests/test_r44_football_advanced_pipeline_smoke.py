@@ -90,3 +90,28 @@ def test_r44_football_advanced_pipeline_smoke() -> None:
     assert len(inseason_cols) > 0
     sport_xg = [c for c in feature_names if "xg_diff" in c and "ewm" in c and "inseason" in c]
     assert len(sport_xg) > 0
+
+
+def test_football_pipeline_skips_absent_optional_stat_metric() -> None:
+    """Неполная club-статистика не отменяет доступные lagged EWM-фичи."""
+    conf_dir = Path(__file__).resolve().parents[1] / "conf"
+    with initialize_config_dir(version_base=None, config_dir=str(conf_dir), job_name="pytest_r44"):
+        cfg = compose(
+            config_name="config",
+            overrides=[
+                "tournament=football_top_leagues",
+                "market=winner",
+                "market_spec=winner_home",
+                "algorithm=dummy",
+                "features=advanced",
+            ],
+        )
+        fd = materialize_features_config(cfg.features, tournament_cfg=cfg.tournament)
+        wide = _synthetic_football_wide(40).drop(
+            columns=["home_possession_all", "away_possession_all"]
+        )
+        long_df, feature_names = FeaturePipeline(fd).generate_features(wide, format="wide")
+
+    assert len(long_df) == 80
+    assert any("xg_diff" in name for name in feature_names)
+    assert not any("possession_diff" in name for name in feature_names)

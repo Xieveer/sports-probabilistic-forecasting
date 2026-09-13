@@ -106,6 +106,10 @@ data_clean:
       away_shotstarget_all: float
       home_yellowcards_all: float
       away_yellowcards_all: float
+      # Historical 1X2 Smart Tables: backtest-only, не predictive feature.
+      odd_home: float
+      odd_draw: float
+      odd_away: float
     string: [id, status, home_team, away_team, competition_code]
     datetime:
       datetime:

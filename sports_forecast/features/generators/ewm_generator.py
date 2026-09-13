@@ -158,7 +158,12 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
 
         # Валидация наличия метрики
         if metric_col not in long.columns:
-            raise ValueError(f"{self.name}: отсутствует колонка с метрикой: '{metric_col}'")
+            logger.warning(
+                "%s: пропущена optional-метрика, отсутствует колонка '%s'",
+                self.name,
+                metric_col,
+            )
+            return long
 
         logger.debug(
             f"{self.name}: metric={metric_col}, metric_label={metric_label!r}, "
