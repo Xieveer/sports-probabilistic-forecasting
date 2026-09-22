@@ -200,10 +200,11 @@ def test_format_schedule_groups_by_moscow_day_and_marks_missing_data() -> None:
     assert "17 сентября" in text
     assert "18 сентября" in text
     assert "01:00 МСК" in text
-    assert "Value: home +0.0500 | away -0.0200" in text
-    assert "Коэффициенты: home 2.00 | away 2.20" in text
-    assert "Решение: home ставка | away нет ставки" in text
-    assert "Прогноз: нет данных" in text
+    assert "—————————————————————————————" in text
+    assert "Predict: 0.60 || нет данных" in text
+    assert "Coeff: 2.00 || 2.20" in text
+    assert "Value: ✅+0.05 || -0.02" in text
+    assert "Predict: нет данных || нет данных" in text
 
 
 def test_fetch_schedule_filters_item_after_exact_moscow_deadline(monkeypatch) -> None:

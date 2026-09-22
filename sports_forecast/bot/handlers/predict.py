@@ -37,6 +37,7 @@ _MONTHS_RU = (
     "ноября",
     "декабря",
 )
+_SCHEDULE_DIVIDER = "—————————————————————————————"
 
 router = Router(name="predict")
 
@@ -282,13 +283,18 @@ def _schedule_decimal(value: Any) -> str:
 
 
 def _schedule_value(value: Any) -> str:
-    """Отформатировать value, не скрывая отсутствующее отдельное поле."""
-    return f"{float(value):+.4f}" if value is not None else "нет данных"
+    """Отформатировать value с маркером положительной ставки."""
+    if value is None:
+        return "нет данных"
+    decimal = float(value)
+    return f"✅+{decimal:.2f}" if decimal > 0 else f"{decimal:.2f}"
 
 
-def _schedule_decision(value: object) -> str:
-    """Вернуть русское решение или явный маркер отсутствующих данных."""
-    return _bet_decision_ru(value) if isinstance(value, str) else "нет данных"
+def _schedule_probability(prediction: object, side: str) -> str:
+    """Вернуть вероятность стороны или явный маркер отсутствующих данных."""
+    if not isinstance(prediction, dict) or prediction.get(side) is None:
+        return "нет данных"
+    return f"{float(prediction[side]):.2f}"
 
 
 def _format_schedule(items: list[dict[str, Any]]) -> str:
@@ -300,25 +306,20 @@ def _format_schedule(items: list[dict[str, Any]]) -> str:
             continue
         moment = utc_moment.astimezone(MOSCOW_TZ)
         prediction = item.get("predictions")
-        prediction_text = (
-            ", ".join(f"{key}: {value}" for key, value in prediction.items())
-            if isinstance(prediction, dict) and prediction
-            else "нет данных"
-        )
         date_label = f"{moment.day} {_MONTHS_RU[moment.month - 1]}"
         card = (
             f"{moment:%H:%M} МСК  {item.get('home_player')} — {item.get('away_player')}\n"
-            f"Прогноз: {prediction_text}\n"
-            f"Коэффициенты: home {_schedule_decimal(item.get('pinnacle_home_decimal'))} | "
-            f"away {_schedule_decimal(item.get('pinnacle_away_decimal'))}\n"
-            f"Value: home {_schedule_value(item.get('edge_home'))} | "
-            f"away {_schedule_value(item.get('edge_away'))}\n"
-            f"Решение: home {_schedule_decision(item.get('bet_decision_home'))} | "
-            f"away {_schedule_decision(item.get('bet_decision_away'))}"
+            f"Predict: {_schedule_probability(prediction, 'home')} || "
+            f"{_schedule_probability(prediction, 'away')}\n"
+            f"Coeff: {_schedule_decimal(item.get('pinnacle_home_decimal'))} || "
+            f"{_schedule_decimal(item.get('pinnacle_away_decimal'))}\n"
+            f"Value: {_schedule_value(item.get('edge_home'))} || "
+            f"{_schedule_value(item.get('edge_away'))}"
         )
         groups.setdefault(date_label, []).append(card)
     return "\n\n".join(
-        f"🏒 NHL — {date}\n\n" + "\n\n".join(cards) for date, cards in groups.items()
+        f"🏒 NHL — {date}\n{_SCHEDULE_DIVIDER}\n" + f"\n{_SCHEDULE_DIVIDER}\n".join(cards)
+        for date, cards in groups.items()
     )
 
 
@@ -327,29 +328,26 @@ def _split_schedule_messages(items: list[dict[str, Any]], *, limit: int = 4000) 
     text = _format_schedule(items)
     if not text:
         return []
-    header = ""
     messages: list[str] = []
-    current = ""
-    for block in text.split("\n\n"):
-        if block.startswith("🏒 NHL — "):
-            if current:
+    for group in text.split("\n\n"):
+        header, *cards = group.split(f"\n{_SCHEDULE_DIVIDER}\n")
+        current = ""
+        for block in cards:
+            card = f"{header}\n{_SCHEDULE_DIVIDER}\n{block}"
+            if len(card) > limit:
+                if current:
+                    messages.append(current)
+                    current = ""
+                messages.extend(
+                    card[offset : offset + limit] for offset in range(0, len(card), limit)
+                )
+            elif current and len(current) + len(_SCHEDULE_DIVIDER) + len(block) + 2 > limit:
                 messages.append(current)
-                current = ""
-            header = block
-            continue
-        card = f"{header}\n\n{block}"
-        if len(card) > limit:
-            if current:
-                messages.append(current)
-                current = ""
-            messages.extend(card[offset : offset + limit] for offset in range(0, len(card), limit))
-        elif current and len(current) + 2 + len(block) > limit:
+                current = card
+            else:
+                current = f"{current}\n{_SCHEDULE_DIVIDER}\n{block}" if current else card
+        if current:
             messages.append(current)
-            current = card
-        else:
-            current = f"{current}\n\n{block}" if current else card
-    if current:
-        messages.append(current)
     return messages
 
 
