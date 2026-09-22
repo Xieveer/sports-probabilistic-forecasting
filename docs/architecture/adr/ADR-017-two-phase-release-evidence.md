@@ -19,8 +19,14 @@ Exact commit SHA и published image digests появляются в разные
 ## Решение
 
 Использовать annotated `v1.1.14` для application source и отдельный annotated
-`v1.1.14-evidence.1` после успешного pipeline. Evidence commit содержит candidate handoff и
+`v1.1.14-evidence.N` после успешного pipeline. Evidence commit содержит candidate handoff и
 `deploy/release-manifest.json`; gate сверяет его с source tag и rendered Compose до создания tag.
+
+Каждый application digest берётся из tagged remote runtime manifest, а не из локального
+`RepoDigests` либо OCI referrer. Перед evidence tag обязательны `imagetools inspect`
+с подтверждением `linux/amd64`; для Worker также обязательны pull, image inspect и
+non-root read-only import smoke по exact `image@sha256` reference. Revision
+`v1.1.14-evidence.2` закрепляет subject manifest вместо provenance referrer.
 
 ## Последствия
 

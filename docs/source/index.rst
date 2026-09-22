@@ -13,6 +13,7 @@ MLOps-система вероятностного прогнозирования
    feature_selection_workflow
    walk_forward
    research_mode
+   smart_tables_bronze
 
 .. toctree::
    :maxdepth: 2

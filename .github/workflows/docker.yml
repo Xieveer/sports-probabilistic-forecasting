@@ -232,9 +232,42 @@ jobs:
           docker load --input artifacts/release-oci/${{ matrix.target }}.docker.tar
           docker tag sf-rollout-${{ matrix.target }}:${GITHUB_SHA} "${IMAGE_NAME}:${GITHUB_REF_NAME#v}"
           docker push "${IMAGE_NAME}:${GITHUB_REF_NAME#v}"
-          published_digest="$(docker image inspect --format='{{index .RepoDigests 0}}' "${IMAGE_NAME}:${GITHUB_REF_NAME#v}" | cut -d@ -f2)"
+          published_digest="$(docker buildx imagetools inspect --format '{{json .}}' "${IMAGE_NAME}:${GITHUB_REF_NAME#v}" | jq --exit-status --raw-output '.manifest.digest')"
           test "$published_digest" = "$TESTED_DIGEST"
           echo "digest=$published_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Verify published runtime manifest platform
+        env:
+          IMAGE_NAME: ${{ steps.image-name.outputs.value }}
+          IMAGE_DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          image_ref="${IMAGE_NAME}@${IMAGE_DIGEST}"
+          docker buildx imagetools inspect "$image_ref"
+          docker buildx imagetools inspect --format '{{json .}}' "$image_ref" \
+            | jq --exit-status -e '
+              (.manifest.mediaType | test("image\.manifest|image\.index|manifest\.v2"))
+              and ((.image.os == "linux" and .image.architecture == "amd64")
+                or any(.manifests[]?; .platform.os == "linux" and .platform.architecture == "amd64"))
+            '
+
+      - name: Smoke Worker runtime reference
+        if: matrix.target == 'worker'
+        env:
+          IMAGE_NAME: ${{ steps.image-name.outputs.value }}
+          IMAGE_DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          worker_image="${IMAGE_NAME}@${IMAGE_DIGEST}"
+          docker pull "$worker_image"
+          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$worker_image")" = 'linux/amd64'
+          docker run --rm --platform linux/amd64 --network none --read-only --user 10001:10001 \
+            --entrypoint python "$worker_image" -c '
+              from sports_forecast.deploy.archive_sync import sync_operational_archive
+              from sports_forecast.deploy.canonical_bootstrap import verify_nhl_bootstrap_bundle
+              from sports_forecast.deploy.source_state import verify_nhl_source_state_bundle
+              assert callable(sync_operational_archive)
+              assert callable(verify_nhl_bootstrap_bundle)
+              assert callable(verify_nhl_source_state_bundle)
+            '
 
       - name: Scan pushed image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

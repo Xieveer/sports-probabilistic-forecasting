@@ -12,7 +12,7 @@ application source и факты, которые возникают только
 ## Scope
 
 - Application tag `v1.1.14` фиксирует package version и статический rollout contract.
-- После зелёного tag pipeline отдельный evidence commit/tag `v1.1.14-evidence.1`
+- После зелёного tag pipeline отдельный evidence commit/tag `v1.1.14-evidence.N`
   фиксирует source binding, пять digest references, candidate handoff и run evidence.
 - Automated gate проверяет manifest и rendered private Compose до evidence tag.
 
@@ -44,5 +44,7 @@ application source и факты, которые возникают только
 
 ## Подтверждение
 
-Владелец 2026-09-08 выбрал отдельный immutable evidence commit/tag
-`v1.1.14-evidence.1` после зелёного pipeline.
+Владелец 2026-09-08 выбрал отдельный immutable evidence commit/tag после зелёного
+pipeline. Revision `v1.1.14-evidence.2` исправляет только Worker runtime digest:
+reference обязан быть runnable OCI manifest для `linux/amd64`, а не provenance
+referrer; application tag и source commit неизменны.

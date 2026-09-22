@@ -3,9 +3,11 @@ Database engine management.
 
 Поддерживает:
 - SQLite для разработки (по умолчанию)
-- PostgreSQL для продакшена (через ``DATABASE_URL``)
+- PostgreSQL для продакшена (через ``DATABASE_URL_FILE`` или ``DATABASE_URL``)
 
 Конфигурация через переменные окружения:
+    ``DATABASE_URL_FILE`` — путь к файлу с полной строкой подключения; имеет
+    приоритет над ``DATABASE_URL``.
     ``DATABASE_URL`` — полная строка подключения (e.g.
     ``postgresql://user:pass@host:5432/sports_forecast``)
     Если не задана — используется ``sqlite:///predictions.db``.
@@ -24,6 +26,7 @@ from __future__ import annotations
 import os
 from collections.abc import Generator
 from contextlib import contextmanager
+from pathlib import Path
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
@@ -39,11 +42,24 @@ _SessionFactory: sessionmaker[Session] | None = None
 
 
 def get_database_url() -> str:
-    """Получить URL базы данных из окружения или дефолт.
+    """Получить URL БД из secret file, окружения или development default.
+
+    ``DATABASE_URL_FILE`` обслуживает прямые CLI entry points так же, как
+    runtime entrypoint контейнера. Пустой или недоступный file — конфигурационная
+    ошибка: нельзя неявно перейти на SQLite и записать bootstrap не в ту БД.
 
     Returns:
         Database URL string.
     """
+    database_url_file = os.environ.get("DATABASE_URL_FILE", "").strip()
+    if database_url_file:
+        try:
+            database_url = Path(database_url_file).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise ValueError("DATABASE_URL_FILE недоступен") from exc
+        if not database_url:
+            raise ValueError("DATABASE_URL_FILE не содержит URL")
+        return database_url
     return os.environ.get("DATABASE_URL", _DEFAULT_DB_URL)
 
 

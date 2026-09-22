@@ -362,9 +362,9 @@ Airflow Variables: ``nhl_morning_refresh`` и ``data_refresh``
    * - Переменная
      - Где нужна
    * - ``DATABASE_URL``
-     - **Prediction store:** в ``docker-compose.yml`` задана для ``api``, ``worker``; в
-       ``airflow/docker-compose.airflow.yml`` — для сервисов Airflow (та же БД, что у API).
-       Для хостового CLI можно задать в ``.env`` (см. комментарий в шаблоне).
+     - **Prediction store:** для production runtime предпочтителен ``DATABASE_URL_FILE``;
+       прямой canonical bootstrap читает его так же, как контейнеры. ``DATABASE_URL``
+       сохраняется для локального Compose/Airflow и development CLI.
    * - ``POSTGRES_PASSWORD`` (и косвенно строка подключения)
      - Сборка URL БД в Compose.
    * - ``ODDS_API_KEY``
@@ -374,7 +374,9 @@ Airflow Variables: ``nhl_morning_refresh`` и ``data_refresh``
    * - ``BOT_TOKEN``, ``BOT_ALLOWED_USER_IDS``, ``BOT_ADMIN_USER_IDS``, ``BOT_API_BASE_URL``
      - Сервис ``telegram-bot`` (профиль ``bot``); **digest** (R39) будет использовать те же секреты
        для отправки операционного сообщения (получатели — как минимум из ``BOT_ALLOWED_USER_IDS``,
-       точный контракт — R39.3).
+       точный контракт — R39.3). При старте bot регистрирует меню `/start`, `/help`,
+       `/predict`, `/upcoming`, `/edge`; администраторы дополнительно получают `/status`,
+       `/refresh`, `/models`.
    * - ``MLFLOW_TRACKING_URI``
      - Worker / Airflow-контур (в compose — ``http://mlflow:5000``).
 

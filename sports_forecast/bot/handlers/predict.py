@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import UTC, datetime, timedelta
+from math import ceil
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 from aiogram import F, Router
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from omegaconf import DictConfig, OmegaConf
@@ -17,8 +22,30 @@ from sports_forecast.utils.log_config import get_logger
 
 
 logger = get_logger(__name__)
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+_MONTHS_RU = (
+    "января",
+    "февраля",
+    "марта",
+    "апреля",
+    "мая",
+    "июня",
+    "июля",
+    "августа",
+    "сентября",
+    "октября",
+    "ноября",
+    "декабря",
+)
 
 router = Router(name="predict")
+
+
+class ScheduleState(StatesGroup):
+    """Шаги запроса календаря турнира."""
+
+    waiting_days = State()
+
 
 # Лёгкий операционный путь (R41): только HTTP GET к витрине + ``live_pinnacle`` на стороне API.
 # Никаких вызовов Airflow/source_refresh/features.
@@ -50,6 +77,33 @@ async def fetch_predict_upcoming(
     return data if isinstance(data, dict) else {"predictions": []}
 
 
+async def fetch_schedule(
+    client: httpx.AsyncClient,
+    *,
+    cfg: DictConfig,
+    tournament: str,
+    days: int,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Загрузить календарь до конца выбранного дня МСК."""
+    base = str(cfg.bot.api_base_url).rstrip("/")
+    window_start, deadline = _schedule_window(days, now=now)
+    params = _upcoming_query_params(tournament, cfg)
+    params["hours"] = _schedule_window_hours(days, now=window_start)
+    data = await _fetch_json(client, _predict_upcoming_url(base, tournament), params=params)
+    if not isinstance(data, dict):
+        return {"predictions": []}
+    items = data.get("predictions") or []
+    return {
+        **data,
+        "predictions": [
+            item
+            for item in items
+            if isinstance(item, dict) and _is_in_schedule_window(item, window_start, deadline)
+        ],
+    }
+
+
 def _tournament_choices(_cfg: DictConfig) -> list[str]:
     raw = os.getenv("BOT_TOURNAMENTS", "").strip()
     if raw:
@@ -65,15 +119,22 @@ def _kb_tournaments(cfg: DictConfig, prefix: str):
     return b.as_markup()
 
 
+def _kb_schedule_tournaments():
+    """Вернуть доступные в первом пилоте турниры расписания."""
+    b = InlineKeyboardBuilder()
+    b.add(InlineKeyboardButton(text="NHL", callback_data="schedule:nhl"))
+    return b.as_markup()
+
+
 def _is_nhl_tournament(tournament: str) -> bool:
     """Турнир NHL: slug ``nhl``; ``nhl_train``/``nhl_*`` — только совместимость со старыми данными."""
     t = tournament.strip().lower()
     return t == "nhl" or t.startswith("nhl_")
 
 
-def _upcoming_query_params(tournament: str, cfg: DictConfig) -> dict[str, str | bool]:
+def _upcoming_query_params(tournament: str, cfg: DictConfig) -> dict[str, str | bool | int]:
     """Параметры GET ``/predict/upcoming/{tournament}`` (R37.7: live + рынок OT для NHL)."""
-    params: dict[str, str | bool] = {}
+    params: dict[str, str | bool | int] = {}
     if bool(OmegaConf.select(cfg, "bot.live_pinnacle", default=True)):
         params["live_pinnacle"] = True
     if _is_nhl_tournament(tournament):
@@ -86,7 +147,7 @@ async def _fetch_json(
     client: httpx.AsyncClient,
     url: str,
     *,
-    params: dict[str, str | bool] | None = None,
+    params: dict[str, str | bool | int] | None = None,
 ) -> Any:
     r = await client.get(url, timeout=60.0, params=params or None)
     r.raise_for_status()
@@ -183,6 +244,115 @@ def _format_upcoming_line(item: dict[str, Any]) -> str:
     return line1 + "\n  " + "\n  ".join(live)
 
 
+def _schedule_window(days: int, *, now: datetime | None = None) -> tuple[datetime, datetime]:
+    """Вернуть точные UTC-границы периода календаря."""
+    current = (now or datetime.now(UTC)).astimezone(MOSCOW_TZ)
+    deadline = current.replace(hour=23, minute=59, second=59, microsecond=999999) + timedelta(
+        days=days
+    )
+    return current.astimezone(UTC), deadline.astimezone(UTC)
+
+
+def _schedule_window_hours(days: int, *, now: datetime | None = None) -> int:
+    """Вернуть округлённый вверх API-горизонт, сохраняя точную границу в фильтре."""
+    start, deadline = _schedule_window(days, now=now)
+    return max(1, ceil((deadline - start).total_seconds() / 3600))
+
+
+def _parse_schedule_datetime(value: object) -> datetime | None:
+    """Прочитать время API: SQLite wall-time без offset считается UTC."""
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return moment.astimezone(UTC)
+
+
+def _is_in_schedule_window(item: dict[str, Any], start: datetime, deadline: datetime) -> bool:
+    """Проверить точную границу, которую часовое API-окно выразить не может."""
+    moment = _parse_schedule_datetime(item.get("match_datetime"))
+    return moment is not None and start <= moment <= deadline
+
+
+def _schedule_decimal(value: Any) -> str:
+    """Отформатировать коэффициент, не скрывая отсутствующее отдельное поле."""
+    return f"{float(value):.2f}" if value is not None else "нет данных"
+
+
+def _schedule_value(value: Any) -> str:
+    """Отформатировать value, не скрывая отсутствующее отдельное поле."""
+    return f"{float(value):+.4f}" if value is not None else "нет данных"
+
+
+def _schedule_decision(value: object) -> str:
+    """Вернуть русское решение или явный маркер отсутствующих данных."""
+    return _bet_decision_ru(value) if isinstance(value, str) else "нет данных"
+
+
+def _format_schedule(items: list[dict[str, Any]]) -> str:
+    """Сгруппировать будущие матчи по календарным дням МСК."""
+    groups: dict[str, list[str]] = {}
+    for item in items:
+        utc_moment = _parse_schedule_datetime(item.get("match_datetime"))
+        if utc_moment is None:
+            continue
+        moment = utc_moment.astimezone(MOSCOW_TZ)
+        prediction = item.get("predictions")
+        prediction_text = (
+            ", ".join(f"{key}: {value}" for key, value in prediction.items())
+            if isinstance(prediction, dict) and prediction
+            else "нет данных"
+        )
+        date_label = f"{moment.day} {_MONTHS_RU[moment.month - 1]}"
+        card = (
+            f"{moment:%H:%M} МСК  {item.get('home_player')} — {item.get('away_player')}\n"
+            f"Прогноз: {prediction_text}\n"
+            f"Коэффициенты: home {_schedule_decimal(item.get('pinnacle_home_decimal'))} | "
+            f"away {_schedule_decimal(item.get('pinnacle_away_decimal'))}\n"
+            f"Value: home {_schedule_value(item.get('edge_home'))} | "
+            f"away {_schedule_value(item.get('edge_away'))}\n"
+            f"Решение: home {_schedule_decision(item.get('bet_decision_home'))} | "
+            f"away {_schedule_decision(item.get('bet_decision_away'))}"
+        )
+        groups.setdefault(date_label, []).append(card)
+    return "\n\n".join(
+        f"🏒 NHL — {date}\n\n" + "\n\n".join(cards) for date, cards in groups.items()
+    )
+
+
+def _split_schedule_messages(items: list[dict[str, Any]], *, limit: int = 4000) -> list[str]:
+    """Разбить расписание на сообщения Telegram, не теряя матчей из-за лимита."""
+    text = _format_schedule(items)
+    if not text:
+        return []
+    header = ""
+    messages: list[str] = []
+    current = ""
+    for block in text.split("\n\n"):
+        if block.startswith("🏒 NHL — "):
+            if current:
+                messages.append(current)
+                current = ""
+            header = block
+            continue
+        card = f"{header}\n\n{block}"
+        if len(card) > limit:
+            if current:
+                messages.append(current)
+                current = ""
+            messages.extend(card[offset : offset + limit] for offset in range(0, len(card), limit))
+        elif current and len(current) + 2 + len(block) > limit:
+            messages.append(current)
+            current = card
+        else:
+            current = f"{current}\n\n{block}" if current else card
+    if current:
+        messages.append(current)
+    return messages
+
+
 @router.message(Command("predict"))
 async def cmd_predict(message: Message, cfg: DictConfig) -> None:
     """Показать клавиатуру турниров → upcoming predictions."""
@@ -232,26 +402,49 @@ async def cb_upcoming(cq: CallbackQuery, cfg: DictConfig) -> None:
 
 
 @router.message(Command("upcoming"))
-async def cmd_upcoming(message: Message, cfg: DictConfig) -> None:
-    """Расписание: аргумент турнира или клавиатура."""
-    parts = (message.text or "").split(maxsplit=1)
-    if len(parts) > 1 and parts[1].strip():
-        tournament = parts[1].strip()
-        async with httpx.AsyncClient() as client:
-            try:
-                data = await fetch_predict_upcoming(client, cfg=cfg, tournament=tournament)
-            except Exception as e:
-                logger.exception("upcoming command fetch failed")
-                await message.answer(f"Ошибка API: {e}")
-                return
-        items = data.get("predictions") or []
-        if not items:
-            await message.answer("Пусто")
-            return
-        text = "\n\n".join(_format_upcoming_line(x) for x in items[:20])
-        await message.answer(text[:4000])
+async def cmd_upcoming(message: Message) -> None:
+    """Начать сценарий выбора турнира и календарного горизонта."""
+    await message.answer("Выберите турнир:", reply_markup=_kb_schedule_tournaments())
+
+
+@router.callback_query(F.data.startswith("schedule:"))
+async def cb_schedule_tournament(cq: CallbackQuery, state: FSMContext) -> None:
+    """Сохранить турнир и запросить календарный горизонт."""
+    if cq.data is None or cq.message is None:
         return
-    await message.answer("Выберите турнир:", reply_markup=_kb_tournaments(cfg, "up"))
+    tournament = cq.data.split(":", 1)[1]
+    await state.update_data(schedule_tournament=tournament)
+    await state.set_state(ScheduleState.waiting_days)
+    await cq.message.answer("Введите число дней от 0 до 30 (0 — до конца сегодня):")
+    await cq.answer()
+
+
+@router.message(ScheduleState.waiting_days)
+async def schedule_days(message: Message, state: FSMContext, cfg: DictConfig) -> None:
+    """Вернуть календарь выбранного турнира на заданный период."""
+    try:
+        days = int((message.text or "").strip())
+    except ValueError:
+        await message.answer("Введите целое число от 0 до 30.")
+        return
+    if not 0 <= days <= 30:
+        await message.answer("Введите число от 0 до 30.")
+        return
+    tournament = str((await state.get_data()).get("schedule_tournament", "nhl"))
+    async with httpx.AsyncClient() as client:
+        try:
+            data = await fetch_schedule(client, cfg=cfg, tournament=tournament, days=days)
+        except (httpx.HTTPError, ValueError):
+            logger.exception("schedule fetch failed")
+            await message.answer("Расписание временно недоступно.")
+            return
+    await state.clear()
+    messages = _split_schedule_messages(data.get("predictions") or [])
+    if not messages:
+        await message.answer("В выбранном периоде будущих матчей нет.")
+        return
+    for text in messages:
+        await message.answer(text)
 
 
 @router.message(Command("edge"))

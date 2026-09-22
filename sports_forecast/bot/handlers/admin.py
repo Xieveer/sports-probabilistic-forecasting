@@ -23,7 +23,7 @@ def _is_admin(user_id: int, admin_ids: set[int]) -> bool:
 
 @router.message(Command("status"))
 async def cmd_status(message: Message, cfg: DictConfig) -> None:
-    """Проверка /health FastAPI."""
+    """Проверить dependency-aware readiness FastAPI без вывода деталей ошибки."""
     uid = message.from_user.id if message.from_user else 0
     admins = {int(x) for x in (cfg.bot.get("admin_user_ids") or []) if x is not None}
     if not _is_admin(uid, admins):
@@ -32,13 +32,14 @@ async def cmd_status(message: Message, cfg: DictConfig) -> None:
     base = str(cfg.bot.api_base_url).rstrip("/")
     async with httpx.AsyncClient() as client:
         try:
-            r = await client.get(f"{base}/health", timeout=30.0)
+            r = await client.get(f"{base}/ready", timeout=30.0)
             r.raise_for_status()
-            body = r.json()
-        except Exception as e:
-            await message.answer(f"Health: ошибка {e}")
+            r.json()
+        except (httpx.HTTPError, ValueError):
+            logger.warning("Telegram /status: API readiness недоступен")
+            await message.answer("API readiness недоступен.")
             return
-    await message.answer(f"API: {body}")
+    await message.answer("API readiness: готов.")
 
 
 @router.message(Command("refresh"))

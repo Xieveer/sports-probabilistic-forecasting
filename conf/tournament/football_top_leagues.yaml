@@ -1,0 +1,71 @@
+# Club pool Smart Tables для Research Mode 1X2 (REQ-021, ADR-021).
+
+defaults:
+  - /sport@_here_: football
+
+name: football_top_leagues
+region: international
+description: "Big Five, РПЛ, ФНЛ, ЛЧ и ЛЕ (Smart Tables)"
+
+data:
+  processed_dir: data/processed/football_top_leagues
+  formats:
+    long: train_long.parquet
+    wide: train_wide.parquet
+  inference:
+    long: inference_long.parquet
+    wide: inference_wide.parquet
+
+data_clean:
+  derived_columns:
+    tour_num:
+      source: datetime
+      transform: hour_to_time_of_day
+    weekday:
+      source: datetime
+      transform: dayofweek
+  select_columns:
+    - id
+    - datetime
+    - status
+    - home_points
+    - away_points
+    - home_team
+    - away_team
+    - match_is_end
+    - match_importance
+    - is_friendly
+    - competition_code
+    - competition_id
+    - season_id
+    - home_goals_all
+    - away_goals_all
+    - home_xg_all
+    - away_xg_all
+    - home_corners_all
+    - away_corners_all
+    - home_yellowcards_all
+    - away_yellowcards_all
+    - home_possession_all
+    - away_possession_all
+    - home_shotstarget_all
+    - away_shotstarget_all
+    - odd_home
+    - odd_draw
+    - odd_away
+    - tour_num
+    - weekday
+
+stats:
+  avg_home_points: 1.4
+  avg_away_points: 1.1
+  avg_total: 2.5
+  typical_range: [0, 8]
+
+time_range:
+  start: "2015-07-01"
+  end: null
+
+train_eval_split:
+  kind: temporal
+  locked_holdout: "2025-07-01/2026-06-30"

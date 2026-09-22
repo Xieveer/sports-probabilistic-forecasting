@@ -42,6 +42,10 @@ provider:
   csv_flush_every: 50
   progress_log_every: 25
 
+  # full (default) | winner_baseline_required. Последний скачивает только
+  # card.json + stat_all.json; env SF_SMART_TABLES_BRONZE_PROFILE переопределяет.
+  bronze_profile: full
+
   # Incremental (R42.15): prematch rows + stat-odds sidecar
   incremental:
     nearest_matches_limit: 50

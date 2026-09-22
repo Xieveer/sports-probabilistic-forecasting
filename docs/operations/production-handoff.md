@@ -1,87 +1,146 @@
-# Передача сервиса в эксплуатацию
+# Передача сервиса в эксплуатацию: v1.1.14 candidate
 
-Этот документ — статический application contract. В application tag он остаётся
-`draft`: final digests, GitHub runs, source SHA и `candidate` возникают только
-после успешного tag pipeline и фиксируются отдельным evidence commit/tag.
+- Статус подготовки: `candidate`
+- Сервис: `sports-probabilistic-forecasting`
+- Canonical repository: `Xieveer/sports-probabilistic-forecasting`
+- Владелец приложения и решения о rollout: пользователь.
+- source_tag: `v1.1.14`
+- source_commit: `9daf2d5bb040a5b8860961a12cb81a48997eaeac`
+- evidence_tag: `v1.1.14-evidence.3`
 
-- Статус подготовки: `draft`
+Evidence tag создаётся только после успешного evidence gate и является annotated,
+immutable указателем на этот evidence commit. Его commit SHA намеренно не записан
+в самого себя: Operations получает tag и разрешает его externally, без self-reference.
 
 ## Идентификация и ответственность
 
-- Сервис: `sports-probabilistic-forecasting`; application version определяется
-  `pyproject.toml`; canonical repository: `Xieveer/sports-probabilistic-forecasting`.
-- Владелец приложения и решения о rollout: пользователь.
-- Application tag и evidence tag являются annotated и immutable. Владелец репозитория
-  обязан защитить оба от force-update/delete вне Git tree.
-- Operations не получает общих Docker, shell, `sudo` или root прав. Production rollout
-  допускается только отдельным явным одобрением владельца.
+Контракт относится только к candidate `v1.1.14`; владелец rollout — пользователь.
+Operations не меняет source tag, image references или scope без нового evidence revision.
 
 ## Runtime и конфигурация
 
-- Первый rollout — private Telegram-only. Base `docker-compose.prod.yml` не публикует
-  host ports. Public ingress, DNS, TLS, Caddy, firewall changes и новые inbound ports
-  не входят в scope.
-- API, Worker, Telegram bot, source-acquirer и archive-sync запускаются с
-  UID/GID `10001:10001`; host paths готовит Operations с теми же ownership/permissions.
-- Все credentials передаются лишь через `*_FILE` paths и Docker secrets. Нельзя включать
-  значения secrets, chat/user IDs, credentials или environment values в manifest/evidence.
-- Runtime identifiers: только exact `image@sha256:...` для PostgreSQL, API, Worker,
-  Telegram bot и archive-sync. SemVer image tag не является runtime identifier.
+Compose получает только pinned references из manifest и secrets через ранее настроенные
+server-side files. Значения secrets в handoff не записываются; application services используют
+UID/GID `10001:10001`.
+
+Operations передаёт в Compose только `*_FILE` paths; значения DB URL, token и паролей не
+становятся значениями environment. Direct host CLI получает тот же DB URL через
+`DATABASE_URL_FILE`.
 
 ## Healthcheck и smoke-проверка
 
-- Liveness: `GET /health`; readiness: `GET /ready`; safe smoke: `/health`, `/ready`,
-  `/docs` и заранее выбранный known prediction с `live_pinnacle=false`.
-- После запуска candidate Operations выполняет non-mutating `make acceptance-check` из
-  защищённого operator environment. Команда не запускает Worker/training, не отправляет
-  Telegram, не делает DML и не выводит secrets/payloads.
-- Ожидаемый health/readiness result — HTTP 200 не позднее 90 секунд; crash loop,
-  DB failure или не-200 являются stop criteria.
+После отдельного approval Operations выполняет только `/health`, `/ready`, `/docs` и выбранную
+known prediction. До production rollout acceptance-команда не запускается: `make acceptance-check`
+выполняется Operations только с approved runtime inputs.
 
 ## Данные и совместимость
 
-- До migrations/import Operations создаёт verified PostgreSQL backup. Затем: `role-bootstrap`,
-  `migrator`, idempotent canonical bootstrap import, API и Telegram bot. API/Worker не
-  выполняют DDL при старте.
-- Operations до запуска проверяет existing initial source-state, canonical bootstrap и
-  model bundle внутри pinned Worker image.
-- Scheduler/timer остаётся disabled до отдельного owner approval и successful bounded
-  initial refresh. Первичный import, migrations и Telegram delivery также не разрешены
-  этим контрактом сами по себе.
-- После additive migration допустимы forward-fix или verified backup restore; destructive
-  downgrade запрещён. До migration rollback — previous immutable image references.
+До migration проверяются source-state, canonical bootstrap и current model bundle. Migration
+выполняет только отдельный migrator после verified PostgreSQL backup.
 
 ## Наблюдаемость
 
-- Operations проверяет host/container telemetry, health, resource limits, backups и отсутствие
-  active incidents до rollout. Logs не должны содержать tokens, passwords, keys или query secrets.
-- Required signals: `/health`, `/ready`, restart loop, DB availability, refresh error и host
-  resource exhaustion.
+Перед запуском Operations проверяет telemetry, active incidents и доступность логов. Stop criteria
+содержат crash loop, DB failure и неуспешные readiness/health probes.
 
 ## Артефакт и откат
 
-После зелёного application pipeline release owner создаёт отдельный evidence commit и только
-после успешного evidence gate annotated tag `v1.1.14-evidence.1`. Evidence commit содержит:
-
-1. `deploy/release-manifest.json` с `source_tag`, exact 40-hex `source_commit`, `evidence_tag`
-   и ровно пять digest references;
-2. этот handoff со статусом `candidate`, replacing historical blockers actual release evidence;
-3. URLs successful CI, Security, Docker/image scan/provenance и first-rollout runs.
-
-Перед evidence tag выполнить `make verify-release-evidence EVIDENCE_GATE_ARGS='--manifest deploy/release-manifest.json --rendered-compose <rendered.yml> --repository-root . --source-tag v<version> --version <version> --handoff docs/operations/production-handoff.md'`.
-Workflow `Release evidence` повторяет проверку для evidence commit. Непройденный evidence gate,
-отсутствующий run, mismatch digest/source binding или unprotected tag означает NO-GO.
+Rollback до migration допускается только на предшествующие immutable references; после additive
+migration применяется forward-fix либо verified backup restore. Destructive downgrade запрещён.
+При cross-version model activation pointer `previous` — recovery artifact предыдущего release:
+его использование требует rollback application release до совместимой версии manifest.
 
 ## Нерешённые вопросы
 
-- Application source не подтверждает successful external GitHub runs, publication, image scans,
-  provenance, Linux/amd64 platform, evidence tag protection или VPS state; это обязательные
-  post-tag доказательства до `candidate`.
-- Deployment не выполнялся. Operations обязан проверить server-side paths, secrets metadata
-  без чтения значений, wrapper restrictions, backup/recovery и acceptance после owner approval.
+Production rollout, migrations, bootstrap import, scheduler и Telegram delivery не одобрены и не
+выполнялись. Protected-tag policy и серверные preflight checks остаются обязанностью Operations.
 
-## Граница ответственности
+## Подтверждённые gates
 
-Application team отвечает за source, automated gates, immutable artifact и этот contract.
-Operations отвечает за host, secrets, wrapper, telemetry, rollout/recovery. Ни один документ
-или зелёный pipeline не заменяет отдельное owner approval на production deployment.
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34231526622
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34231526630
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34231529542
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34231529542
+- evidence.2 runtime gate: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/34244384888
+
+CI и Security относятся к review/evidence-base commit
+`c50ec4073ec88b6de833626a977965122bfaa942`; Docker и first-rollout относятся к
+exact application source commit `9daf2d5bb040a5b8860961a12cb81a48997eaeac`.
+Docker run подтвердил publication, linux/amd64, image scan и provenance для всех
+application images; first-rollout был выполнен только в одноразовом изолированном
+CI-контуре с local registry и redacted evidence. Новый Docker run для evidence.2
+должен быть успешно завершён до создания tag; production deployment этой задачей не
+выполняется.
+
+## Immutable runtime references
+
+- SF_POSTGRES_IMAGE: `postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94`
+- api: published; linux/amd64; image scan; provenance; `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:b685fcf6218a8df39a2083282eda3c0285c9d258a681e14ea2cd1a009ab2498c`
+- worker: published; linux/amd64; image scan; provenance; `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:3f802d34f6673afa7a3df74e6fa89554a77170856108ef2347306e752ee89325`
+- telegram_bot: published; linux/amd64; image scan; provenance; `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:b96c98c7a16f3e9104d6b862cc76c01b7df79dd21683a7ef249e0c17bf4a31ba`
+- archive_sync: published; linux/amd64; image scan; provenance; `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:3faa489816edf7cf123e390ff1da23992f183faa3a2ac8d6521c69e67944f833`
+
+`deploy/release-manifest.json` из этого commit является единственным декларативным
+источником runtime references; manifest не содержит secrets, credentials, IDs,
+Object Storage keys или environment values. SemVer tags не являются runtime
+identifiers.
+
+Перед annotated evidence tag release owner запускает manual workflow либо его
+эквивалентный evidence gate с `--handoff docs/operations/production-handoff.md`;
+успех gate не является разрешением на deployment.
+
+## Исправление Worker evidence.2
+
+В `v1.1.14-evidence.1` был записан `sha256:c963ed…`, то есть Sigstore/SLSA
+provenance referrer с пустым OCI config, а не его subject image. Поэтому Docker
+production-сервера не мог разрешить из него `linux/amd64`. Независимый mandatory gate
+показал тот же referrer defect у API, Telegram bot и archive-sync, поэтому evidence.2
+заменяет все четыре application references на их runnable subject manifests; PostgreSQL
+reference сохранён. Docker pipeline теперь получает digest из
+tagged remote manifest, проверяет его через `docker buildx imagetools inspect` на
+`linux/amd64`, а для Worker выполняет pull, image inspect и non-root read-only
+runtime import smoke по exact reference.
+
+## Граница первого rollout
+
+Первый rollout private и Telegram-only. Public ingress, DNS, TLS, Caddy, новые
+inbound ports и firewall changes не входят в scope. Base Compose не публикует host
+ports. API, Worker, Telegram bot, source-acquirer и archive-sync используют
+UID/GID `10001:10001`.
+
+Scheduler/timer остаётся disabled до отдельного owner approval и successful bounded
+initial refresh. Этот candidate не разрешает deployment, production migrations,
+bootstrap import или Telegram delivery verification.
+
+## Контракт Operations и recovery boundaries
+
+До любого одобренного запуска Operations проверяет server-side paths, ownership
+`10001:10001`, permissions, ресурсы, локально доступные pinned images, secrets
+metadata без чтения значений, backups, telemetry и отсутствие active incidents.
+Root-owned wrapper принимает только:
+
+```text
+deploy sports-probabilistic-forecasting v1.1.14
+```
+
+Он сверяет service, version, source commit и все digest с локально установленным
+verified manifest; не принимает image references, paths, environment values или
+дополнительные аргументы. `deployer` не получает shell, sudo, Docker CLI,
+port/agent/X11 forwarding. До изменения entrypoint Operations создаёт timestamped
+backup, выполняет syntax/config dry-run и доказывает rejection запрещённых команд.
+
+При отдельном owner approval порядок строго следующий:
+
+1. Проверить pre-existing initial source-state, canonical bootstrap и model bundle
+   в pinned Worker image; создать verified PostgreSQL backup до migrations/import.
+2. Выполнить `role-bootstrap`, затем отдельный `migrator`; API/Worker не выполняют
+   DDL при старте.
+3. Выполнить idempotent canonical bootstrap import; запустить API и Telegram bot.
+4. Выполнить только безопасные `/health`, `/ready`, `/docs` и заранее выбранную
+   known prediction с `live_pinnacle=false`; ожидается HTTP 200 не позднее 90 секунд.
+
+Stop criteria: crash loop, DB failure, non-200 readiness/health, missing verified
+backup либо отклонение manifest/wrapper. До migration разрешён rollback только на
+предыдущие immutable references; после additive migration — forward-fix либо verified
+backup restore. Destructive downgrade запрещён. Continuous deployment остаётся
+выключенным до успешного первого production rollout и проверенного recovery path.
