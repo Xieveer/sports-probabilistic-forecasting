@@ -310,6 +310,14 @@ make materialize TOURNAMENT=uel_kz_1
 | `/predict/upcoming/{tournament}` | GET | Upcoming матчи турнира |
 | `/metrics` | GET | Prometheus метрики |
 
+### Telegram: расписание NHL
+
+Команда `/upcoming` открывает сценарий расписания: выберите NHL, затем введите число
+от `0` до `30`. `0` означает остаток текущего дня, остальные значения — период до
+конца соответствующего дня по МСК. Бот группирует матчи по датам и показывает
+существующие прогноз, коэффициенты и value; отсутствующие значения помечает как
+«нет данных».
+
 ### Monitoring
 
 - **Prometheus:** AUC, LogLoss, ECE, ROI, drift score, request latency

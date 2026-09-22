@@ -1,6 +1,6 @@
 # TASK-023-2 — отчёт о выполнении
 
-> **Статус задачи:** in_review
+> **Статус задачи:** done
 > **Дата:** 2026-09-22
 > **Задача:** [TASK-023-2](../../backlog/tasks/TASK-023-2-ewm-optional-metric-contract.md)
 
@@ -23,4 +23,5 @@ TASK выделена отдельно, поскольку корректиру�
 
 ## Review
 
-Независимый reviewer должен подтвердить отсутствие изменения runtime и exact commit.
+Независимый reviewer подтвердил отсутствие изменения runtime. Commit: `8a30825`
+(`test(features): align optional EWM metric contract`); push не выполнялся.

@@ -55,3 +55,6 @@
 | TASK-018-2 | done | high | [File-backed DB URL для canonical bootstrap](tasks/TASK-018-2-bootstrap-database-url-file.md) |
 | TASK-018-3 | done | high | [Cross-version model bundle recovery](tasks/TASK-018-3-cross-version-model-recovery.md) |
 | TASK-018-4 | done | high | [Telegram command menu](tasks/TASK-018-4-telegram-command-menu.md) |
+| EPIC-023 | in_progress | high | [Пилот агентского цикла: расписание NHL в Telegram](EPIC-023-nhl-schedule-agent-pilot.md) |
+| TASK-023-1 | in_progress | high | [Расписание NHL в Telegram и агентский delivery pilot](tasks/TASK-023-1-nhl-schedule-agent-pilot.md) |
+| TASK-023-2 | done | high | [Согласование тестового контракта optional EWM-метрики](tasks/TASK-023-2-ewm-optional-metric-contract.md) |
