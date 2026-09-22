@@ -32,7 +32,7 @@ production secrets.
   tests; регрессии существующих bot/API contracts исключены.
 - [ ] Фактически успешны `make lint`, полный test suite и Git CI для exact commit,
   принятый независимым reviewer; реальный commit и результаты зафиксированы в done-report.
-- [ ] Browser e2e тестового бота подтверждает именно форматированную выдачу с fixture,
+- [x] Browser e2e тестового бота подтверждает именно форматированную выдачу с fixture,
   без production token; evidence не содержит секретов, chat IDs или полных Telegram payload.
 - [ ] `operations-agent` до deployment документирует read-only discovery и исправляет
   устаревшие service facts. Он развёртывает только принятый immutable release через свой
@@ -117,15 +117,13 @@ Rollback не переписывает Git history и не затрагивае�
 ## Handoff и отчёт
 
 - Отчёт выполнения: `docs/changes/done/TASK-023-1-nhl-schedule-agent-pilot.md`.
-- Follow-up / findings: локальный test-bot и API подняты 2026-09-22; heartbeat зелёный,
-  а чистая временная SQLite подтверждает HTTP 200, пустой календарь и форматированную fixture
-  на API-уровне. Реальный browser E2E пройден только для пустого ответа:
-  `/upcoming` → NHL → `0` → сообщение об отсутствии будущих матчей. Форматированный ответ
-  требует отдельного повторного browser E2E в стабильной тестовой вкладке: активная вкладка
-  владельца переключилась на другой чат, поэтому ввод в неё прекращён. В evidence не
-  записывались chat IDs, токены, payload или снимки интерфейса. Следующие gates: browser E2E
-  fixture, повторный независимый review, exact commit и Git CI; после них — read-only
-  discovery operations-agent и ограниченный deployment.
+- Follow-up / findings: 2026-09-22 в авторизованной вкладке test bot пройден полный browser
+  E2E на коде commit `93d0d0a`: `/upcoming` → NHL → `1` → будущий матч, сгруппированный по
+  дате МСК, с прогнозом, home/away коэффициентами, home/away value и решениями. Ответ пришёл
+  от краткоживущей локальной HTTP-fixture; production endpoint и production token не
+  использовались. После проверки fixture и локальный polling остановлены. В evidence не
+  записывались chat IDs, токены, payload или снимки интерфейса. Следующие gates: Git CI
+  exact commit, затем read-only discovery operations-agent и ограниченный deployment.
 - Review: ссылка на независимый review и exact commit добавляются после реализации.
 - Commit/push: hash проверенного commit и ссылка заполняются reviewer; deploy release
   получает отдельную immutable identity в операционной записи.
