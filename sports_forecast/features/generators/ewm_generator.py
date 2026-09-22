@@ -141,8 +141,8 @@ class EWMFeatureGenerator(BaseFeatureGenerator):
         Returns:
             Датафрейм с добавленными EWM фичами
 
-        Raises:
-            ValueError: Если отсутствуют обязательные колонки
+        Отсутствующая метрика из конфигурации турнира считается optional: генератор
+        возвращает входные данные без изменений, чтобы не отменять доступные признаки.
         """
         long = df.copy()
         self._last_run_skipped_contexts = 0

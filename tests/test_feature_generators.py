@@ -499,8 +499,8 @@ class TestEWMFeatureGenerator:
 
     # ---------- Error handling ----------
 
-    def test_missing_metric_raises(self, long_df: pd.DataFrame) -> None:
-        """Отсутствие metric колонки вызывает ValueError."""
+    def test_missing_metric_skips_generator(self, long_df: pd.DataFrame) -> None:
+        """Отсутствующая optional-метрика не отменяет доступные признаки."""
         config = {
             "type": "ewm",
             "metric": "nonexistent_metric",
@@ -518,8 +518,9 @@ class TestEWMFeatureGenerator:
             ],
         }
         gen = EWMFeatureGenerator(config)
-        with pytest.raises(ValueError, match="nonexistent_metric"):
-            gen.generate(long_df)
+        result = gen.generate(long_df)
+
+        pd.testing.assert_frame_equal(result, long_df)
 
     def test_missing_spans_raises(self) -> None:
         """Конфиг без spans вызывает ошибку при инициализации."""
