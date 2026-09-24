@@ -333,10 +333,10 @@ def test_log_redaction_gate_rejects_fixture_secret(tmp_path: Path) -> None:
         )
 
 
-def test_minio_fixture_connects_alias_only_to_compose_network(
+def test_minio_fixture_uses_dedicated_user_defined_network_before_compose_connect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """MinIO получает DNS alias после старта, не через default bridge Docker."""
+    """MinIO не использует встроенный default bridge Docker."""
     commands: list[list[str]] = []
 
     def record(command: list[str], **_: object) -> None:
@@ -347,12 +347,30 @@ def test_minio_fixture_connects_alias_only_to_compose_network(
     _start_minio_fixture(
         minio_name="sf-rollout-test-minio",
         network="sf-rollout-test_default",
+        fixture_network="sf-rollout-test-minio-network",
         values={"DATABASE_URL_FILE": "/non-secret-path"},
     )
 
-    assert commands[0][:5] == ["docker", "run", "-d", "--name", "sf-rollout-test-minio"]
-    assert "--network" not in commands[0]
-    assert commands[1] == [
+    assert commands[0] == [
+        "docker",
+        "network",
+        "create",
+        "--driver",
+        "bridge",
+        "sf-rollout-test-minio-network",
+    ]
+    assert commands[1][:9] == [
+        "docker",
+        "run",
+        "-d",
+        "--name",
+        "sf-rollout-test-minio",
+        "--network",
+        "sf-rollout-test-minio-network",
+        "--network-alias",
+        "minio",
+    ]
+    assert commands[2] == [
         "docker",
         "network",
         "connect",

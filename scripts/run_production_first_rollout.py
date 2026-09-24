@@ -372,12 +372,13 @@ def _run_one_shot_checked(
     return result
 
 
-def _start_minio_fixture(*, minio_name: str, network: str, values: dict[str, str]) -> None:
-    """Запустить MinIO и подключить alias к user-defined Compose-сети.
-
-    Docker не принимает ``--network-alias`` у встроенной сети ``bridge``. Сначала
-    запускаем fixture без alias, затем подключаем к уже созданной Compose-сети.
-    """
+def _start_minio_fixture(
+    *, minio_name: str, network: str, fixture_network: str, values: dict[str, str]
+) -> None:
+    """Запустить MinIO вне встроенного bridge и подключить к Compose-сети."""
+    _run_one_shot_checked(
+        ["docker", "network", "create", "--driver", "bridge", fixture_network], values=values
+    )
     _run_one_shot_checked(
         [
             "docker",
@@ -385,6 +386,10 @@ def _start_minio_fixture(*, minio_name: str, network: str, values: dict[str, str
             "-d",
             "--name",
             minio_name,
+            "--network",
+            fixture_network,
+            "--network-alias",
+            "minio",
             "--env",
             "MINIO_ROOT_USER=fixture-access-key",
             "--env",
@@ -813,6 +818,7 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
             _start_minio_fixture(
                 minio_name=minio_name,
                 network=f"{project_name}_default",
+                fixture_network=f"{project_name}-minio-network",
                 values=values,
             )
             _wait_for(
@@ -1103,6 +1109,11 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
             )
             subprocess.run(
                 ["docker", "rm", "-f", f"{project_name}-minio"], capture_output=True, check=False
+            )
+            subprocess.run(
+                ["docker", "network", "rm", f"{project_name}-minio-network"],
+                capture_output=True,
+                check=False,
             )
             _run([*compose, "down", "--volumes", "--remove-orphans"], timeout=180)
             _restore_fixture_mount_ownership(fixture_mounts, image=refs["SF_WORKER_IMAGE"])
