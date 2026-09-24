@@ -57,9 +57,10 @@ payload в evidence не сохранялись.
   https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/35776276169 и
   https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/35776276293.
 - Tag pipeline `v1.1.15` остановился до publication: isolated first-rollout contract не смог
-  запустить MinIO fixture с network alias на default bridge (Docker exit 125). Production
-  server и GHCR images не менялись. Regression fix оформлен как новый candidate `v1.1.16`.
-- Не завершены final tag pipeline `v1.1.16` и operations-agent rollout. До их успешного
+  запустить MinIO fixture с network alias на default bridge (Docker exit 125). `v1.1.16`
+  также остановился на MinIO startup (exit 125). Production server и GHCR images не менялись.
+  Regression fix оформлен как новый candidate `v1.1.17`.
+- Не завершены final tag pipeline `v1.1.17` и operations-agent rollout. До их успешного
   завершения задача не считается принятой, а deployment запрещён.
 
 ## Review
@@ -70,3 +71,14 @@ payload в evidence не сохранялись.
 Функциональный commit reviewer: `93d0d0a`. Browser E2E formatted fixture завершён.
 Candidate handoff фиксирует version/tag contract без фиктивного self-reference SHA;
 обязательными внешними gates остаются final tag pipeline и operations rollout.
+
+### Review release remediation v1.1.17
+
+Независимый reviewer не обнаружил findings P0/P1/P2 в исправлении isolated first-rollout.
+Проверенный implementation commit: `5145142440d4be58b18b6137eb6c6ab0307ddcde`.
+Подтверждены выделенная user-defined сеть MinIO, последующее подключение к Compose-сети,
+cleanup контейнера и сети, согласованность версии и release-документов. Выполнены 47
+целевых тестов, полный `make test` (1034 tests), `make lint`, `make security`, обязательный
+`uv run pre-commit run mypy --all-files`, `uv lock --check`, `make production-check`,
+Docker smoke и `git diff --check`; все проверки успешны. Остаточный внешний gate — полный
+first-rollout на Docker daemon GitHub hosted runner в tag pipeline `v1.1.17`.

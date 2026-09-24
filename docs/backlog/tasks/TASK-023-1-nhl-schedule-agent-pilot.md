@@ -131,5 +131,6 @@ Rollback не переписывает Git history и не затрагивае�
 - Commit/push: deploy release получает immutable identity только из tag pipeline и
   операционной записи; SemVer tag сам по себе runtime identifier не является.
 - Release remediation: tag `v1.1.15` остановлен до publication и deploy на isolated
-  MinIO fixture (Docker exit 125). Follow-up `v1.1.16` изолированно исправляет этот
-  release gate; production scope TASK не меняется.
+  MinIO fixture (Docker exit 125). `v1.1.16` также не прошёл MinIO startup (exit 125);
+  follow-up `v1.1.17` изолированно переводит fixture на выделенную user-defined сеть.
+  Production scope TASK не меняется.
