@@ -1,6 +1,6 @@
 # TASK-023-1 — отчёт о выполнении
 
-> **Статус задачи:** in_progress, передан на независимый review
+> **Статус задачи:** in_progress, готова к финальному release gate
 > **Дата:** 2026-09-22
 > **Задача:** [TASK-023-1](../../backlog/tasks/TASK-023-1-nhl-schedule-agent-pilot.md)
 > **Требование:** [REQ-023](../../product/requirements/REQ-023-nhl-schedule-agent-pilot.md)
@@ -50,13 +50,20 @@ payload в evidence не сохранялись.
 - Отдельная [TASK-023-2](../../backlog/tasks/TASK-023-2-ewm-optional-metric-contract.md)
   приводит старое test-ожидание к уже принятому optional-metric контракту генератора EWM;
   runtime-код не менялся. Она принята отдельным commit `8a30825`.
-- Не завершены Git CI exact commit и operations-agent rollout. До их успешного завершения
-  задача не считается принятой, а deployment запрещён.
+- CI и Security implementation commit `7bedfe8` успешны:
+  https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/35774317354 и
+  https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/35774317402.
+  Formatting commit `ef8ace6` также имеет успешные CI и Security:
+  https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/35776276169 и
+  https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/35776276293.
+- Не завершены final tag pipeline `v1.1.15` и operations-agent rollout. До их успешного
+  завершения задача не считается принятой, а deployment запрещён.
 
 ## Review
 
 Независимый reviewer выполнил два цикла review. Первый выявил и второй подтвердил устранение
 ошибок окна МСК/UTC, полей away, безопасного разбиения сообщений, malformed JSON и
 синхронизации evidence. Вердикт последнего review: `approve-with-external-blockers`.
-Функциональный commit reviewer: `93d0d0a`. Browser E2E formatted fixture завершён;
-обязательными внешними gates остаются Git CI и operations rollout.
+Функциональный commit reviewer: `93d0d0a`. Browser E2E formatted fixture завершён.
+Candidate handoff фиксирует version/tag contract без фиктивного self-reference SHA;
+обязательными внешними gates остаются final tag pipeline и operations rollout.

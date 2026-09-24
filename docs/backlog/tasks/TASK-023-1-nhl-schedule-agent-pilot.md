@@ -30,14 +30,15 @@ production secrets.
 - [x] Отсутствие будущих матчей возвращает понятное сообщение.
 - [x] Новое поведение проходит сначала targeted failing tests, затем unit/integration
   tests; регрессии существующих bot/API contracts исключены.
-- [ ] Фактически успешны `make lint`, полный test suite и Git CI для exact commit,
-  принятый независимым reviewer; реальный commit и результаты зафиксированы в done-report.
+- [x] Фактически успешны `make lint`, полный test suite и Git CI для проверенного
+  implementation commit; результаты зафиксированы в done-report. Финальный release commit
+  дополнительно проходит tag pipeline до rollout.
 - [x] Browser e2e тестового бота подтверждает именно форматированную выдачу с fixture,
   без production token; evidence не содержит секретов, chat IDs или полных Telegram payload.
 - [ ] `operations-agent` до deployment документирует read-only discovery и исправляет
   устаревшие service facts. Он развёртывает только принятый immutable release через свой
   allowlist, проверяет лишь утверждённые health/log checks и автоматически откатывается
-  при техническом сбое.
+  при техническом сбое. Фактический rollout остаётся следующим gate.
 - [ ] Production-result либо successful health/log evidence, либо completed rollback
   and non-terminal TASK status; пользовательская production-проверка не выполняется
   агентом.
@@ -124,6 +125,8 @@ Rollback не переписывает Git history и не затрагивае�
   использовались. После проверки fixture и локальный polling остановлены. В evidence не
   записывались chat IDs, токены, payload или снимки интерфейса. Следующие gates: Git CI
   exact commit, затем read-only discovery operations-agent и ограниченный deployment.
-- Review: ссылка на независимый review и exact commit добавляются после реализации.
-- Commit/push: hash проверенного commit и ссылка заполняются reviewer; deploy release
-  получает отдельную immutable identity в операционной записи.
+- Review: независимый reviewer принял functional commit `93d0d0a`; merge commit
+  `7bedfe8` прошёл CI и Security. Последующее formatting-уточнение `ef8ace6` также прошло
+  CI и Security; final release commit проходит tag pipeline отдельно.
+- Commit/push: deploy release получает immutable identity только из tag pipeline и
+  операционной записи; SemVer tag сам по себе runtime identifier не является.
