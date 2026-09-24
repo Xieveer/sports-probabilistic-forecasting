@@ -112,6 +112,10 @@
   data требует возвращения к владельцу за отдельным решением.
 - Автоматический rollback снижает последствия deployment failure, но не заменяет
   pre-deploy проверки и сохранённый совместимый rollback target.
+- Release candidate `v1.1.15` остановлен до publication и server mutation: isolated
+  first-rollout contract получил Docker exit 125 при MinIO network alias. Исправление
+  `v1.1.16` обязано иметь regression test и пройти полный tag pipeline до rollout;
+  переиспользование либо перемещение `v1.1.15` запрещено.
 
 ## Предположения и открытые вопросы
 

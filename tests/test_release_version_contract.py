@@ -13,7 +13,7 @@ from sports_forecast.service.schemas import HealthResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.1.14"
+RELEASE_VERSION = "1.1.16"
 
 
 def test_package_and_fastapi_publish_same_release_version() -> None:
@@ -65,10 +65,12 @@ def test_evidence_workflow_is_manual_and_keeps_dynamic_facts_outside_application
     assert 'evidence_path="$GITHUB_WORKSPACE/evidence"' in command
     assert 'test("^v" + $version + "-evidence\\\\.[1-9][0-9]*$")' in command
     assert 'validator_manifest="$fixture_root/release-manifest.validator.json"' in command
+    assert 'source_tag="${{ steps.manifest.outputs.source_tag }}"' in command
+    assert 'source_tag="v1.1.14"' not in command
     assert 'docker buildx imagetools inspect "$image_ref"' in command
     assert "--platform linux/amd64 --network none --read-only --user 10001:10001" in command
     checkouts = [step for step in workflow["jobs"]["verify-evidence"]["steps"] if "uses" in step]
-    assert checkouts[1]["with"]["ref"] == "v1.1.14"
+    assert checkouts[1]["with"]["ref"] == "${{ steps.manifest.outputs.source_tag }}"
     assert any(
         step.get("name") == "Log in to GHCR for immutable image verification"
         for step in workflow["jobs"]["verify-evidence"]["steps"]
@@ -78,7 +80,7 @@ def test_evidence_workflow_is_manual_and_keeps_dynamic_facts_outside_application
     )
     assert "- Статус подготовки: `candidate`" in handoff
     assert "v1.1.12" not in handoff
-    assert "v1.1.14-evidence.3" in handoff
+    assert "v1.1.16" in handoff
     assert "--handoff docs/operations/production-handoff.md" in handoff
 
 

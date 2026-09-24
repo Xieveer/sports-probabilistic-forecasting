@@ -372,6 +372,35 @@ def _run_one_shot_checked(
     return result
 
 
+def _start_minio_fixture(*, minio_name: str, network: str, values: dict[str, str]) -> None:
+    """Запустить MinIO и подключить alias к user-defined Compose-сети.
+
+    Docker не принимает ``--network-alias`` у встроенной сети ``bridge``. Сначала
+    запускаем fixture без alias, затем подключаем к уже созданной Compose-сети.
+    """
+    _run_one_shot_checked(
+        [
+            "docker",
+            "run",
+            "-d",
+            "--name",
+            minio_name,
+            "--env",
+            "MINIO_ROOT_USER=fixture-access-key",
+            "--env",
+            "MINIO_ROOT_PASSWORD=fixture-secret-key",
+            MINIO_IMAGE,
+            "server",
+            "/data",
+        ],
+        values=values,
+    )
+    _run_one_shot_checked(
+        ["docker", "network", "connect", "--alias", "minio", network, minio_name],
+        values=values,
+    )
+
+
 def _probe_runtime_identities(
     *, project_name: str, values: dict[str, str], postgres_image: str
 ) -> None:
@@ -781,25 +810,9 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
             evidence["health"]["worker_refresh"] = "ok"
             evidence["health"]["worker_run_id_idempotency"] = "ok"
             minio_name = f"{project_name}-minio"
-            _run_one_shot_checked(
-                [
-                    "docker",
-                    "run",
-                    "-d",
-                    "--name",
-                    minio_name,
-                    "--network",
-                    f"{project_name}_default",
-                    "--network-alias",
-                    "minio",
-                    "--env",
-                    "MINIO_ROOT_USER=fixture-access-key",
-                    "--env",
-                    "MINIO_ROOT_PASSWORD=fixture-secret-key",
-                    MINIO_IMAGE,
-                    "server",
-                    "/data",
-                ],
+            _start_minio_fixture(
+                minio_name=minio_name,
+                network=f"{project_name}_default",
                 values=values,
             )
             _wait_for(

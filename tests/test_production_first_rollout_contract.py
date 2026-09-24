@@ -18,6 +18,7 @@ from scripts.run_production_first_rollout import (
     _parse_memory_usage_bytes,
     _restore_fixture_mount_ownership,
     _restore_runtime_root_ownership,
+    _start_minio_fixture,
 )
 
 
@@ -330,6 +331,36 @@ def test_log_redaction_gate_rejects_fixture_secret(tmp_path: Path) -> None:
         _assert_logs_are_redacted(
             "connected postgresql://secret", {"DATABASE_URL_FILE": str(secret)}
         )
+
+
+def test_minio_fixture_connects_alias_only_to_compose_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MinIO получает DNS alias после старта, не через default bridge Docker."""
+    commands: list[list[str]] = []
+
+    def record(command: list[str], **_: object) -> None:
+        commands.append(command)
+
+    monkeypatch.setattr("scripts.run_production_first_rollout._run_one_shot_checked", record)
+
+    _start_minio_fixture(
+        minio_name="sf-rollout-test-minio",
+        network="sf-rollout-test_default",
+        values={"DATABASE_URL_FILE": "/non-secret-path"},
+    )
+
+    assert commands[0][:5] == ["docker", "run", "-d", "--name", "sf-rollout-test-minio"]
+    assert "--network" not in commands[0]
+    assert commands[1] == [
+        "docker",
+        "network",
+        "connect",
+        "--alias",
+        "minio",
+        "sf-rollout-test_default",
+        "sf-rollout-test-minio",
+    ]
 
 
 @pytest.mark.parametrize(

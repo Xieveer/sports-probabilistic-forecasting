@@ -30,7 +30,7 @@ jobs:
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.2
         with:
-          ref: v1.1.14
+          ref: ${{ steps.manifest.outputs.source_tag }}
           path: source
           fetch-depth: 0
 
@@ -59,7 +59,7 @@ jobs:
           manifest="$evidence_path/deploy/release-manifest.json"
           handoff="$evidence_path/docs/operations/production-handoff.md"
           test -f "$manifest"
-          source_tag="v1.1.14"
+          source_tag="${{ steps.manifest.outputs.source_tag }}"
           test "$(jq --raw-output '.source_tag' "$manifest")" = "$source_tag"
           app_version="$(uv run --directory "$source_path" python -c 'import tomllib; from pathlib import Path; print(tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"])')"
           jq --exit-status --raw-output --arg version "$app_version" \
