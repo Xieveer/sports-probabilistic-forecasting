@@ -1,17 +1,21 @@
-# Передача сервиса в эксплуатацию: v1.1.15 candidate
+# Передача сервиса в эксплуатацию: v1.1.16 candidate
 
 - Статус подготовки: `candidate`
 - Сервис: `sports-probabilistic-forecasting`
 - Canonical repository: `Xieveer/sports-probabilistic-forecasting`
 - Владелец приложения и решения о rollout: пользователь.
-- source_tag: `v1.1.15`
-- source_commit: разрешается Operations из annotated tag `v1.1.15` непосредственно перед rollout.
+- source_tag: `v1.1.16`
+- source_commit: разрешается Operations из annotated tag `v1.1.16` непосредственно перед rollout.
 
 Этот handoff относится только к выпуску Epic 23: расписание NHL в Telegram. Тег создаётся
 на commit, содержащем весь код, версию и этот статический контракт; self-reference SHA в
 commit намеренно не записывается. После успешного tag pipeline Operations получает exact
 commit, immutable image digests, scan и provenance из GitHub Actions и сверяет их со своим
 allowlist. До этого любые image reference и deploy запрещены.
+
+`v1.1.15` не прошёл isolated first-rollout contract: Docker отклонил MinIO fixture с
+network alias на default bridge (exit 125). GHCR images не публиковались, production-сервер
+не менялся. `v1.1.16` содержит только regression fix этого fixture и новую проверку.
 
 ## Идентификация и ответственность
 
@@ -53,7 +57,7 @@ DB failure, missing verified backup, manifest/wrapper mismatch или не-200 r
 
 ## Артефакт и откат
 
-Docker workflow на tag `v1.1.15` обязан успешно завершить CI, Security, first-rollout,
+Docker workflow на tag `v1.1.16` обязан успешно завершить CI, Security, first-rollout,
 publication linux/amd64 images, image scan и provenance. Operations принимает только
 `IMAGE@sha256:DIGEST` из результата этого workflow, а не SemVer tag.
 
@@ -64,7 +68,7 @@ publication linux/amd64 images, image scan и provenance. Operations прини�
 Root-owned wrapper принимает только:
 
 ```text
-deploy sports-probabilistic-forecasting v1.1.15
+deploy sports-probabilistic-forecasting v1.1.16
 ```
 
 Он сверяет service, tag-resolved commit и все digests с локально установленным verified

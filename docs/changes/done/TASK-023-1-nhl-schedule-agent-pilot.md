@@ -56,7 +56,10 @@ payload в evidence не сохранялись.
   Formatting commit `ef8ace6` также имеет успешные CI и Security:
   https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/35776276169 и
   https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/35776276293.
-- Не завершены final tag pipeline `v1.1.15` и operations-agent rollout. До их успешного
+- Tag pipeline `v1.1.15` остановился до publication: isolated first-rollout contract не смог
+  запустить MinIO fixture с network alias на default bridge (Docker exit 125). Production
+  server и GHCR images не менялись. Regression fix оформлен как новый candidate `v1.1.16`.
+- Не завершены final tag pipeline `v1.1.16` и operations-agent rollout. До их успешного
   завершения задача не считается принятой, а deployment запрещён.
 
 ## Review
