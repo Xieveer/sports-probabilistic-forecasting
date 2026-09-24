@@ -65,6 +65,8 @@ def test_evidence_workflow_is_manual_and_keeps_dynamic_facts_outside_application
     assert 'evidence_path="$GITHUB_WORKSPACE/evidence"' in command
     assert 'test("^v" + $version + "-evidence\\\\.[1-9][0-9]*$")' in command
     assert 'validator_manifest="$fixture_root/release-manifest.validator.json"' in command
+    assert 'source_tag="${{ steps.manifest.outputs.source_tag }}"' in command
+    assert 'source_tag="v1.1.14"' not in command
     assert 'docker buildx imagetools inspect "$image_ref"' in command
     assert "--platform linux/amd64 --network none --read-only --user 10001:10001" in command
     checkouts = [step for step in workflow["jobs"]["verify-evidence"]["steps"] if "uses" in step]
