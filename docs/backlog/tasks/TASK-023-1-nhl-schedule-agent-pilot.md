@@ -132,5 +132,6 @@ Rollback не переписывает Git history и не затрагивае�
   операционной записи; SemVer tag сам по себе runtime identifier не является.
 - Release remediation: tag `v1.1.15` остановлен до publication и deploy на isolated
   MinIO fixture (Docker exit 125). `v1.1.16` также не прошёл MinIO startup (exit 125);
-  follow-up `v1.1.17` изолированно переводит fixture на выделенную user-defined сеть.
-  Production scope TASK не меняется.
+  `v1.1.17` также остановился на MinIO startup; follow-up `v1.1.18` передаёт MinIO
+  prebuilt OCI artifact и исключает Docker Hub pull из first-rollout. Production scope TASK
+  не меняется.
