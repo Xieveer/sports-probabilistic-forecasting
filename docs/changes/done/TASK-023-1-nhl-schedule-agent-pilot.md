@@ -59,8 +59,9 @@ payload в evidence не сохранялись.
 - Tag pipeline `v1.1.15` остановился до publication: isolated first-rollout contract не смог
   запустить MinIO fixture с network alias на default bridge (Docker exit 125). `v1.1.16`
   также остановился на MinIO startup (exit 125). Production server и GHCR images не менялись.
-  Regression fix оформлен как новый candidate `v1.1.17`.
-- Не завершены final tag pipeline `v1.1.17` и operations-agent rollout. До их успешного
+  `v1.1.17` также остановился на MinIO startup (exit 125). Regression fix оформлен как
+  новый candidate `v1.1.18` с prebuilt MinIO OCI artifact.
+- Не завершены final tag pipeline `v1.1.18` и operations-agent rollout. До их успешного
   завершения задача не считается принятой, а deployment запрещён.
 
 ## Review

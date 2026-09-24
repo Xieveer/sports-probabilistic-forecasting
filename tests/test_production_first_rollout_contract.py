@@ -176,7 +176,11 @@ def test_first_rollout_tests_prebuilt_image_archives_before_exact_publish() -> N
             if "uses" in step:
                 assert re.search(r"@[0-9a-f]{40}(?:\s|$)", step["uses"])
 
-    assert docker["jobs"]["first-rollout"]["needs"] == ["verify", "build-artifacts"]
+    assert docker["jobs"]["first-rollout"]["needs"] == [
+        "verify",
+        "build-artifacts",
+        "build-fixture-artifact",
+    ]
     artifact_build = docker["jobs"]["build-artifacts"]
     build_step = next(
         step
