@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+import subprocess
+import sys
 import tomllib
 from datetime import datetime
 from pathlib import Path
@@ -13,7 +16,7 @@ from sports_forecast.service.schemas import HealthResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.1.21"
+RELEASE_VERSION = "1.1.22"
 
 
 def test_package_and_fastapi_publish_same_release_version() -> None:
@@ -124,8 +127,35 @@ def test_docker_publish_waits_for_security_rollout_gates_and_attests_digest() ->
         in worker_smoke["run"]
     )
     assert "docker image inspect --format '{{.Os}}/{{.Architecture}}'" not in worker_smoke["run"]
+    assert "\n    from sports_forecast.deploy" not in worker_smoke["run"]
     assert workflow["permissions"]["attestations"] == "write"
     assert workflow["permissions"]["id-token"] == "write"
+
+
+def test_worker_smoke_python_payload_compiles_exactly_as_workflow_passes_it() -> None:
+    """Python payload Worker smoke исполняется без подмены локальной копией."""
+    workflow = yaml.safe_load(
+        (PROJECT_ROOT / ".github" / "workflows" / "docker.yml").read_text(encoding="utf-8")
+    )
+    worker_smoke = next(
+        step
+        for step in workflow["jobs"]["build-push"]["steps"]
+        if step.get("name") == "Smoke Worker runtime reference"
+    )
+    match = re.search(
+        r'--entrypoint python "\$worker_image" -c \'(?P<payload>.*?)\'',
+        worker_smoke["run"],
+        flags=re.DOTALL,
+    )
+
+    assert match is not None
+    subprocess.run(
+        [sys.executable, "-c", match.group("payload")],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_first_rollout_builds_project_owned_s3_fixture_without_minio_pull() -> None:

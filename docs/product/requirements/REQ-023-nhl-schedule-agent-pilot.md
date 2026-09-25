@@ -118,8 +118,9 @@
   project-owned S3-compatible fixture из locked dependencies, но остановился после
   publication из-за невалидного regex в `jq` manifest-platform gate. `v1.1.20` исправил
   этот gate, но Worker остановился на дублирующей local image-metadata проверке после
-  успешного manifest gate. `v1.1.21` сохраняет registry manifest-проверку и actual runtime
-  smoke, удаляя только этот нестабильный дубль, и обязан пройти полный tag pipeline до rollout;
+  успешного manifest gate. `v1.1.21` сохранил эти проверки, но YAML передал smoke с leading
+  indentation и получил `IndentationError`; `v1.1.22` передаёт ту же проверку однострочно и
+  обязан пройти полный tag pipeline до rollout;
   переиспользование либо перемещение предыдущих тегов запрещено. Решение о fixture — ADR-024.
 
 ## Предположения и открытые вопросы
