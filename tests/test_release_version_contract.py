@@ -13,7 +13,7 @@ from sports_forecast.service.schemas import HealthResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.1.19"
+RELEASE_VERSION = "1.1.20"
 
 
 def test_package_and_fastapi_publish_same_release_version() -> None:
@@ -112,6 +112,7 @@ def test_docker_publish_waits_for_security_rollout_gates_and_attests_digest() ->
         if step.get("name") == "Verify published runtime manifest platform"
     )
     assert 'docker buildx imagetools inspect "$image_ref"' in runtime_gate["run"]
+    assert 'test("image\\\\.manifest|image\\\\.index|manifest\\\\.v2")' in runtime_gate["run"]
     assert '"linux"' in runtime_gate["run"]
     assert '"amd64"' in runtime_gate["run"]
     worker_smoke = next(

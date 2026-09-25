@@ -114,10 +114,11 @@
   pre-deploy проверки и сохранённый совместимый rollback target.
 - Release candidates `v1.1.15`–`v1.1.17` остановлены до publication и server mutation
   на MinIO startup (Docker exit 125). `v1.1.18` остановился до first-rollout: Docker Hub
-  отклонил pull pinned `minio/minio` digest. `v1.1.19` обязан собирать project-owned
-  S3-compatible fixture из locked dependencies, передавать его в OCI artifacts и пройти
-  полный tag pipeline до rollout; переиспользование либо перемещение предыдущих тегов
-  запрещено. Решение зафиксировано в ADR-024.
+  отклонил pull pinned `minio/minio` digest. `v1.1.19` успешно прошёл first-rollout с
+  project-owned S3-compatible fixture из locked dependencies, но остановился после
+  publication из-за невалидного regex в `jq` manifest-platform gate. `v1.1.20` исправляет
+  только этот gate и обязан пройти полный tag pipeline до rollout; переиспользование либо
+  перемещение предыдущих тегов запрещено. Решение о fixture зафиксировано в ADR-024.
 
 ## Предположения и открытые вопросы
 

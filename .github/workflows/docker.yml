@@ -246,7 +246,7 @@ jobs:
           docker buildx imagetools inspect "$image_ref"
           docker buildx imagetools inspect --format '{{json .}}' "$image_ref" \
             | jq --exit-status -e '
-              (.manifest.mediaType | test("image\.manifest|image\.index|manifest\.v2"))
+              (.manifest.mediaType | test("image\\.manifest|image\\.index|manifest\\.v2"))
               and ((.image.os == "linux" and .image.architecture == "amd64")
                 or any(.manifests[]?; .platform.os == "linux" and .platform.architecture == "amd64"))
             '

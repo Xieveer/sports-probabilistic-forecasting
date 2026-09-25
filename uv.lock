@@ -3009,7 +3009,7 @@ wheels = [
 
 [[package]]
 name = "sports-probabilistic-forecasting"
-version = "1.1.19"
+version = "1.1.20"
 source = { editable = "." }
 dependencies = [
     { name = "aiogram" },
