@@ -1,6 +1,6 @@
 # EPIC-024 — Работа агентов вокруг бизнес-инициативы
 
-> **Статус:** in_progress
+> **Статус:** done
 > **Приоритет:** high
 > **Владелец:** Product Owner
 > **Требование:** [REQ-024](../product/requirements/REQ-024-initiative-agent-workflow.md)
@@ -10,7 +10,7 @@
 
 - Инициатива: `EPIC-024`.
 - Ветка инициативы: `initiative/epic-024-agent-workflow`.
-- Workflow / этап: `engineering / PR preparation`.
+- Workflow / этап: `engineering / merged`.
 - Исходная цель: минимальный процесс агентов, ведущий две ветки задач до бизнес-результата;
   [подтверждённый REQ-024](../product/requirements/REQ-024-initiative-agent-workflow.md).
 - Критерии приёмки и DoD: критерии REQ-024, независимое review, зелёные проверки и merge
@@ -18,15 +18,18 @@
 - Релиз: не требуется.
 - Выполнено: интервью и подтверждение требований; ADR-025; четыре TASK реализованы;
   Developer устранил три research finding, Reviewer повторно подтвердил gates;
-  локальные `make test` (1058 passed), lint, mypy, ai-validate и docs проходят.
+  локальные `make test` (1058 passed), lint, mypy, ai-validate и docs проходят;
+  [PR #37](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/37)
+  прошёл три GitHub checks и слит в `main` коммитом
+  `e3a0d38c056782a9e6a553eabdd0db58dae200bb`.
 - Решения: память в EPIC/TASK без отдельного state или CLI; ADR-025.
-- Артефакты: REQ-024, ADR-025, TASK-024-1–4, четыре отчёта `done`, текущая ветка.
-- Предыдущая роль: Reviewer.
-- Следующая роль: Reviewer — финальная проверка и commit/push; затем Product Owner — PR/CI.
-- Открытые вопросы / блокеры: GitHub CI и merge ещё не выполнены; расчёт трёх profit
-  на одной выборке проверяется по evidence конкретного research, не этим diff.
+- Артефакты: REQ-024, ADR-025, TASK-024-1–4, четыре отчёта `done`, PR #37 и merge commit.
+- Предыдущая роль: Product Owner — CI и merge.
+- Следующая роль: нет, инициатива завершена.
+- Открытые вопросы / блокеры: нет. Остаточное ограничение: расчёт трёх profit на
+  одной выборке проверяется по evidence конкретного research, не этим diff.
 - Research: не применяется к этой инженерной инициативе.
-- Обновлено: 2026-09-25.
+- Обновлено: 2026-09-26.
 
 ## Цель и границы
 
@@ -56,10 +59,10 @@ TASK и `done`, упростить дублирующиеся роли/прав�
 
 Независимый Reviewer проверил весь diff и повторно подтвердил устранение трёх
 research findings. REQ-024, ADR-025, четыре TASK и отчёта `done`, код, тесты и
-документация согласованы; незавершённый scope — PR/terminal CI/merge без релиза.
+документация согласованы. PR #37 прошёл terminal CI и слит в `main` без релиза.
 Проверенный коммит: `f0b003ada757e716795771a06b39e80528f5e069`.
 Проверки: `make test` — 1058 passed; `make lint`, `make ai-validate`, `make docs`,
 целевой mypy и pre-commit hooks — успешно; после форматирования hook фокусный
 набор — 38 passed. Остаточный риск: единая тестовая выборка для сравниваемых
 profit подтверждается evidence конкретного исследования, а не этим контрактом.
-Следующий gate: Product Owner создаёт PR, ждёт terminal CI и merge в `main`.
+Финальный merge commit: `e3a0d38c056782a9e6a553eabdd0db58dae200bb`.
