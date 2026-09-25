@@ -58,15 +58,17 @@ jobs:
           docker load --input artifacts/release-oci/worker.docker.tar
           docker load --input artifacts/release-oci/telegram-bot.docker.tar
           docker load --input artifacts/release-oci/archive-sync.docker.tar
-          docker load --input artifacts/release-oci/minio.docker.tar
+          docker load --input artifacts/release-oci/s3-fixture.docker.tar
           docker tag sf-rollout-api:${GITHUB_SHA} localhost:5000/sf-rollout-api:${GITHUB_SHA}
           docker tag sf-rollout-worker:${GITHUB_SHA} localhost:5000/sf-rollout-worker:${GITHUB_SHA}
           docker tag sf-rollout-telegram-bot:${GITHUB_SHA} localhost:5000/sf-rollout-bot:${GITHUB_SHA}
           docker tag sf-rollout-archive-sync:${GITHUB_SHA} localhost:5000/sf-rollout-archive:${GITHUB_SHA}
+          docker tag sf-rollout-s3-fixture:${GITHUB_SHA} localhost:5000/sf-rollout-s3-fixture:${GITHUB_SHA}
           docker push localhost:5000/sf-rollout-api:${GITHUB_SHA}
           docker push localhost:5000/sf-rollout-worker:${GITHUB_SHA}
           docker push localhost:5000/sf-rollout-bot:${GITHUB_SHA}
           docker push localhost:5000/sf-rollout-archive:${GITHUB_SHA}
+          docker push localhost:5000/sf-rollout-s3-fixture:${GITHUB_SHA}
       - name: Record tested local-registry digests
         id: tested-images
         run: |
@@ -84,10 +86,12 @@ jobs:
           worker_image="$(docker image inspect --format='{{index .RepoDigests 0}}' localhost:5000/sf-rollout-worker:${GITHUB_SHA})"
           bot_image="$(docker image inspect --format='{{index .RepoDigests 0}}' localhost:5000/sf-rollout-bot:${GITHUB_SHA})"
           archive_image="$(docker image inspect --format='{{index .RepoDigests 0}}' localhost:5000/sf-rollout-archive:${GITHUB_SHA})"
+          s3_fixture_image="$(docker image inspect --format='{{index .RepoDigests 0}}' localhost:5000/sf-rollout-s3-fixture:${GITHUB_SHA})"
           uv run python scripts/build_production_compose_env_fixture.py \
             --output "$fixture_root/production.env" --root "$fixture_root" --app-version "${{ steps.release.outputs.version }}" \
             --postgres-image "$postgres_image" --api-image "$api_image" --worker-image "$worker_image" \
-            --bot-image "$bot_image" --archive-sync-image "$archive_image"
+            --bot-image "$bot_image" --archive-sync-image "$archive_image" \
+            --s3-fixture-image "$s3_fixture_image"
           uv run python scripts/run_production_first_rollout.py \
             --env-file "$fixture_root/production.env" \
             --evidence artifacts/production-first-rollout.json --app-version "${{ steps.release.outputs.version }}"

@@ -141,7 +141,7 @@ jobs:
           '
 
   first-rollout:
-    needs: [verify, build-artifacts, build-fixture-artifact]
+    needs: [verify, build-artifacts]
     uses: ./.github/workflows/production-first-rollout-contract.yml
     permissions:
       contents: read
@@ -157,6 +157,7 @@ jobs:
           - target: worker
           - target: telegram-bot
           - target: archive-sync
+          - target: s3-fixture
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.2
       - name: Set up Docker Buildx
@@ -176,22 +177,6 @@ jobs:
         with:
           name: release-oci-${{ matrix.target }}
           path: /tmp/${{ matrix.target }}.docker.tar
-          if-no-files-found: error
-
-  build-fixture-artifact:
-    needs: [verify]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Pull pinned MinIO fixture image
-        run: |
-          minio_image="minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
-          docker pull "$minio_image"
-          docker save --output /tmp/minio.docker.tar "$minio_image"
-      - name: Upload MinIO fixture image archive
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: release-oci-minio
-          path: /tmp/minio.docker.tar
           if-no-files-found: error
 
   build-push:

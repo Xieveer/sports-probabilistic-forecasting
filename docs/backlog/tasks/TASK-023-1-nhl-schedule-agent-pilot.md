@@ -130,8 +130,8 @@ Rollback не переписывает Git history и не затрагивае�
   CI и Security; final release commit проходит tag pipeline отдельно.
 - Commit/push: deploy release получает immutable identity только из tag pipeline и
   операционной записи; SemVer tag сам по себе runtime identifier не является.
-- Release remediation: tag `v1.1.15` остановлен до publication и deploy на isolated
-  MinIO fixture (Docker exit 125). `v1.1.16` также не прошёл MinIO startup (exit 125);
-  `v1.1.17` также остановился на MinIO startup; follow-up `v1.1.18` передаёт MinIO
-  prebuilt OCI artifact и исключает Docker Hub pull из first-rollout. Production scope TASK
-  не меняется.
+- Release remediation: tags `v1.1.15`–`v1.1.17` остановлены до publication и deploy
+  на MinIO startup (Docker exit 125). `v1.1.18` не дошёл до first-rollout: Docker Hub
+  отклонил pinned MinIO digest. Follow-up `v1.1.19` собирает project-owned
+  S3-compatible OCI fixture, исключая внешний MinIO/MC pull; решение — ADR-024.
+  Production scope TASK не меняется.

@@ -96,3 +96,14 @@ USER sf
 
 ENTRYPOINT ["/app/runtime-entrypoint.sh"]
 CMD ["/app/.venv/bin/python", "-m", "sports_forecast.deploy.archive_sync_runtime"]
+
+# ── S3 fixture для isolated first-rollout contract ───────────────
+FROM base AS s3-fixture
+
+RUN uv sync --frozen --no-dev --no-install-project --group s3-fixture
+
+USER sf
+
+EXPOSE 9000
+
+CMD ["moto_server", "-H", "0.0.0.0", "-p", "9000"]

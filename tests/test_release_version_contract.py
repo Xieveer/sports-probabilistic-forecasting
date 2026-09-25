@@ -13,7 +13,7 @@ from sports_forecast.service.schemas import HealthResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.1.18"
+RELEASE_VERSION = "1.1.19"
 
 
 def test_package_and_fastapi_publish_same_release_version() -> None:
@@ -80,7 +80,7 @@ def test_evidence_workflow_is_manual_and_keeps_dynamic_facts_outside_application
     )
     assert "- Статус подготовки: `candidate`" in handoff
     assert "v1.1.12" not in handoff
-    assert "v1.1.18" in handoff
+    assert "v1.1.19" in handoff
     assert "--handoff docs/operations/production-handoff.md" in handoff
 
 
@@ -126,8 +126,8 @@ def test_docker_publish_waits_for_security_rollout_gates_and_attests_digest() ->
     assert workflow["permissions"]["id-token"] == "write"
 
 
-def test_first_rollout_receives_minio_as_prebuilt_oci_artifact() -> None:
-    """First-rollout не должен pull MinIO из Docker Hub во время contract run."""
+def test_first_rollout_builds_project_owned_s3_fixture_without_minio_pull() -> None:
+    """First-rollout использует собранный S3 fixture, а не удалённый MinIO-образ."""
     docker_workflow = (PROJECT_ROOT / ".github" / "workflows" / "docker.yml").read_text(
         encoding="utf-8"
     )
@@ -135,11 +135,14 @@ def test_first_rollout_receives_minio_as_prebuilt_oci_artifact() -> None:
         PROJECT_ROOT / ".github" / "workflows" / "production-first-rollout-contract.yml"
     ).read_text(encoding="utf-8")
 
-    assert "build-fixture-artifact" in docker_workflow
-    assert "release-oci-minio" in docker_workflow
-    assert "minio.docker.tar" in docker_workflow
-    assert "minio.docker.tar" in rollout_workflow
-    assert "docker load --input artifacts/release-oci/minio.docker.tar" in rollout_workflow
+    assert "target: s3-fixture" in docker_workflow
+    assert "name: release-oci-${{ matrix.target }}" in docker_workflow
+    assert "dest=/tmp/${{ matrix.target }}.docker.tar" in docker_workflow
+    assert "s3-fixture.docker.tar" in rollout_workflow
+    assert "docker load --input artifacts/release-oci/s3-fixture.docker.tar" in rollout_workflow
+    assert "build-fixture-artifact" not in docker_workflow
+    assert "minio/minio" not in docker_workflow
+    assert "minio/mc" not in rollout_workflow
 
 
 def test_tag_gate_requires_static_release_docs_and_forbids_evidence_commit() -> None:
