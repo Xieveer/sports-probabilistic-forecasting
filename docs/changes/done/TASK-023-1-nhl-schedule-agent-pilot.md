@@ -66,9 +66,11 @@ payload в evidence не сохранялись.
   остановился на невалидном regex `jq`; server mutation не выполнялась. Новый candidate
   `v1.1.20` исправил экранирование regex и успешно прошёл manifest gate, но Worker остановился
   на дублирующей local image-metadata проверке после успешного registry manifest gate; identical
-  read-only runtime smoke опубликованного digest локально прошёл. Новый candidate `v1.1.21`
-  сохраняет manifest gate и runtime smoke, удаляя только нестабильный дубль.
-- Не завершены final tag pipeline `v1.1.21` и operations-agent rollout. До их успешного
+  read-only runtime smoke опубликованного digest локально прошёл. `v1.1.21` сохранил manifest
+  gate и runtime smoke, но YAML передал многострочный `python -c` с leading indentation:
+  GitHub зафиксировал `IndentationError`. Новый candidate `v1.1.22` передаёт ту же команду
+  однострочно.
+- Не завершены final tag pipeline `v1.1.22` и operations-agent rollout. До их успешного
   завершения задача не считается принятой, а deployment запрещён.
 - Remediation `v1.1.19`: независимый review одобрил project-owned Moto S3 fixture;
   `uv lock --check`, 48 контрактных тестов, `make production-check`, `make lint`,
