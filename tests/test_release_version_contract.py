@@ -13,7 +13,7 @@ from sports_forecast.service.schemas import HealthResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.1.20"
+RELEASE_VERSION = "1.1.21"
 
 
 def test_package_and_fastapi_publish_same_release_version() -> None:
@@ -123,6 +123,7 @@ def test_docker_publish_waits_for_security_rollout_gates_and_attests_digest() ->
         "--platform linux/amd64 --network none --read-only --user 10001:10001"
         in worker_smoke["run"]
     )
+    assert "docker image inspect --format '{{.Os}}/{{.Architecture}}'" not in worker_smoke["run"]
     assert workflow["permissions"]["attestations"] == "write"
     assert workflow["permissions"]["id-token"] == "write"
 

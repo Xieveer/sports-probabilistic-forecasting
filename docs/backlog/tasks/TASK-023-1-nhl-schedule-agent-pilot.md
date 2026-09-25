@@ -134,5 +134,7 @@ Rollback не переписывает Git history и не затрагивае�
   на MinIO startup (Docker exit 125). `v1.1.18` не дошёл до first-rollout: Docker Hub
   отклонил pinned MinIO digest. `v1.1.19` успешно прошёл first-rollout с project-owned
   S3-compatible OCI fixture, исключающим внешний MinIO/MC pull, но остановился после
-  publication на невалидном regex в `jq` manifest-platform gate. Follow-up `v1.1.20`
-  исправляет только этот gate; решение о fixture — ADR-024. Production scope TASK не меняется.
+  publication на невалидном regex в `jq` manifest-platform gate. `v1.1.20` исправил этот
+  gate, но Worker остановился на нестабильной дублирующей local image-metadata проверке после
+  успешного manifest gate. Follow-up `v1.1.21` сохраняет registry manifest-проверку и actual
+  runtime smoke, удаляя только этот дубль; решение о fixture — ADR-024. Production scope TASK не меняется.

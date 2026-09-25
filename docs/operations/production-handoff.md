@@ -1,11 +1,11 @@
-# Передача сервиса в эксплуатацию: v1.1.20 candidate
+# Передача сервиса в эксплуатацию: v1.1.21 candidate
 
 - Статус подготовки: `candidate`
 - Сервис: `sports-probabilistic-forecasting`
 - Canonical repository: `Xieveer/sports-probabilistic-forecasting`
 - Владелец приложения и решения о rollout: пользователь.
-- source_tag: `v1.1.20`
-- source_commit: разрешается Operations из annotated tag `v1.1.20` непосредственно перед rollout.
+- source_tag: `v1.1.21`
+- source_commit: разрешается Operations из annotated tag `v1.1.21` непосредственно перед rollout.
 
 Этот handoff относится только к выпуску Epic 23: расписание NHL в Telegram. Тег создаётся
 на commit, содержащем весь код, версию и этот статический контракт; self-reference SHA в
@@ -19,8 +19,10 @@ MinIO startup (exit 125) до публикации GHCR и изменения pr
 остановился ещё раньше: Docker Hub отклонил pull удалённого `minio/minio` digest.
 `v1.1.19` успешно прошёл first-rollout с project-owned S3-compatible Moto fixture, но
 после публикации образов остановился на синтаксической ошибке `jq` в проверке manifest
-platform; server mutation не выполнялась. `v1.1.20` исправляет экранирование regex в
-этом gate; fixture и production scope не меняются.
+platform; server mutation не выполнялась. `v1.1.20` исправил этот gate и прошёл его для
+всех образов, но Worker остановился на нестабильной дублирующей локальной platform-проверке
+после успешной registry manifest-проверки. `v1.1.21` сохраняет manifest gate и actual runtime
+smoke, убирая только дублирующую local image-metadata проверку.
 
 ## Идентификация и ответственность
 
@@ -62,7 +64,7 @@ DB failure, missing verified backup, manifest/wrapper mismatch или не-200 r
 
 ## Артефакт и откат
 
-Docker workflow на tag `v1.1.20` обязан успешно завершить CI, Security, first-rollout,
+Docker workflow на tag `v1.1.21` обязан успешно завершить CI, Security, first-rollout,
 publication linux/amd64 images, image scan и provenance. Operations принимает только
 `IMAGE@sha256:DIGEST` из результата этого workflow, а не SemVer tag.
 
@@ -73,7 +75,7 @@ publication linux/amd64 images, image scan и provenance. Operations прини�
 Root-owned wrapper принимает только:
 
 ```text
-deploy sports-probabilistic-forecasting v1.1.20
+deploy sports-probabilistic-forecasting v1.1.21
 ```
 
 Он сверяет service, tag-resolved commit и все digests с локально установленным verified

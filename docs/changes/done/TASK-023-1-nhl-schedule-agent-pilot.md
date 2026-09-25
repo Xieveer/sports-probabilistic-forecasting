@@ -64,8 +64,11 @@ payload в evidence не сохранялись.
   как новый candidate `v1.1.19` с project-owned S3-compatible Moto OCI artifact (ADR-024).
   First-rollout `v1.1.19` успешно завершился, но post-publication manifest-platform gate
   остановился на невалидном regex `jq`; server mutation не выполнялась. Новый candidate
-  `v1.1.20` исправляет только экранирование этого regex.
-- Не завершены final tag pipeline `v1.1.20` и operations-agent rollout. До их успешного
+  `v1.1.20` исправил экранирование regex и успешно прошёл manifest gate, но Worker остановился
+  на дублирующей local image-metadata проверке после успешного registry manifest gate; identical
+  read-only runtime smoke опубликованного digest локально прошёл. Новый candidate `v1.1.21`
+  сохраняет manifest gate и runtime smoke, удаляя только нестабильный дубль.
+- Не завершены final tag pipeline `v1.1.21` и operations-agent rollout. До их успешного
   завершения задача не считается принятой, а deployment запрещён.
 - Remediation `v1.1.19`: независимый review одобрил project-owned Moto S3 fixture;
   `uv lock --check`, 48 контрактных тестов, `make production-check`, `make lint`,

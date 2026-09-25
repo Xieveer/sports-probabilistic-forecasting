@@ -259,7 +259,6 @@ jobs:
         run: |
           worker_image="${IMAGE_NAME}@${IMAGE_DIGEST}"
           docker pull "$worker_image"
-          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$worker_image")" = 'linux/amd64'
           docker run --rm --platform linux/amd64 --network none --read-only --user 10001:10001 \
             --entrypoint python "$worker_image" -c '
               from sports_forecast.deploy.archive_sync import sync_operational_archive

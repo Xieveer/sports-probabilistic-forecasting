@@ -116,9 +116,11 @@
   на MinIO startup (Docker exit 125). `v1.1.18` остановился до first-rollout: Docker Hub
   отклонил pull pinned `minio/minio` digest. `v1.1.19` успешно прошёл first-rollout с
   project-owned S3-compatible fixture из locked dependencies, но остановился после
-  publication из-за невалидного regex в `jq` manifest-platform gate. `v1.1.20` исправляет
-  только этот gate и обязан пройти полный tag pipeline до rollout; переиспользование либо
-  перемещение предыдущих тегов запрещено. Решение о fixture зафиксировано в ADR-024.
+  publication из-за невалидного regex в `jq` manifest-platform gate. `v1.1.20` исправил
+  этот gate, но Worker остановился на дублирующей local image-metadata проверке после
+  успешного manifest gate. `v1.1.21` сохраняет registry manifest-проверку и actual runtime
+  smoke, удаляя только этот нестабильный дубль, и обязан пройти полный tag pipeline до rollout;
+  переиспользование либо перемещение предыдущих тегов запрещено. Решение о fixture — ADR-024.
 
 ## Предположения и открытые вопросы
 
