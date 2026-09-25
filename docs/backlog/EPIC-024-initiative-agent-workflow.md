@@ -55,5 +55,11 @@ TASK и `done`, упростить дублирующиеся роли/прав�
 ## Полное EPIC review
 
 Независимый Reviewer проверил весь diff и повторно подтвердил устранение трёх
-research findings. Ожидаются окончательная проверка согласованности артефактов,
-GitHub CI, merge и evidence проверенного коммита.
+research findings. REQ-024, ADR-025, четыре TASK и отчёта `done`, код, тесты и
+документация согласованы; незавершённый scope — PR/terminal CI/merge без релиза.
+Проверенный коммит: `f0b003ada757e716795771a06b39e80528f5e069`.
+Проверки: `make test` — 1058 passed; `make lint`, `make ai-validate`, `make docs`,
+целевой mypy и pre-commit hooks — успешно; после форматирования hook фокусный
+набор — 38 passed. Остаточный риск: единая тестовая выборка для сравниваемых
+profit подтверждается evidence конкретного исследования, а не этим контрактом.
+Следующий gate: Product Owner создаёт PR, ждёт terminal CI и merge в `main`.
