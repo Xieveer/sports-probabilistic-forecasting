@@ -132,6 +132,7 @@ Rollback не переписывает Git history и не затрагивае�
   операционной записи; SemVer tag сам по себе runtime identifier не является.
 - Release remediation: tags `v1.1.15`–`v1.1.17` остановлены до publication и deploy
   на MinIO startup (Docker exit 125). `v1.1.18` не дошёл до first-rollout: Docker Hub
-  отклонил pinned MinIO digest. Follow-up `v1.1.19` собирает project-owned
-  S3-compatible OCI fixture, исключая внешний MinIO/MC pull; решение — ADR-024.
-  Production scope TASK не меняется.
+  отклонил pinned MinIO digest. `v1.1.19` успешно прошёл first-rollout с project-owned
+  S3-compatible OCI fixture, исключающим внешний MinIO/MC pull, но остановился после
+  publication на невалидном regex в `jq` manifest-platform gate. Follow-up `v1.1.20`
+  исправляет только этот gate; решение о fixture — ADR-024. Production scope TASK не меняется.

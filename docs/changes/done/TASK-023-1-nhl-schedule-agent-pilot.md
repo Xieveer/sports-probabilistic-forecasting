@@ -62,7 +62,10 @@ payload в evidence не сохранялись.
   `v1.1.17` также остановился на MinIO startup (exit 125). Candidate `v1.1.18`
   остановился до first-rollout: Docker Hub отклонил MinIO digest. Regression fix оформлен
   как новый candidate `v1.1.19` с project-owned S3-compatible Moto OCI artifact (ADR-024).
-- Не завершены final tag pipeline `v1.1.19` и operations-agent rollout. До их успешного
+  First-rollout `v1.1.19` успешно завершился, но post-publication manifest-platform gate
+  остановился на невалидном regex `jq`; server mutation не выполнялась. Новый candidate
+  `v1.1.20` исправляет только экранирование этого regex.
+- Не завершены final tag pipeline `v1.1.20` и operations-agent rollout. До их успешного
   завершения задача не считается принятой, а deployment запрещён.
 - Remediation `v1.1.19`: независимый review одобрил project-owned Moto S3 fixture;
   `uv lock --check`, 48 контрактных тестов, `make production-check`, `make lint`,
