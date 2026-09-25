@@ -12,7 +12,19 @@ from typing import Any
 REQUIRED_SKILL_SECTIONS = {"Нельзя сокращать", "Red flags", "Проверка"}
 REQUIRED_ROLE_SECTIONS = {"Цель", "Scope", "Результат", "Composition"}
 REQUIRED_AGENT_FIELDS = {"name", "description", "developer_instructions", "model"}
-SUPPORTED_AGENT_MODELS = {"gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}
+SUPPORTED_AGENT_MODELS = {"gpt-6-astra", "gpt-6-sol", "gpt-6-luna"}
+DEFAULT_AGENT_MODEL = "gpt-6-sol"
+AGENT_MODELS = {
+    "architect": "gpt-6-astra",
+    "business-analyst": "gpt-6-luna",
+    "data-researcher": "gpt-6-sol",
+    "developer": "gpt-6-luna",
+    "operations-agent": "gpt-6-sol",
+    "product-owner": "gpt-6-sol",
+    "research-scientist": "gpt-6-sol",
+    "reviewer": "gpt-6-sol",
+}
+REQUIRED_AGENT_NAMES = frozenset(AGENT_MODELS)
 FRONTMATTER_PATTERN = re.compile(
     r"\A---\nname: ([a-z0-9-]+)\ndescription: (.+?)\n---\n",
     re.DOTALL,
@@ -60,6 +72,18 @@ def _reviewer_profile_error(profile: dict[str, Any]) -> str | None:
     return None
 
 
+def _agent_model_error(name: str, model: object) -> str | None:
+    """Вернуть ошибку, если роль назначена не на закреплённую модель GPT-6."""
+    if model not in SUPPORTED_AGENT_MODELS:
+        return "разрешены только модели GPT-6"
+    if model == "gpt-6-astra" and name != "architect":
+        return "gpt-6-astra разрешена только для architect"
+    expected_model = AGENT_MODELS.get(name, DEFAULT_AGENT_MODEL)
+    if model != expected_model:
+        return f"для {name} ожидается {expected_model}"
+    return None
+
+
 def _workflow_contract_errors(root: Path) -> list[str]:
     """Вернуть ошибки обязательных gates и evidence в канонических templates."""
     errors: list[str] = []
@@ -72,10 +96,14 @@ def _workflow_contract_errors(root: Path) -> list[str]:
         root / "docs" / "backlog" / "0000-epic-template.md": {
             "Полное EPIC review",
             "Hash проверенного коммита",
+            "Ветка инициативы:",
+            "Следующая роль:",
         },
         root / "docs" / "backlog" / "tasks" / "0000-task-template.md": {
             "Review:",
             "Commit/push:",
+            "Ветка инициативы:",
+            "Следующая роль:",
         },
         root / "docs" / "changes" / "done" / "0000-task-report-template.md": {
             "Review / security:",
@@ -140,11 +168,13 @@ def validate(root: Path) -> list[str]:
     config_path = root / ".codex" / "config.toml"
     with config_path.open("rb") as config_file:
         config = tomllib.load(config_file)
+    if config.get("model") != "gpt-6-sol":
+        errors.append(".codex/config.toml: главный Product Owner должен использовать gpt-6-sol")
     agents_config = config.get("agents")
     if not isinstance(agents_config, dict):
         errors.append(".codex/config.toml: отсутствует таблица agents")
-    elif agents_config.get("default_subagent_model") not in SUPPORTED_AGENT_MODELS:
-        errors.append(".codex/config.toml: неизвестная default_subagent_model")
+    elif agents_config.get("default_subagent_model") != DEFAULT_AGENT_MODEL:
+        errors.append(".codex/config.toml: default_subagent_model должна быть gpt-6-sol")
 
     agent_names: set[str] = set()
     for agent_file in sorted((root / ".codex" / "agents").glob("*.toml")):
@@ -158,12 +188,16 @@ def validate(root: Path) -> list[str]:
         agent_names.add(name)
         if name != agent_file.stem:
             errors.append(f"{agent_file}: name не совпадает с именем файла")
-        if agent["model"] not in SUPPORTED_AGENT_MODELS:
-            errors.append(f"{agent_file}: неизвестная model")
+        if model_error := _agent_model_error(name, agent["model"]):
+            errors.append(f"{agent_file}: {model_error}")
         if f"agents/{name}.md" not in str(agent["developer_instructions"]):
             errors.append(f"{agent_file}: developer_instructions не ссылается на роль")
 
-    if agent_names != role_names:
+    if role_names != REQUIRED_AGENT_NAMES:
+        errors.append("agents: ожидаются ровно восемь ролей REQ-024")
+    if agent_names != REQUIRED_AGENT_NAMES:
+        errors.append(".codex/agents: ожидаются ровно восемь ролей REQ-024")
+    elif agent_names != role_names:
         errors.append(".codex/agents: набор custom agents не совпадает с проектными ролями")
 
     reviewer_profile = root / ".codex" / "agents" / "reviewer.toml"

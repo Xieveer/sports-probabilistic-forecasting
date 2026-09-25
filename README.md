@@ -398,6 +398,9 @@ make airflow-down     # Остановить
 
 Карта выбора ролей и процессов находится в
 [`docs/development/ai-agents-and-skills.md`](docs/development/ai-agents-and-skills.md).
+Product Owner ведёт отдельную ветку и компактную память каждой бизнес-инициативы
+в EPIC или одношаговой TASK; Engineering и Research используют только необходимые
+роли. Серверные задачи и запрошенные релизы передаются отдельному Operations Agent.
 Структура проверяется командой `make ai-validate`.
 
 ## Документация

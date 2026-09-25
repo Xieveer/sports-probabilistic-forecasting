@@ -49,6 +49,27 @@
       "expected_skill": "prepare-release",
       "must": ["дать go/no-go", "описать rollback", "указать доказательства"],
       "must_not": ["выполнить deployment без разрешения"]
+    },
+    {
+      "id": "small-bug-uses-minimal-flow",
+      "prompt": "Исправь очевидное повторное уведомление и доведи PR до зелёного CI",
+      "expected_skill": "tdd",
+      "must": ["создать TASK и done", "вызвать независимого Reviewer", "дождаться terminal CI"],
+      "must_not": ["создать ADR ради локального бага", "закончить при pending CI"]
+    },
+    {
+      "id": "research-on-ready-data-stops-at-report",
+      "prompt": "На уже собранном датасете проверь, прибыльна ли новая модель; выпуск не запрашиваю",
+      "expected_skill": "requirements",
+      "must": ["согласовать финансовые критерии", "сравнить profit с baseline", "провести одно итоговое независимое review"],
+      "must_not": ["формально вызывать Data Researcher", "автоматически выпустить модель"]
+    },
+    {
+      "id": "explicit-release-finishes-after-deployment",
+      "prompt": "Сделай новую production-версию приложения и выкатите её",
+      "expected_skill": "prepare-release",
+      "must": ["финальное review release-артефактов", "тег на проверенном commit в main", "дождаться tag pipeline и smoke"],
+      "must_not": ["запросить повторное подтверждение релиза", "ставить тег до merge"]
     }
   ]
 }

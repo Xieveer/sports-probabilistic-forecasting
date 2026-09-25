@@ -6,7 +6,8 @@ from sports_forecast.research.contracts import (
     EvaluationDecision,
     EvaluationResult,
     ExperimentResult,
-    GoalContract,
+    ResearchGoal,
+    ResearchGoalContract,
     ResearchMemory,
 )
 
@@ -16,7 +17,7 @@ class EvaluationHarness:
 
     def evaluate(
         self,
-        goal: GoalContract,
+        goal: ResearchGoal,
         result: ExperimentResult,
         memory: ResearchMemory,
     ) -> EvaluationResult:
@@ -42,6 +43,21 @@ class EvaluationHarness:
             )
 
         missing_metrics: list[str] = []
+        if isinstance(goal, ResearchGoalContract):
+            criteria = goal.research_acceptance_criteria
+            if result.positive_roi_bootstrap_fraction is None:
+                missing_metrics.append("Не получена доля positive ROI bootstrap-прогонов.")
+            if result.bet_coverage is None:
+                missing_metrics.append("Не получена обязательная bet coverage.")
+            if result.simulated_profit is None:
+                missing_metrics.append("Не получен simulated profit кандидата.")
+            if result.baseline_simulated_profit is None:
+                missing_metrics.append("Не получен simulated profit baseline.")
+            if (
+                criteria.require_current_model_profit_superiority
+                and result.current_model_simulated_profit is None
+            ):
+                missing_metrics.append("Не получен simulated profit current model.")
         if goal.min_bootstrap_ci_low is not None and result.bootstrap_ci_low is None:
             missing_metrics.append("Не получена обязательная bootstrap lower bound.")
         if goal.max_concentration is not None and result.max_selection_share is None:
@@ -53,11 +69,11 @@ class EvaluationHarness:
             )
 
         reasons: list[str] = []
-        if result.log_loss > goal.max_log_loss:
+        if goal.max_log_loss is not None and result.log_loss > goal.max_log_loss:
             reasons.append("LogLoss не достиг целевого порога.")
-        if result.log_loss >= result.baseline_log_loss:
+        if goal.max_log_loss is not None and result.log_loss >= result.baseline_log_loss:
             reasons.append("Нет улучшения относительно baseline LogLoss.")
-        if result.roi < goal.min_roi:
+        if goal.min_roi is not None and result.roi < goal.min_roi:
             reasons.append("ROI не достиг целевого порога.")
         if result.number_of_bets < goal.min_bets:
             reasons.append("Недостаточно ставок для economic evidence.")
@@ -75,6 +91,28 @@ class EvaluationHarness:
             and result.max_selection_share > goal.max_concentration
         ):
             reasons.append("Стратегия чрезмерно концентрирована.")
+        if isinstance(goal, ResearchGoalContract):
+            criteria = goal.research_acceptance_criteria
+            assert result.positive_roi_bootstrap_fraction is not None
+            assert result.bet_coverage is not None
+            assert result.simulated_profit is not None
+            assert result.baseline_simulated_profit is not None
+            if result.roi <= 0:
+                reasons.append("Итоговый ROI не положителен.")
+            if (
+                result.positive_roi_bootstrap_fraction
+                < criteria.min_positive_roi_bootstrap_fraction
+            ):
+                reasons.append("Доля положительных ROI bootstrap-прогонов ниже порога.")
+            if result.bet_coverage < criteria.min_bet_coverage:
+                reasons.append("Bet coverage ниже согласованного порога.")
+            if result.simulated_profit <= result.baseline_simulated_profit:
+                reasons.append("Simulated profit не превзошёл baseline.")
+            if (
+                result.current_model_simulated_profit is not None
+                and result.simulated_profit <= result.current_model_simulated_profit
+            ):
+                reasons.append("Simulated profit не превзошёл current model.")
         if reasons:
             return EvaluationResult(decision=EvaluationDecision.FAIL, reasons=reasons)
         return EvaluationResult(

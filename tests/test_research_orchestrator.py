@@ -21,12 +21,12 @@ from sports_forecast.research.contracts import (
     EngineeringRequest,
     EngineeringStatus,
     EvaluationDecision,
-    EvaluationNarrative,
     ExperimentResult,
     ExperimentSpec,
     GoalContract,
     HypothesisProposal,
     ResearchMemory,
+    ResearchState,
     ResearchStatus,
 )
 from sports_forecast.research.evaluation import EvaluationHarness
@@ -138,13 +138,6 @@ class ScriptedRoles:
             ),
         )
 
-    def interpret_evaluation(self, package, result):  # type: ignore[no-untyped-def]
-        self.context_roles.append(package.role)
-        return EvaluationNarrative(
-            conclusion=f"{result.decision.value}: результат интерпретирован независимо.",
-            caveats=["Нужна проверка на следующем сезоне."],
-        )
-
 
 class VerifiedEngineering:
     """Имитирует только подтверждённый handoff существующего workflow."""
@@ -242,12 +235,19 @@ def _orchestrator(
     )
 
 
+def _legacy_run(orchestrator: ResearchOrchestrator, goal: GoalContract) -> str:
+    """Восстановить существующий до REQ-024 run без создания нового legacy run."""
+    run_id = f"{goal.goal_id}-legacy"
+    orchestrator.repository.create(ResearchState(run_id=run_id, goal=goal))
+    return run_id
+
+
 def test_research_loop_survives_isolated_orchestrator_instances(tmp_path: Path) -> None:
     """Две итерации восстанавливаются только из persistent state, а не из чата."""
     roles = ScriptedRoles()
     experiments = ScriptedExperiments()
     root = tmp_path / "research-workspace"
-    run_id = _orchestrator(root, roles, experiments).start(_goal())
+    run_id = _legacy_run(_orchestrator(root, roles, experiments), _goal())
 
     for _ in range(8):
         state = _orchestrator(root, roles, experiments).advance(run_id)
@@ -264,9 +264,7 @@ def test_research_loop_survives_isolated_orchestrator_instances(tmp_path: Path) 
     assert roles.context_roles == [
         "research-scientist",
         "data-researcher",
-        "research-evaluator",
         "research-scientist",
-        "research-evaluator",
     ]
     assert (root / "runs" / run_id / "state.json").is_file()
 
@@ -277,7 +275,7 @@ def test_experiment_waits_for_verified_engineering_task(tmp_path: Path) -> None:
     experiments = ScriptedExperiments()
     root = tmp_path / "research-workspace"
     orchestrator = _orchestrator(root, roles, experiments)
-    run_id = orchestrator.start(_goal())
+    run_id = _legacy_run(orchestrator, _goal())
 
     orchestrator.advance(run_id)
     orchestrator.advance(run_id)
@@ -328,7 +326,7 @@ def test_exhausted_validation_retry_fails_before_state_transition(tmp_path: Path
         engineering=VerifiedEngineering(),
         experiments=ScriptedExperiments(),
     )
-    run_id = orchestrator.start(_goal())
+    run_id = _legacy_run(orchestrator, _goal())
 
     state = orchestrator.advance(run_id)
 
@@ -370,7 +368,7 @@ def test_engineering_receipt_for_another_request_cannot_start_experiment(tmp_pat
         engineering=WrongEngineeringReceipt(),
         experiments=ScriptedExperiments(),
     )
-    run_id = orchestrator.start(_goal())
+    run_id = _legacy_run(orchestrator, _goal())
 
     orchestrator.advance(run_id)
     orchestrator.advance(run_id)
@@ -389,7 +387,7 @@ def test_stale_experiment_result_cannot_be_evaluated_for_active_hypothesis(tmp_p
         engineering=VerifiedEngineering(),
         experiments=WrongExperimentResult(),
     )
-    run_id = orchestrator.start(_goal())
+    run_id = _legacy_run(orchestrator, _goal())
 
     orchestrator.advance(run_id)
     orchestrator.advance(run_id)
@@ -409,7 +407,7 @@ def test_experiment_result_must_match_temporal_validation_specification(tmp_path
         engineering=VerifiedEngineering(),
         experiments=WrongTemporalExperimentResult(),
     )
-    run_id = orchestrator.start(_goal())
+    run_id = _legacy_run(orchestrator, _goal())
 
     for _ in range(4):
         state = orchestrator.advance(run_id)
@@ -467,7 +465,7 @@ def test_validation_payload_is_not_persisted_or_logged(
         engineering=VerifiedEngineering(),
         experiments=ScriptedExperiments(),
     )
-    run_id = orchestrator.start(_goal())
+    run_id = _legacy_run(orchestrator, _goal())
 
     state = orchestrator.advance(run_id)
 
