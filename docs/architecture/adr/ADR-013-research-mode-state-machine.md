@@ -4,6 +4,11 @@
 > **Дата:** 2026-08-23
 > **Связанное требование:** [REQ-013](../../product/requirements/REQ-013-research-mode.md)
 
+Типизированный experiment ledger и Evaluation Harness сохраняются. Владение всей
+инициативой, состав ролей и финальный Research review уточнены
+[ADR-025](ADR-025-initiative-memory-and-orchestration-boundaries.md); роль
+`research-evaluator` на каждой итерации больше не применяется.
+
 ## Контекст и критерии выбора
 
 Проект уже имеет зрелый Engineering Workflow, в котором роли не вызывают друг друга. Для

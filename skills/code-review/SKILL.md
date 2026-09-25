@@ -28,7 +28,7 @@ description: Провести ориентированное на дефекты
 2. Главный агент передаёт полный diff независимому `reviewer` с `$code-review`.
 3. При P0/P1/P2 finding автор исправляет его через TDD, после чего reviewer
    повторяет review изменённого diff.
-4. До commit/push reviewer сверяет обновление TASK, отчёта `done`, REQ/ADR/EPIC и применимых
+4. До commit/push reviewer сверяет обновление TASK, отчёта `done`, применимых REQ/ADR/EPIC и
    README/runbook/`.env.example`. Он сначала коммитит проверенный diff, а затем отдельным
    documentation-only evidence-коммитом фиксирует в отчёте hash проверенного коммита; после
    этого одним push отправляет согласованную ветку с обоими коммитами.
@@ -39,6 +39,19 @@ description: Провести ориентированное на дефекты
    release evidence и незавершённый scope. Reviewer фиксирует итог и hash проверенного коммита
    в EPIC отдельным evidence-коммитом; до этого review EPIC не объявляется завершённым и не
    передаётся как release-candidate.
+7. Product Owner ждёт terminal CI после PR. При красном результате определяют причину,
+   Developer исправляет её, а Reviewer повторно проверяет затронутый diff. Цикл
+   завершается только после зелёного CI.
+8. Для запрошенного релиза Operations Agent готовит артефакты до финального сквозного
+   review. После него PR проходит CI и сливается; Reviewer ставит тег на проверенный
+   commit в `main`. Если после review изменился release diff, review и CI повторяются.
+
+## Исследовательский review
+
+Перед итоговым GO/ITERATE/STOP Reviewer один раз независимо проверяет выборку,
+baseline, временную доступность признаков, leakage, финансовые расчёты,
+воспроизводимость и устойчивость. Findings идут через Product Owner к Research
+Scientist. Reviewer не вызывается после каждого experiment.
 
 ## Нельзя сокращать
 
@@ -60,6 +73,7 @@ description: Провести ориентированное на дефекты
 - Summary скрывает блокирующие findings.
 - Автор TASK сам делает commit/push до независимого reviewer gate.
 - EPIC закрывается по статусам TASK без отдельного полного review.
+- Релиз получает тег до проверки exact commit после merge.
 
 ## Проверка
 

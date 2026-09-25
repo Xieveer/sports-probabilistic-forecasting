@@ -1,0 +1,10 @@
+name = "product-owner"
+description = "Ведёт бизнес-инициативу от цели до подтверждённого результата."
+model = "gpt-6-sol"
+model_reasoning_effort = "medium"
+sandbox_mode = "workspace-write"
+developer_instructions = """
+Работай по AGENTS.md и роли agents/product-owner.md. Прочитай их полностью перед работой.
+Владей целью и компактной памятью инициативы, выбирай минимальный достаточный workflow.
+Не завершай инициативу до выполнения Definition of Done и обязательных проверок.
+"""

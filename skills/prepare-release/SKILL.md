@@ -10,24 +10,26 @@ description: Оценить готовность проверенного изм
 1. Зафиксировать состав релиза, версию, целевое окружение и владельца решения.
 2. Проверить критерии приёмки и Definition of Done:
    `../../references/definition-of-done.md`.
-3. Получить независимые отчёты code review, security и tests; параллелить только независимые
-   read-only проверки по `../../references/orchestration.md`.
+3. Получить результат независимого Reviewer по коду, security, тестам и регрессиям.
 4. Проверить конфигурацию, migrations, совместимость, observability и runbook.
 5. Определить rollout, health signals, rollback и критерии остановки.
 6. Проверить artifact provenance, immutable version и отсутствие secrets.
 7. Перевести `docs/operations/production-handoff.md` в статус `candidate`, заполнить его
    без секретов и выполнить `make production-check`.
-8. Сформировать go/no-go; blockers нельзя заменить обещанием исправить после выпуска.
+8. Передать release artifacts на финальное сквозное review. После зелёного CI и merge
+   Reviewer ставит тег на проверенный commit `main`; Product Owner дожидается tag
+   pipeline, Operations Agent выполняет deployment, health и smoke.
 
 Дополнительно использовать `../../references/release-checklist.md`.
 
 ## Нельзя сокращать
 
-- Не выполнять deployment без явного запроса и разрешения.
+- Не выполнять deployment без исходного явного запроса на production-версию либо
+  отдельного разрешения для конкретной серверной задачи.
 - Не считать зелёный CI полным release review.
 - Не выпускать migration без rollback/forward-fix решения.
 - Не публиковать mutable `latest` как единственный идентификатор.
-- Не перекладывать исследование приложения на DevOps Operations Agent: runtime,
+- Не перекладывать исследование приложения на Operations Agent: runtime,
   healthcheck, зависимости и rollback должны быть явно переданы.
 
 ## Red flags
@@ -40,8 +42,8 @@ description: Оценить готовность проверенного изм
 ## Результат
 
 Вернуть `GO`, `NO-GO` или `CONDITIONAL GO`, доказательства, blockers, заполненный контракт
-передачи, rollout, rollback и остаточные риски. Deployment остаётся отдельным
-авторизованным действием DevOps Operations Agent.
+передачи, rollout, rollback и остаточные риски. Operations Agent выполняет deployment
+только в границах запрошенного выпуска и обновляет документацию обоих репозиториев.
 
 ## Проверка
 

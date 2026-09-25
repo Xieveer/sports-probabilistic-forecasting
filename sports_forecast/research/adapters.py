@@ -9,8 +9,6 @@ from pydantic import BaseModel, ValidationError
 from sports_forecast.research.contracts import (
     ContextPackage,
     DataResearchResult,
-    EvaluationNarrative,
-    EvaluationResult,
     HypothesisProposal,
 )
 
@@ -50,17 +48,6 @@ class ValidatedRoleGateway:
     def research_data(self, package: ContextPackage) -> DataResearchResult:
         """Вернуть валидный DataResearchResult либо поднять ValidationError."""
         return self._validated("data-researcher", package, DataResearchResult)
-
-    def interpret_evaluation(
-        self, package: ContextPackage, result: EvaluationResult
-    ) -> EvaluationNarrative:
-        """Вернуть валидный EvaluationNarrative, добавив decision в retry feedback при ошибке."""
-        return self._validated(
-            "research-evaluator",
-            package,
-            EvaluationNarrative,
-            f"Детерминированное решение: {result.decision.value}.",
-        )
 
     def _validated(
         self,

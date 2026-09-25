@@ -1,103 +1,113 @@
-# Research Mode v1
+# Research Mode
 
-Research Mode — явный opt-in контур для цели, способ достижения которой ещё неизвестен.
-Он не заменяет Engineering Workflow: запрос на определённое изменение системы остаётся
-Engineering Mode и идёт через существующие REQ → ADR → EPIC/TASK → TDD → review.
+Research Mode нужен, когда способ достижения цели неизвестен и сначала требуется
+проверить данные, гипотезы или модель. Product Owner ведёт инициативу через память
+EPIC/TASK и завершает её отчётом GO/ITERATE/STOP. GO означает достигнутые
+исследовательские критерии, а не разрешение выпускать модель или турнир: решение
+о production остаётся за пользователем. Исходные требования —
+[REQ-024](../product/requirements/REQ-024-initiative-agent-workflow.md).
 
-## Явный запуск и состояние
+## Цель и финансовые критерии
 
-В v1 запуск — создание `GoalContract` и вызов `ResearchOrchestrator.start(goal)`. Контракт
-задаёт scientific/business objective, target, horizon, market, odds source, allowed timestamp,
-development/validation/locked-holdout periods, prediction/economic/robustness criteria и
-experiment/compute/API budgets. Нет автоматической LLM-классификации: вызов orchestrator —
-явный выбор Research Mode.
+Новый запуск принимает только `ResearchGoalContract` через
+`ResearchOrchestrator.start(goal)`; старый `GoalContract` остаётся доступным лишь
+для восстановления ранее сохранённых запусков. Цель указывает target, рынок, odds source,
+время доступности признаков, temporal validation, holdout, budgets и stop conditions.
+До серьёзных экспериментов Product Owner согласует финансовые пороги. Новый
+`ResearchGoalContract` задаёт долю bootstrap-прогонов с положительным ROI (по
+умолчанию 0,8), coverage ставок (по умолчанию 0,2) и требование большего
+симулированного profit, чем у baseline и при наличии действующей модели. Итоговый
+ROI кандидата должен быть положительным. Новый контракт резервирует не менее пяти
+циклов, хотя ранний GO может завершить исследование раньше.
+Coverage — доля матчей тестовой выборки, на которых стратегия делает ставку.
+Пороги могут отличаться для разных турниров. Baseline и ML-пороги определяются
+после разведки данных; хорошие ML-метрики не заменяют финансовую проверку.
 
-`ResearchRepository` сохраняет `runs/<run_id>/state.json`, а каталог источников —
-`data-sources/<source_id>.json` в переданном workspace. Workspace выбирает оператор; он не
-является сервисной БД и не коммитится по умолчанию. Следующий вызов создаёт новый orchestrator
-и восстанавливает run только из durable state. Для глубоко исследованного API карточка имеет
-`catalog_completeness="complete"`: endpoint и field-level contract с JSON path, типом,
-семантикой, доступностью во времени и evidence. Краткая legacy-card (`partial`) не считается
-доказательством схемы и не должна быть основанием для реализации или научной гипотезы без
-повторной Data Researcher-проверки.
+Один полный исследовательский цикл включает гипотезу, признаки, обучение,
+валидацию и финансовые метрики. Optuna с ориентиром 50–100 trials помогает
+проверить наличие сигнала; при его отсутствии Scientist пересматривает гипотезы
+и признаки. После пяти безуспешных циклов Product Owner представляет пользователю
+проверенные идеи, цифры и ограничения. Ранний GO можно представить раньше.
+Необычно сильный сигнал требует проверки leakage.
 
-## State machine
+## Данные и роли
+
+Data Researcher вызывается, когда данных нет или источник ещё не оценён. Его
+приоритет — исследовать запросы API и WebSocket, глубину истории, качество,
+частоту пополнения, доступ и стоимость. Нужные аккаунт или прокси запрашиваются
+через Product Owner; разбор страниц отдельно обсуждается с пользователем.
+При готовом наборе данных Data Researcher пропускается.
+
+Если необходим длительный сбор, Data Researcher описывает источник и ставит
+Engineering-задачи на первичную загрузку, хранение, возобновление после обрыва
+и регулярное пополнение после матчей. Developer реализует защиту накопленных
+данных от случайного удаления и полного пересоздания с тестами; подтверждённое
+исправление конкретной записи допустимо. Пользователь запускает долгий сбор
+отдельной командой в своём терминале и возвращается к сохранённой инициативе
+после его завершения.
+
+Research Scientist отвечает за target, baseline, гипотезы, признаки, модели,
+leakage, temporal validation, calibration и финансовые сравнения. Детерминированный
+`EvaluationHarness` оценивает каждый эксперимент. Независимый Reviewer вызывается
+один раз перед итоговым отчётом: проверяет подход, расчёты, leakage и
+воспроизводимость. Он не является per-iteration Research Evaluator.
+
+## Состояние и переходы
+
+`ResearchRepository` хранит `runs/<run_id>/state.json` и карточки источников
+`data-sources/<source_id>.json` в переданном workspace. Workspace выбирает оператор;
+он не является сервисной БД и не коммитится по умолчанию. Это детальное evidence
+экспериментов; общий этап и следующий шаг хранятся в памяти EPIC/TASK. Новый
+orchestrator восстанавливает run из durable state без истории чата.
 
 ```text
 SCIENTIST → DATA_RESEARCH? → ENGINEERING? → EXPERIMENT → EVALUATION
     ↑                                                     │
     └──────────────────── FAIL / next iteration ─────────┘
 
-EVALUATION PASS → SUCCESS
-budget exhausted → EXHAUSTED
+EVALUATION PASS → SUCCESS → финальный Reviewer → отчёт пользователю
+budget exhausted → EXHAUSTED → отчёт или решение пользователя о новых гипотезах
 external decision / data unavailable → BLOCKED
-unexpected orchestrator error → FAILED
+unexpected internal error → FAILED
 ```
 
-`advance(run_id)` выполняет ровно один переход и сначала валидирует ответ Pydantic contract.
-`WAITING_ENGINEERING` не позволяет запустить experiment: only `EngineeringReceipt(status=verified,
-task_reference=...)` от gateway существующего workflow открывает переход.
-
-## Контракты и минимальный context
-
-Канонические схемы находятся в `sports_forecast.research.contracts`: `GoalContract`,
-`HypothesisProposal`, `DataRequirement`, `DataResearchResult`, `ExperimentSpec`,
-`EngineeringRequest`, `ExperimentResult`, `EvaluationResult`, `ResearchFinding` и
-`HumanDecisionRequest`. `ContextPackage` получает только Goal, serializable state, active
-hypothesis, последние findings, source IDs и текущую задачу. Он не получает историю чата или
-полные raw responses.
-
-`ResearchMemory` хранит evaluator findings, data-research findings, source references и факт раскрытия locked holdout. Harness
-помечает повторный просмотр уже раскрытого locked holdout `INVALID`; Scientist не получает
-его результаты как материал для очередной оптимизации.
-
-## Роли и границы
-
-`research-scientist` формирует гипотезу и information gain; `data-researcher` описывает
-легально доступный источник; `research-evaluator` интерпретирует готовое решение. Каждая роль
-получает изолируемый package и не вызывает следующую роль. Orchestrator — обычный код, который
-вызывает adapter текущего state.
-
-При потребности в коде или pipeline data-researcher/scientist возвращает `EngineeringRequest`.
-Gateway обязан создать обычную REQ/TASK в existing Engineering Workflow и вернуть verified
-receipt только после его доказательств. Research Mode не имеет implementer/reviewer-дублей.
-Operations Agent также вне Research Loop: возможная передача candidate в deployment относится к
-future scope и требует отдельной авторизации.
+`advance(run_id)` выполняет один валидированный переход. При нужной правке кода
+`EngineeringRequest` проходит обычную Engineering TASK; только verified
+`EngineeringReceipt` с совпадающим `request_id` открывает эксперимент. Role calls
+получают минимальный `ContextPackage`, а не историю чата. Карточка API с
+`catalog_completeness="complete"` требует endpoint и field-level contract, включая
+JSON path, тип, семантику, временную доступность и evidence. Частичная карточка
+не доказывает пригодность источника для реализации или научной гипотезы.
 
 ## Evaluation Harness
 
-v1 детерминированно проверяет temporal validation, baseline LogLoss, целевой LogLoss, ROI,
-число ставок и, когда заданы в Goal Contract, max drawdown, bootstrap lower bound и
-concentration. `ExperimentResult` уже переносит Brier/calibration, bootstrap interval,
-stability по сезонам/турнирам, threshold/odds sensitivity и CLV; их полный расчёт и policy
-gate — следующий bounded scope. Все такие метрики вычисляет код; LLM добавляет только научную
-интерпретацию.
+Harness отклоняет отсутствие temporal validation и повторное использование
+раскрытого locked holdout. Старый `GoalContract` сохраняет проверку числа ставок;
+LogLoss, ROI, max drawdown, bootstrap lower bound и concentration проверяются,
+если их пороги заданы. Новый
+`ResearchGoalContract` дополнительно требует долю положительных ROI bootstrap-прогонов,
+bet coverage, simulated profit кандидата и baseline, а при наличии действующей модели —
+её profit. Наличие этого значения включает сравнение независимо от флага; если
+сравнение заранее обязательно, но значение не получено, результат `INVALID`.
+Отсутствующая обязательная метрика даёт `INVALID`; проваленный порог или profit
+не выше сравниваемого варианта — `FAIL`.
 
-Если Goal Contract требует bootstrap lower bound или concentration, а runner не вернул эту
-метрику, Harness возвращает `INVALID`, а не `PASS`. Аналогично Engineering boundary принимает
-`verified` receipt только при совпадении его `request_id` с активным `EngineeringRequest`.
-Validation feedback и failure state содержат только безопасные имена полей/тип ошибки: raw
-внешний payload не записывается в logs или JSON memory.
+`ExperimentResult` переносит Brier/calibration, интервалы bootstrap, stability по
+сезонам/турнирам, threshold/odds sensitivity и CLV. Экспериментальный runner
+обязан вычислять все поля, которые нужны контракту конкретного исследования;
+LLM не подменяет raw metrics интерпретацией. Старые сохранённые `GoalContract`
+остаются читаемыми без новых financial полей. Несовпадение `experiment_id` или
+temporal validation с `ExperimentSpec` приводит к `FAILED` до сохранения raw result.
 
-Перед сохранением raw experiment runner обязан вернуть тот же `experiment_id` и значение
-`temporal_validation`, что указаны в active `ExperimentSpec`. Несовпадение считается `FAILED`
-до добавления result в memory и до вызова evaluator.
+`ValidatedRoleGateway` принимает JSON ответа роли, валидирует typed contract и
+передаёт один безопасный retry feedback; исчерпание retry завершает run как
+`FAILED`. `ContextPackage` содержит schema version, `as_of` и provenance findings.
+Это дисциплина передачи контекста между изолированными вызовами, а не гарантия
+приватности внутренних контекстов Codex. В state/log сохраняются только безопасные
+имена полей и тип ошибки, без полного внешнего payload. Повторно раскрытый locked
+holdout не может служить evidence новой оптимизации.
 
-## Context isolation audit
-
-Профили `.codex/agents/` фактически задают model, reasoning effort, sandbox и лимит потоков,
-но не содержат контракт inheritance/return размера context. Официальная документация OpenAI
-описывает multi-agent API как beta, однако не определяет семантику локальных custom-agent calls
-этого репозитория. В pilot TASK-013-2 три текущих agent calls с `fork_turns=none` получили
-разные JSON packages и выполнили последовательный handoff; их complete outputs вернулись
-родительской сессии. Это подтверждает практическую дисциплину package, но не внутреннюю
-гарантию privacy/isolation и не Python adapter.
-
-Pilot также показал, что package нужно расширить `schema_version`, `as_of` и provenance для
-findings, а agent adapter — retry после Pydantic validation failure; это реализовано в
-TASK-013-3 через `ValidatedRoleGateway`. Gateway принимает только raw JSON, валидирует contract
-до перехода и передаёт один retry feedback. Исчерпание retry — `FAILED`, а не неявный переход.
-Повторный Scientist pilot исправил type mismatch; Data Researcher исчерпал retry на полном
-catalog contract, что подтверждает fail-safe свойство, но не достаточность prompt-only schema
-transport. Runtime/API adapter обязан рассматривать вызов как уничтожаемую изолированную сессию
-и передавать лишь `ContextPackage`.
+Финальный отчёт включает все рассчитанные проектом метрики, сравнение на одних
+тестовых данных, число ставок, дисперсию и интервалы. Исторический симулированный
+profit не является фактически полученной прибылью. При GO Research Scientist
+прикладывает спецификацию алгоритма для возможной отдельной Engineering-инициативы.

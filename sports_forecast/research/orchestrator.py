@@ -14,13 +14,11 @@ from sports_forecast.research.contracts import (
     EngineeringRequest,
     EngineeringStatus,
     EvaluationDecision,
-    EvaluationNarrative,
-    EvaluationResult,
     ExperimentResult,
     ExperimentSpec,
-    GoalContract,
     HypothesisProposal,
     ResearchFinding,
+    ResearchGoalContract,
     ResearchState,
     ResearchStatus,
 )
@@ -38,10 +36,6 @@ class ResearchRoleGateway(Protocol):
     def propose_hypothesis(self, package: ContextPackage) -> HypothesisProposal: ...
 
     def research_data(self, package: ContextPackage) -> DataResearchResult: ...
-
-    def interpret_evaluation(
-        self, package: ContextPackage, result: EvaluationResult
-    ) -> EvaluationNarrative: ...
 
 
 class EngineeringWorkflowGateway(Protocol):
@@ -79,8 +73,11 @@ class ResearchOrchestrator:
         self.experiments = experiments
         self.harness = harness or EvaluationHarness()
 
-    def start(self, goal: GoalContract) -> str:
-        """Создать явный opt-in Research Mode run и вернуть его идентификатор."""
+    def start(self, goal: ResearchGoalContract) -> str:
+        """Создать новый run только с обязательными financial gates."""
+        if not isinstance(goal, ResearchGoalContract):
+            msg = "Новый run требует ResearchGoalContract; legacy GoalContract только для чтения."
+            raise TypeError(msg)
         run_id = f"{goal.goal_id}-{uuid4().hex[:8]}"
         self.repository.create(ResearchState(run_id=run_id, goal=goal))
         logger.info("Создан Research Mode run %s", run_id)
@@ -154,9 +151,13 @@ class ResearchOrchestrator:
         if result.source.source_id not in state.memory.data_sources:
             state.memory.data_sources.append(result.source.source_id)
         state.memory.data_research_findings.extend(result.findings)
-        if result.blocked_reason is not None or result.human_decision_request is not None:
+        if result.blocked_reason is not None:
             state.status = ResearchStatus.BLOCKED
-            state.failure_reason = result.blocked_reason or result.human_decision_request.reason
+            state.failure_reason = result.blocked_reason
+            return
+        if result.human_decision_request is not None:
+            state.status = ResearchStatus.BLOCKED
+            state.failure_reason = result.human_decision_request.reason
             return
         assert state.active_hypothesis is not None
         if result.engineering_request is not None:
@@ -222,23 +223,17 @@ class ResearchOrchestrator:
         assert state.active_hypothesis is not None
         assert state.active_experiment is not None
         result = self.harness.evaluate(state.goal, state.active_experiment, state.memory)
-        narrative = self.roles.interpret_evaluation(
-            self._package(
-                state, "research-evaluator", "Интерпретировать raw metrics и решение harness."
-            ),
-            result,
-        )
         state.memory.findings.append(
             ResearchFinding(
                 hypothesis_id=state.active_hypothesis.hypothesis_id,
                 experiment_id=state.active_experiment.experiment_id,
                 decision=result.decision,
-                summary=narrative.conclusion,
-                caveats=[*result.reasons, *narrative.caveats],
+                summary=f"{result.decision.value}: {' '.join(result.reasons)}",
+                caveats=result.reasons,
                 provenance=ArtifactProvenance(
                     artifact_id=f"{state.run_id}:finding:{state.iteration + 1}",
-                    role="research-evaluator",
-                    context_package_id=f"{state.run_id}:{state.iteration + 1}:research-evaluator",
+                    role="evaluation-harness",
+                    context_package_id=f"{state.run_id}:{state.iteration + 1}:evaluation-harness",
                     as_of=state.as_of,
                 ),
             )

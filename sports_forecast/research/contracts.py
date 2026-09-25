@@ -61,8 +61,8 @@ class GoalContract(BaseModel):
     prediction_metrics: list[str] = Field(min_length=1)
     economic_metrics: list[str] = Field(min_length=1)
     robustness_criteria: list[str] = Field(min_length=1)
-    min_roi: float
-    max_log_loss: float
+    min_roi: float | None = None
+    max_log_loss: float | None = None
     min_bets: int = Field(ge=1)
     max_drawdown: float | None = Field(default=None, ge=0)
     min_bootstrap_ci_low: float | None = None
@@ -71,6 +71,35 @@ class GoalContract(BaseModel):
     compute_budget: str
     api_budget: str
     stop_conditions: list[str] = Field(min_length=1)
+
+
+class ResearchAcceptanceCriteria(BaseModel):
+    """Согласованные до эксперимента business gates исследовательской инициативы.
+
+    ML-пороги намеренно не входят в этот контракт: их можно определить после
+    разведки данных и baseline. Financial gates остаются проверяемыми уже на
+    входе в исследование.
+    """
+
+    min_positive_roi_bootstrap_fraction: float = Field(default=0.8, ge=0, le=1)
+    min_bet_coverage: float = Field(default=0.2, ge=0, le=1)
+    require_current_model_profit_superiority: bool = False
+
+
+class ResearchGoalContract(GoalContract):
+    """Новый контракт Research Mode с обязательными financial gates.
+
+    Совместим с ``GoalContract``, но допускает отложенную фиксацию ML-порогов
+    после исследования доступных данных.
+    """
+
+    experiment_budget: int = Field(ge=5)
+    research_acceptance_criteria: ResearchAcceptanceCriteria = Field(
+        default_factory=ResearchAcceptanceCriteria
+    )
+
+
+ResearchGoal = GoalContract | ResearchGoalContract
 
 
 class ExperimentSpec(BaseModel):
@@ -378,6 +407,11 @@ class ExperimentResult(BaseModel):
     odds_bucket_roi: dict[str, float] = Field(default_factory=dict)
     max_selection_share: float | None = Field(default=None, ge=0, le=1)
     closing_line_value: float | None = None
+    positive_roi_bootstrap_fraction: float | None = Field(default=None, ge=0, le=1)
+    bet_coverage: float | None = Field(default=None, ge=0, le=1)
+    simulated_profit: float | None = None
+    baseline_simulated_profit: float | None = None
+    current_model_simulated_profit: float | None = None
 
 
 class EvaluationResult(BaseModel):
@@ -385,13 +419,6 @@ class EvaluationResult(BaseModel):
 
     decision: EvaluationDecision
     reasons: list[str]
-
-
-class EvaluationNarrative(BaseModel):
-    """Научная интерпретация evaluator, не меняющая decision harness."""
-
-    conclusion: str
-    caveats: list[str]
 
 
 class ResearchFinding(BaseModel):
@@ -421,7 +448,7 @@ class ContextPackage(BaseModel):
     package_id: str = Field(pattern=r"^[a-z0-9][a-z0-9:.-]*$")
     as_of: datetime
     role: str
-    goal: GoalContract
+    goal: ResearchGoal
     run_id: str
     iteration: int
     current_status: ResearchStatus
@@ -437,7 +464,7 @@ class ResearchState(BaseModel):
 
     schema_version: int = Field(default=1, ge=1)
     run_id: str
-    goal: GoalContract
+    goal: ResearchGoal
     status: ResearchStatus = ResearchStatus.SCIENTIST
     iteration: int = 0
     active_hypothesis: HypothesisProposal | None = None
