@@ -59,10 +59,16 @@ payload в evidence не сохранялись.
 - Tag pipeline `v1.1.15` остановился до publication: isolated first-rollout contract не смог
   запустить MinIO fixture с network alias на default bridge (Docker exit 125). `v1.1.16`
   также остановился на MinIO startup (exit 125). Production server и GHCR images не менялись.
-  `v1.1.17` также остановился на MinIO startup (exit 125). Regression fix оформлен как
-  новый candidate `v1.1.18` с prebuilt MinIO OCI artifact.
-- Не завершены final tag pipeline `v1.1.18` и operations-agent rollout. До их успешного
+  `v1.1.17` также остановился на MinIO startup (exit 125). Candidate `v1.1.18`
+  остановился до first-rollout: Docker Hub отклонил MinIO digest. Regression fix оформлен
+  как новый candidate `v1.1.19` с project-owned S3-compatible Moto OCI artifact (ADR-024).
+- Не завершены final tag pipeline `v1.1.19` и operations-agent rollout. До их успешного
   завершения задача не считается принятой, а deployment запрещён.
+- Remediation `v1.1.19`: независимый review одобрил project-owned Moto S3 fixture;
+  `uv lock --check`, 48 контрактных тестов, `make production-check`, `make lint`,
+  `make security`, `git diff --check` и Docker read-only S3 smoke успешны. Полный mypy
+  для затронутых scripts остаётся красным из-за 156 существующих ошибок в транзитивных
+  модулях вне этого diff; scoped mypy reviewer прошёл.
 
 ## Review
 

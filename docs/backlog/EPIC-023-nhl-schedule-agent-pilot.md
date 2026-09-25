@@ -5,6 +5,7 @@
 > **Владелец:** главный агент
 > **Требование:** [REQ-023](../product/requirements/REQ-023-nhl-schedule-agent-pilot.md)
 > **ADR:** [ADR-023](../architecture/adr/ADR-023-minimal-agent-pilot-with-operations-agent.md)
+> **Release-решение:** [ADR-024](../architecture/adr/ADR-024-project-owned-s3-first-rollout-fixture.md)
 
 ## Цель и границы
 

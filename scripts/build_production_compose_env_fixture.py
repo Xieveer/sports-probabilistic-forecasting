@@ -47,6 +47,7 @@ def build_fixture(
         "SF_WORKER_IMAGE": f"ghcr.io/fixture/worker@{digest}",
         "SF_BOT_IMAGE": f"ghcr.io/fixture/bot@{digest}",
         "SF_ARCHIVE_SYNC_IMAGE": f"ghcr.io/fixture/archive-sync@{digest}",
+        "SF_S3_FIXTURE_IMAGE": f"ghcr.io/fixture/s3-fixture@{digest}",
     }
     if image_refs is not None:
         missing = set(default_images) - set(image_refs)
@@ -97,6 +98,7 @@ def main() -> None:
     parser.add_argument("--worker-image")
     parser.add_argument("--bot-image")
     parser.add_argument("--archive-sync-image")
+    parser.add_argument("--s3-fixture-image")
     args = parser.parse_args()
     supplied_images = {
         "SF_POSTGRES_IMAGE": args.postgres_image,
@@ -104,6 +106,7 @@ def main() -> None:
         "SF_WORKER_IMAGE": args.worker_image,
         "SF_BOT_IMAGE": args.bot_image,
         "SF_ARCHIVE_SYNC_IMAGE": args.archive_sync_image,
+        "SF_S3_FIXTURE_IMAGE": args.s3_fixture_image,
     }
     build_fixture(
         args.output,

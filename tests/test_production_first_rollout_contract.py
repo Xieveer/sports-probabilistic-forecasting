@@ -18,7 +18,7 @@ from scripts.run_production_first_rollout import (
     _parse_memory_usage_bytes,
     _restore_fixture_mount_ownership,
     _restore_runtime_root_ownership,
-    _start_minio_fixture,
+    _start_s3_fixture,
 )
 
 
@@ -176,11 +176,7 @@ def test_first_rollout_tests_prebuilt_image_archives_before_exact_publish() -> N
             if "uses" in step:
                 assert re.search(r"@[0-9a-f]{40}(?:\s|$)", step["uses"])
 
-    assert docker["jobs"]["first-rollout"]["needs"] == [
-        "verify",
-        "build-artifacts",
-        "build-fixture-artifact",
-    ]
+    assert docker["jobs"]["first-rollout"]["needs"] == ["verify", "build-artifacts"]
     artifact_build = docker["jobs"]["build-artifacts"]
     build_step = next(
         step
@@ -337,10 +333,10 @@ def test_log_redaction_gate_rejects_fixture_secret(tmp_path: Path) -> None:
         )
 
 
-def test_minio_fixture_uses_dedicated_user_defined_network_before_compose_connect(
+def test_s3_fixture_uses_project_image_on_compose_network(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """MinIO не использует встроенный default bridge Docker."""
+    """S3 fixture запускается из переданного immutable project artifact."""
     commands: list[list[str]] = []
 
     def record(command: list[str], **_: object) -> None:
@@ -348,41 +344,27 @@ def test_minio_fixture_uses_dedicated_user_defined_network_before_compose_connec
 
     monkeypatch.setattr("scripts.run_production_first_rollout._run_one_shot_checked", record)
 
-    _start_minio_fixture(
-        minio_name="sf-rollout-test-minio",
+    _start_s3_fixture(
+        fixture_name="sf-rollout-test-s3-fixture",
         network="sf-rollout-test_default",
-        fixture_network="sf-rollout-test-minio-network",
+        image="localhost:5000/sf-rollout-s3-fixture@sha256:" + "0" * 64,
         values={"DATABASE_URL_FILE": "/non-secret-path"},
     )
 
-    assert commands[0] == [
-        "docker",
-        "network",
-        "create",
-        "--driver",
-        "bridge",
-        "sf-rollout-test-minio-network",
-    ]
-    assert commands[1][:9] == [
+    assert commands[0][:9] == [
         "docker",
         "run",
         "-d",
         "--name",
-        "sf-rollout-test-minio",
+        "sf-rollout-test-s3-fixture",
         "--network",
-        "sf-rollout-test-minio-network",
+        "sf-rollout-test_default",
         "--network-alias",
         "minio",
     ]
-    assert commands[2] == [
-        "docker",
-        "network",
-        "connect",
-        "--alias",
-        "minio",
-        "sf-rollout-test_default",
-        "sf-rollout-test-minio",
-    ]
+    assert "--read-only" in commands[0]
+    assert "--tmpfs" in commands[0]
+    assert commands[0][-1] == "localhost:5000/sf-rollout-s3-fixture@sha256:" + "0" * 64
 
 
 @pytest.mark.parametrize(

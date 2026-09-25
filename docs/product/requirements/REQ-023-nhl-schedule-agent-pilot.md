@@ -112,11 +112,12 @@
   data требует возвращения к владельцу за отдельным решением.
 - Автоматический rollback снижает последствия deployment failure, но не заменяет
   pre-deploy проверки и сохранённый совместимый rollback target.
-- Release candidate `v1.1.15` остановлен до publication и server mutation: isolated
-  first-rollout contract получил Docker exit 125 при MinIO network alias. `v1.1.16`
-  также остановился на MinIO startup (exit 125). `v1.1.17` также не прошёл этот gate;
-  `v1.1.18` обязан передавать prebuilt OCI artifact без скрытого pull MinIO в first-rollout и пройти полный
-  tag pipeline до rollout; переиспользование либо перемещение предыдущих тегов запрещено.
+- Release candidates `v1.1.15`–`v1.1.17` остановлены до publication и server mutation
+  на MinIO startup (Docker exit 125). `v1.1.18` остановился до first-rollout: Docker Hub
+  отклонил pull pinned `minio/minio` digest. `v1.1.19` обязан собирать project-owned
+  S3-compatible fixture из locked dependencies, передавать его в OCI artifacts и пройти
+  полный tag pipeline до rollout; переиспользование либо перемещение предыдущих тегов
+  запрещено. Решение зафиксировано в ADR-024.
 
 ## Предположения и открытые вопросы
 

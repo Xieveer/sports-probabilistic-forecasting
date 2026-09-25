@@ -30,8 +30,6 @@ from scripts.verify_production_compose_contract import verify_contract  # noqa: 
 
 
 RUNTIME_UID_GID = "10001:10001"
-MINIO_IMAGE = "minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
-MINIO_MC_IMAGE = "minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727"
 _MEMORY_BYTES_PER_UNIT = {
     "B": 1,
     "KB": 1000,
@@ -372,36 +370,26 @@ def _run_one_shot_checked(
     return result
 
 
-def _start_minio_fixture(
-    *, minio_name: str, network: str, fixture_network: str, values: dict[str, str]
+def _start_s3_fixture(
+    *, fixture_name: str, network: str, image: str, values: dict[str, str]
 ) -> None:
-    """Запустить MinIO вне встроенного bridge и подключить к Compose-сети."""
-    _run_one_shot_checked(
-        ["docker", "network", "create", "--driver", "bridge", fixture_network], values=values
-    )
+    """Запустить project-owned S3 fixture в изолированной Compose-сети."""
     _run_one_shot_checked(
         [
             "docker",
             "run",
             "-d",
             "--name",
-            minio_name,
+            fixture_name,
             "--network",
-            fixture_network,
+            network,
             "--network-alias",
             "minio",
-            "--env",
-            "MINIO_ROOT_USER=fixture-access-key",
-            "--env",
-            "MINIO_ROOT_PASSWORD=fixture-secret-key",
-            MINIO_IMAGE,
-            "server",
-            "/data",
+            "--read-only",
+            "--tmpfs",
+            "/tmp:rw,noexec,nosuid,size=64m",
+            image,
         ],
-        values=values,
-    )
-    _run_one_shot_checked(
-        ["docker", "network", "connect", "--alias", "minio", network, minio_name],
         values=values,
     )
 
@@ -814,11 +802,11 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
                 raise RuntimeError("повтор Worker run_id создал duplicate execution")
             evidence["health"]["worker_refresh"] = "ok"
             evidence["health"]["worker_run_id_idempotency"] = "ok"
-            minio_name = f"{project_name}-minio"
-            _start_minio_fixture(
-                minio_name=minio_name,
+            s3_fixture_name = f"{project_name}-s3-fixture"
+            _start_s3_fixture(
+                fixture_name=s3_fixture_name,
                 network=f"{project_name}_default",
-                fixture_network=f"{project_name}-minio-network",
+                image=refs["SF_S3_FIXTURE_IMAGE"],
                 values=values,
             )
             _wait_for(
@@ -826,15 +814,29 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
                     "docker",
                     "run",
                     "--rm",
+                    "--read-only",
+                    "--user",
+                    RUNTIME_UID_GID,
+                    "--tmpfs",
+                    "/tmp:rw,noexec,nosuid,size=64m",
                     "--network",
                     f"{project_name}_default",
-                    MINIO_MC_IMAGE,
-                    "alias",
-                    "set",
-                    "fixture",
-                    "http://minio:9000",
-                    "fixture-access-key",
-                    "fixture-secret-key",
+                    "--mount",
+                    f"type=bind,src={values['SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE']},dst=/run/secrets/object_storage_access_key,readonly",
+                    "--mount",
+                    f"type=bind,src={values['SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE']},dst=/run/secrets/object_storage_secret_key,readonly",
+                    "--env",
+                    "SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE=/run/secrets/object_storage_access_key",
+                    "--env",
+                    "SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE=/run/secrets/object_storage_secret_key",
+                    refs["SF_ARCHIVE_SYNC_IMAGE"],
+                    "/app/.venv/bin/python",
+                    "-c",
+                    "from pathlib import Path; import boto3; boto3.client("
+                    "'s3', endpoint_url='http://minio:9000', "
+                    "aws_access_key_id=Path('/run/secrets/object_storage_access_key').read_text().strip(), "
+                    "aws_secret_access_key=Path('/run/secrets/object_storage_secret_key').read_text().strip(), "
+                    "region_name='us-east-1').list_buckets()",
                 ],
                 timeout=90,
             )
@@ -843,14 +845,29 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
                     "docker",
                     "run",
                     "--rm",
+                    "--read-only",
+                    "--user",
+                    RUNTIME_UID_GID,
+                    "--tmpfs",
+                    "/tmp:rw,noexec,nosuid,size=64m",
                     "--network",
                     f"{project_name}_default",
-                    "--entrypoint",
-                    "/bin/sh",
-                    MINIO_MC_IMAGE,
+                    "--mount",
+                    f"type=bind,src={values['SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE']},dst=/run/secrets/object_storage_access_key,readonly",
+                    "--mount",
+                    f"type=bind,src={values['SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE']},dst=/run/secrets/object_storage_secret_key,readonly",
+                    "--env",
+                    "SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE=/run/secrets/object_storage_access_key",
+                    "--env",
+                    "SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE=/run/secrets/object_storage_secret_key",
+                    refs["SF_ARCHIVE_SYNC_IMAGE"],
+                    "/app/.venv/bin/python",
                     "-c",
-                    "mc alias set fixture http://minio:9000 fixture-access-key fixture-secret-key >/dev/null && "
-                    "mc mb --ignore-existing fixture/fixture-bucket >/dev/null",
+                    "from pathlib import Path; import boto3; client=boto3.client("
+                    "'s3', endpoint_url='http://minio:9000', "
+                    "aws_access_key_id=Path('/run/secrets/object_storage_access_key').read_text().strip(), "
+                    "aws_secret_access_key=Path('/run/secrets/object_storage_secret_key').read_text().strip(), "
+                    "region_name='us-east-1'); client.create_bucket(Bucket='fixture-bucket')",
                 ],
                 values=values,
             )
@@ -1108,10 +1125,7 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
                 check=False,
             )
             subprocess.run(
-                ["docker", "rm", "-f", f"{project_name}-minio"], capture_output=True, check=False
-            )
-            subprocess.run(
-                ["docker", "network", "rm", f"{project_name}-minio-network"],
+                ["docker", "rm", "-f", f"{project_name}-s3-fixture"],
                 capture_output=True,
                 check=False,
             )
