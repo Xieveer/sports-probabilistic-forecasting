@@ -20,7 +20,7 @@ _PUBLIC_COMMANDS = (
     BotCommand(command="start", description="Начать работу"),
     BotCommand(command="help", description="Справка"),
     BotCommand(command="predict", description="Ближайшие прогнозы"),
-    BotCommand(command="upcoming", description="Расписание матчей"),
+    BotCommand(command="upcoming", description="Календарь NHL"),
     BotCommand(command="edge", description="Котировки и edge"),
 )
 _ADMIN_COMMANDS = (

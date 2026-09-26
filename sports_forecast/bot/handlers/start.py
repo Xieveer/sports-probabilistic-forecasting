@@ -17,7 +17,7 @@ async def cmd_start(message: Message) -> None:
         "Привет! Я бот прогнозов Sports Probabilistic Forecasting.\n\n"
         "Команды:\n"
         "/predict — ближайшие матчи с вероятностями\n"
-        "/upcoming — расписание NHL на выбранное число дней\n"
+        "/upcoming — календарь NHL: сегодня, завтра, 3/7/14/30 дней\n"
         "/edge [турнир] — обновить live-котировки/edge (лёгкий путь; без пайплайна данных)\n"
         "/help — справка\n"
         "Админ: /status, /refresh (полный refresh через Airflow), /models"

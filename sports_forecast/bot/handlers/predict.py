@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import UTC, datetime, timedelta
-from math import ceil
+from datetime import UTC, datetime
+from html import escape
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -38,6 +38,7 @@ _MONTHS_RU = (
     "декабря",
 )
 _SCHEDULE_DIVIDER = "—————————————————————————————"
+_MAX_SCHEDULE_PARTICIPANT_LENGTH = 128
 
 router = Router(name="predict")
 
@@ -45,7 +46,19 @@ router = Router(name="predict")
 class ScheduleState(StatesGroup):
     """Шаги запроса календаря турнира."""
 
-    waiting_days = State()
+    waiting_period = State()
+
+
+SCHEDULE_PERIODS = ("today", "tomorrow", "3", "7", "14", "30")
+SCHEDULE_PAGE_SIZE = 50
+_PERIOD_LABELS = {
+    "today": "Сегодня",
+    "tomorrow": "Завтра",
+    "3": "3 дня",
+    "7": "7 дней",
+    "14": "14 дней",
+    "30": "30 дней",
+}
 
 
 # Лёгкий операционный путь (R41): только HTTP GET к витрине + ``live_pinnacle`` на стороне API.
@@ -83,26 +96,21 @@ async def fetch_schedule(
     *,
     cfg: DictConfig,
     tournament: str,
-    days: int,
-    now: datetime | None = None,
+    period: str,
 ) -> dict[str, Any]:
-    """Загрузить календарь до конца выбранного дня МСК."""
+    """Загрузить страницу независимого source-календаря."""
+    if period not in SCHEDULE_PERIODS:
+        raise ValueError("Недопустимый период календаря")
     base = str(cfg.bot.api_base_url).rstrip("/")
-    window_start, deadline = _schedule_window(days, now=now)
-    params = _upcoming_query_params(tournament, cfg)
-    params["hours"] = _schedule_window_hours(days, now=window_start)
-    data = await _fetch_json(client, _predict_upcoming_url(base, tournament), params=params)
-    if not isinstance(data, dict):
-        return {"predictions": []}
-    items = data.get("predictions") or []
-    return {
-        **data,
-        "predictions": [
-            item
-            for item in items
-            if isinstance(item, dict) and _is_in_schedule_window(item, window_start, deadline)
-        ],
-    }
+    url = f"{base}/calendar/{tournament.strip()}"
+    data = await _fetch_json(
+        client,
+        url,
+        params={"period": period, "limit": SCHEDULE_PAGE_SIZE, "offset": 0},
+    )
+    if not isinstance(data, dict) or not isinstance(data.get("events"), list):
+        raise ValueError("Некорректный ответ календаря")
+    return data
 
 
 def _tournament_choices(_cfg: DictConfig) -> list[str]:
@@ -125,6 +133,15 @@ def _kb_schedule_tournaments():
     b = InlineKeyboardBuilder()
     b.add(InlineKeyboardButton(text="NHL", callback_data="schedule:nhl"))
     return b.as_markup()
+
+
+def _kb_schedule_periods():
+    """Клавиатура разрешённых календарных периодов."""
+    builder = InlineKeyboardBuilder()
+    for period in SCHEDULE_PERIODS:
+        builder.button(text=_PERIOD_LABELS[period], callback_data=f"period:{period}")
+    builder.adjust(2)
+    return builder.as_markup()
 
 
 def _is_nhl_tournament(tournament: str) -> bool:
@@ -245,108 +262,118 @@ def _format_upcoming_line(item: dict[str, Any]) -> str:
     return line1 + "\n  " + "\n  ".join(live)
 
 
-def _schedule_window(days: int, *, now: datetime | None = None) -> tuple[datetime, datetime]:
-    """Вернуть точные UTC-границы периода календаря."""
-    current = (now or datetime.now(UTC)).astimezone(MOSCOW_TZ)
-    deadline = current.replace(hour=23, minute=59, second=59, microsecond=999999) + timedelta(
-        days=days
-    )
-    return current.astimezone(UTC), deadline.astimezone(UTC)
-
-
-def _schedule_window_hours(days: int, *, now: datetime | None = None) -> int:
-    """Вернуть округлённый вверх API-горизонт, сохраняя точную границу в фильтре."""
-    start, deadline = _schedule_window(days, now=now)
-    return max(1, ceil((deadline - start).total_seconds() / 3600))
-
-
 def _parse_schedule_datetime(value: object) -> datetime | None:
-    """Прочитать время API: SQLite wall-time без offset считается UTC."""
+    """Прочитать время календаря; SQLite wall-time считается UTC."""
     try:
         moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=UTC)
-    return moment.astimezone(UTC)
+    return (moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment).astimezone(UTC)
 
 
-def _is_in_schedule_window(item: dict[str, Any], start: datetime, deadline: datetime) -> bool:
-    """Проверить точную границу, которую часовое API-окно выразить не может."""
-    moment = _parse_schedule_datetime(item.get("match_datetime"))
-    return moment is not None and start <= moment <= deadline
+def _coverage_label(status: object) -> str:
+    """Объяснить пользователю полноту source-календаря."""
+    return {
+        "complete": "календарь актуален",
+        "confirmed_empty": "пустое окно подтверждено источником",
+        "incomplete": "покрытие календаря неполное",
+        "stale": "данные календаря устарели",
+        "unavailable": "последнее обновление календаря завершилось ошибкой",
+        "unknown": "полнота календаря ещё не проверена",
+    }.get(str(status), "состояние календаря неизвестно")
 
 
-def _schedule_decimal(value: Any) -> str:
-    """Отформатировать коэффициент, не скрывая отсутствующее отдельное поле."""
-    return f"{float(value):.2f}" if value is not None else "нет данных"
+def _readiness_label(status: object) -> str:
+    return {
+        "current": "актуален",
+        "changed": "изменён",
+        "postponed": "перенесён",
+        "cancelled": "отменён",
+        "started": "начался",
+        "finished": "завершён",
+        "needs_review": "требует проверки",
+        "ready": "готово",
+        "partial": "частично готово",
+        "pending": "ожидает",
+        "waiting": "ожидает",
+        "missing": "нет данных",
+        "stale": "устарело",
+        "failed": "ошибка",
+        "error": "ошибка",
+        "unavailable": "недоступно",
+    }.get(str(status), "неизвестно")
 
 
-def _schedule_value(value: Any) -> str:
-    """Отформатировать value с маркером положительной ставки."""
-    if value is None:
-        return "нет данных"
-    decimal = float(value)
-    return f"✅+{decimal:.2f}" if decimal > 0 else f"{decimal:.2f}"
-
-
-def _schedule_probability(prediction: object, side: str) -> str:
-    """Вернуть вероятность стороны или явный маркер отсутствующих данных."""
-    if not isinstance(prediction, dict) or prediction.get(side) is None:
-        return "нет данных"
-    return f"{float(prediction[side]):.2f}"
-
-
-def _format_schedule(items: list[dict[str, Any]]) -> str:
-    """Сгруппировать будущие матчи по календарным дням МСК."""
+def _calendar_cards(items: list[dict[str, Any]], *, participant_limit: int) -> dict[str, list[str]]:
+    """Подготовить ограниченные по длине карточки без разрезания HTML-сущностей."""
     groups: dict[str, list[str]] = {}
     for item in items:
-        utc_moment = _parse_schedule_datetime(item.get("match_datetime"))
+        utc_moment = _parse_schedule_datetime(item.get("scheduled_at"))
         if utc_moment is None:
             continue
         moment = utc_moment.astimezone(MOSCOW_TZ)
-        prediction = item.get("predictions")
         date_label = f"{moment.day} {_MONTHS_RU[moment.month - 1]}"
+        prediction = item.get("prediction_readiness") or {}
+        odds = item.get("odds_readiness") or {}
+        aggregate = item.get("readiness") or {}
+        status = item.get("status")
+        home = str(item.get("home_participant") or "—")
+        away = str(item.get("away_participant") or "—")
+        if len(home) > participant_limit:
+            home = home[: participant_limit - 1] + "…"
+        if len(away) > participant_limit:
+            away = away[: participant_limit - 1] + "…"
+        calendar = (
+            "перенесён"
+            if status == "postponed"
+            else (
+                "отменён"
+                if status == "cancelled"
+                else _readiness_label(item.get("calendar_readiness"))
+            )
+        )
         card = (
-            f"{moment:%H:%M} МСК  {item.get('home_player')} — {item.get('away_player')}\n"
-            f"Predict: {_schedule_probability(prediction, 'home')} || "
-            f"{_schedule_probability(prediction, 'away')}\n"
-            f"Coeff: {_schedule_decimal(item.get('pinnacle_home_decimal'))} || "
-            f"{_schedule_decimal(item.get('pinnacle_away_decimal'))}\n"
-            f"Value: {_schedule_value(item.get('edge_home'))} || "
-            f"{_schedule_value(item.get('edge_away'))}"
+            f"{moment:%H:%M} МСК  {escape(home)} — {escape(away)}\n"
+            f"Календарь: {calendar}\n"
+            f"Прогноз: {_readiness_label(prediction.get('status'))}\n"
+            f"Коэффициенты: {_readiness_label(odds.get('status'))}\n"
+            f"Готовность: {_readiness_label(aggregate.get('status'))}"
         )
         groups.setdefault(date_label, []).append(card)
+    return groups
+
+
+def _format_calendar(items: list[dict[str, Any]]) -> str:
+    """Сгруппировать calendar events по календарным дням МСК."""
+    groups = _calendar_cards(items, participant_limit=_MAX_SCHEDULE_PARTICIPANT_LENGTH)
     return "\n\n".join(
         f"🏒 NHL — {date}\n{_SCHEDULE_DIVIDER}\n" + f"\n{_SCHEDULE_DIVIDER}\n".join(cards)
         for date, cards in groups.items()
     )
 
 
+def _telegram_text_length(text: str) -> int:
+    """Оценить длину сообщения в единицах UTF-16, которые использует Telegram."""
+    return len(text.encode("utf-16-le")) // 2
+
+
 def _split_schedule_messages(items: list[dict[str, Any]], *, limit: int = 4000) -> list[str]:
-    """Разбить расписание на сообщения Telegram, не теряя матчей из-за лимита."""
-    text = _format_schedule(items)
-    if not text:
-        return []
+    """Разбить страницу на сообщения по карточкам в бюджете UTF-16 Telegram."""
+    participant_limit = max(1, min(_MAX_SCHEDULE_PARTICIPANT_LENGTH, (limit - 512) // 10))
+    groups = _calendar_cards(items, participant_limit=participant_limit)
     messages: list[str] = []
-    for group in text.split("\n\n"):
-        header, *cards = group.split(f"\n{_SCHEDULE_DIVIDER}\n")
-        current = ""
+    for date, cards in groups.items():
+        header = f"🏒 NHL — {date}\n{_SCHEDULE_DIVIDER}"
+        current = header
         for block in cards:
             card = f"{header}\n{_SCHEDULE_DIVIDER}\n{block}"
-            if len(card) > limit:
-                if current:
-                    messages.append(current)
-                    current = ""
-                messages.extend(
-                    card[offset : offset + limit] for offset in range(0, len(card), limit)
-                )
-            elif current and len(current) + len(_SCHEDULE_DIVIDER) + len(block) + 2 > limit:
+            candidate = f"{current}\n{_SCHEDULE_DIVIDER}\n{block}"
+            if current != header and _telegram_text_length(candidate) > limit:
                 messages.append(current)
                 current = card
             else:
-                current = f"{current}\n{_SCHEDULE_DIVIDER}\n{block}" if current else card
-        if current:
+                current = candidate
+        if current != header:
             messages.append(current)
     return messages
 
@@ -407,42 +434,65 @@ async def cmd_upcoming(message: Message) -> None:
 
 @router.callback_query(F.data.startswith("schedule:"))
 async def cb_schedule_tournament(cq: CallbackQuery, state: FSMContext) -> None:
-    """Сохранить турнир и запросить календарный горизонт."""
-    if cq.data is None or cq.message is None:
+    """Сохранить турнир и показать стандартные периоды."""
+    if cq.data is None or not isinstance(cq.message, Message):
+        await cq.answer()
         return
     tournament = cq.data.split(":", 1)[1]
     await state.update_data(schedule_tournament=tournament)
-    await state.set_state(ScheduleState.waiting_days)
-    await cq.message.answer("Введите число дней от 0 до 30 (0 — до конца сегодня):")
+    await state.set_state(ScheduleState.waiting_period)
+    await cq.message.answer(
+        "Выберите период букмекерских суток (08:00–08:00 МСК):", reply_markup=_kb_schedule_periods()
+    )
     await cq.answer()
 
 
-@router.message(ScheduleState.waiting_days)
-async def schedule_days(message: Message, state: FSMContext, cfg: DictConfig) -> None:
-    """Вернуть календарь выбранного турнира на заданный период."""
-    try:
-        days = int((message.text or "").strip())
-    except ValueError:
-        await message.answer("Введите целое число от 0 до 30.")
-        return
-    if not 0 <= days <= 30:
-        await message.answer("Введите число от 0 до 30.")
+async def _send_schedule(message: Message, state: FSMContext, cfg: DictConfig, period: str) -> None:
+    """Получить календарь и показать покрытие со страницей событий."""
+    if period not in SCHEDULE_PERIODS:
+        await message.answer("Этот период календаря не поддерживается.")
         return
     tournament = str((await state.get_data()).get("schedule_tournament", "nhl"))
     async with httpx.AsyncClient() as client:
         try:
-            data = await fetch_schedule(client, cfg=cfg, tournament=tournament, days=days)
+            data = await fetch_schedule(client, cfg=cfg, tournament=tournament, period=period)
         except (httpx.HTTPError, ValueError):
             logger.exception("schedule fetch failed")
             await message.answer("Расписание временно недоступно.")
             return
     await state.clear()
-    messages = _split_schedule_messages(data.get("predictions") or [])
+    events = [item for item in data["events"] if isinstance(item, dict)]
+    total = int(data.get("total") or 0)
+    coverage = data.get("coverage") or {}
+    shown = len(events)
+    header = f"🏒 NHL · {_PERIOD_LABELS[period]}\n{_coverage_label(coverage.get('status'))}."
+    if total:
+        header += f" Показано {shown} из {total}."
+    if total > shown:
+        header += f"\nОстальные события не показаны: лимит страницы {SCHEDULE_PAGE_SIZE}."
+    messages = _split_schedule_messages(events)
     if not messages:
-        await message.answer("В выбранном периоде будущих матчей нет.")
+        if coverage.get("status") == "confirmed_empty":
+            header += " Матчей в этом периоде нет."
+        elif coverage.get("status") in {"incomplete", "stale", "unavailable", "unknown"}:
+            header += " Список матчей может быть неполным."
+        else:
+            header += " Матчей в этом периоде нет."
+        await message.answer(header)
         return
+    await message.answer(header)
     for text in messages:
         await message.answer(text)
+
+
+@router.callback_query(F.data.startswith("period:"))
+async def cb_schedule_period(cq: CallbackQuery, state: FSMContext, cfg: DictConfig) -> None:
+    """Показать выбранный период source-календаря."""
+    if cq.data is None or not isinstance(cq.message, Message):
+        await cq.answer()
+        return
+    await _send_schedule(cq.message, state, cfg, cq.data.split(":", 1)[1])
+    await cq.answer()
 
 
 @router.message(Command("edge"))

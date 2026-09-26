@@ -3,30 +3,32 @@
 from __future__ import annotations
 
 import asyncio
-import json
-from datetime import UTC, datetime
+import re
+from datetime import datetime
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock
 
 import httpx
+import pytest
+from aiogram.types import Chat, InaccessibleMessage, Message
 from omegaconf import OmegaConf
 
 from sports_forecast.bot.handlers.predict import (
+    SCHEDULE_PERIODS,
+    _format_calendar,
     _format_live_lines,
     _format_prediction_card,
-    _format_schedule,
     _format_upcoming_line,
     _is_nhl_tournament,
+    _kb_schedule_periods,
     _kb_schedule_tournaments,
-    _schedule_window,
-    _schedule_window_hours,
+    _send_schedule,
     _split_schedule_messages,
     _upcoming_query_params,
     cb_schedule_tournament,
     cmd_upcoming,
     fetch_schedule,
-    schedule_days,
 )
 from sports_forecast.bot.handlers.start import cmd_help
 
@@ -82,12 +84,14 @@ def test_help_describes_schedule_without_obsolete_tournament_argument() -> None:
     asyncio.run(cmd_help(message))
 
     text = message.answer.await_args.args[0]
-    assert "/upcoming — расписание NHL на выбранное число дней" in text
+    assert "/upcoming — календарь NHL: сегодня, завтра, 3/7/14/30 дней" in text
     assert "/upcoming [турнир]" not in text
 
 
-def test_schedule_tournament_requests_days_and_persists_choice() -> None:
-    message = _message()
+def test_schedule_tournament_requests_period_and_persists_choice(monkeypatch) -> None:
+    message = Message(message_id=1, date=datetime(2026, 1, 1), chat=Chat(id=1, type="private"))
+    answer = AsyncMock()
+    monkeypatch.setattr(Message, "answer", answer)
     query = SimpleNamespace(data="schedule:nhl", message=message, answer=AsyncMock())
     state = _ScheduleState()
 
@@ -95,105 +99,146 @@ def test_schedule_tournament_requests_days_and_persists_choice() -> None:
 
     assert state.data == {"schedule_tournament": "nhl"}
     assert state.state is not None
-    message.answer.assert_awaited_once_with("Введите число дней от 0 до 30 (0 — до конца сегодня):")
+    answer.assert_awaited_once()
+    assert "08:00–08:00 МСК" in answer.await_args.args[0]
     query.answer.assert_awaited_once()
 
 
-def test_schedule_days_rejects_invalid_range_without_api_call(monkeypatch) -> None:
-    message = _message("31")
-    state = _ScheduleState({"schedule_tournament": "nhl"})
-    cfg = OmegaConf.create({"bot": {"api_base_url": "http://api"}})
-    fetch = AsyncMock()
-    monkeypatch.setattr("sports_forecast.bot.handlers.predict.fetch_schedule", fetch)
-
-    asyncio.run(schedule_days(message, state, cfg))
-
-    message.answer.assert_awaited_once_with("Введите число от 0 до 30.")
-    fetch.assert_not_awaited()
-    assert state.cleared is False
+def test_schedule_period_keyboard_has_only_contract_values() -> None:
+    keyboard = _kb_schedule_periods()
+    assert [button.callback_data for row in keyboard.inline_keyboard for button in row] == [
+        f"period:{period}" for period in SCHEDULE_PERIODS
+    ]
 
 
-def test_schedule_days_returns_empty_result_and_clears_state(monkeypatch) -> None:
-    message = _message("0")
-    state = _ScheduleState({"schedule_tournament": "nhl"})
-    cfg = OmegaConf.create({"bot": {"api_base_url": "http://api"}})
-
-    async def fake_fetch(*_args: object, **kwargs: object) -> dict[str, list[object]]:
-        assert kwargs["tournament"] == "nhl"
-        assert kwargs["days"] == 0
-        return {"predictions": []}
-
-    monkeypatch.setattr("sports_forecast.bot.handlers.predict.fetch_schedule", fake_fetch)
-
-    asyncio.run(schedule_days(message, state, cfg))
-
-    assert state.cleared is True
-    message.answer.assert_awaited_once_with("В выбранном периоде будущих матчей нет.")
-
-
-def test_schedule_days_handles_malformed_successful_response(monkeypatch) -> None:
-    message = _message("1")
-    state = _ScheduleState({"schedule_tournament": "nhl"})
-    cfg = OmegaConf.create({"bot": {"api_base_url": "http://api"}})
-
-    async def fake_fetch(*_args: object, **_kwargs: object) -> dict[str, object]:
-        raise json.JSONDecodeError("Некорректный JSON", "<html>", 0)
-
-    monkeypatch.setattr("sports_forecast.bot.handlers.predict.fetch_schedule", fake_fetch)
-
-    asyncio.run(schedule_days(message, state, cfg))
-
-    assert state.cleared is False
-    message.answer.assert_awaited_once_with("Расписание временно недоступно.")
-
-
-def test_fetch_schedule_passes_calendar_horizon(monkeypatch) -> None:
+def test_fetch_schedule_uses_calendar_endpoint_and_fixed_period(monkeypatch) -> None:
     cfg = OmegaConf.create({"bot": {"api_base_url": "http://api", "live_pinnacle": False}})
     captured: dict[str, object] = {}
 
     async def fake_fetch(_client, url, *, params=None):  # type: ignore[no-untyped-def]
         captured["url"] = url
         captured["params"] = params
-        return {"predictions": []}
+        return {"events": [], "total": 0, "coverage": {"status": "confirmed_empty"}}
 
     monkeypatch.setattr("sports_forecast.bot.handlers.predict._fetch_json", fake_fetch)
 
     result = asyncio.run(
-        fetch_schedule(cast(httpx.AsyncClient, object()), cfg=cfg, tournament="nhl", days=3)
+        fetch_schedule(cast(httpx.AsyncClient, object()), cfg=cfg, tournament="nhl", period="3")
     )
-    assert result == {"predictions": []}
-    assert captured["url"] == "http://api/predict/upcoming/nhl"
-    assert isinstance(captured["params"], dict)
-    assert captured["params"]["hours"] > 48
+    assert result["coverage"]["status"] == "confirmed_empty"
+    assert captured["url"] == "http://api/calendar/nhl"
+    assert captured["params"] == {"period": "3", "limit": 50, "offset": 0}
 
 
-def test_schedule_window_zero_ends_today_moscow() -> None:
-    now = datetime(2026, 9, 16, 20, 30, tzinfo=UTC)
-    assert _schedule_window_hours(0, now=now) == 1
-    start, deadline = _schedule_window(0, now=now)
-    assert start == now
-    assert deadline == datetime(2026, 9, 16, 20, 59, 59, 999999, tzinfo=UTC)
+def test_fetch_schedule_passes_each_supported_period(monkeypatch) -> None:
+    cfg = OmegaConf.create({"bot": {"api_base_url": "http://api"}})
+    requests: list[dict[str, object]] = []
+
+    async def fake_fetch(_client, _url, *, params=None):  # type: ignore[no-untyped-def]
+        requests.append(params)
+        return {"events": [], "total": 0, "coverage": {"status": "confirmed_empty"}}
+
+    monkeypatch.setattr("sports_forecast.bot.handlers.predict._fetch_json", fake_fetch)
+    for period in SCHEDULE_PERIODS:
+        asyncio.run(
+            fetch_schedule(
+                cast(httpx.AsyncClient, object()), cfg=cfg, tournament="nhl", period=period
+            )
+        )
+
+    assert [request["period"] for request in requests] == list(SCHEDULE_PERIODS)
 
 
-def test_format_schedule_groups_by_moscow_day_and_marks_missing_data() -> None:
-    text = _format_schedule(
+def test_fetch_schedule_rejects_period_outside_calendar_contract() -> None:
+    cfg = OmegaConf.create({"bot": {"api_base_url": "http://api"}})
+    with pytest.raises(ValueError, match="Недопустимый период"):
+        asyncio.run(
+            fetch_schedule(cast(httpx.AsyncClient, object()), cfg=cfg, tournament="nhl", period="0")
+        )
+
+
+@pytest.mark.parametrize(
+    ("coverage", "expected"),
+    [
+        ("confirmed_empty", "пустое окно подтверждено источником"),
+        ("incomplete", "покрытие календаря неполное"),
+        ("stale", "данные календаря устарели"),
+        ("unavailable", "обновление календаря завершилось ошибкой"),
+    ],
+)
+def test_empty_calendar_explains_coverage_state(monkeypatch, coverage: str, expected: str) -> None:
+    message = _message()
+    state = _ScheduleState({"schedule_tournament": "nhl"})
+    cfg = OmegaConf.create({"bot": {"api_base_url": "http://api"}})
+
+    async def fake_fetch(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {"events": [], "total": 0, "coverage": {"status": coverage}}
+
+    monkeypatch.setattr("sports_forecast.bot.handlers.predict.fetch_schedule", fake_fetch)
+    asyncio.run(_send_schedule(message, state, cfg, "today"))
+
+    text = message.answer.await_args.args[0]
+    assert expected in text
+    if coverage != "confirmed_empty":
+        assert "Список матчей может быть неполным." in text
+
+
+def test_calendar_api_failure_is_not_reported_as_empty(monkeypatch) -> None:
+    message = _message()
+    state = _ScheduleState({"schedule_tournament": "nhl"})
+    cfg = OmegaConf.create({"bot": {"api_base_url": "http://api"}})
+
+    async def failed_fetch(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise httpx.ConnectError("internal test detail")
+
+    monkeypatch.setattr("sports_forecast.bot.handlers.predict.fetch_schedule", failed_fetch)
+    asyncio.run(_send_schedule(message, state, cfg, "today"))
+
+    message.answer.assert_awaited_once_with("Расписание временно недоступно.")
+    assert state.cleared is False
+
+
+def test_format_calendar_groups_events_and_shows_independent_readiness() -> None:
+    text = _format_calendar(
         [
             {
-                "home_player": "A",
-                "away_player": "B",
-                "match_datetime": "2026-09-16T22:00:00",
-                "predictions": {"home": 0.6},
-                "edge_home": 0.05,
-                "edge_away": -0.02,
-                "pinnacle_home_decimal": 2.0,
-                "pinnacle_away_decimal": 2.2,
-                "bet_decision_home": "bet",
-                "bet_decision_away": "no_bet",
+                "home_participant": "A",
+                "away_participant": "B",
+                "scheduled_at": "2026-09-16T22:00:00Z",
+                "status": "scheduled",
+                "calendar_readiness": "current",
+                "prediction_readiness": {"status": "ready"},
+                "odds_readiness": {"status": "stale"},
+                "readiness": {"status": "partial"},
             },
             {
-                "home_player": "C",
-                "away_player": "D",
-                "match_datetime": "2026-09-17T22:00:00",
+                "home_participant": "C",
+                "away_participant": "D",
+                "scheduled_at": "2026-09-17T22:00:00Z",
+                "calendar_readiness": "current",
+                "prediction_readiness": {"status": "pending"},
+                "odds_readiness": {"status": "missing"},
+                "readiness": {"status": "waiting"},
+            },
+            {
+                "home_participant": "E",
+                "away_participant": "F",
+                "scheduled_at": "2026-09-18T22:00:00Z",
+                "status": "postponed",
+                "calendar_readiness": "postponed",
+                "prediction_readiness": {"status": "pending"},
+                "odds_readiness": {"status": "missing"},
+                "readiness": {"status": "waiting"},
+            },
+            {
+                "home_participant": "G",
+                "away_participant": "H",
+                "scheduled_at": "2026-09-19T22:00:00Z",
+                "status": "cancelled",
+                "calendar_readiness": "cancelled",
+                "prediction_readiness": {"status": "pending"},
+                "odds_readiness": {"status": "missing"},
+                "readiness": {"status": "waiting"},
             },
         ]
     )
@@ -201,42 +246,26 @@ def test_format_schedule_groups_by_moscow_day_and_marks_missing_data() -> None:
     assert "18 сентября" in text
     assert "01:00 МСК" in text
     assert "—————————————————————————————" in text
-    assert "Predict: 0.60 || нет данных" in text
-    assert "Coeff: 2.00 || 2.20" in text
-    assert "Value: ✅+0.05 || -0.02" in text
-    assert "Predict: нет данных || нет данных" in text
-
-
-def test_fetch_schedule_filters_item_after_exact_moscow_deadline(monkeypatch) -> None:
-    cfg = OmegaConf.create({"bot": {"api_base_url": "http://api", "live_pinnacle": False}})
-
-    async def fake_fetch(_client, _url, *, params=None):  # type: ignore[no-untyped-def]
-        assert params["hours"] == 1
-        return {
-            "predictions": [
-                {"match_datetime": "2026-09-16T20:45:00"},
-                {"match_datetime": "2026-09-16T21:15:00"},
-            ]
-        }
-
-    monkeypatch.setattr("sports_forecast.bot.handlers.predict._fetch_json", fake_fetch)
-    now = datetime(2026, 9, 16, 20, 30, tzinfo=UTC)
-    result = asyncio.run(
-        fetch_schedule(
-            cast(httpx.AsyncClient, object()), cfg=cfg, tournament="nhl", days=0, now=now
-        )
-    )
-
-    assert result["predictions"] == [{"match_datetime": "2026-09-16T20:45:00"}]
+    assert "Календарь: актуален" in text
+    assert "Прогноз: готово" in text
+    assert "Коэффициенты: устарело" in text
+    assert "Готовность: частично готово" in text
+    assert "Прогноз: ожидает" in text
+    assert "Коэффициенты: нет данных" in text
+    assert "Календарь: перенесён" in text
+    assert "Календарь: отменён" in text
 
 
 def test_split_schedule_messages_keeps_every_match_without_truncation() -> None:
     items = [
         {
-            "home_player": f"Home {index}",
-            "away_player": f"Away {index}",
-            "match_datetime": "2026-09-16T20:00:00",
-            "predictions": {"home": 0.5},
+            "home_participant": f"Home {index}",
+            "away_participant": f"Away {index}",
+            "scheduled_at": "2026-09-16T20:00:00Z",
+            "calendar_readiness": "current",
+            "prediction_readiness": {"status": "pending"},
+            "odds_readiness": {"status": "missing"},
+            "readiness": {"status": "waiting"},
         }
         for index in range(80)
     ]
@@ -246,6 +275,70 @@ def test_split_schedule_messages_keeps_every_match_without_truncation() -> None:
     assert len(messages) > 1
     assert all(len(message) <= 800 for message in messages)
     assert all(f"Home {index} — Away {index}" in "\n".join(messages) for index in range(80))
+
+
+def test_split_schedule_messages_keeps_html_entities_and_emoji_intact() -> None:
+    items = [
+        {
+            "home_participant": "&" * 1000,
+            "away_participant": "🏒" * 1000,
+            "scheduled_at": "2026-09-16T20:00:00Z",
+            "calendar_readiness": "current",
+            "prediction_readiness": {"status": "pending"},
+            "odds_readiness": {"status": "missing"},
+            "readiness": {"status": "waiting"},
+        }
+    ]
+
+    messages = _split_schedule_messages(items)
+
+    assert all(len(message) <= 4000 for message in messages)
+    for message in messages:
+        assert re.search(r"&amp;", message)
+        assert all(
+            re.match(r"&(amp|lt|gt|quot|#x27);", message[index:])
+            for index, char in enumerate(message)
+            if char == "&"
+        )
+        assert "🏒" in message
+
+
+def test_split_schedule_messages_measures_telegram_utf16_limit() -> None:
+    items = [
+        {
+            "home_participant": "🏒" * 128,
+            "away_participant": "🏒" * 128,
+            "scheduled_at": "2026-09-16T20:00:00Z",
+            "calendar_readiness": "current",
+            "prediction_readiness": {"status": "pending"},
+            "odds_readiness": {"status": "missing"},
+            "readiness": {"status": "waiting"},
+        }
+        for _ in range(15)
+    ]
+
+    messages = _split_schedule_messages(items)
+
+    assert len(messages) > 1
+    assert all(len(message.encode("utf-16-le")) // 2 <= 4000 for message in messages)
+
+
+def test_old_schedule_callback_handles_inaccessible_message() -> None:
+    callback = SimpleNamespace(
+        data="schedule:nhl",
+        message=InaccessibleMessage(
+            chat=Chat(id=123, type="private"),
+            message_id=456,
+            date=0,
+        ),
+        answer=AsyncMock(),
+    )
+    state = _ScheduleState()
+
+    asyncio.run(cb_schedule_tournament(callback, state))
+
+    callback.answer.assert_awaited_once()
+    assert state.data == {}
 
 
 def test_is_nhl_tournament() -> None:
