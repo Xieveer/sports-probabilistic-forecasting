@@ -83,6 +83,7 @@ API эндпоинты:
 * ``GET /health`` — проверка доступности
 * ``GET /predict/{match_id}`` — предикт для матча
 * ``GET /predict/upcoming/{tournament}`` — предикты предстоящих матчей
+* ``GET /calendar/{tournament}?period=today|tomorrow|3|7|14|30`` — source-календарь независимо от prediction-витрины; ответ включает opaque canonical event ID, участников, статус, coverage и пагинацию
 * ``POST /predict/on-demand`` — предикт по запросу (с кешированием)
 * ``GET /metrics`` — Prometheus метрики
 

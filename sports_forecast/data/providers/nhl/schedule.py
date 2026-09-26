@@ -9,6 +9,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
+from sports_forecast.data.providers.base import SourceFetchError
 from sports_forecast.data.providers.nhl.client import NhlApiClient
 from sports_forecast.utils.log_config import get_logger
 
@@ -34,6 +35,7 @@ class ScheduleGameStub:
     match_end: str | None
     home_score: int | None
     away_score: int | None
+    game_schedule_state: str = ""
 
 
 def stub_to_dict(stub: ScheduleGameStub) -> dict[str, Any]:
@@ -51,6 +53,7 @@ def stub_to_dict(stub: ScheduleGameStub) -> dict[str, Any]:
         "match_end": stub.match_end,
         "home_score": stub.home_score,
         "away_score": stub.away_score,
+        "game_schedule_state": stub.game_schedule_state,
     }
 
 
@@ -69,6 +72,7 @@ def stub_from_dict(d: dict[str, Any]) -> ScheduleGameStub:
         match_end=str(d["match_end"]) if d.get("match_end") is not None else None,
         home_score=int(d["home_score"]) if d.get("home_score") is not None else None,
         away_score=int(d["away_score"]) if d.get("away_score") is not None else None,
+        game_schedule_state=str(d.get("game_schedule_state") or ""),
     )
 
 
@@ -293,6 +297,7 @@ def _parse_game(
         home_abbrev=str(ha),
         away_abbrev=str(aa),
         game_state=str(g.get("gameState") or ""),
+        game_schedule_state=str(g.get("gameScheduleState") or ""),
         match_end=match_end,
         home_score=int(hscore) if hscore is not None else None,
         away_score=int(ascore) if ascore is not None else None,
@@ -327,16 +332,40 @@ def fetch_schedule_day(client: NhlApiClient, day: date) -> list[ScheduleGameStub
     """
     path = f"schedule/{day.isoformat()}"
     payload = client.get_json(path)
+    if (
+        not isinstance(payload, dict)
+        or not isinstance(payload.get("gameWeek"), list)
+        or not payload["gameWeek"]
+        or len(payload["gameWeek"]) != 7
+    ):
+        raise SourceFetchError(f"NHL schedule anchor {day}: неполное недельное покрытие schedule")
+    expected_dates = {day + timedelta(days=offset) for offset in range(7)}
+    observed_dates: set[date] = set()
+    for week in payload["gameWeek"]:
+        if not isinstance(week, dict) or not isinstance(week.get("date"), str):
+            raise SourceFetchError(f"NHL schedule anchor {day}: некорректная неделя schedule")
+        try:
+            observed_dates.add(date.fromisoformat(week["date"]))
+        except ValueError as exc:
+            raise SourceFetchError(
+                f"NHL schedule anchor {day}: некорректная дата недели schedule"
+            ) from exc
+    if observed_dates != expected_dates:
+        raise SourceFetchError(f"NHL schedule anchor {day}: неполное недельное покрытие schedule")
+
     out: list[ScheduleGameStub] = []
-    for week in payload.get("gameWeek") or []:
-        wk_date = week.get("date") if isinstance(week, dict) else None
+    for week in payload["gameWeek"]:
+        if not isinstance(week, dict) or not isinstance(week.get("games"), list):
+            raise SourceFetchError(f"NHL schedule anchor {day}: некорректная неделя schedule")
+        wk_date = week.get("date")
         wk_date_s = str(wk_date) if wk_date else None
-        for g in week.get("games") or []:
+        for g in week["games"]:
             if not isinstance(g, dict):
-                continue
+                raise SourceFetchError(f"NHL schedule anchor {day}: некорректное событие schedule")
             stub = _parse_game(g, fallback_game_date=wk_date_s)
-            if stub is not None:
-                out.append(stub)
+            if stub is None:
+                raise SourceFetchError(f"NHL schedule anchor {day}: некорректное событие schedule")
+            out.append(stub)
     return out
 
 

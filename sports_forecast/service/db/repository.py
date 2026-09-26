@@ -20,10 +20,13 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import and_, exists
+from sqlalchemy import and_, exists, select
+from sqlalchemy.engine import ScalarResult
 from sqlalchemy.orm import Session
 
 from sports_forecast.service.db.models import (
+    CalendarCoverage,
+    CanonicalEvent,
     LineupNotificationOutbox,
     LineupPredictionRevision,
     ModelDeployment,
@@ -44,6 +47,54 @@ def _utc_naive_for_query(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt
     return dt.astimezone(UTC).replace(tzinfo=None)
+
+
+class CalendarRepository:
+    """Чтение source calendar и coverage без зависимости от prediction store."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def list_events(
+        self,
+        *,
+        tournament: str,
+        start_at: datetime,
+        end_at: datetime,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[CanonicalEvent], int]:
+        """Вернуть страницу событий из полуоткрытого временного окна."""
+        start = _utc_naive_for_query(start_at)
+        end = _utc_naive_for_query(end_at)
+        query = self.session.query(CanonicalEvent).filter(
+            CanonicalEvent.tournament == tournament,
+            CanonicalEvent.scheduled_at >= start,
+            CanonicalEvent.scheduled_at < end,
+            CanonicalEvent.__table__.c.status.not_in(("started", "finished")),
+        )
+        total = query.count()
+        rows = (
+            query.order_by(CanonicalEvent.scheduled_at, CanonicalEvent.source_event_id)
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+        return rows, total
+
+    def get_coverage(
+        self,
+        *,
+        tournament: str,
+        source: str | None = None,
+    ) -> CalendarCoverage | None:
+        """Вернуть последнее состояние покрытия для турнира."""
+        statement = select(CalendarCoverage).where(CalendarCoverage.tournament == tournament)
+        if source is not None:
+            statement = statement.where(CalendarCoverage.source == source)
+        statement = statement.order_by(CalendarCoverage.__table__.c.checked_at.desc())
+        result: ScalarResult[CalendarCoverage] = self.session.scalars(statement)
+        return cast(CalendarCoverage | None, result.first())
 
 
 def _public_slice_predicate():

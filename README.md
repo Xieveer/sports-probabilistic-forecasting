@@ -308,6 +308,7 @@ make materialize TOURNAMENT=uel_kz_1
 | `/predict/{match_id}` | GET | Предсказание для матча |
 | `/predict/match/{match_id}/all` | GET | Все предсказания для матча |
 | `/predict/upcoming/{tournament}` | GET | Upcoming матчи турнира |
+| `/calendar/{tournament}?period=today\|tomorrow\|3\|7\|14\|30` | GET | Source-календарь независимо от predictions; ответ содержит opaque event ID, участников, статус, pagination и coverage (`unknown`, `incomplete`, `stale`, `confirmed_empty`, `complete`) |
 | `/metrics` | GET | Prometheus метрики |
 
 ### Telegram: расписание NHL

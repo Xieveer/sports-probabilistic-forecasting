@@ -93,6 +93,41 @@ class PredictionListResponse(BaseModel):
     predictions: list[PredictionResponse]
 
 
+class CalendarEventResponse(BaseModel):
+    """Source event календаря, независимый от наличия предсказания."""
+
+    event_id: str
+    tournament: str
+    scheduled_at: datetime
+    status: str
+    home_participant: str | None
+    away_participant: str | None
+    calendar_updated_at: datetime
+
+
+class CalendarCoverageResponse(BaseModel):
+    """Доказательство полноты source calendar для выбранного окна."""
+
+    status: str
+    covered_from: datetime | None = None
+    covered_until: datetime | None = None
+    checked_at: datetime | None = None
+
+
+class CalendarResponse(BaseModel):
+    """Страница календарных событий с отдельным состоянием покрытия."""
+
+    tournament: str
+    period: str
+    start_at: datetime
+    end_at: datetime
+    total: int
+    limit: int
+    offset: int
+    coverage: CalendarCoverageResponse
+    events: list[CalendarEventResponse]
+
+
 class HealthResponse(BaseModel):
     """Ответ healthcheck."""
 

@@ -132,6 +132,11 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
         "lineup_notification_outbox",
         "canonical_events",
         "canonical_event_revisions",
+        "calendar_coverages",
         "refresh_watermarks",
         "bootstrap_imports",
     } <= table_names
+    event_columns = {
+        column["name"] for column in inspect(migrated_engine).get_columns("canonical_events")
+    }
+    assert {"home_participant", "away_participant"} <= event_columns

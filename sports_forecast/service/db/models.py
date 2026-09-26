@@ -190,6 +190,8 @@ class CanonicalEvent(Base):
     scheduled_at: datetime = Column(DateTime, nullable=False, index=True)
     status: str = Column(String(16), nullable=False)
     current_revision_sha256: str = Column(String(64), nullable=False)
+    home_participant: str | None = Column(String(128), nullable=True)
+    away_participant: str | None = Column(String(128), nullable=True)
     first_ingested_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
     last_ingested_at: datetime = Column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
@@ -220,6 +222,26 @@ class CanonicalEventRevision(Base):
         UniqueConstraint(
             "canonical_event_id", "revision_sha256", name="uq_canonical_event_revision"
         ),
+    )
+
+
+class CalendarCoverage(Base):
+    """Последняя проверка полноты календарного окна по источнику."""
+
+    __tablename__ = "calendar_coverages"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    tournament: str = Column(String(64), nullable=False)
+    source: str = Column(String(128), nullable=False)
+    covered_from: datetime = Column(DateTime, nullable=False)
+    covered_until: datetime = Column(DateTime, nullable=False)
+    complete: bool = Column(Boolean, nullable=False)
+    checked_at: datetime = Column(DateTime, nullable=False)
+    failure_code: str | None = Column(String(64), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("tournament", "source", name="uq_calendar_coverage_source"),
+        Index("ix_calendar_coverages_window", "tournament", "covered_from", "covered_until"),
     )
 
 

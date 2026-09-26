@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
+import pytest
 from omegaconf import OmegaConf
 
 from sports_forecast.config.loaders import load_tournament_quality_gate_config
 from sports_forecast.data.providers import NhlWebApiSourceProvider, get_provider
+from sports_forecast.data.providers.base import SourceFetchError
 from sports_forecast.data.providers.nhl.assembler import (
     _build_upcoming_row,
     _load_previous_source_rows,
@@ -21,6 +24,7 @@ from sports_forecast.data.providers.nhl.boxscore import aggregate_play_by_play, 
 from sports_forecast.data.providers.nhl.schedule import (
     ScheduleGameStub,
     _parse_game,
+    fetch_schedule_day,
     load_schedule_progress,
     save_schedule_progress,
     stub_from_dict,
@@ -30,6 +34,7 @@ from sports_forecast.data.providers.nhl.standings import (
     parse_standings_payload,
     standings_snapshot_ymd_before_game_date,
 )
+from sports_forecast.utils.bookmaker_calendar import bookmaker_window
 from sports_forecast.validation.tournament_quality import load_schedule_coverage
 
 
@@ -51,6 +56,59 @@ def test_schedule_stub_roundtrip_dict() -> None:
     d = stub_to_dict(stub)
     back = stub_from_dict(d)
     assert back == stub
+
+
+def test_schedule_fetch_rejects_missing_weekly_anchor_payload() -> None:
+    """Отсутствующая структура ответа якоря не доказывает пустое расписание."""
+    client = MagicMock()
+    client.get_json.return_value = {}
+    with pytest.raises(SourceFetchError, match="недельное покрытие"):
+        fetch_schedule_day(client, date(2026, 9, 26))
+
+    client.get_json.return_value = {"gameWeek": []}
+    with pytest.raises(SourceFetchError, match="недельное покрытие"):
+        fetch_schedule_day(client, date(2026, 9, 26))
+
+
+def test_schedule_fetch_rejects_unparseable_game_in_anchor() -> None:
+    """Некорректная строка ответа не должна молча превращать anchor в пустой."""
+    client = MagicMock()
+    client.get_json.return_value = {
+        "gameWeek": [
+            {
+                "date": (date(2026, 9, 26) + timedelta(days=offset)).isoformat(),
+                "games": [{}] if offset == 0 else [],
+            }
+            for offset in range(7)
+        ]
+    }
+    with pytest.raises(SourceFetchError, match="некорректное событие"):
+        fetch_schedule_day(client, date(2026, 9, 26))
+
+
+def test_schedule_fetch_rejects_partial_weekly_anchor() -> None:
+    """Календарь с пропущенным днём не подтверждает покрытие weekly anchor."""
+    client = MagicMock()
+    client.get_json.return_value = {
+        "gameWeek": [
+            {"date": (date(2026, 9, 26) + timedelta(days=offset)).isoformat(), "games": []}
+            for offset in (0, 1, 3, 4, 5, 6)
+        ]
+    }
+    with pytest.raises(SourceFetchError, match="неполное недельное покрытие"):
+        fetch_schedule_day(client, date(2026, 9, 26))
+
+
+def test_schedule_fetch_accepts_complete_empty_weekly_anchor() -> None:
+    """Семь подтверждённых дней без событий являются допустимым пустым окном."""
+    client = MagicMock()
+    client.get_json.return_value = {
+        "gameWeek": [
+            {"date": (date(2026, 9, 26) + timedelta(days=offset)).isoformat(), "games": []}
+            for offset in range(7)
+        ]
+    }
+    assert fetch_schedule_day(client, date(2026, 9, 26)) == []
 
 
 def test_schedule_progress_save_load_roundtrip(tmp_path: Path) -> None:
@@ -567,4 +625,54 @@ def test_nhl_provider_saves_configured_quality_schedule_snapshot(
         source_path, load_tournament_quality_gate_config("nhl")
     ) >= before_fetch + timedelta(hours=47)
     assembler_config = mock_assembler_cls.call_args.args[1]
-    assert assembler_config.date_to >= (before_fetch + timedelta(hours=47)).date()
+    coverage_start, coverage_end = bookmaker_window(before_fetch, 30)
+    assert assembler_config.date_to >= coverage_end.date()
+    manifest = json.loads(
+        (source_path.parent / ".nhl_calendar_coverage.json").read_text(encoding="utf-8")
+    )
+    assert manifest["complete"] is True
+    assert datetime.fromisoformat(manifest["covered_from"]) <= coverage_start
+    assert datetime.fromisoformat(manifest["covered_until"]) >= coverage_end
+    assert datetime.fromisoformat(manifest["checked_at"]) >= before_fetch
+
+
+@patch("sports_forecast.data.providers.nhl.provider.NhlDataAssembler")
+def test_failed_nhl_fetch_invalidates_old_complete_coverage_manifest(
+    mock_assembler_cls: MagicMock, tmp_path: Path
+) -> None:
+    """Сбой текущего fetch оставляет manifest incomplete вместо старого complete."""
+    source_dir = tmp_path / "src" / "nhl"
+    source_dir.mkdir(parents=True)
+    progress_path = source_dir / "schedule-progress.json"
+    progress_path.write_text('{"schedule_complete":true}', encoding="utf-8")
+    coverage_path = source_dir / ".nhl_calendar_coverage.json"
+    coverage_path.write_text(
+        '{"version":1,"complete":true,"covered_from":"2026-09-01T00:00:00+00:00",'
+        '"covered_until":"2026-10-27T00:00:00+00:00",'
+        '"checked_at":"2026-09-25T12:00:00+00:00"}',
+        encoding="utf-8",
+    )
+    mock_assembler_cls.return_value.build_dataframe.side_effect = SourceFetchError(
+        "anchor fetch failed"
+    )
+    provider = NhlWebApiSourceProvider(
+        source_cfg=OmegaConf.create(
+            {
+                "provider": {
+                    "type": "nhl_web_api",
+                    "date_from": "2026-09-01",
+                    "date_to": "2026-09-01",
+                    "schedule_progress_file": "schedule-progress.json",
+                }
+            }
+        ),
+        paths_cfg=OmegaConf.create({"paths": {"source_dir": str(tmp_path / "src")}}),
+        project_root=tmp_path,
+    )
+
+    with pytest.raises(SourceFetchError, match="anchor fetch failed"):
+        provider.fetch("nhl")
+
+    manifest = json.loads(coverage_path.read_text(encoding="utf-8"))
+    assert manifest["complete"] is False
+    assert not progress_path.exists()

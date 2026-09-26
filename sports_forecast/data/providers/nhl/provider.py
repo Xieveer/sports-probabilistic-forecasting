@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 
 from omegaconf import DictConfig, OmegaConf
@@ -22,6 +23,7 @@ from sports_forecast.data.providers.nhl.assembler import (
 )
 from sports_forecast.data.providers.nhl.client import NhlApiClient
 from sports_forecast.data.providers.nhl.schedule import clear_schedule_progress
+from sports_forecast.utils.bookmaker_calendar import bookmaker_window
 from sports_forecast.utils.log_config import get_logger
 from sports_forecast.validation.tournament_quality import (
     TournamentQualityGateConfig,
@@ -78,14 +80,26 @@ class NhlWebApiSourceProvider(SourceProvider):
         out_path = target_dir / "source.csv"
 
         quality_config = self._quality_gate_config()
-        required_coverage_until = (
-            datetime.now(UTC) + timedelta(hours=quality_config.schedule_window_hours)
-            if quality_config is not None
-            else None
-        )
+        window_anchor = datetime.now(UTC)
+        _coverage_start, required_coverage_until = bookmaker_window(window_anchor, 30)
         asm_cfg = resolve_incremental_date_from(self._asm_cfg, out_path)
-        if required_coverage_until is not None and asm_cfg.date_to < required_coverage_until.date():
+        if asm_cfg.date_to < required_coverage_until.date():
             asm_cfg = replace(asm_cfg, date_to=required_coverage_until.date())
+        coverage_path = target_dir / ".nhl_calendar_coverage.json"
+        coverage_payload = {
+            "version": 1,
+            "covered_from": datetime.combine(asm_cfg.date_from, time.min, tzinfo=UTC).isoformat(),
+            "covered_until": datetime.combine(
+                asm_cfg.date_to + timedelta(days=1), time.min, tzinfo=UTC
+            ).isoformat(),
+            "checked_at": datetime.now(UTC).isoformat(),
+            "complete": False,
+        }
+        self._write_calendar_coverage(coverage_path, coverage_payload)
+        if asm_cfg.schedule_progress_file:
+            # Доказательство нового полного окна требует успешного ответа на каждый
+            # недельный якорь в этом запуске, а не cached schedule_complete.
+            clear_schedule_progress(target_dir / asm_cfg.schedule_progress_file)
         logger.info(
             "NhlWebApiSourceProvider: старт загрузки source_name=%s, интервал %s … %s (incremental=%s)",
             source_name,
@@ -102,13 +116,18 @@ class NhlWebApiSourceProvider(SourceProvider):
         except OSError as e:
             raise SourceFetchError(f"Не удалось записать {out_path}: {e}") from e
 
-        if quality_config is not None and required_coverage_until is not None:
+        if quality_config is not None:
             self._save_quality_schedule_snapshot(
                 assembler,
                 out_path,
                 quality_config,
                 required_coverage_until,
             )
+
+        coverage_checked_at = datetime.now(UTC)
+        coverage_payload["checked_at"] = coverage_checked_at.isoformat()
+        coverage_payload["complete"] = True
+        self._write_calendar_coverage(coverage_path, coverage_payload)
 
         if self._asm_cfg.schedule_progress_file:
             sp = target_dir / self._asm_cfg.schedule_progress_file
@@ -123,6 +142,16 @@ class NhlWebApiSourceProvider(SourceProvider):
             out_path,
         )
         return out_path
+
+    @staticmethod
+    def _write_calendar_coverage(path: Path, payload: dict[str, object]) -> None:
+        """Атомарно записать состояние проверки окна календаря."""
+        try:
+            tmp_path = path.with_name(path.name + ".tmp")
+            tmp_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+            tmp_path.replace(path)
+        except OSError as exc:
+            raise SourceFetchError("Не удалось сохранить coverage календаря NHL") from exc
 
     def _save_quality_schedule_snapshot(
         self,
