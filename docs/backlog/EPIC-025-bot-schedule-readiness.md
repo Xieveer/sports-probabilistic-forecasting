@@ -10,7 +10,7 @@
 
 - Инициатива: `EPIC-025`.
 - Ветка инициативы: `initiative/epic-025-bot-readiness` в основном каталоге проекта.
-- Workflow / этап: `engineering / TASK-025-1 correction после commit gate`.
+- Workflow / этап: `engineering / TASK-025-1 завершён; следующий TASK-025-2`.
 - Исходная цель: календарь NHL независимо от прогноза, готовность событий,
   админ-управление Data Cycle и выпуск `1.2.0`;
   [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
@@ -27,9 +27,9 @@
   и его 30-дневное покрытие всё ещё не проверены. Первый diff TASK-025-1
   прошёл correction cycle после findings и повторное независимое review
   без блокирующих замечаний; Developer выполнил 61 тест/lint/Alembic head,
-  Reviewer повторно выполнил 46 целевых тестов. Commit gate остановился:
-  pre-commit форматировал 4 файла, mypy нашёл 3 ошибки в calendar repository;
-  commit и push не выполнены.
+  Reviewer повторно выполнил 46 целевых тестов. Ошибки mypy из первого
+  commit gate исправлены; повторный commit gate прошёл все hooks.
+  Проверенный content commit: `b23e2ccc3b869667e95e0f46fbe472731a6f1c8e`.
 - Решения: [ADR-026](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
   принят после независимого review: календарь независим от прогноза, control
   state в PostgreSQL, ограниченный control API и systemd dispatcher;
@@ -37,9 +37,8 @@
   ручная команда повторяет data job без перезапуска служб; футбол проверяется
   по общему контракту без включения в `1.2.0`.
 - Артефакты: [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
-- Предыдущая роль: Reviewer — commit gate failure mypy, без commit.
-- Следующая роль: Developer — точечно исправить типизацию; затем Reviewer —
-  повторный review и commit gate TASK-025-1.
+- Предыдущая роль: Reviewer — чистое review и content commit TASK-025-1.
+- Следующая роль: Developer — TASK-025-2.
 - Открытые вопросы / блокеры: фактическая работа runtime scheduler не
   проверена из-за недоступного SSH. EPIC-023 имеет статус `in_progress`,
   пересечение требует сверки.
@@ -56,7 +55,7 @@
 
 | Задача | Результат | Проверка | Статус |
 |---|---|---|---|
-| [TASK-025-1](tasks/TASK-025-1-calendar-api.md) | Calendar acquisition → canonical store → API | 08:00, 30 суток, coverage, revision, футбол fixture | in_progress |
+| [TASK-025-1](tasks/TASK-025-1-calendar-api.md) | Calendar acquisition → canonical store → API | 08:00, 30 суток, coverage, revision, футбол fixture | done |
 | [TASK-025-2](tasks/TASK-025-2-event-readiness.md) | Readiness прогноза и коэффициентов поверх календаря | missing/stale/deadline, футбол fixture | backlog |
 | [TASK-025-3](tasks/TASK-025-3-data-cycle-runs.md) | Durable Data Cycle, stage results и failed acquisition | fault injection, summary, recovery | backlog |
 

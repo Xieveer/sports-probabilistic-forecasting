@@ -83,7 +83,8 @@ canonical store и выдаются отдельным API календаря н
 - Review: повторное независимое review 2026-09-26 чистое; Reviewer запустил
   46 целевых тестов. Первые findings по пустой странице, status mapping,
   неполной неделе и bootstrap projection устранены в correction cycle.
-- Commit/push: ожидается после review.
+- Review evidence: content commit `b23e2ccc3b869667e95e0f46fbe472731a6f1c8e`;
+  повторный commit gate прошёл ruff, форматирование, mypy и остальные hooks.
 
 ## Correction cycle после независимого review
 
