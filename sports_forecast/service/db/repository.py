@@ -17,6 +17,7 @@ CRUD операции над таблицей ``predictions``.
 from __future__ import annotations
 
 import json
+from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
@@ -646,6 +647,38 @@ class DataCycleRunRepository:
             self.session.query(DataCycleRun).filter_by(run_id=run_id).one_or_none(),
         )
 
+    def get_current(self, tournament: str) -> DataCycleRun | None:
+        """Получить самый новый незавершённый run выбранного pipeline."""
+        return cast(
+            DataCycleRun | None,
+            self.session.query(DataCycleRun)
+            .filter(
+                DataCycleRun.tournament == tournament,
+                DataCycleRun.status.in_(("waiting", "running")),  # type: ignore[attr-defined]
+            )
+            .order_by(
+                DataCycleRun.requested_at.desc(),  # type: ignore[attr-defined]
+                DataCycleRun.id.desc(),  # type: ignore[attr-defined]
+            )
+            .first(),
+        )
+
+    def list_recent(self, tournament: str, *, limit: int = 10) -> list[DataCycleRun]:
+        """Получить ограниченную историю цикла без ограничения на NHL."""
+        if not 1 <= limit <= 50:
+            raise ValueError("Лимит истории должен быть от 1 до 50")
+        return cast(
+            list[DataCycleRun],
+            self.session.query(DataCycleRun)
+            .filter_by(tournament=tournament)
+            .order_by(
+                DataCycleRun.requested_at.desc(),  # type: ignore[attr-defined]
+                DataCycleRun.id.desc(),  # type: ignore[attr-defined]
+            )
+            .limit(limit)
+            .all(),
+        )
+
     def create(
         self,
         *,
@@ -679,6 +712,10 @@ class DataCycleRunRepository:
         if stage not in DATA_CYCLE_STAGES:
             raise ValueError("Неизвестная стадия Data Cycle")
         run = self._require_active(run_id)
+        if stage in {"predictions", "publication"}:
+            quality = self._stage(run_id, "quality")
+            if quality.status not in {"success", "partial_success"}:
+                raise ValueError(f"Стадия {stage} заблокирована до успешной стадии quality")
         if run.current_stage is not None:
             raise ValueError("Предыдущая стадия Data Cycle ещё выполняется")
         result = self._stage(run_id, stage)
@@ -748,17 +785,44 @@ class DataCycleRunRepository:
         run_id: str,
         *,
         status: str,
+        required_stages: Collection[str],
         at: datetime | None = None,
         summary: dict[str, Any] | None = None,
     ) -> None:
         """Записать итог цикла; неисполненные стадии получают явный skipped."""
         if status not in {"success", "partial_success", "failed"}:
             raise ValueError("Недопустимый terminal status Data Cycle")
+        required = frozenset(required_stages)
+        if not required or not required <= set(DATA_CYCLE_STAGES):
+            raise ValueError(
+                "Pipeline policy содержит неизвестный или пустой набор required stages"
+            )
         run = self._require_active(run_id)
         now = _utc_naive_for_query(at or datetime.now(UTC))
         running_stages = [stage.stage for stage in run.stages if stage.status == "running"]
         if run.current_stage is not None or running_stages:
             raise ValueError("Data Cycle нельзя завершить при работающей стадии")
+        states = {
+            stage.stage: ("skipped" if stage.status == "waiting" else stage.status)
+            for stage in run.stages
+        }
+        failed_required = sorted(stage for stage in required if states.get(stage) == "failed")
+        if failed_required and status != "failed":
+            raise ValueError(
+                "Data Cycle не может скрыть failed обязательную стадию: "
+                + ",".join(failed_required)
+            )
+        incomplete_required = sorted(
+            stage for stage in required if states.get(stage) not in {"success", "partial_success"}
+        )
+        if status != "failed" and incomplete_required:
+            raise ValueError("Обязательные стадии не выполнены: " + ",".join(incomplete_required))
+        if status == "success":
+            incomplete = sorted(stage for stage, result in states.items() if result != "success")
+            if incomplete:
+                raise ValueError("Не все стадии завершились success: " + ",".join(incomplete))
+        if status == "partial_success" and all(result == "success" for result in states.values()):
+            raise ValueError("partial_success требует подтверждённого неполного результата")
         for stage in run.stages:
             if stage.status == "waiting":
                 stage.status = "skipped"
@@ -767,10 +831,12 @@ class DataCycleRunRepository:
         run.current_stage = None
         run.completed_at = now
         run.heartbeat_at = now
-        run.summary_json = (
-            json.dumps(summary, sort_keys=True, separators=(",", ":"))
-            if summary is not None
-            else None
+        from sports_forecast.service.data_cycle_history import build_run_summary
+
+        run.summary_json = json.dumps(
+            build_run_summary(run, at=now, supplemental=summary),
+            sort_keys=True,
+            separators=(",", ":"),
         )
 
     def fail_run(self, run_id: str, *, failure_code: str, at: datetime | None = None) -> None:
@@ -803,6 +869,13 @@ class DataCycleRunRepository:
         run.current_stage = None
         run.completed_at = now
         run.heartbeat_at = now
+        from sports_forecast.service.data_cycle_history import build_run_summary
+
+        run.summary_json = json.dumps(
+            build_run_summary(run, at=now),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
 
     def record_calendar_failure(
         self,

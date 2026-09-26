@@ -4,8 +4,23 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from omegaconf import ListConfig
+
+from sports_forecast.config.loaders import load_tournament_config
 from sports_forecast.service.db.engine import get_session
 from sports_forecast.service.db.repository import DataCycleRunRepository
+
+
+def load_required_stages(tournament: str) -> frozenset[str]:
+    """Загрузить policy обязательных Data Cycle stages из tournament Hydra config."""
+    tournament_config = load_tournament_config(tournament)
+    policy = tournament_config.get("data_cycle")
+    required = policy.get("required_stages") if policy is not None else None
+    if not isinstance(required, (list, tuple, ListConfig)) or not required:
+        raise ValueError("Для pipeline не настроены обязательные стадии Data Cycle")
+    if any(not isinstance(stage, str) for stage in required):
+        raise ValueError("Pipeline policy содержит некорректный список обязательных стадий")
+    return frozenset(required)
 
 
 def create_run(run_id: str, tournament: str, reason: str) -> None:
@@ -31,9 +46,14 @@ def finish_stage(
 def finish_run(run_id: str, *, status: str, summary: dict[str, int] | None = None) -> None:
     """Закрыть run после завершения всех обязательных действий."""
     with get_session() as session:
-        DataCycleRunRepository(session).finish_run(
+        repository = DataCycleRunRepository(session)
+        run = repository.get(run_id)
+        if run is None:
+            raise ValueError("Data Cycle run отсутствует")
+        repository.finish_run(
             run_id,
             status=status,
+            required_stages=load_required_stages(run.tournament),
             at=datetime.now(UTC),
             summary=summary,
         )
