@@ -113,6 +113,9 @@ def test_calendar_returns_canonical_event_without_prediction(monkeypatch) -> Non
     assert payload["events"][0]["event_id"] == expected_event_id
     assert payload["events"][0]["home_participant"] == "NYR"
     assert payload["events"][0]["status"] == "scheduled"
+    assert payload["events"][0]["prediction_readiness"]["status"] == "unavailable"
+    assert payload["events"][0]["odds_readiness"]["status"] == "missing"
+    assert payload["events"][0]["readiness"]["status"] == "partial"
     assert payload["coverage"]["status"] == "unknown"
 
 

@@ -308,7 +308,7 @@ make materialize TOURNAMENT=uel_kz_1
 | `/predict/{match_id}` | GET | Предсказание для матча |
 | `/predict/match/{match_id}/all` | GET | Все предсказания для матча |
 | `/predict/upcoming/{tournament}` | GET | Upcoming матчи турнира |
-| `/calendar/{tournament}?period=today\|tomorrow\|3\|7\|14\|30` | GET | Source-календарь независимо от predictions; ответ содержит opaque event ID, участников, статус, pagination и coverage (`unknown`, `incomplete`, `stale`, `confirmed_empty`, `complete`) |
+| `/calendar/{tournament}?period=today\|tomorrow\|3\|7\|14\|30` | GET | Source-календарь с независимыми calendar/prediction/odds/readiness статусами и coverage (`unknown`, `incomplete`, `stale`, `confirmed_empty`, `complete`) |
 | `/metrics` | GET | Prometheus метрики |
 
 ### Telegram: расписание NHL
@@ -318,6 +318,14 @@ make materialize TOURNAMENT=uel_kz_1
 конца соответствующего дня по МСК. Бот группирует матчи по датам и показывает
 существующие прогноз, коэффициенты и value; отсутствующие значения помечает как
 «нет данных».
+
+`GET /calendar/{tournament}` сохраняет события без прогнозов. Для каждого события
+`prediction_readiness` сообщает `pending`, `ready`, `partial`, `failed` или
+`unavailable`; `odds_readiness` сообщает `missing`, `partial`, `ready`, `stale`.
+Агрегированное `readiness` имеет состояния `waiting`, `ready`, `partial`, `error`.
+TTL и срок подготовки задаются отдельной policy в `conf/readiness/`. Коэффициенты
+связываются с событием только при однозначном совпадении нормализованных участников
+и точного UTC kickoff; неоднозначное совпадение остаётся без линии.
 
 ### Monitoring
 

@@ -93,8 +93,27 @@ class PredictionListResponse(BaseModel):
     predictions: list[PredictionResponse]
 
 
+class ComponentReadinessResponse(BaseModel):
+    """Состояние одного независимого источника данных события."""
+
+    status: str
+    reason_code: str
+    last_success_at: datetime | None = None
+    required: list[str] = Field(default_factory=list)
+    available: list[str] = Field(default_factory=list)
+
+
+class EventReadinessResponse(BaseModel):
+    """Агрегированная пригодность события для Telegram."""
+
+    status: str
+    reason_code: str
+    deadline_at: datetime | None = None
+    computed_at: datetime
+
+
 class CalendarEventResponse(BaseModel):
-    """Source event календаря, независимый от наличия предсказания."""
+    """Source event календаря с независимыми состояниями компонентов."""
 
     event_id: str
     tournament: str
@@ -103,6 +122,10 @@ class CalendarEventResponse(BaseModel):
     home_participant: str | None
     away_participant: str | None
     calendar_updated_at: datetime
+    calendar_readiness: str
+    prediction_readiness: ComponentReadinessResponse
+    odds_readiness: ComponentReadinessResponse
+    readiness: EventReadinessResponse
 
 
 class CalendarCoverageResponse(BaseModel):

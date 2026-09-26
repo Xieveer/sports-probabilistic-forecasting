@@ -33,6 +33,7 @@ from sports_forecast.service.db.models import (
     NotificationCycle,
     NotificationDelivery,
     NotificationLineState,
+    OddsObservation,
     Prediction,
     TournamentPublicationState,
     WorkerExecution,
@@ -95,6 +96,73 @@ class CalendarRepository:
         statement = statement.order_by(CalendarCoverage.__table__.c.checked_at.desc())
         result: ScalarResult[CalendarCoverage] = self.session.scalars(statement)
         return cast(CalendarCoverage | None, result.first())
+
+    def get_readiness_data(
+        self, events: list[CanonicalEvent]
+    ) -> tuple[dict[int, list[Prediction]], dict[int, list[OddsObservation]]]:
+        """Одним запросом на компонент загрузить readiness data страницы событий."""
+        if not events:
+            return {}, {}
+        event_ids = [event.id for event in events]
+        identities = {(event.tournament, event.source_event_id) for event in events}
+        predictions = self.session.scalars(
+            select(Prediction).where(
+                Prediction.__table__.c.match_id.in_([source_id for _, source_id in identities]),
+                Prediction.__table__.c.tournament.in_([tournament for tournament, _ in identities]),
+            )
+        ).all()
+        odds = self.session.scalars(
+            select(OddsObservation).where(
+                OddsObservation.__table__.c.canonical_event_id.in_(event_ids)
+            )
+        ).all()
+        predictions_by_event = {
+            event.id: [
+                row
+                for row in predictions
+                if row.tournament == event.tournament and row.match_id == event.source_event_id
+            ]
+            for event in events
+        }
+        odds_by_event: dict[int, list[OddsObservation]] = {event.id: [] for event in events}
+        for row in odds:
+            odds_by_event.setdefault(row.canonical_event_id, []).append(row)
+        return predictions_by_event, odds_by_event
+
+    def upsert_odds_observation(self, observation: Any) -> bool:
+        """Сохранить только новое или более свежее подтверждённое наблюдение."""
+        row = self.session.scalar(
+            select(OddsObservation).where(
+                OddsObservation.canonical_event_id == observation.canonical_event_id,
+                OddsObservation.market == observation.market,
+                OddsObservation.market_spec == observation.market_spec,
+                OddsObservation.bookmaker == observation.bookmaker,
+            )
+        )
+        if row is not None and row.observed_at >= observation.observed_at.replace(tzinfo=None):
+            return False
+        if row is None:
+            row = OddsObservation(
+                canonical_event_id=observation.canonical_event_id,
+                market=observation.market,
+                market_spec=observation.market_spec,
+                bookmaker=observation.bookmaker,
+                event_scheduled_at=observation.event_scheduled_at.replace(tzinfo=None),
+                event_home_participant=observation.event_home_participant,
+                event_away_participant=observation.event_away_participant,
+                observed_at=observation.observed_at.replace(tzinfo=None),
+                values_json=json.dumps(observation.values, sort_keys=True),
+                source=observation.source,
+            )
+            self.session.add(row)
+        else:
+            row.event_scheduled_at = observation.event_scheduled_at.replace(tzinfo=None)
+            row.event_home_participant = observation.event_home_participant
+            row.event_away_participant = observation.event_away_participant
+            row.observed_at = observation.observed_at.replace(tzinfo=None)
+            row.values_json = json.dumps(observation.values, sort_keys=True)
+            row.source = observation.source
+        return True
 
 
 def _public_slice_predicate():

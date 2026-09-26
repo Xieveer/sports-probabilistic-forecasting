@@ -584,6 +584,22 @@ def run_odds_refresh(
     if not final_store.empty:
         validate_odds_float_columns(final_store, context="odds refresh: store after backfill")
         _log_store_odds_post_validate(final_store)
+        from sports_forecast.service.db.engine import get_session
+        from sports_forecast.service.odds_projection import sync_odds_store_observations
+        from sports_forecast.service.readiness_policy import load_readiness_policy
+
+        readiness_policy = load_readiness_policy(tournament)
+        if readiness_policy is not None:
+            sync_registry = _resolve_team_registry(tournament, sport_key)
+            if sync_registry is not None:
+                with get_session() as session:
+                    sync_odds_store_observations(
+                        session,
+                        tournament,
+                        final_store,
+                        readiness_policy,
+                        sync_registry,
+                    )
 
     if req_rem is not None or req_used is not None:
         logger.info(

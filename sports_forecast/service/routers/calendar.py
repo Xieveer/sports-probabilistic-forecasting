@@ -9,6 +9,8 @@ from fastapi import APIRouter, Query
 
 from sports_forecast.service.db.engine import get_session
 from sports_forecast.service.db.repository import CalendarRepository
+from sports_forecast.service.event_readiness import evaluate_event_readiness
+from sports_forecast.service.readiness_policy import load_readiness_policy
 from sports_forecast.service.schemas import (
     CalendarCoverageResponse,
     CalendarEventResponse,
@@ -51,7 +53,8 @@ def get_calendar(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> CalendarResponse:
     """Получить source events в выбранных букмекерских сутках."""
-    start_at, end_at = calendar_window(utc_now(), period)
+    now = utc_now()
+    start_at, end_at = calendar_window(now, period)
     with get_session() as session:
         repository = CalendarRepository(session)
         events, total = repository.list_events(
@@ -64,6 +67,17 @@ def get_calendar(
         coverage = repository.get_coverage(
             tournament=tournament,
         )
+        predictions_by_event, odds_by_event = repository.get_readiness_data(events)
+        event_readiness = {
+            event.id: evaluate_event_readiness(
+                event,
+                predictions_by_event[event.id],
+                odds_by_event[event.id],
+                load_readiness_policy(event.tournament),
+                now,
+            )
+            for event in events
+        }
 
     is_covered = bool(
         coverage
@@ -108,6 +122,7 @@ def get_calendar(
                 home_participant=event.home_participant,
                 away_participant=event.away_participant,
                 calendar_updated_at=_as_utc(event.last_ingested_at),
+                **event_readiness[event.id],
             )
             for event in events
         ],

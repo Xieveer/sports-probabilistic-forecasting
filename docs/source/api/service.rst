@@ -66,6 +66,22 @@ Repository
    :undoc-members:
    :show-inheritance:
 
+Event readiness
+~~~~~~~~~~~~~~~
+
+.. automodule:: sports_forecast.service.event_readiness
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Odds projection
+~~~~~~~~~~~~~~~
+
+.. automodule:: sports_forecast.service.odds_projection
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Materialize
 -----------
 

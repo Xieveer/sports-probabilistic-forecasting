@@ -140,6 +140,15 @@ def test_save_load_refresh_state_roundtrip(tmp_path: Path) -> None:
     assert loaded.in_progress_from == "2025-01-20"
 
 
+@pytest.fixture(autouse=True)
+def _isolate_refresh_projection_db(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Тесты file refresh не требуют service DB; linker покрывается отдельно."""
+    monkeypatch.setattr(
+        "sports_forecast.service.odds_projection.sync_odds_store_observations",
+        lambda *_args, **_kwargs: 0,
+    )
+
+
 def test_run_odds_refresh_mocked_backfill(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     st_path = tmp_path / "s" / "odds" / "refresh_state.json"
     sp = tmp_path / "s" / "odds" / "pinnacle_odds.parquet"

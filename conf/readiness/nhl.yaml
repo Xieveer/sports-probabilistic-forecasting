@@ -1,0 +1,14 @@
+# Readiness policy для NHL. Сроки независимы от календарного горизонта.
+prediction_freshness_hours: 24
+odds_freshness_hours: 6
+preparation_deadline_hours: 6
+prediction_markets:
+  - market: winner_withOT
+    market_spec: winner_withOT
+odds_markets:
+  - market: winner
+    market_spec: winner_withOT
+    bookmaker: pinnacle
+    value_columns:
+      - pinnacle_winner_withOT_home_close
+      - pinnacle_winner_withOT_away_close

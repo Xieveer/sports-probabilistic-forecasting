@@ -245,6 +245,35 @@ class CalendarCoverage(Base):
     )
 
 
+class OddsObservation(Base):
+    """Последняя подтверждённая линия для canonical event, рынка и букмекера."""
+
+    __tablename__ = "odds_observations"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    canonical_event_id: int = Column(ForeignKey("canonical_events.id"), nullable=False, index=True)
+    market: str = Column(String(32), nullable=False)
+    market_spec: str = Column(String(64), nullable=False)
+    bookmaker: str = Column(String(64), nullable=False)
+    event_scheduled_at: datetime = Column(DateTime, nullable=False)
+    event_home_participant: str = Column(String(128), nullable=False)
+    event_away_participant: str = Column(String(128), nullable=False)
+    observed_at: datetime = Column(DateTime, nullable=False)
+    values_json: str = Column(Text, nullable=False)
+    source: str = Column(String(128), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "canonical_event_id",
+            "market",
+            "market_spec",
+            "bookmaker",
+            name="uq_odds_observation_event_market_bookmaker",
+        ),
+        Index("ix_odds_observation_event", "canonical_event_id", "observed_at"),
+    )
+
+
 class RefreshWatermark(Base):
     """Последний успешно imported canonical snapshot одного турнира."""
 

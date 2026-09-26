@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect
 
+from sports_forecast.deploy.database_roles import RUNTIME_GRANTS
 from sports_forecast.service import app as app_module
 from sports_forecast.service.db import engine as engine_module
 from sports_forecast.service.db.models import Base
@@ -133,6 +134,7 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
         "canonical_events",
         "canonical_event_revisions",
         "calendar_coverages",
+        "odds_observations",
         "refresh_watermarks",
         "bootstrap_imports",
     } <= table_names
@@ -140,3 +142,30 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
         column["name"] for column in inspect(migrated_engine).get_columns("canonical_events")
     }
     assert {"home_participant", "away_participant"} <= event_columns
+    odds_columns = {
+        column["name"] for column in inspect(migrated_engine).get_columns("odds_observations")
+    }
+    assert {
+        "event_scheduled_at",
+        "event_home_participant",
+        "event_away_participant",
+    } <= odds_columns
+    api_grant = next(
+        statement
+        for statement in RUNTIME_GRANTS
+        if "GRANT SELECT ON TABLE" in statement and "TO sf_api_reader" in statement
+    )
+    assert all(
+        table in api_grant
+        for table in (
+            "canonical_events",
+            "canonical_event_revisions",
+            "calendar_coverages",
+            "odds_observations",
+        )
+    )
+    assert any(
+        "INSERT, UPDATE, DELETE ON TABLE" in statement
+        and "odds_observations TO sf_refresh_writer" in statement
+        for statement in RUNTIME_GRANTS
+    )
