@@ -8,7 +8,8 @@ Grafana Alloy собирает container logs и внутренние HTTP signa
 |---|---|---|
 | API liveness/readiness | `/health`, `/ready` | non-200 или DB unavailable |
 | Bot | `/tmp/sf-bot-heartbeat.json` healthcheck | старше 120 сек. или Telegram/internal API false |
-| Worker | `worker_executions` и container exit | failed, нет daily success или `materialization_failed` |
+| Data Cycle | `data_cycle_runs`, `data_cycle_stage_results` и container exit | failed, незавершённый run или отсутствие daily terminal run |
+| Worker | `worker_executions` | failed или `materialization_failed` |
 | Prediction freshness | `predictions.prediction_ts` | старше daily SLA |
 | Resources/restarts | container/host metrics Alloy | memory/CPU limit, restart loop |
 

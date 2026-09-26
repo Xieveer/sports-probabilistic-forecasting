@@ -28,7 +28,11 @@ from sports_forecast.materialize import materialize_predictions
 from sports_forecast.service.db.engine import get_session
 from sports_forecast.service.db.models import CanonicalEvent, CanonicalEventRevision
 from sports_forecast.service.db.refresh_lock import RefreshLockRepository
-from sports_forecast.service.db.repository import PredictionRepository, WorkerExecutionRepository
+from sports_forecast.service.db.repository import (
+    DataCycleRunRepository,
+    PredictionRepository,
+    WorkerExecutionRepository,
+)
 from sports_forecast.utils.log_config import get_logger
 from sports_forecast.validation.canonical_freshness import validate_prediction_result_freshness
 
@@ -114,6 +118,37 @@ def _record_publication_state(
     return result
 
 
+def _start_cycle_stage(run_id: str, stage: str) -> bool:
+    """Начать Data Cycle stage для scheduler run, сохраняя standalone Worker."""
+    with get_session() as session:
+        repository = DataCycleRunRepository(session)
+        if repository.get(run_id) is None:
+            return False
+        repository.start_stage(run_id, stage)
+    return True
+
+
+def _finish_cycle_stage(
+    run_id: str,
+    stage: str,
+    *,
+    status: str,
+    counts: dict[str, int] | None = None,
+    failure_code: str | None = None,
+) -> None:
+    """Закрыть Data Cycle stage, если запуск создан scheduler wrapper-ом."""
+    with get_session() as session:
+        repository = DataCycleRunRepository(session)
+        if repository.get(run_id) is not None:
+            repository.finish_stage(
+                run_id,
+                stage,
+                status=status,
+                counts=counts,
+                failure_code=failure_code,
+            )
+
+
 def run_full_refresh(
     cfg: DictConfig,
     *,
@@ -144,7 +179,27 @@ def run_full_refresh(
     try:
         if source_csv is not None:
             with get_session() as session:
-                refresh_nhl_canonical_from_csv(source_csv, session)
+                imported_events = refresh_nhl_canonical_from_csv(source_csv, session)
+            with get_session() as session:
+                cycle = DataCycleRunRepository(session)
+                if cycle.get(run_id) is not None:
+                    cycle.finish_stage(
+                        run_id,
+                        "calendar",
+                        status="success",
+                        counts={"events": imported_events},
+                    )
+                    cycle.start_stage(run_id, "data_odds")
+                    cycle.finish_stage(
+                        run_id,
+                        "data_odds",
+                        status="partial_success",
+                        counts={
+                            "canonical_events": imported_events,
+                            "independently_observed_events": 0,
+                        },
+                    )
+        _start_cycle_stage(run_id, "quality")
         quality_config = load_tournament_quality_gate_config(tournament)
         with get_session() as session:
             freshness = validate_prediction_result_freshness(
@@ -155,6 +210,12 @@ def run_full_refresh(
                 provider_grace_minutes=quality_config.provider_grace_minutes,
             )
         if not freshness.is_valid:
+            _finish_cycle_stage(
+                run_id,
+                "quality",
+                status="failed",
+                failure_code="quality_failed",
+            )
             result = _record_publication_state(
                 cfg,
                 run_id=run_id,
@@ -167,6 +228,8 @@ def run_full_refresh(
                     run_id, failure_code="canonical_freshness_failed"
                 )
             return result
+        _finish_cycle_stage(run_id, "quality", status="success")
+        _start_cycle_stage(run_id, "predictions")
         bundle = load_current_model_bundle(runtime_root, app_version=app_version)
         snapshot = _canonical_rows(tournament)
         with tempfile.TemporaryDirectory(prefix=f"canonical-refresh-{tournament}-") as directory:
@@ -198,6 +261,13 @@ def run_full_refresh(
                 runtime_cfg.features,
                 tournament_cfg,
             )
+            _finish_cycle_stage(
+                run_id,
+                "predictions",
+                status="success",
+                counts={"canonical_events": len(snapshot)},
+            )
+            _start_cycle_stage(run_id, "publication")
             with get_session() as session:
                 published = materialize_predictions(runtime_cfg, version="prod", session=session)
                 result = FullRefreshResult(
@@ -214,17 +284,31 @@ def run_full_refresh(
                     run_id=run_id,
                 )
                 execution = WorkerExecutionRepository(session)
+                cycle = DataCycleRunRepository(session)
+                cycle_exists = cycle.get(run_id) is not None
                 if published:
-                    execution.succeed(
-                        run_id,
-                        predictions_count=repository.count_showcase(
-                            tournament=tournament,
-                            market=market,
-                            market_spec=str(cfg.market_spec.name),
-                        ),
+                    predictions_count = repository.count_showcase(
+                        tournament=tournament,
+                        market=market,
+                        market_spec=str(cfg.market_spec.name),
                     )
+                    execution.succeed(run_id, predictions_count=predictions_count)
+                    if cycle_exists:
+                        cycle.finish_stage(
+                            run_id,
+                            "publication",
+                            status="success",
+                            counts={"predictions": predictions_count},
+                        )
                 else:
                     execution.fail(run_id, failure_code="materialization_failed")
+                    if cycle_exists:
+                        cycle.finish_stage(
+                            run_id,
+                            "publication",
+                            status="failed",
+                            failure_code="publication_failed",
+                        )
         if published and archive_root is not None:
             with get_session() as session:
                 export_canonical_snapshot(

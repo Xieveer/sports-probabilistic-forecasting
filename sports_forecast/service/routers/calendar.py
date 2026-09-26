@@ -112,6 +112,11 @@ def get_calendar(
             covered_from=_as_utc(coverage.covered_from) if coverage else None,
             covered_until=_as_utc(coverage.covered_until) if coverage else None,
             checked_at=_as_utc(coverage.checked_at) if coverage else None,
+            last_successful_at=(
+                _as_utc(coverage.last_successful_at)
+                if coverage and coverage.last_successful_at
+                else None
+            ),
         ),
         events=[
             CalendarEventResponse(

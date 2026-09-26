@@ -18,7 +18,7 @@ from sports_forecast.service.db.models import (
     TournamentPublicationState,
     WorkerExecution,
 )
-from sports_forecast.service.db.repository import PredictionRepository
+from sports_forecast.service.db.repository import DataCycleRunRepository, PredictionRepository
 
 
 def _cfg() -> object:
@@ -70,6 +70,16 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
                     source_observed_at=datetime(2026, 8, 13, tzinfo=UTC),
                 )
             )
+            cycle_repository = DataCycleRunRepository(session)
+            cycle_repository.create(run_id="nhl-20260814", tournament="nhl", reason="scheduled")
+            cycle_repository.start_stage("nhl-20260814", "calendar")
+
+        source_csv = tmp_path / "source.csv"
+        source_csv.write_text(
+            "id,datetime,match_is_end,game_state,home_team,away_team\n"
+            "1,2026-08-14T00:00:00Z,0,PRE,NYR,BOS\n",
+            encoding="utf-8",
+        )
 
         clean = MagicMock()
         features = MagicMock()
@@ -106,6 +116,7 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
                 runtime_root=tmp_path,
                 app_version="1.1.0",
                 refreshed_at=datetime(2026, 8, 14, tzinfo=UTC),
+                source_csv=source_csv,
             )
 
         assert result.published is True
@@ -123,6 +134,14 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
             execution = session.query(WorkerExecution).one()
             assert state.status == "public"
             assert execution.status == "succeeded"
+            cycle = DataCycleRunRepository(session).get("nhl-20260814")
+            assert cycle is not None
+            statuses = {stage.stage: stage.status for stage in cycle.stages}
+            assert statuses["calendar"] == "success"
+            assert statuses["data_odds"] == "partial_success"
+            assert statuses["quality"] == "success"
+            assert statuses["predictions"] == "success"
+            assert statuses["publication"] == "success"
     finally:
         reset_engine()
         engine.dispose()

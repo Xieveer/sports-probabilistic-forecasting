@@ -1,6 +1,6 @@
-# TASK-025-3 — Сквозная история Data Cycle и стадий
+# TASK-025-3 — Durable Data Cycle runs и failed acquisition
 
-> **Статус:** backlog
+> **Статус:** done — локальный срез, runtime gate остаётся в EPIC
 > **Владелец:** Developer
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -8,54 +8,62 @@
 
 ## Результат и границы
 
-Каждый запуск получает durable `run_id` до обращения к NHL source; этапы
-calendar, data/odds, quality, predictions, publication и archive имеют
-наблюдаемые результаты. Этот срез закрывает failure-attempt gap TASK-025-1:
-ошибка acquisition до canonical refresh видна в состоянии календаря/API и
-не маскируется предыдущим успешным покрытием.
+Runner создаёт durable run со всеми фиксированными stage rows до вызова NHL
+source. Source failure завершает календарную стадию, Data Cycle и coverage
+attempt; API показывает состояние недоступности и времена последней попытки и
+последнего успеха раздельно. Успешный canonical import запускает и закрывает
+calendar, quality, predictions, publication и archive stages. Legacy odds
+acquisition явно остаётся `partial_success`, пока future canonical odds path
+не добавлен в [TASK-025-6](TASK-025-6-future-odds.md).
 
-## Критерии приёмки
+## Критерии приёмки этого TASK
 
-- [ ] `waiting/running/success/partial_success/failed` и результаты стадий
-  сохраняются с timestamps, safe reason codes и счётчиками.
-- [ ] Ошибка NHL acquisition, включая malformed weekly anchor, фиксируется
-  до Worker; API перестаёт утверждать подтверждённую актуальность старого
-  coverage после failed попытки и показывает время последнего успеха отдельно.
-- [ ] Quality failure запрещает publication, но не удаляет уже сохранённый
-  календарь. Ошибки отдельных optional событий допускают partial_success.
-- [ ] Стадия data/odds получает доступные будущие котировки для canonical
-  событий независимо от наличия Prediction row и сохраняет наблюдение с
-  реальным временем получения. Historical odds refresh, ограниченный
-  `need_to=today`, и live poll по существующим прогнозам сами по себе этот
-  критерий не выполняют; отсутствие линии отражается как missing.
-- [ ] Сбой/timeout executor не оставляет вечный running и не разрешает
-  параллельный запуск без подтверждения остановки прежнего владельца.
-- [ ] Summary и история отражают число событий, покрытие и длительность с
-  явным denominator; при нуле eligible событий доля `n/a`.
+- [x] Durable run и фиксированные stage results создаются до внешнего NHL
+  acquisition; DB constraint допускает не более одного active run на турнир.
+  PostgreSQL race проверяется в TASK-025-7.
+- [x] Runner записывает статусы, timestamps, безопасные failure codes и
+  неотрицательные счётчики стадий; stages, которые не запускались, получают
+  явный `skipped`.
+- [x] Ошибка NHL acquisition, в том числе malformed weekly anchor, завершает
+  run до Worker. Failed attempt сохраняется в calendar coverage, предыдущее
+  окно и `last_successful_at` остаются, а Calendar API возвращает `unavailable`
+  и `checked_at` попытки отдельно от последнего успеха.
+- [x] Успешный canonical import закрывает calendar stage; quality failure
+  закрывает quality stage и оставляет publication закрытым; predictions,
+  publication и archive stage отражают фактические outcomes.
+- [x] До TASK-025-6 odds stage не объявляет независимую готовность линий на
+  основании legacy refresh и делает Data Cycle итог как минимум
+  `partial_success`.
 
-## План реализации
+Timeout/crash recovery, полный summary/history API, all-stage fault matrix,
+executor ownership/fencing и PostgreSQL concurrency tests вынесены в
+[TASK-025-7](TASK-025-7-data-cycle-recovery-summary.md).
 
-1. Red: тесты отказа каждой стадии, partial_success, crash/timeout и
-   старого coverage после failed fetch.
-2. Green: аддитивные run/stage/attempt таблицы и единый lifecycle wrapper
-   вокруг существующего source → Worker → archive path.
-3. Refactor: один источник статусов и безопасных reason codes; документация.
+## Реализация и проверки
 
-## Затрагиваемые области и зависимости
+1. Red: unit/integration checks для duplicate active run, безопасных stage
+   transitions и failed calendar attempt на фоне старого успешного coverage.
+2. Green: additive migration и runtime grants; lifecycle CLI вокруг
+   `run-canonical-refresh.sh`; Calendar API хранит отдельные часы попытки и
+   успеха.
+3. Refactor: один набор allowlisted stage/failure names; production runner
+   contract и migration checks.
 
-- После TASK-025-1 и TASK-025-2; точные файлы уточняются по текущему diff.
-  Следует учесть квоты Odds API и не выполнять запрос на каждый матч, если
-  доступен один ограниченный batch по турниру.
-- `worker_executions` остаётся нижележащим журналом, не итогом всего цикла.
+## Затрагиваемые области
 
-## Проверка
+- `DataCycleRun`, `DataCycleStageResult`, `CalendarCoverage` и lifecycle
+  repository/CLI.
+- `run-canonical-refresh.sh`, canonical full refresh stage transitions,
+  migration `0012` и grants `sf_refresh_writer`.
+- Calendar coverage response, migration/runner/lifecycle tests и operating
+  notes. Не затрагивает scheduler control API или Telegram UX.
 
-- Целевые integration tests с fault injection и PostgreSQL concurrency
-  там, где проверяется claim/lock; регрессии canonical refresh и alerts.
+## Handoff
 
-## Handoff и отчёт
-
-- Отчёт выполнения: ожидается в `docs/changes/done/`.
-- Follow-up / findings: failure-attempt gap TASK-025-1.
-- Review: ожидается независимый Reviewer.
-- Commit/push: ожидается после review.
+- [Отчёт и проверки](../../changes/done/TASK-025-3-data-cycle-runs.md):
+  независимый повторный Reviewer не нашёл блокирующих findings; 30 целевых
+  тестов, синтаксис shell и diff-check прошли.
+- Проверка реального shell/Compose runtime и production timer остаётся
+  release gate Operations Agent; source config и runbook не подтверждают, что
+  установленный VPS timer активен.
+- TASK-025-6/7 остаются отдельными незавершёнными release зависимостями.

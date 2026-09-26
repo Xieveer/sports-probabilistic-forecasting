@@ -340,6 +340,7 @@ def _import_calendar_coverage(source_csv: Path, session: Session) -> None:
         "covered_until": covered_until.replace(tzinfo=None),
         "complete": True,
         "checked_at": checked_at.replace(tzinfo=None),
+        "last_successful_at": checked_at.replace(tzinfo=None),
         "failure_code": None,
     }
     if row is None:

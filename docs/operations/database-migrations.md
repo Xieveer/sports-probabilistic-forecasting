@@ -29,6 +29,13 @@ Schema PostgreSQL изменяет только Alembic. API и Worker не вы
 3. Запустите API, дождитесь `curl -sf http://127.0.0.1:8000/ready`, затем
    разрешайте одноразовый Worker. `/health` проверяет только liveness процесса.
 
+Revision `0012_data_cycle_runs` добавляет историю полного Data Cycle и фиксированный
+набор результатов стадий. `sf_refresh_writer` получает DML только на эти таблицы;
+`sf_api_reader` их не читает. Scheduler создаёт запись до NHL acquisition. При
+ошибке acquisition он закрывает run с safe failure code и записывает failed attempt
+в `calendar_coverages`, сохраняя окно предыдущего успеха, но делая его статус
+недоступным до следующей успешной проверки. Старую историю run/stage не удаляют.
+
 ## Проверка и recovery
 
 Перед изменением или после прерванной операции узнайте состояние revision:

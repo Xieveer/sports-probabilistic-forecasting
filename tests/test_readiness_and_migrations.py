@@ -135,6 +135,8 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
         "canonical_event_revisions",
         "calendar_coverages",
         "odds_observations",
+        "data_cycle_runs",
+        "data_cycle_stage_results",
         "refresh_watermarks",
         "bootstrap_imports",
     } <= table_names
@@ -150,6 +152,9 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
         "event_home_participant",
         "event_away_participant",
     } <= odds_columns
+    assert "last_successful_at" in {
+        column["name"] for column in inspect(migrated_engine).get_columns("calendar_coverages")
+    }
     api_grant = next(
         statement
         for statement in RUNTIME_GRANTS
@@ -166,6 +171,6 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
     )
     assert any(
         "INSERT, UPDATE, DELETE ON TABLE" in statement
-        and "odds_observations TO sf_refresh_writer" in statement
+        and "data_cycle_stage_results TO sf_refresh_writer" in statement
         for statement in RUNTIME_GRANTS
     )

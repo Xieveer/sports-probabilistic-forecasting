@@ -209,8 +209,8 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     assert set(cast(dict[str, object], compose["volumes"])) == {"pg_data"}
 
 
-def test_systemd_scheduler_has_profile_cadence_lock_timeout_retry_and_safe_run_id() -> None:
-    """Template не допускает overlap и оставляет DB execution state сигналом успеха."""
+def test_systemd_scheduler_has_durable_cycle_before_calendar_acquisition() -> None:
+    """Scheduler создаёт durable run раньше provider и фиксирует ошибки acquisition."""
     service = (SYSTEMD_DIR / "sports-forecast-canonical-refresh@.service").read_text(
         encoding="utf-8"
     )
@@ -230,7 +230,10 @@ def test_systemd_scheduler_has_profile_cadence_lock_timeout_retry_and_safe_run_i
     assert "SF_NHL_SOURCE_STATE_PREFIX" in runner
     assert "uuidgen" in runner
     assert "SF_WORKER_RUN_ID" in runner
-    assert "last successful run is stored in worker_executions" in runner
+    assert "data_cycle_cli" in runner
+    assert runner.index("control create") < runner.index("source_snapshot_cli")
+    assert "--calendar-attempt" in runner
+    assert "finish-run" in runner
     assert "OnBootSec=365d" in timer
     assert "Persistent=true" in timer
     assert "Unit=sports-forecast-canonical-refresh@%i.service" in timer

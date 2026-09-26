@@ -20,6 +20,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     Float,
@@ -30,8 +31,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, relationship
 
 
 class Base(DeclarativeBase):
@@ -237,6 +239,7 @@ class CalendarCoverage(Base):
     covered_until: datetime = Column(DateTime, nullable=False)
     complete: bool = Column(Boolean, nullable=False)
     checked_at: datetime = Column(DateTime, nullable=False)
+    last_successful_at: datetime | None = Column(DateTime, nullable=True)
     failure_code: str | None = Column(String(64), nullable=True)
 
     __table_args__ = (
@@ -271,6 +274,69 @@ class OddsObservation(Base):
             name="uq_odds_observation_event_market_bookmaker",
         ),
         Index("ix_odds_observation_event", "canonical_event_id", "observed_at"),
+    )
+
+
+class DataCycleRun(Base):
+    """Долговечный итог полного цикла сбора данных и публикации."""
+
+    __tablename__ = "data_cycle_runs"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    run_id: str = Column(String(128), nullable=False, unique=True)
+    tournament: str = Column(String(64), nullable=False, index=True)
+    reason: str = Column(String(16), nullable=False)
+    status: str = Column(String(24), nullable=False)
+    current_stage: str | None = Column(String(32), nullable=True)
+    failure_code: str | None = Column(String(64), nullable=True)
+    summary_json: str | None = Column(Text, nullable=True)
+    requested_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+    started_at: datetime | None = Column(DateTime, nullable=True)
+    heartbeat_at: datetime | None = Column(DateTime, nullable=True)
+    completed_at: datetime | None = Column(DateTime, nullable=True)
+
+    stages = relationship(
+        "DataCycleStageResult", back_populates="run", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        CheckConstraint("status IN ('waiting','running','success','partial_success','failed')"),
+        CheckConstraint("reason IN ('scheduled','manual','retry')"),
+        Index(
+            "uq_data_cycle_active_tournament",
+            "tournament",
+            unique=True,
+            sqlite_where=text("status IN ('waiting', 'running')"),
+            postgresql_where=text("status IN ('waiting', 'running')"),
+        ),
+        Index("ix_data_cycle_runs_requested", "tournament", "requested_at"),
+    )
+
+
+class DataCycleStageResult(Base):
+    """Состояние и счётчики одной фиксированной стадии Data Cycle."""
+
+    __tablename__ = "data_cycle_stage_results"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    run_id: str = Column(ForeignKey("data_cycle_runs.run_id"), nullable=False, index=True)
+    stage: str = Column(String(32), nullable=False)
+    status: str = Column(String(24), nullable=False)
+    failure_code: str | None = Column(String(64), nullable=True)
+    counts_json: str | None = Column(Text, nullable=True)
+    started_at: datetime | None = Column(DateTime, nullable=True)
+    completed_at: datetime | None = Column(DateTime, nullable=True)
+    run = relationship("DataCycleRun", back_populates="stages")
+
+    __table_args__ = (
+        UniqueConstraint("run_id", "stage", name="uq_data_cycle_stage"),
+        CheckConstraint(
+            "stage IN ('calendar','data_odds','quality','predictions','publication','archive_sync')"
+        ),
+        CheckConstraint(
+            "status IN ('waiting','running','success','partial_success','failed','skipped')"
+        ),
+        Index("ix_data_cycle_stages_run_status", "run_id", "status"),
     )
 
 

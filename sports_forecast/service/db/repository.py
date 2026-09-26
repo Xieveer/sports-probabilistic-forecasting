@@ -27,6 +27,8 @@ from sqlalchemy.orm import Session
 from sports_forecast.service.db.models import (
     CalendarCoverage,
     CanonicalEvent,
+    DataCycleRun,
+    DataCycleStageResult,
     LineupNotificationOutbox,
     LineupPredictionRevision,
     ModelDeployment,
@@ -37,6 +39,30 @@ from sports_forecast.service.db.models import (
     Prediction,
     TournamentPublicationState,
     WorkerExecution,
+)
+
+
+DATA_CYCLE_STAGES = (
+    "calendar",
+    "data_odds",
+    "quality",
+    "predictions",
+    "publication",
+    "archive_sync",
+)
+DATA_CYCLE_FAILURE_CODES = frozenset(
+    {
+        "source_fetch_failed",
+        "calendar_acquisition_failed",
+        "odds_acquisition_failed",
+        "quality_failed",
+        "prediction_failed",
+        "publication_failed",
+        "archive_sync_failed",
+        "executor_interrupted",
+        "executor_timeout",
+        "run_locked",
+    }
 )
 
 
@@ -605,6 +631,227 @@ class WorkerExecutionRepository:
         if state is None or state.status != "running":
             raise ValueError(f"Worker run недоступен для завершения: {run_id}")
         return state
+
+
+class DataCycleRunRepository:
+    """Durable lifecycle full data pipeline-цикла и безопасный attempt календаря."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get(self, run_id: str) -> DataCycleRun | None:
+        """Получить запуск вместе с результатами стадий."""
+        return cast(
+            DataCycleRun | None,
+            self.session.query(DataCycleRun).filter_by(run_id=run_id).one_or_none(),
+        )
+
+    def create(
+        self,
+        *,
+        run_id: str,
+        tournament: str,
+        reason: str,
+        at: datetime | None = None,
+    ) -> DataCycleRun:
+        """Создать waiting run и фиксированный набор стадий до внешних вызовов."""
+        if reason not in {"scheduled", "manual", "retry"}:
+            raise ValueError("Недопустимая причина Data Cycle")
+        if not run_id or len(run_id) > 128 or not tournament or len(tournament) > 64:
+            raise ValueError("Некорректная идентичность Data Cycle")
+        requested_at = _utc_naive_for_query(at or datetime.now(UTC))
+        run = DataCycleRun(
+            run_id=run_id,
+            tournament=tournament,
+            reason=reason,
+            status="waiting",
+            requested_at=requested_at,
+            stages=[
+                DataCycleStageResult(stage=stage, status="waiting") for stage in DATA_CYCLE_STAGES
+            ],
+        )
+        self.session.add(run)
+        self.session.flush()
+        return run
+
+    def start_stage(self, run_id: str, stage: str, *, at: datetime | None = None) -> None:
+        """Атомарно отметить запуск фиксированной стадии и heartbeat цикла."""
+        if stage not in DATA_CYCLE_STAGES:
+            raise ValueError("Неизвестная стадия Data Cycle")
+        run = self._require_active(run_id)
+        if run.current_stage is not None:
+            raise ValueError("Предыдущая стадия Data Cycle ещё выполняется")
+        result = self._stage(run_id, stage)
+        if result.status != "waiting":
+            raise ValueError("Стадия Data Cycle уже запускалась")
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        result.status = "running"
+        result.started_at = now
+        run.status = "running"
+        run.current_stage = stage
+        run.started_at = run.started_at or now
+        run.heartbeat_at = now
+
+    def finish_stage(
+        self,
+        run_id: str,
+        stage: str,
+        *,
+        status: str,
+        at: datetime | None = None,
+        counts: dict[str, int] | None = None,
+        failure_code: str | None = None,
+    ) -> None:
+        """Завершить стадию безопасным outcome и скалярными счётчиками."""
+        if stage not in DATA_CYCLE_STAGES or status not in {
+            "success",
+            "partial_success",
+            "failed",
+            "skipped",
+        }:
+            raise ValueError("Недопустимый результат стадии Data Cycle")
+        if failure_code is not None and failure_code not in DATA_CYCLE_FAILURE_CODES:
+            raise ValueError("Недопустимый safe failure code")
+        if status == "failed" and failure_code is None:
+            raise ValueError("Неуспешная стадия требует safe failure code")
+        if counts is not None and any(
+            not isinstance(key, str) or not isinstance(value, int) or value < 0
+            for key, value in counts.items()
+        ):
+            raise ValueError("Счётчики стадии должны быть неотрицательными целыми числами")
+        run = self._require_active(run_id)
+        result = self._stage(run_id, stage)
+        if status == "skipped" and result.status != "waiting":
+            raise ValueError("В skipped переводится только незапущенная стадия")
+        if result.status == "waiting" and status != "skipped":
+            raise ValueError("Стадия должна быть running перед завершением")
+        if result.status == "running" and run.current_stage != stage:
+            raise ValueError("Завершить можно только текущую работающую стадию")
+        if result.status not in {"running", "waiting"}:
+            raise ValueError("Завершённую стадию нельзя переписать")
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        result.status = status
+        result.failure_code = failure_code
+        result.counts_json = (
+            json.dumps(counts, sort_keys=True, separators=(",", ":"))
+            if counts is not None
+            else None
+        )
+        result.started_at = result.started_at or now if status != "skipped" else None
+        result.completed_at = now
+        if run.current_stage == stage:
+            run.current_stage = None
+        run.heartbeat_at = now
+
+    def finish_run(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        at: datetime | None = None,
+        summary: dict[str, Any] | None = None,
+    ) -> None:
+        """Записать итог цикла; неисполненные стадии получают явный skipped."""
+        if status not in {"success", "partial_success", "failed"}:
+            raise ValueError("Недопустимый terminal status Data Cycle")
+        run = self._require_active(run_id)
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        running_stages = [stage.stage for stage in run.stages if stage.status == "running"]
+        if run.current_stage is not None or running_stages:
+            raise ValueError("Data Cycle нельзя завершить при работающей стадии")
+        for stage in run.stages:
+            if stage.status == "waiting":
+                stage.status = "skipped"
+                stage.completed_at = now
+        run.status = status
+        run.current_stage = None
+        run.completed_at = now
+        run.heartbeat_at = now
+        run.summary_json = (
+            json.dumps(summary, sort_keys=True, separators=(",", ":"))
+            if summary is not None
+            else None
+        )
+
+    def fail_run(self, run_id: str, *, failure_code: str, at: datetime | None = None) -> None:
+        """Завершить активный цикл как failed, скрывая исходные exception details."""
+        run = self._require_active(run_id)
+        stage_failure_codes = {
+            "calendar": "source_fetch_failed",
+            "data_odds": "odds_acquisition_failed",
+            "quality": "quality_failed",
+            "predictions": "prediction_failed",
+            "publication": "publication_failed",
+            "archive_sync": "archive_sync_failed",
+        }
+        if failure_code == "executor_interrupted" and run.current_stage is not None:
+            failure_code = stage_failure_codes[run.current_stage]
+        if failure_code not in DATA_CYCLE_FAILURE_CODES:
+            raise ValueError("Недопустимый safe failure code")
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        if run.current_stage is not None:
+            current = self._stage(run_id, run.current_stage)
+            current.status = "failed"
+            current.failure_code = failure_code
+            current.completed_at = now
+        for stage in run.stages:
+            if stage.status == "waiting":
+                stage.status = "skipped"
+                stage.completed_at = now
+        run.status = "failed"
+        run.failure_code = failure_code
+        run.current_stage = None
+        run.completed_at = now
+        run.heartbeat_at = now
+
+    def record_calendar_failure(
+        self,
+        *,
+        tournament: str,
+        source: str,
+        failure_code: str,
+        at: datetime | None = None,
+    ) -> None:
+        """Сохранить неуспешную попытку, не выдавая предыдущее coverage за актуальное."""
+        if failure_code not in {"source_fetch_failed", "calendar_acquisition_failed"}:
+            raise ValueError("Недопустимый calendar failure code")
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        row = (
+            self.session.query(CalendarCoverage)
+            .filter_by(tournament=tournament, source=source)
+            .one_or_none()
+        )
+        if row is None:
+            row = CalendarCoverage(
+                tournament=tournament,
+                source=source,
+                covered_from=now,
+                covered_until=now,
+                complete=False,
+                checked_at=now,
+                failure_code=failure_code,
+            )
+            self.session.add(row)
+        else:
+            row.checked_at = now
+            row.failure_code = failure_code
+
+    def _stage(self, run_id: str, stage: str) -> DataCycleStageResult:
+        result = cast(
+            DataCycleStageResult | None,
+            self.session.query(DataCycleStageResult)
+            .filter_by(run_id=run_id, stage=stage)
+            .one_or_none(),
+        )
+        if result is None:
+            raise ValueError("Стадия отсутствует в Data Cycle")
+        return result
+
+    def _require_active(self, run_id: str) -> DataCycleRun:
+        run = self.get(run_id)
+        if run is None or run.status not in {"waiting", "running"}:
+            raise ValueError("Data Cycle run отсутствует или уже завершён")
+        return run
 
 
 class ModelRegistryRepository:

@@ -39,9 +39,12 @@ Docker volume. До запуска Worker Operations убеждается, чт�
 
 Каждый запуск получает run ID `<profile>-<UTC timestamp>-<UUID>`. `flock -n`
 завершает overlap без ожидания; DB per-tournament lock остаётся второй границей
-защиты. `TimeoutStartSec`, `Restart=on-failure`, `RestartSec=5m` и systemd
-start limit задают timeout/retry. Успех не определяется exit code timer-а:
-durable сигнал — `worker_executions.status=succeeded` для этого run ID.
+защиты. Runner создаёт `data_cycle_runs` и строки стадий до NHL acquisition.
+Ошибка acquisition закрывает цикл и фиксирует failed calendar attempt, поэтому
+предыдущее coverage больше не выдаётся как актуальное. `worker_executions`
+остаётся журналом materialization Worker; итог полного цикла находится в
+`data_cycle_runs`. `TimeoutStartSec`, `Restart=on-failure`, `RestartSec=5m` и
+systemd start limit задают timeout/retry.
 
 До включения timer Operations Agent выполняет только dry-run: `docker compose
 config`, `bash -n deploy/systemd/run-canonical-refresh.sh` и `systemd-analyze

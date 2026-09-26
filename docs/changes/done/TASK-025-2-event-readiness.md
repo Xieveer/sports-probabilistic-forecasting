@@ -1,7 +1,7 @@
 # TASK-025-2 — Отчёт о срезе readiness API
 
 > **Статус среза:** реализован, повторное независимое review пройдено
-> **Статус TASK:** `blocked` до добавления persisted failed-odds attempts в TASK-025-3
+> **Статус TASK:** `blocked` до добавления persisted failed-odds attempts в TASK-025-6
 > **Дата:** 2026-09-26
 > **Задача:** [TASK-025-2](../../backlog/tasks/TASK-025-2-event-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -62,10 +62,10 @@ Production migration или production smoke не запускались.
 - Odds observation отражает только реально сохранённые строки OddsStore. Текущий
   refresh ограничен `need_to=today`, а live poll выбирает существующие prediction
   rows; будущие календарные события без прогноза не получают линию автоматически.
-  Calendar-first future odds acquisition добавлена в критерии TASK-025-3 и остаётся
+  Calendar-first future odds acquisition добавлена в критерии TASK-025-6 и остаётся
   release gap до её выполнения.
 - Persisted failed odds acquisition lifecycle и `odds_readiness=failed` зависят
-  от TASK-025-3. До этого отсутствие/устаревание линии честно возвращает
+  от TASK-025-6. До этого отсутствие/устаревание линии честно возвращает
   `missing`/`stale`; API не синтезирует failed из старого successful observation.
 - Readiness policy defaults заданы конфигурацией и могут изменяться без API
   изменения: NHL prediction TTL 24h, odds TTL 6h, deadline 6h; EPL fixture
@@ -102,13 +102,13 @@ Production migration или production smoke не запускались.
 - `uv run pytest -q tests/test_event_readiness.py tests/test_calendar_api.py tests/test_odds_refresh.py tests/test_readiness_and_migrations.py tests/test_prediction_repository_upcoming.py tests/test_prediction_publication.py tests/test_odds_enrichment.py tests/test_odds_store.py tests/test_odds_pipeline_v2_integration.py` — 95 passed после snapshot/Draw correction.
 - `make lint` — passed.
 - `uv run pre-commit run mypy --files sports_forecast/service/event_readiness.py sports_forecast/service/odds_projection.py sports_forecast/service/db/models.py sports_forecast/service/db/repository.py sports_forecast/service/routers/calendar.py sports_forecast/service/schemas.py` — passed.
-- `uv run alembic heads` — единственный head `0011_event_odds_observations`.
+- `uv run alembic heads` — на момент этого среза единственный head
+  `0011_event_odds_observations`; следующий срез добавил `0012`.
 - `git diff --check` — passed.
-- Повторные общие gates после параллельного TASK-025-3 изменения: `make lint` сейчас
-  блокируется двумя unused import в `tests/test_data_cycle_lifecycle.py`; targeted
-  mypy сообщает `Any` return в `sports_forecast/service/db/repository.py:819`.
-  Эти строки принадлежат параллельной реализации TASK-025-3. `ruff check` по
-  принадлежащим этому срезу odds/readiness файлам и `git diff --check` проходят.
+- Во время параллельного TASK-025-3 общий lint и targeted mypy временно
+  блокировались его незавершённым diff; после исправления TASK-025-3 повторный
+  `make lint` прошёл. `ruff check` по odds/readiness файлам, pre-commit для
+  correction commit и `git diff --check` также прошли.
 
 Независимый Reviewer нашёл два P1: свежий `Prediction.status=error` ошибочно
 становился `ready`, а odds observation после переноса оставался `ready` до TTL.

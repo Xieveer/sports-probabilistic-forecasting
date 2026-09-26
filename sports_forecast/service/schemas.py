@@ -135,6 +135,7 @@ class CalendarCoverageResponse(BaseModel):
     covered_from: datetime | None = None
     covered_until: datetime | None = None
     checked_at: datetime | None = None
+    last_successful_at: datetime | None = None
 
 
 class CalendarResponse(BaseModel):
