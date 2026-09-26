@@ -1,6 +1,6 @@
 # TASK-025-2 — Готовность прогноза и коэффициентов события
 
-> **Статус:** blocked — `odds.failed` зависит от TASK-025-6
+> **Статус:** done
 > **Владелец:** Developer
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -13,10 +13,12 @@ API календаря из TASK-025-1 дополняет каждое собы�
 и агрегированным состоянием для Telegram. Событие без прогноза остаётся в
 выдаче. Этот срез не меняет формулы ML, odds или Data Cycle scheduler.
 
-Реализована projection часть readiness на наблюдаемых данных. Текущий API может
-показать `failed` для prediction row со статусом `error`; persisted odds
-observation является только подтверждённым успехом. Отдельная запись ошибки odds
-acquisition будет добавлена в TASK-025-6; до этого API не выдумывает `failed`.
+Readiness projection вычисляется по predictions, подтверждённым odds
+observations и persisted odds acquisition attempts. Неподтверждённая попытка
+показывает `failed` только после preparation deadline и только для события внутри
+её UTC window. Успешная более новая попытка без линии возвращает компонент в
+`missing`; старые observations сохраняются и показываются отдельно через
+`last_success_at`.
 
 ## Критерии приёмки
 
@@ -26,8 +28,10 @@ acquisition будет добавлена в TASK-025-6; до этого API н�
 - [x] Prediction статусы (`pending`, `ready`, `partial`, `failed`, `unavailable`)
   и odds статусы (`missing`, `partial`, `ready`, `stale`) применяются по policy,
   не выводятся из `Prediction.odds_raw`.
-- [ ] Odds status `failed` основан на persisted failed-attempt record; отложено
-  до [TASK-025-6](TASK-025-6-future-odds.md).
+- [x] Odds status `failed` основан на persisted failed-attempt record; окно
+  должно покрывать событие, попытка должна быть новее успешного observation или
+  успешной попытки и выполниться после preparation deadline. Вне окна/до срока
+  readiness остаётся `missing` или `pending`.
 - [x] Legacy OddsStore winner observation допускается только при подтверждённом
   2-way h2h и provider `market.last_update`; `fetched_at` не доказывает свежесть.
 - [x] Состояния календаря, прогноза и коэффициентов имеют проверяемые reason codes
@@ -63,15 +67,15 @@ acquisition будет добавлена в TASK-025-6; до этого API н�
 - Регрессия prediction API, materialization и odds; lint.
 - Readiness policy defaults явно заданы и изменяемы без смены API: NHL TTL
   24h/6h, deadline 6h; EPL fixture TTL 12h/3h, deadline 4h.
-- Calendar-first future odds acquisition не входит в этот срез: текущий odds
-  refresh ограничен `need_to=today`, live polling выбирает только predictions.
-  Это release gap передан в TASK-025-6.
+- Calendar-first future odds acquisition и failed-attempt projection завершены в
+  [TASK-025-6](TASK-025-6-future-odds.md); production football adapter не входит.
 
 ## Handoff и отчёт
 
-- Отчёт частичного выполнения: [TASK-025-2](../../changes/done/TASK-025-2-event-readiness.md).
-- Follow-up / findings: два P1 исправлены; failed odds attempt и calendar-first
-  future odds poll переданы TASK-025-6.
-- Review: повторное независимое review без блокирующих findings; 47 целевых
-  тестов прошли.
-- Commit/push: ожидается после review.
+- Отчёт выполнения: [TASK-025-2](../../changes/done/TASK-025-2-event-readiness.md).
+- Follow-up / findings: два P1 и дополнительный odds provenance correction
+  исправлены; failed odds attempt и calendar-first future poll завершены в
+  TASK-025-6.
+- Review: повторное независимое review TASK-025-2 и расширения TASK-025-6
+  без блокирующих findings.
+- Commit/push: расширение TASK-025-6 ожидает content commit gate.

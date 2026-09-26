@@ -10,7 +10,7 @@
 
 - Инициатива: `EPIC-025`.
 - Ветка инициативы: `initiative/epic-025-bot-readiness` в основном каталоге проекта.
-- Workflow / этап: `engineering / TASK-025-11 reviewed; TASK-025-6 future odds в разработке`.
+- Workflow / этап: `engineering / TASK-025-6 reviewed; подготовка TASK-025-4 control`.
 - Исходная цель: календарь NHL независимо от прогноза, готовность событий,
   админ-управление Data Cycle и выпуск `1.2.0`;
   [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
@@ -52,6 +52,10 @@
   TASK-025-4, recovery/fencing в TASK-025-8; будущие odds — в TASK-025-6.
   TASK-025-11 перевёл `/upcoming` на календарь и прошёл повторное review без
   findings после HTML/UTF-16 и callback исправлений; 78 целевых тестов прошли.
+  Content commit TASK-025-11 `f958bbc` опубликован. TASK-025-6 добавил
+  calendar-first future odds и persisted failed attempts; после трёх findings
+  повторное review чистое, 81 целевой тест у Developer и 51 у Reviewer прошли.
+  `odds.failed` завершает зависимость TASK-025-2.
 - Решения: [ADR-026](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
   принят после независимого review: календарь независим от прогноза, control
   state в PostgreSQL, ограниченный control API и systemd dispatcher;
@@ -59,10 +63,10 @@
   ручная команда повторяет data job без перезапуска служб; футбол проверяется
   по общему контракту без включения в `1.2.0`.
 - Артефакты: [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
-- Предыдущая роль: Reviewer — повторное review TASK-025-11 без блокирующих
-  findings, bot→ASGI→DB сценарий прошёл.
-- Следующие роли: Product Owner — selective commit TASK-025-11; затем
-  Developer — завершить TASK-025-6 и control/admin Telegram срезы.
+- Предыдущая роль: Reviewer — повторное review TASK-025-6 без блокирующих
+  findings после трёх исправлений.
+- Следующая роль: Product Owner — content commit TASK-025-6; затем Developer —
+  TASK-025-4 control и зависимые admin Telegram срезы.
 - Открытые вопросы / блокеры: ежедневный NHL timer на VPS выключен; нет
   привилегированного read-only доступа к Docker/DB и подтверждённого backup,
   runtime run history и rollback digest. Это production release NO-GO до
@@ -82,9 +86,9 @@
 | Задача | Результат | Проверка | Статус |
 |---|---|---|---|
 | [TASK-025-1](tasks/TASK-025-1-calendar-api.md) | Calendar acquisition → canonical store → API | 08:00, 30 суток, coverage, revision, футбол fixture | done |
-| [TASK-025-2](tasks/TASK-025-2-event-readiness.md) | Readiness прогноза и коэффициентов поверх календаря | missing/stale/deadline, футбол fixture | blocked: `odds.failed` в TASK-025-6 |
+| [TASK-025-2](tasks/TASK-025-2-event-readiness.md) | Readiness прогноза и коэффициентов поверх календаря | missing/stale/deadline, футбол fixture | done |
 | [TASK-025-3](tasks/TASK-025-3-data-cycle-runs.md) | Durable ingress, failed acquisition, stage wiring | source failure, shell path, migration | done; runtime gate остаётся |
-| [TASK-025-6](tasks/TASK-025-6-future-odds.md) | Calendar-first future NHL odds | semantic evidence, quota, identity, freshness | in_progress |
+| [TASK-025-6](tasks/TASK-025-6-future-odds.md) | Calendar-first future NHL odds | semantic evidence, quota, identity, freshness | done |
 | [TASK-025-7](tasks/TASK-025-7-data-cycle-recovery-summary.md) | Terminal stages, summary и run history query contract | stage faults, coverage, safe DTO | blocked: producers/API в TASK-025-10/4 |
 | [TASK-025-8](tasks/TASK-025-8-executor-fencing.md) | Executor recovery/fencing after crash | PostgreSQL race, no duplicate executor | backlog |
 | [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production v1.2.0 and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | backlog |

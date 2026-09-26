@@ -135,6 +135,7 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
         "canonical_event_revisions",
         "calendar_coverages",
         "odds_observations",
+        "odds_acquisition_attempts",
         "data_cycle_runs",
         "data_cycle_stage_results",
         "refresh_watermarks",
@@ -151,10 +152,18 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
         "event_scheduled_at",
         "event_home_participant",
         "event_away_participant",
+        "retrieved_at",
+        "observed_at_source",
+        "provider_event_id",
     } <= odds_columns
     assert "last_successful_at" in {
         column["name"] for column in inspect(migrated_engine).get_columns("calendar_coverages")
     }
+    attempt_columns = {
+        column["name"]
+        for column in inspect(migrated_engine).get_columns("odds_acquisition_attempts")
+    }
+    assert {"window_from", "window_to", "requests_remaining", "requests_used"} <= attempt_columns
     api_grant = next(
         statement
         for statement in RUNTIME_GRANTS
@@ -167,6 +176,7 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
             "canonical_event_revisions",
             "calendar_coverages",
             "odds_observations",
+            "odds_acquisition_attempts",
         )
     )
     assert any(

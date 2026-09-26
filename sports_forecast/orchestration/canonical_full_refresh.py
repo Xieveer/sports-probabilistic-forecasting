@@ -25,6 +25,7 @@ from sports_forecast.deploy.model_bundle import BundleVerificationError, load_cu
 from sports_forecast.deploy.source_state import export_nhl_source_state
 from sports_forecast.features.features_build import process_tournament_new
 from sports_forecast.materialize import materialize_predictions
+from sports_forecast.orchestration.future_odds import run_nhl_future_odds_batch
 from sports_forecast.service.db.engine import get_session
 from sports_forecast.service.db.models import CanonicalEvent, CanonicalEventRevision
 from sports_forecast.service.db.refresh_lock import RefreshLockRepository
@@ -177,28 +178,46 @@ def run_full_refresh(
             locks.release(tournament=tournament, run_id=run_id)
             return FullRefreshResult(published=False, already_finished=True)
     try:
+        cycle_present = False
         if source_csv is not None:
             with get_session() as session:
                 imported_events = refresh_nhl_canonical_from_csv(source_csv, session)
             with get_session() as session:
                 cycle = DataCycleRunRepository(session)
                 if cycle.get(run_id) is not None:
+                    cycle_present = True
                     cycle.finish_stage(
                         run_id,
                         "calendar",
                         status="success",
                         counts={"events": imported_events},
                     )
-                    cycle.start_stage(run_id, "data_odds")
-                    cycle.finish_stage(
-                        run_id,
-                        "data_odds",
-                        status="partial_success",
-                        counts={
-                            "canonical_events": imported_events,
-                            "independently_observed_events": 0,
-                        },
-                    )
+        if not cycle_present:
+            cycle_present = _start_cycle_stage(run_id, "data_odds")
+        else:
+            _start_cycle_stage(run_id, "data_odds")
+        if cycle_present:
+            with get_session() as session:
+                attempt = run_nhl_future_odds_batch(
+                    session,
+                    run_id=run_id,
+                    now=refreshed_at,
+                )
+            stage_status = attempt.status
+            with get_session() as session:
+                DataCycleRunRepository(session).finish_stage(
+                    run_id,
+                    "data_odds",
+                    status=stage_status,
+                    counts={
+                        "canonical_events": attempt.matched_events + attempt.missing_events,
+                        "independently_observed_events": attempt.matched_events,
+                        "errors": int(attempt.status == "failed"),
+                    },
+                    failure_code=(
+                        "odds_acquisition_failed" if attempt.status == "failed" else None
+                    ),
+                )
         _start_cycle_stage(run_id, "quality")
         quality_config = load_tournament_quality_gate_config(tournament)
         with get_session() as session:

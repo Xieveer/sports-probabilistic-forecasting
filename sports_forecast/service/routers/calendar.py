@@ -67,7 +67,9 @@ def get_calendar(
         coverage = repository.get_coverage(
             tournament=tournament,
         )
-        predictions_by_event, odds_by_event = repository.get_readiness_data(events)
+        predictions_by_event, odds_by_event, attempts_by_event = repository.get_readiness_data(
+            events
+        )
         event_readiness = {
             event.id: evaluate_event_readiness(
                 event,
@@ -75,6 +77,7 @@ def get_calendar(
                 odds_by_event[event.id],
                 load_readiness_policy(event.tournament),
                 now,
+                odds_attempts=attempts_by_event[event.id],
             )
             for event in events
         }

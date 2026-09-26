@@ -12,7 +12,12 @@ from sports_forecast.data.providers.odds.team_name_registry import (
     load_nhl_team_name_registry,
     normalize_team_key,
 )
-from sports_forecast.service.db.models import CanonicalEvent, OddsObservation, Prediction
+from sports_forecast.service.db.models import (
+    CanonicalEvent,
+    OddsAcquisitionAttempt,
+    OddsObservation,
+    Prediction,
+)
 
 
 def _utc(value: datetime) -> datetime:
@@ -25,6 +30,7 @@ def evaluate_event_readiness(
     odds: Sequence[OddsObservation],
     policy: dict[str, Any] | None,
     now: datetime,
+    odds_attempts: Sequence[OddsAcquisitionAttempt] = (),
 ) -> dict[str, Any]:
     """Вычислить состояния по persisted timestamps, не выводя сбои из отсутствия строк."""
     reference = _utc(now)
@@ -76,10 +82,20 @@ def evaluate_event_readiness(
         unavailable_status="missing",
         stale_status="stale",
         force_stale_getter=lambda item: (
-            _utc(item.event_scheduled_at) != _utc(event.scheduled_at)
+            _utc(item.observed_at) > reference
+            or _utc(item.event_scheduled_at) != _utc(event.scheduled_at)
             or item.event_home_participant != event.home_participant
             or item.event_away_participant != event.away_participant
         ),
+    )
+    _apply_odds_attempt_state(
+        odds_readiness,
+        event=event,
+        observations=odds,
+        attempts=odds_attempts,
+        required=odds_policy,
+        now=reference,
+        deadline=deadline,
     )
 
     required_prediction_keys = {
@@ -155,9 +171,67 @@ def _component(status: str, reason_code: str) -> dict[str, Any]:
         "status": status,
         "reason_code": reason_code,
         "last_success_at": None,
+        "last_attempt_at": None,
         "required": [],
         "available": [],
     }
+
+
+def _apply_odds_attempt_state(
+    readiness: dict[str, Any],
+    *,
+    event: CanonicalEvent,
+    observations: Sequence[OddsObservation],
+    attempts: Sequence[OddsAcquisitionAttempt],
+    required: Sequence[dict[str, Any]],
+    now: datetime,
+    deadline: datetime,
+) -> None:
+    """Отразить свежий failed attempt, не распространяя его на далёкие события."""
+    if event.status != "scheduled":
+        return
+    kickoff = _utc(event.scheduled_at)
+    applicable = [
+        attempt
+        for attempt in attempts
+        if attempt.tournament == event.tournament
+        and attempt.window_from is not None
+        and attempt.window_to is not None
+        and _utc(attempt.window_from) <= kickoff <= _utc(attempt.window_to)
+    ]
+    if not applicable:
+        return
+    latest_attempt = max(applicable, key=lambda item: _utc(item.retrieved_at))
+    readiness["last_attempt_at"] = _utc(latest_attempt.retrieved_at)
+    if latest_attempt.status != "failed":
+        return
+    failed_at = _utc(latest_attempt.retrieved_at)
+    if now < deadline or failed_at < deadline:
+        return
+
+    required_keys = {
+        (str(item["market"]), str(item["market_spec"]), str(item["bookmaker"])) for item in required
+    }
+    matching_observations = [
+        item
+        for item in observations
+        if (item.market, item.market_spec, item.bookmaker) in required_keys
+        and _utc(item.event_scheduled_at) == kickoff
+        and item.event_home_participant == event.home_participant
+        and item.event_away_participant == event.away_participant
+    ]
+    successful_at: list[datetime] = [
+        _utc(attempt.retrieved_at)
+        for attempt in applicable
+        if attempt.status in {"success", "partial_success"}
+    ]
+    successful_at.extend(
+        _utc(item.retrieved_at or item.observed_at) for item in matching_observations
+    )
+    if successful_at and max(successful_at) > failed_at:
+        return
+    readiness["status"] = "failed"
+    readiness["reason_code"] = latest_attempt.failure_code or "odds_acquisition_failed"
 
 
 def _evaluate_markets(
@@ -220,6 +294,7 @@ def _evaluate_markets(
         "status": status,
         "reason_code": reason,
         "last_success_at": last_success,
+        "last_attempt_at": None,
         "required": [label(key) for key in keys],
         "available": [label(key) for key in available],
     }

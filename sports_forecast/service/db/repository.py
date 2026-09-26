@@ -36,6 +36,7 @@ from sports_forecast.service.db.models import (
     NotificationCycle,
     NotificationDelivery,
     NotificationLineState,
+    OddsAcquisitionAttempt,
     OddsObservation,
     Prediction,
     TournamentPublicationState,
@@ -126,10 +127,14 @@ class CalendarRepository:
 
     def get_readiness_data(
         self, events: list[CanonicalEvent]
-    ) -> tuple[dict[int, list[Prediction]], dict[int, list[OddsObservation]]]:
-        """Одним запросом на компонент загрузить readiness data страницы событий."""
+    ) -> tuple[
+        dict[int, list[Prediction]],
+        dict[int, list[OddsObservation]],
+        dict[int, list[OddsAcquisitionAttempt]],
+    ]:
+        """Пакетно загрузить predictions, odds и attempts для страницы календаря."""
         if not events:
-            return {}, {}
+            return {}, {}, {}
         event_ids = [event.id for event in events]
         identities = {(event.tournament, event.source_event_id) for event in events}
         predictions = self.session.scalars(
@@ -143,6 +148,17 @@ class CalendarRepository:
                 OddsObservation.__table__.c.canonical_event_id.in_(event_ids)
             )
         ).all()
+        event_times = [_utc_naive_for_query(event.scheduled_at) for event in events]
+        attempt_columns = OddsAcquisitionAttempt.__table__.c
+        attempts = self.session.scalars(
+            select(OddsAcquisitionAttempt).where(
+                attempt_columns.tournament.in_([item.tournament for item in events]),
+                attempt_columns.window_from.is_not(None),
+                attempt_columns.window_to.is_not(None),
+                attempt_columns.window_from <= max(event_times),
+                attempt_columns.window_to >= min(event_times),
+            )
+        ).all()
         predictions_by_event = {
             event.id: [
                 row
@@ -154,7 +170,22 @@ class CalendarRepository:
         odds_by_event: dict[int, list[OddsObservation]] = {event.id: [] for event in events}
         for row in odds:
             odds_by_event.setdefault(row.canonical_event_id, []).append(row)
-        return predictions_by_event, odds_by_event
+        attempts_by_event: dict[int, list[OddsAcquisitionAttempt]] = {
+            event.id: [] for event in events
+        }
+        for event in events:
+            scheduled = _utc_naive_for_query(event.scheduled_at)
+            attempts_by_event[event.id] = [
+                attempt
+                for attempt in attempts
+                if attempt.tournament == event.tournament
+                and attempt.window_from is not None
+                and attempt.window_to is not None
+                and _utc_naive_for_query(attempt.window_from)
+                <= scheduled
+                <= _utc_naive_for_query(attempt.window_to)
+            ]
+        return predictions_by_event, odds_by_event, attempts_by_event
 
     def upsert_odds_observation(self, observation: Any) -> bool:
         """Сохранить только новое или более свежее подтверждённое наблюдение."""
@@ -166,8 +197,23 @@ class CalendarRepository:
                 OddsObservation.bookmaker == observation.bookmaker,
             )
         )
-        if row is not None and row.observed_at >= observation.observed_at.replace(tzinfo=None):
-            return False
+        if row is not None:
+            incoming_kickoff = observation.event_scheduled_at.replace(tzinfo=None)
+            same_event_identity = (
+                row.event_scheduled_at == incoming_kickoff
+                and row.event_home_participant == observation.event_home_participant
+                and row.event_away_participant == observation.event_away_participant
+            )
+            if same_event_identity:
+                if row.observed_at >= observation.observed_at.replace(tzinfo=None):
+                    return False
+            else:
+                incoming_retrieved_at = getattr(observation, "retrieved_at", None)
+                if row.retrieved_at is not None and (
+                    incoming_retrieved_at is None
+                    or row.retrieved_at >= incoming_retrieved_at.replace(tzinfo=None)
+                ):
+                    return False
         if row is None:
             row = OddsObservation(
                 canonical_event_id=observation.canonical_event_id,
@@ -178,6 +224,13 @@ class CalendarRepository:
                 event_home_participant=observation.event_home_participant,
                 event_away_participant=observation.event_away_participant,
                 observed_at=observation.observed_at.replace(tzinfo=None),
+                observed_at_source=getattr(observation, "observed_at_source", None),
+                retrieved_at=(
+                    observation.retrieved_at.replace(tzinfo=None)
+                    if observation.retrieved_at is not None
+                    else None
+                ),
+                provider_event_id=observation.provider_event_id,
                 values_json=json.dumps(observation.values, sort_keys=True),
                 source=observation.source,
             )
@@ -187,9 +240,54 @@ class CalendarRepository:
             row.event_home_participant = observation.event_home_participant
             row.event_away_participant = observation.event_away_participant
             row.observed_at = observation.observed_at.replace(tzinfo=None)
+            row.observed_at_source = getattr(observation, "observed_at_source", None)
+            row.retrieved_at = (
+                observation.retrieved_at.replace(tzinfo=None)
+                if observation.retrieved_at is not None
+                else None
+            )
+            row.provider_event_id = observation.provider_event_id
             row.values_json = json.dumps(observation.values, sort_keys=True)
             row.source = observation.source
         return True
+
+    def record_odds_attempt(self, attempt: Any) -> None:
+        """Записать или идемпотентно заменить outcome batch-попытки одного run."""
+        row = self.session.scalar(
+            select(OddsAcquisitionAttempt).where(
+                OddsAcquisitionAttempt.run_id == attempt.run_id,
+                OddsAcquisitionAttempt.provider == attempt.provider,
+            )
+        )
+        fields = {
+            "tournament": attempt.tournament,
+            "status": attempt.status,
+            "failure_code": attempt.failure_code,
+            "retrieved_at": attempt.retrieved_at.replace(tzinfo=None),
+            "window_from": attempt.window_from.replace(tzinfo=None)
+            if attempt.window_from is not None
+            else None,
+            "window_to": attempt.window_to.replace(tzinfo=None)
+            if attempt.window_to is not None
+            else None,
+            "provider_events": attempt.provider_events,
+            "matched_events": attempt.matched_events,
+            "missing_events": attempt.missing_events,
+            "rejected_events": attempt.rejected_events,
+            "requests_remaining": attempt.requests_remaining,
+            "requests_used": attempt.requests_used,
+        }
+        if row is None:
+            self.session.add(
+                OddsAcquisitionAttempt(
+                    run_id=attempt.run_id,
+                    provider=attempt.provider,
+                    **fields,
+                )
+            )
+            return
+        for name, value in fields.items():
+            setattr(row, name, value)
 
 
 def _public_slice_predicate():

@@ -99,6 +99,7 @@ class ComponentReadinessResponse(BaseModel):
     status: str
     reason_code: str
     last_success_at: datetime | None = None
+    last_attempt_at: datetime | None = None
     required: list[str] = Field(default_factory=list)
     available: list[str] = Field(default_factory=list)
 

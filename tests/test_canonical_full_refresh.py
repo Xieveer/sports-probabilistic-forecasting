@@ -14,6 +14,7 @@ from sports_forecast.service.db.engine import get_session, init_db, reset_engine
 from sports_forecast.service.db.models import (
     CanonicalEvent,
     CanonicalEventRevision,
+    OddsAcquisitionAttempt,
     Prediction,
     TournamentPublicationState,
     WorkerExecution,
@@ -84,6 +85,10 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
         clean = MagicMock()
         features = MagicMock()
         materialize = MagicMock(return_value=True)
+        odds_provider = MagicMock()
+        odds_provider.fetch_future_nhl_odds.return_value = []
+        odds_provider.last_quota.return_value.requests_remaining = 20
+        odds_provider.last_quota.return_value.requests_used = 3
         with (
             patch(
                 "sports_forecast.orchestration.canonical_full_refresh.get_session",
@@ -108,6 +113,10 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
             patch(
                 "sports_forecast.orchestration.canonical_full_refresh.materialize_predictions",
                 materialize,
+            ),
+            patch(
+                "sports_forecast.orchestration.future_odds.OddsApiClient",
+                return_value=odds_provider,
             ),
         ):
             result = run_full_refresh(
@@ -138,10 +147,14 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
             assert cycle is not None
             statuses = {stage.stage: stage.status for stage in cycle.stages}
             assert statuses["calendar"] == "success"
-            assert statuses["data_odds"] == "partial_success"
+            assert statuses["data_odds"] == "success"
             assert statuses["quality"] == "success"
             assert statuses["predictions"] == "success"
             assert statuses["publication"] == "success"
+            odds_attempt = session.query(OddsAcquisitionAttempt).one()
+            assert odds_attempt.status == "success"
+            assert odds_attempt.missing_events == 1
+            assert odds_attempt.requests_remaining == 20
     finally:
         reset_engine()
         engine.dispose()

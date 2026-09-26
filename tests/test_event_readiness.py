@@ -15,7 +15,13 @@ from sqlalchemy.pool import StaticPool
 
 from sports_forecast.data.providers.odds.team_name_registry import TeamNameRegistry
 from sports_forecast.service.app import app
-from sports_forecast.service.db.models import Base, CanonicalEvent, OddsObservation, Prediction
+from sports_forecast.service.db.models import (
+    Base,
+    CanonicalEvent,
+    OddsAcquisitionAttempt,
+    OddsObservation,
+    Prediction,
+)
 from sports_forecast.service.event_readiness import evaluate_event_readiness
 from sports_forecast.service.odds_projection import (
     OddsMarketColumns,
@@ -405,6 +411,107 @@ def test_canonical_event_move_marks_existing_prediction_for_review() -> None:
     assert readiness["readiness"]["reason_code"] == "event_identity_changed"
 
 
+def test_odds_failure_is_event_scoped_deadline_aware_and_superseded_by_success() -> None:
+    event = SimpleNamespace(
+        id=44,
+        tournament="nhl",
+        status="scheduled",
+        scheduled_at=datetime(2026, 10, 1, 12, tzinfo=UTC),
+        home_participant="NYR",
+        away_participant="PIT",
+    )
+    policy = {
+        "preparation_deadline_hours": 6,
+        "prediction_freshness_hours": 24,
+        "odds_freshness_hours": 6,
+        "prediction_markets": [{"market": "winner", "market_spec": "winner_withOT"}],
+        "odds_markets": [
+            {"market": "winner", "market_spec": "winner_withOT", "bookmaker": "pinnacle"}
+        ],
+    }
+    attempt = SimpleNamespace(
+        tournament="nhl",
+        window_from=datetime(2026, 10, 1, 12),
+        window_to=datetime(2026, 10, 1, 12),
+        retrieved_at=datetime(2026, 10, 1, 6, 30),
+        status="failed",
+        failure_code="quota_exhausted",
+    )
+    attempt_row = cast(OddsAcquisitionAttempt, attempt)
+    now = datetime(2026, 10, 1, 7, tzinfo=UTC)
+
+    failed = evaluate_event_readiness(
+        cast(CanonicalEvent, event), [], [], policy, now, odds_attempts=[attempt_row]
+    )
+    assert failed["odds_readiness"]["status"] == "failed"
+    assert failed["odds_readiness"]["reason_code"] == "quota_exhausted"
+    assert failed["odds_readiness"]["last_success_at"] is None
+    assert failed["odds_readiness"]["last_attempt_at"] == now.replace(hour=6, minute=30)
+
+    early = evaluate_event_readiness(
+        cast(CanonicalEvent, event),
+        [],
+        [],
+        policy,
+        datetime(2026, 10, 1, 5, tzinfo=UTC),
+        odds_attempts=[attempt_row],
+    )
+    assert early["odds_readiness"]["status"] == "missing"
+
+    far_failure = SimpleNamespace(
+        **{**attempt.__dict__, "retrieved_at": datetime(2026, 10, 1, 5, 30)}
+    )
+    far_failure_row = cast(OddsAcquisitionAttempt, far_failure)
+    still_missing = evaluate_event_readiness(
+        cast(CanonicalEvent, event),
+        [],
+        [],
+        policy,
+        now,
+        odds_attempts=[far_failure_row],
+    )
+    assert still_missing["odds_readiness"]["status"] == "missing"
+
+    successful_attempt = SimpleNamespace(
+        **{**attempt.__dict__, "retrieved_at": datetime(2026, 10, 1, 7), "status": "success"}
+    )
+    successful_attempt_row = cast(OddsAcquisitionAttempt, successful_attempt)
+    recovered = evaluate_event_readiness(
+        cast(CanonicalEvent, event),
+        [],
+        [],
+        policy,
+        datetime(2026, 10, 1, 8, tzinfo=UTC),
+        odds_attempts=[attempt_row, successful_attempt_row],
+    )
+    assert recovered["odds_readiness"]["status"] == "missing"
+    assert recovered["odds_readiness"]["last_attempt_at"] == datetime(2026, 10, 1, 7, tzinfo=UTC)
+
+    older_observation = SimpleNamespace(
+        market="winner",
+        market_spec="winner_withOT",
+        bookmaker="pinnacle",
+        event_scheduled_at=event.scheduled_at,
+        event_home_participant="NYR",
+        event_away_participant="PIT",
+        observed_at=datetime(2026, 10, 1, 6, 15, tzinfo=UTC),
+        retrieved_at=datetime(2026, 10, 1, 6, 20, tzinfo=UTC),
+        status="success",
+    )
+    failure_after_success = evaluate_event_readiness(
+        cast(CanonicalEvent, event),
+        [],
+        [cast(OddsObservation, older_observation)],
+        policy,
+        now,
+        odds_attempts=[attempt_row],
+    )
+    assert failure_after_success["odds_readiness"]["status"] == "failed"
+    assert failure_after_success["odds_readiness"]["last_success_at"] == datetime(
+        2026, 10, 1, 6, 15, tzinfo=UTC
+    )
+
+
 def test_fresh_failed_prediction_cannot_be_reported_ready() -> None:
     """Свежий timestamp failed prediction не перекрывает факт failed результата."""
     event = SimpleNamespace(
@@ -442,3 +549,43 @@ def test_fresh_failed_prediction_cannot_be_reported_ready() -> None:
 
     assert readiness["prediction_readiness"]["status"] == "failed"
     assert readiness["readiness"]["status"] == "error"
+
+
+def test_future_provider_timestamp_cannot_make_odds_ready() -> None:
+    event = SimpleNamespace(
+        id=12,
+        tournament="nhl",
+        status="scheduled",
+        scheduled_at=datetime(2026, 10, 31, 23, tzinfo=UTC),
+        home_participant="NYR",
+        away_participant="PIT",
+    )
+    future_odds = SimpleNamespace(
+        market="winner",
+        market_spec="winner_withOT",
+        bookmaker="pinnacle",
+        observed_at=datetime(2026, 10, 30, 12, tzinfo=UTC),
+        retrieved_at=datetime(2026, 9, 26, 12, tzinfo=UTC),
+        event_scheduled_at=event.scheduled_at,
+        event_home_participant="NYR",
+        event_away_participant="PIT",
+    )
+
+    readiness = evaluate_event_readiness(
+        cast(CanonicalEvent, event),
+        [],
+        [cast(OddsObservation, future_odds)],
+        {
+            "preparation_deadline_hours": 6,
+            "prediction_freshness_hours": 24,
+            "odds_freshness_hours": 6,
+            "prediction_markets": [],
+            "odds_markets": [
+                {"market": "winner", "market_spec": "winner_withOT", "bookmaker": "pinnacle"}
+            ],
+        },
+        datetime(2026, 9, 26, 12, tzinfo=UTC),
+    )
+
+    assert readiness["odds_readiness"]["status"] == "stale"
+    assert readiness["odds_readiness"]["available"] == []

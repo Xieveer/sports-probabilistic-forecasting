@@ -262,6 +262,9 @@ class OddsObservation(Base):
     event_home_participant: str = Column(String(128), nullable=False)
     event_away_participant: str = Column(String(128), nullable=False)
     observed_at: datetime = Column(DateTime, nullable=False)
+    observed_at_source: str | None = Column(String(64), nullable=True)
+    retrieved_at: datetime | None = Column(DateTime, nullable=True)
+    provider_event_id: str | None = Column(String(128), nullable=True)
     values_json: str = Column(Text, nullable=False)
     source: str = Column(String(128), nullable=False)
 
@@ -274,6 +277,34 @@ class OddsObservation(Base):
             name="uq_odds_observation_event_market_bookmaker",
         ),
         Index("ix_odds_observation_event", "canonical_event_id", "observed_at"),
+    )
+
+
+class OddsAcquisitionAttempt(Base):
+    """Безопасный outcome одной batch-попытки получения будущих odds."""
+
+    __tablename__ = "odds_acquisition_attempts"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    run_id: str = Column(ForeignKey("data_cycle_runs.run_id"), nullable=False)
+    tournament: str = Column(String(64), nullable=False)
+    provider: str = Column(String(64), nullable=False)
+    status: str = Column(String(16), nullable=False)
+    failure_code: str | None = Column(String(64), nullable=True)
+    retrieved_at: datetime = Column(DateTime, nullable=False)
+    window_from: datetime | None = Column(DateTime, nullable=True)
+    window_to: datetime | None = Column(DateTime, nullable=True)
+    provider_events: int = Column(Integer, nullable=False, default=0)
+    matched_events: int = Column(Integer, nullable=False, default=0)
+    missing_events: int = Column(Integer, nullable=False, default=0)
+    rejected_events: int = Column(Integer, nullable=False, default=0)
+    requests_remaining: int | None = Column(Integer, nullable=True)
+    requests_used: int | None = Column(Integer, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('success','partial_success','failed')"),
+        UniqueConstraint("run_id", "provider", name="uq_odds_attempt_run_provider"),
+        Index("ix_odds_acquisition_attempt_tournament", "tournament", "retrieved_at"),
     )
 
 

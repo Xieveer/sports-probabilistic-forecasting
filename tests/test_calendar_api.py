@@ -16,6 +16,8 @@ from sports_forecast.service.db.models import (
     CalendarCoverage,
     CanonicalEvent,
     CanonicalEventRevision,
+    DataCycleRun,
+    OddsAcquisitionAttempt,
 )
 from sports_forecast.service.routers import calendar
 from sports_forecast.utils.bookmaker_calendar import bookmaker_window
@@ -117,6 +119,75 @@ def test_calendar_returns_canonical_event_without_prediction(monkeypatch) -> Non
     assert payload["events"][0]["odds_readiness"]["status"] == "missing"
     assert payload["events"][0]["readiness"]["status"] == "partial"
     assert payload["coverage"]["status"] == "unknown"
+
+
+def test_calendar_exposes_failed_odds_attempt_for_eligible_event(monkeypatch) -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        event = CanonicalEvent(
+            sport="ice_hockey",
+            tournament="nhl",
+            source="nhl_web_api",
+            source_event_id="2026020002",
+            scheduled_at=datetime(2026, 9, 26, 1),
+            status="scheduled",
+            current_revision_sha256="b" * 64,
+            home_participant="NYR",
+            away_participant="PIT",
+        )
+        session.add(event)
+        session.add(
+            DataCycleRun(
+                run_id="failed-odds-run",
+                tournament="nhl",
+                reason="scheduled",
+                status="failed",
+            )
+        )
+        session.flush()
+        session.add(
+            OddsAcquisitionAttempt(
+                run_id="failed-odds-run",
+                tournament="nhl",
+                provider="the_odds_api_v4",
+                status="failed",
+                failure_code="quota_exhausted",
+                retrieved_at=datetime(2026, 9, 26, 0),
+                window_from=datetime(2026, 9, 26, 1),
+                window_to=datetime(2026, 9, 26, 1),
+                provider_events=0,
+                matched_events=0,
+                missing_events=1,
+                rejected_events=0,
+            )
+        )
+        session.commit()
+
+    @contextmanager
+    def _get_test_session():
+        test_session = Session(engine)
+        try:
+            yield test_session
+        finally:
+            test_session.close()
+
+    monkeypatch.setattr(calendar, "get_session", _get_test_session)
+    monkeypatch.setattr(calendar, "utc_now", lambda: datetime(2026, 9, 26, 0, tzinfo=UTC))
+    try:
+        response = TestClient(app).get("/calendar/nhl", params={"period": "today"})
+    finally:
+        engine.dispose()
+
+    assert response.status_code == 200
+    readiness = response.json()["events"][0]["odds_readiness"]
+    assert readiness["status"] == "failed"
+    assert readiness["reason_code"] == "quota_exhausted"
+    assert readiness["last_attempt_at"] == "2026-09-26T00:00:00Z"
 
 
 def test_calendar_distinguishes_confirmed_empty_period_from_unknown(monkeypatch) -> None:

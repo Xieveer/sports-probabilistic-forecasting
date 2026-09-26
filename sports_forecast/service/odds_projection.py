@@ -42,6 +42,8 @@ class OddsObservationInput:
     observed_at: datetime
     values: dict[str, float]
     source: str
+    retrieved_at: datetime | None = None
+    provider_event_id: str | None = None
 
 
 def _parse_timestamp(value: Any) -> datetime | None:
@@ -123,6 +125,7 @@ def project_odds_rows(
                         observed_at=observed_at,
                         values=values,
                         source=source,
+                        retrieved_at=_parse_timestamp(row.get("fetched_at")),
                     )
                 )
     return output

@@ -1,7 +1,7 @@
 # TASK-025-2 — Отчёт о срезе readiness API
 
-> **Статус среза:** реализован, повторное независимое review пройдено
-> **Статус TASK:** `blocked` до добавления persisted failed-odds attempts в TASK-025-6
+> **Статус среза:** базовая версия и failed-attempt extension прошли review
+> **Статус TASK:** `done`
 > **Дата:** 2026-09-26
 > **Задача:** [TASK-025-2](../../backlog/tasks/TASK-025-2-event-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -40,11 +40,17 @@ evaluation сразу переводит старое observation в `stale`, д
 `fetched_at` находится внутри TTL. Новая линия требует нового однозначного
 source observation.
 
-DB migration `0011_event_odds_observations` additive. Runtime grants включают
-API read для canonical calendar/coverage/revision и odds projection, а worker
-write для odds observations. Ошибка DB sync после Parquet upsert возвращает
-ошибку вызывающему Odds refresh; повторное выполнение синхронизирует persisted
-store в БД.
+Migration `0011_event_odds_observations` создаёт odds projection. TASK-025-6
+добавил migration `0013_future_odds_acquisition` для batch attempts и provider
+timestamp provenance. Каждая попытка хранит run ID, результат, safe failure code,
+quota snapshot и UTC request window. Runtime grants дают API read для attempt
+history и refresh writer право записи.
+
+Calendar API теперь возвращает odds `last_success_at` и `last_attempt_at`.
+`odds.failed` выставляется, когда последняя применимая попытка завершилась
+ошибкой внутри request window уже после preparation deadline и новее успешного
+наблюдения/ответа. Более поздний успешный batch без линии оставляет `missing`;
+старое observation не удаляется.
 
 ## Изменённые границы
 
@@ -54,19 +60,13 @@ store в БД.
 - Alembic migration и database role grants;
 - целевые API/unit/migration tests, README и API architecture docs.
 
-Формулы odds/value, Telegram handlers, scheduler и service deployment не менялись.
-Production migration или production smoke не запускались.
+Формулы odds/value, Telegram handlers и service deployment не менялись. Production
+migration или production smoke не запускались.
 
 ## Непокрытые зависимости и риски
 
-- Odds observation отражает только реально сохранённые строки OddsStore. Текущий
-  refresh ограничен `need_to=today`, а live poll выбирает существующие prediction
-  rows; будущие календарные события без прогноза не получают линию автоматически.
-  Calendar-first future odds acquisition добавлена в критерии TASK-025-6 и остаётся
-  release gap до её выполнения.
-- Persisted failed odds acquisition lifecycle и `odds_readiness=failed` зависят
-  от TASK-025-6. До этого отсутствие/устаревание линии честно возвращает
-  `missing`/`stale`; API не синтезирует failed из старого successful observation.
+- Production API key/quota и фактический coverage подтверждаются Operations;
+  в этой задаче использовались fake provider fixtures без реальных odds запросов.
 - Readiness policy defaults заданы конфигурацией и могут изменяться без API
   изменения: NHL prediction TTL 24h, odds TTL 6h, deadline 6h; EPL fixture
   prediction TTL 12h, odds TTL 3h, deadline 4h.
@@ -91,6 +91,10 @@ Production migration или production smoke не запускались.
   h2h использует `market.last_update`; retrieval timestamp OddsStore не заменяет
   provider time. Close snapshot выбирается только при равенстве нормализованных
   команд и точного kickoff; наличие Draw/Tie распознаётся независимо от цены.
+- **Failed-attempt extension:** red-тесты до implementation падали на отсутствующем
+  future odds adapter; затем API/unit tests проверили окно события, preparation
+  deadline, более поздний success без линии, сохранённый старый observation и
+  `last_attempt_at`. Конкретные команды для extension приведены в отчёте TASK-025-6.
 - **Refactor:** DB grants ограничены необходимыми API read/worker write правами;
   API загружает readiness rows пакетно, а не выполняет запрос на компонент для
   каждого события.
@@ -115,3 +119,6 @@ Production migration или production smoke не запускались.
 Оба сценария воспроизведены regression tests и исправлены. Повторный review
 проверил identity matching, migration/grants, API semantics, football fixture
 и идемпотентный sync; блокирующих findings для реализованного среза нет.
+
+Расширение failed acquisition в TASK-025-6 реализовано и прошло повторное
+независимое review без блокирующих findings.

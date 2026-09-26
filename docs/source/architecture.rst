@@ -88,10 +88,11 @@ API эндпоинты:
 * ``GET /metrics`` — Prometheus метрики
 
 Состояние прогноза и коэффициентов вычисляется по отдельным timestamp и
-турнирным policy в ``conf/readiness/``. OddsStore observation привязывается к
-canonical event только при уникальном совпадении участников и точного kickoff;
-сбойные odds acquisition попытки и календарный сбор коэффициентов на будущие
-события остаются отдельной задачей Data Cycle.
+турнирным policy в ``conf/readiness/``. Odds observation привязывается к
+canonical event только при уникальном совпадении участников и точного kickoff.
+Calendar-first сбор будущих NHL odds записывает provider observation и отдельный
+результат попытки Data Cycle; API сообщает последнее успешное наблюдение и
+последнюю попытку сбора независимо.
 
 Мониторинг
 -----------
