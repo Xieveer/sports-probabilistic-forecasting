@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 import tomllib
 from pathlib import Path
 from typing import cast
 
+import pytest
 import yaml
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_SERVICES = {
     "api",
+    "data-cycle-dispatcher",
     "db",
     "telegram-bot",
     "source-acquirer",
@@ -44,6 +48,36 @@ def test_production_compose_contains_only_serving_services() -> None:
     assert "SF_API_DOMAIN" not in (PROJECT_ROOT / "docker-compose.prod.yml").read_text(
         encoding="utf-8"
     )
+
+
+def test_scheduler_compose_config_is_independent_of_systemd_environment() -> None:
+    """Профиль NHL полностью задаёт Compose interpolation даже в env -i."""
+    docker = shutil.which("docker")
+    if docker is None:
+        pytest.skip("Docker Compose не установлен")
+    result = subprocess.run(
+        [
+            docker,
+            "compose",
+            "--env-file",
+            str(SYSTEMD_DIR / "refresh-profile.env.example"),
+            "-f",
+            str(PROJECT_ROOT / "docker-compose.prod.yml"),
+            "--profile",
+            "scheduler",
+            "config",
+            "--quiet",
+        ],
+        cwd=PROJECT_ROOT,
+        env={"PATH": str(Path(docker).parent), "HOME": "/tmp"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+    bridge = (SYSTEMD_DIR / "dispatch-data-cycle.sh").read_text(encoding="utf-8")
+    assert "SF_COMPOSE_ENV_FILE:-/etc/sports-forecast/refresh/nhl.env" in bridge
 
 
 def test_production_runtime_images_are_external_and_immutable_inputs() -> None:
@@ -163,12 +197,18 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     source_acquirer = services["source-acquirer"]
     archive_sync = services["archive-sync"]
 
-    assert api["environment"] == {"DATABASE_URL_FILE": "/run/secrets/api_database_url"}
+    assert api["environment"] == {
+        "DATABASE_URL_FILE": "/run/secrets/api_database_url",
+        "SF_CONTROL_DATABASE_URL_FILE": "/run/secrets/control_database_url",
+        "SF_CONTROL_API_KEY_FILE": "/run/secrets/control_api_key",
+        "SF_CONTROL_ADMIN_IDS": "${BOT_ADMIN_USER_IDS:-}",
+    }
     assert "volumes" not in api
     assert "volumes" not in bot
     assert "DATABASE_URL" not in cast(dict[str, str], bot["environment"])
     bot_environment = cast(dict[str, str], bot["environment"])
     assert bot_environment["BOT_TOKEN_FILE"] == "/run/secrets/bot_token"
+    assert bot_environment["BOT_CONTROL_API_KEY_FILE"] == "/run/secrets/control_api_key"
     assert bot_environment["BOT_TELEGRAM_API_BASE_URL"] == "${BOT_TELEGRAM_API_BASE_URL:-}"
     assert worker["environment"] == {
         "DATABASE_URL_FILE": "/run/secrets/worker_database_url",
@@ -210,32 +250,46 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
 
 
 def test_systemd_scheduler_has_durable_cycle_before_calendar_acquisition() -> None:
-    """Scheduler создаёт durable run раньше provider и фиксирует ошибки acquisition."""
+    """Business dispatcher и fixed run template подготавливают durable cycle."""
     service = (SYSTEMD_DIR / "sports-forecast-canonical-refresh@.service").read_text(
         encoding="utf-8"
     )
     timer = (SYSTEMD_DIR / "sports-forecast-canonical-refresh@.timer").read_text(encoding="utf-8")
+    dispatcher_service = (SYSTEMD_DIR / "sports-forecast-data-cycle-dispatcher.service").read_text(
+        encoding="utf-8"
+    )
+    dispatcher_timer = (SYSTEMD_DIR / "sports-forecast-data-cycle-dispatcher.timer").read_text(
+        encoding="utf-8"
+    )
+    cycle_service = (SYSTEMD_DIR / "sports-forecast-data-cycle@.service").read_text(
+        encoding="utf-8"
+    )
+    bridge = (SYSTEMD_DIR / "dispatch-data-cycle.sh").read_text(encoding="utf-8")
     runner = (SYSTEMD_DIR / "run-canonical-refresh.sh").read_text(encoding="utf-8")
 
     assert "EnvironmentFile=/etc/sports-forecast/refresh/%i.env" in service
-    assert "TimeoutStartSec=90m" in service
-    assert "Restart=on-failure" in service
-    assert "RestartSec=5m" in service
-    assert "flock -n" in service
+    assert "dispatch-data-cycle.sh %i" in service
+    assert "OnBootSec=365d" in timer
+    assert "OnUnitActiveSec=60s" in dispatcher_timer
+    assert "dispatch-data-cycle.sh nhl" in dispatcher_service
+    assert "data-cycle-dispatcher" in bridge
+    assert "systemctl start --no-block" in bridge
+    assert "sports-forecast-data-cycle@${run_id}.service" in bridge
+    assert 'pipeline" != "nhl"' in bridge
+    assert "EnvironmentFile=/etc/sports-forecast/refresh/nhl.env" in cycle_service
+    assert "run-canonical-refresh.sh nhl %i" in cycle_service
+    assert "TimeoutStartSec=90m" in cycle_service
+    assert "flock -n" in cycle_service
     assert "canonical_full_refresh_cli" in runner
     assert "source_snapshot_cli" in runner
     assert runner.index("source_snapshot_cli") < runner.index("canonical_full_refresh_cli")
     assert "archive-sync" in runner
     assert runner.index("canonical_full_refresh_cli") < runner.index("archive-sync")
     assert "SF_NHL_SOURCE_STATE_PREFIX" in runner
-    assert "uuidgen" in runner
     assert "SF_WORKER_RUN_ID" in runner
     assert "data_cycle_cli" in runner
-    assert runner.index("control create") < runner.index("source_snapshot_cli")
     assert "--calendar-attempt" in runner
     assert "finish-run" in runner
-    assert "OnBootSec=365d" in timer
-    assert "Persistent=true" in timer
     assert "Unit=sports-forecast-canonical-refresh@%i.service" in timer
 
 
@@ -268,7 +322,12 @@ def test_scheduler_profile_provides_every_production_compose_input() -> None:
         "SF_API_DB_PASSWORD_FILE",
         "SF_WORKER_DB_PASSWORD_FILE",
         "SF_MIGRATOR_DB_PASSWORD_FILE",
+        "SF_CONTROL_API_DB_PASSWORD_FILE",
         "SF_MIGRATOR_DATABASE_URL_FILE",
+        "SF_CONTROL_DATABASE_URL_FILE",
+        "SF_CONTROL_API_KEY_FILE",
+        "SF_DATA_CYCLE_DISPATCHER_ID",
+        "BOT_ADMIN_USER_IDS",
         "SF_BOT_TOKEN_FILE",
         "ODDS_API_KEY_FREE_FILE",
         "ODDS_API_KEY_20K_FILE",

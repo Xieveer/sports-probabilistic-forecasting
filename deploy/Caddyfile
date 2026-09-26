@@ -8,5 +8,7 @@
     encode gzip zstd
     @internal_metrics path /metrics /metrics/*
     respond @internal_metrics 404
+    @admin_control path /admin /admin/*
+    respond @admin_control 404
     reverse_proxy api:8000
 }

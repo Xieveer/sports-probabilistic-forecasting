@@ -14,6 +14,7 @@ from sports_forecast.deploy.canonical_bootstrap import (
     build_nhl_bootstrap_bundle,
     import_nhl_bootstrap_bundle,
     refresh_nhl_canonical_from_csv,
+    refresh_nhl_canonical_with_summary_from_csv,
     verify_nhl_bootstrap_bundle,
 )
 from sports_forecast.deploy.serving_data import ArchiveVerificationError
@@ -138,6 +139,37 @@ def test_refresh_csv_creates_new_revision_for_provider_correction(tmp_path: Path
         assert refresh_nhl_canonical_from_csv(source_csv, session) == 1
         assert len(session.scalars(select(CanonicalEvent)).all()) == 2
         assert len(session.scalars(select(CanonicalEventRevision)).all()) == 3
+    finally:
+        session.close()
+
+
+def test_refresh_summary_counts_only_new_and_changed_events_in_this_attempt(
+    tmp_path: Path,
+) -> None:
+    """Повтор snapshots не удваивает counters, перенос считается изменением identity."""
+    source_csv = tmp_path / "source.csv"
+    _write_nhl_source_csv(source_csv)
+    session = _session()
+    try:
+        first = refresh_nhl_canonical_with_summary_from_csv(source_csv, session)
+        repeated = refresh_nhl_canonical_with_summary_from_csv(source_csv, session)
+        assert first.events_found == 2
+        assert first.new_events == 2
+        assert first.changed_events == 0
+        assert repeated.events_found == 2
+        assert repeated.new_events == 0
+        assert repeated.changed_events == 0
+
+        source_csv.write_text(
+            "id,datetime,match_is_end,home_score_ft,away_score_ft,match_end,home_team,away_team\n"
+            "202401,2024-01-01T21:00:00Z,1,3,2,REG,Home A,Away A\n"
+            "202403,2024-01-03T20:00:00Z,0,,,,Home C,Away C\n",
+            encoding="utf-8",
+        )
+        changed = refresh_nhl_canonical_with_summary_from_csv(source_csv, session)
+        assert changed.events_found == 2
+        assert changed.new_events == 1
+        assert changed.changed_events == 1
     finally:
         session.close()
 

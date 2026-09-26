@@ -44,7 +44,7 @@ def finish_stage(
 
 
 def finish_run(run_id: str, *, status: str, summary: dict[str, int] | None = None) -> None:
-    """Закрыть run после завершения всех обязательных действий."""
+    """Закрыть run вручную либо вывести итоговый статус из фактических стадий."""
     with get_session() as session:
         repository = DataCycleRunRepository(session)
         run = repository.get(run_id)

@@ -6,20 +6,23 @@ import hashlib
 import json
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf, open_dict
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from sports_forecast.config.loaders import (
     load_tournament_config,  # noqa: F401 - публичная точка подмены для теста.
     load_tournament_quality_gate_config,
 )
 from sports_forecast.data.clean import process_tournament
-from sports_forecast.deploy.canonical_bootstrap import refresh_nhl_canonical_from_csv
+from sports_forecast.deploy.canonical_bootstrap import (
+    refresh_nhl_canonical_with_summary_from_csv,
+)
 from sports_forecast.deploy.canonical_snapshot import export_canonical_snapshot
 from sports_forecast.deploy.model_bundle import BundleVerificationError, load_current_model_bundle
 from sports_forecast.deploy.source_state import export_nhl_source_state
@@ -27,13 +30,16 @@ from sports_forecast.features.features_build import process_tournament_new
 from sports_forecast.materialize import materialize_predictions
 from sports_forecast.orchestration.future_odds import run_nhl_future_odds_batch
 from sports_forecast.service.db.engine import get_session
-from sports_forecast.service.db.models import CanonicalEvent, CanonicalEventRevision
+from sports_forecast.service.db.models import CanonicalEvent, CanonicalEventRevision, Prediction
 from sports_forecast.service.db.refresh_lock import RefreshLockRepository
 from sports_forecast.service.db.repository import (
+    CalendarRepository,
     DataCycleRunRepository,
     PredictionRepository,
     WorkerExecutionRepository,
 )
+from sports_forecast.service.event_readiness import evaluate_event_readiness
+from sports_forecast.service.readiness_policy import load_readiness_policy
 from sports_forecast.utils.log_config import get_logger
 from sports_forecast.validation.canonical_freshness import validate_prediction_result_freshness
 
@@ -150,6 +156,69 @@ def _finish_cycle_stage(
             )
 
 
+def _eligible_calendar_events(
+    session: Session, *, tournament: str, at: datetime
+) -> tuple[list[CanonicalEvent], dict[str, Any]] | None:
+    """Select the policy-defined upcoming denominator for one run timestamp."""
+    policy = load_readiness_policy(tournament)
+    days = policy.get("eligibility_window_days") if policy is not None else None
+    if not isinstance(days, int) or isinstance(days, bool) or days <= 0:
+        return None
+    now = at.replace(tzinfo=UTC) if at.tzinfo is None else at.astimezone(UTC)
+    events = session.scalars(
+        select(CanonicalEvent)
+        .where(
+            CanonicalEvent.tournament == tournament,
+            CanonicalEvent.scheduled_at >= now.replace(tzinfo=None),
+            CanonicalEvent.scheduled_at < (now + timedelta(days=days)).replace(tzinfo=None),
+            CanonicalEvent.status == "scheduled",
+        )
+        .order_by(CanonicalEvent.scheduled_at, CanonicalEvent.source_event_id)
+    ).all()
+    return events, policy
+
+
+def _readiness_counts(
+    session: Session,
+    *,
+    tournament: str,
+    at: datetime,
+) -> dict[str, int]:
+    """Count event readiness on one explicit calendar window and timestamp."""
+    selected = _eligible_calendar_events(session, tournament=tournament, at=at)
+    if selected is None:
+        return {}
+    events, policy = selected
+    predictions, odds, attempts = CalendarRepository(session).get_readiness_data(events)
+    counts = {
+        "eligible_events": len(events),
+        "odds_eligible_events": len(events),
+        "predictions_ready": 0,
+        "odds_ready": 0,
+        "fully_ready_events": 0,
+        "partially_ready_events": 0,
+        "errors": 0,
+    }
+    for event in events:
+        readiness = evaluate_event_readiness(
+            event,
+            predictions.get(event.id, []),
+            odds.get(event.id, []),
+            policy,
+            at,
+            attempts.get(event.id, []),
+        )
+        prediction_state = readiness["prediction_readiness"]["status"]
+        odds_state = readiness["odds_readiness"]["status"]
+        overall_state = readiness["readiness"]["status"]
+        counts["predictions_ready"] += int(prediction_state == "ready")
+        counts["odds_ready"] += int(odds_state == "ready")
+        counts["fully_ready_events"] += int(overall_state == "ready")
+        counts["partially_ready_events"] += int(overall_state == "partial")
+        counts["errors"] += int(overall_state == "error")
+    return counts
+
+
 def run_full_refresh(
     cfg: DictConfig,
     *,
@@ -181,7 +250,7 @@ def run_full_refresh(
         cycle_present = False
         if source_csv is not None:
             with get_session() as session:
-                imported_events = refresh_nhl_canonical_from_csv(source_csv, session)
+                import_summary = refresh_nhl_canonical_with_summary_from_csv(source_csv, session)
             with get_session() as session:
                 cycle = DataCycleRunRepository(session)
                 if cycle.get(run_id) is not None:
@@ -190,7 +259,12 @@ def run_full_refresh(
                         run_id,
                         "calendar",
                         status="success",
-                        counts={"events": imported_events},
+                        counts={
+                            "events": import_summary.events_found,
+                            "events_found": import_summary.events_found,
+                            "new_events": import_summary.new_events,
+                            "changed_events": import_summary.changed_events,
+                        },
                     )
         if not cycle_present:
             cycle_present = _start_cycle_stage(run_id, "data_odds")
@@ -204,6 +278,8 @@ def run_full_refresh(
                     now=refreshed_at,
                 )
             stage_status = attempt.status
+            if stage_status == "success" and attempt.missing_events > 0:
+                stage_status = "partial_success"
             with get_session() as session:
                 DataCycleRunRepository(session).finish_stage(
                     run_id,
@@ -212,7 +288,7 @@ def run_full_refresh(
                     counts={
                         "canonical_events": attempt.matched_events + attempt.missing_events,
                         "independently_observed_events": attempt.matched_events,
-                        "errors": int(attempt.status == "failed"),
+                        "stage_errors": int(attempt.status == "failed"),
                     },
                     failure_code=(
                         "odds_acquisition_failed" if attempt.status == "failed" else None
@@ -289,6 +365,7 @@ def run_full_refresh(
             _start_cycle_stage(run_id, "publication")
             with get_session() as session:
                 published = materialize_predictions(runtime_cfg, version="prod", session=session)
+                readiness_as_of = datetime.now(UTC)
                 result = FullRefreshResult(
                     published=published,
                     failure_code=None if published else "materialization_failed",
@@ -306,26 +383,43 @@ def run_full_refresh(
                 cycle = DataCycleRunRepository(session)
                 cycle_exists = cycle.get(run_id) is not None
                 if published:
-                    predictions_count = repository.count_showcase(
-                        tournament=tournament,
-                        market=market,
-                        market_spec=str(cfg.market_spec.name),
+                    predictions_count = int(
+                        session.scalar(
+                            select(func.count(Prediction.id)).where(
+                                Prediction.tournament == tournament,
+                                Prediction.market == market,
+                                Prediction.market_spec == str(cfg.market_spec.name),
+                                Prediction.refresh_run_id == run_id,
+                                Prediction.status == "ok",
+                            )
+                        )
+                        or 0
                     )
                     execution.succeed(run_id, predictions_count=predictions_count)
                     if cycle_exists:
+                        publication_counts = {
+                            "predictions": predictions_count,
+                            **_readiness_counts(session, tournament=tournament, at=readiness_as_of),
+                        }
                         cycle.finish_stage(
                             run_id,
                             "publication",
                             status="success",
-                            counts={"predictions": predictions_count},
+                            at=readiness_as_of,
+                            counts=publication_counts,
                         )
                 else:
                     execution.fail(run_id, failure_code="materialization_failed")
                     if cycle_exists:
+                        publication_counts = _readiness_counts(
+                            session, tournament=tournament, at=readiness_as_of
+                        )
                         cycle.finish_stage(
                             run_id,
                             "publication",
                             status="failed",
+                            at=readiness_as_of,
+                            counts=publication_counts,
                             failure_code="publication_failed",
                         )
         if published and archive_root is not None:

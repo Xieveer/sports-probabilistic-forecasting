@@ -19,6 +19,9 @@ from sports_forecast.service.data_cycle_history import get_current_run, list_rec
 from sports_forecast.service.db.models import (
     Base,
     CalendarCoverage,
+    CanonicalEvent,
+    OddsObservation,
+    Prediction,
 )
 from sports_forecast.service.db.repository import DataCycleRunRepository
 from sports_forecast.service.routers import calendar as calendar_router
@@ -94,6 +97,11 @@ def test_run_has_durable_waiting_stages_and_terminal_summary(session: Session) -
     assert json.loads(stored.summary_json or "{}")["events"] == 24
     dto = list_recent_runs(session, "nhl", limit=1)[0]
     assert dto["summary"]["events"] == json.loads(stored.summary_json or "{}")["events"]
+    assert dto["summary"]["last_successful_updates"]["calendar"] == {
+        "last_successful_at": None,
+        "source": "calendar_coverages.last_successful_at",
+        "status": "unknown",
+    }
     calendar = next(stage for stage in stored.stages if stage.stage == "calendar")
     assert calendar.status == "success"
     assert calendar.counts_json == '{"events":24}'
@@ -305,6 +313,8 @@ def test_data_cycle_summary_preserves_unknown_counts_and_zero_denominator_as_na(
         "numerator": None,
         "denominator": None,
         "ratio": None,
+        "status": "unknown",
+        "reason_code": "producer_not_recorded",
     }
     assert "secret_token" not in summary
     persisted_summary = json.loads(stored.summary_json or "{}")
@@ -331,7 +341,10 @@ def test_data_cycle_summary_reports_observed_prediction_coverage(session: Sessio
     )
     repo.start_stage("football-coverage", "predictions")
     repo.finish_stage(
-        "football-coverage", "predictions", status="success", counts={"predictions": 3}
+        "football-coverage",
+        "predictions",
+        status="success",
+        counts={"predictions_ready": 3},
     )
     repo.finish_run(
         "football-coverage",
@@ -341,7 +354,256 @@ def test_data_cycle_summary_reports_observed_prediction_coverage(session: Sessio
 
     summary = list_recent_runs(session, "football_fixture", limit=1)[0]["summary"]
 
-    assert summary["prediction_coverage"] == {"numerator": 3, "denominator": 4, "ratio": 0.75}
+    assert summary["prediction_coverage"] == {
+        "numerator": 3,
+        "denominator": 4,
+        "ratio": 0.75,
+        "status": "known",
+        "reason_code": None,
+    }
+
+
+def test_data_cycle_summary_empty_policy_window_is_not_zero_percent(session: Session) -> None:
+    """Подтверждённое пустое окно имеет нулевой denominator и отображается как n/a."""
+    repo = DataCycleRunRepository(session)
+    run_id = "empty-window"
+    repo.create(run_id=run_id, tournament="football_fixture", reason="manual")
+    for stage, counts in (
+        ("calendar", {"events_found": 0}),
+        ("data_odds", {"odds_eligible_events": 0, "odds_ready": 0}),
+        ("quality", {"eligible_events": 0}),
+        ("predictions", {"predictions_ready": 0}),
+    ):
+        repo.start_stage(run_id, stage)
+        repo.finish_stage(run_id, stage, status="success", counts=counts)
+    repo.finish_run(
+        run_id,
+        status="partial_success",
+        required_stages=frozenset({"quality", "predictions"}),
+    )
+
+    summary = list_recent_runs(session, "football_fixture", limit=1)[0]["summary"]
+
+    assert summary["prediction_coverage"] == {
+        "numerator": 0,
+        "denominator": 0,
+        "ratio": None,
+        "status": "n/a",
+        "reason_code": "empty_eligible_set",
+    }
+    assert summary["odds_coverage"] == {
+        "numerator": 0,
+        "denominator": 0,
+        "ratio": None,
+        "status": "n/a",
+        "reason_code": "empty_eligible_set",
+    }
+
+
+def test_summary_uses_same_run_readiness_counters_and_does_not_double_count_stage_failure(
+    session: Session,
+) -> None:
+    """Готовность рынка берётся из stage producer, ошибки stage не дублируются."""
+    repo = DataCycleRunRepository(session)
+    repo.create(run_id="football-readiness", tournament="football_fixture", reason="manual")
+    repo.start_stage("football-readiness", "calendar")
+    repo.finish_stage(
+        "football-readiness",
+        "calendar",
+        status="success",
+        counts={"events_found": 4, "new_events": 1, "changed_events": 2},
+    )
+    repo.start_stage("football-readiness", "data_odds")
+    repo.finish_stage(
+        "football-readiness",
+        "data_odds",
+        status="failed",
+        failure_code="odds_acquisition_failed",
+        counts={"odds_eligible_events": 3, "odds_ready": 1, "errors": 1},
+    )
+    repo.fail_run("football-readiness", failure_code="odds_acquisition_failed")
+
+    summary = list_recent_runs(session, "football_fixture", limit=1)[0]["summary"]
+
+    assert summary["events_found"] == 4
+    assert summary["new_events"] == 1
+    assert summary["changed_events"] == 2
+    assert summary["odds_ready"] == 1
+    assert summary["odds_coverage"] == {
+        "numerator": 1,
+        "denominator": 3,
+        "ratio": 1 / 3,
+        "status": "known",
+        "reason_code": None,
+    }
+    assert summary["event_errors"] == 1
+    assert summary["stage_errors"] == 1
+    assert summary["errors"] == 2
+
+
+def test_failed_run_persists_last_successful_component_times_from_prior_stages(
+    session: Session,
+) -> None:
+    """Неуспешная попытка сохраняет provenance прежних успешных компонентов."""
+    repo = DataCycleRunRepository(session)
+    old_start = datetime(2026, 9, 25, 10)
+    successful_at = datetime(2026, 9, 25, 11)
+    repo.create(run_id="old-success", tournament="nhl", reason="scheduled", at=old_start)
+    for stage in ("calendar", "data_odds", "quality", "predictions", "publication", "archive_sync"):
+        repo.start_stage("old-success", stage, at=old_start)
+        repo.finish_stage("old-success", stage, status="success", at=successful_at)
+    event = CanonicalEvent(
+        sport="ice_hockey",
+        tournament="nhl",
+        source="nhl_web_api",
+        source_event_id="last-success-event",
+        scheduled_at=successful_at,
+        status="scheduled",
+        current_revision_sha256="a" * 64,
+        home_participant="NYR",
+        away_participant="PIT",
+    )
+    session.add(event)
+    session.add(
+        CalendarCoverage(
+            tournament="nhl",
+            source="nhl_web_api",
+            covered_from=old_start,
+            covered_until=successful_at,
+            complete=True,
+            checked_at=successful_at,
+            last_successful_at=successful_at,
+        )
+    )
+    session.flush()
+    session.add(
+        OddsObservation(
+            canonical_event_id=event.id,
+            market="winner",
+            market_spec="winner_withOT",
+            bookmaker="pinnacle",
+            event_scheduled_at=successful_at,
+            event_home_participant="NYR",
+            event_away_participant="PIT",
+            observed_at=successful_at,
+            retrieved_at=successful_at,
+            values_json='{"home": 2.0}',
+            source="the_odds_api",
+        )
+    )
+    session.add(
+        Prediction(
+            match_id="last-success-event",
+            tournament="nhl",
+            market="winner_withOT",
+            market_spec="winner_withOT",
+            model_version="test-model",
+            algorithm="test",
+            featureset="test",
+            predictions_json="{}",
+            prediction_ts=successful_at,
+            status="ok",
+        )
+    )
+    repo.finish_run(
+        "old-success",
+        status="success",
+        required_stages=NHL_REQUIRED_STAGES,
+        at=successful_at,
+    )
+
+    failed_at = datetime(2026, 9, 26, 10)
+    repo.create(run_id="new-failure", tournament="nhl", reason="scheduled", at=failed_at)
+    repo.start_stage("new-failure", "calendar", at=failed_at)
+    future_update = datetime(2030, 1, 1)
+    session.add(
+        Prediction(
+            match_id="future-event",
+            tournament="nhl",
+            market="winner_withOT",
+            market_spec="winner_withOT",
+            model_version="future-model",
+            algorithm="test",
+            featureset="test",
+            predictions_json="{}",
+            prediction_ts=future_update,
+            status="ok",
+        )
+    )
+    session.add(
+        OddsObservation(
+            canonical_event_id=event.id,
+            market="total",
+            market_spec="future-market",
+            bookmaker="pinnacle",
+            event_scheduled_at=successful_at,
+            event_home_participant="NYR",
+            event_away_participant="PIT",
+            observed_at=future_update,
+            retrieved_at=future_update,
+            values_json='{"over": 2.0}',
+            source="the_odds_api",
+        )
+    )
+    repo.fail_run("new-failure", failure_code="source_fetch_failed", at=failed_at)
+
+    dto = list_recent_runs(session, "nhl", limit=1)[0]
+    updates = dto["summary"]["last_successful_updates"]
+
+    for component in ("calendar", "odds", "predictions"):
+        assert updates[component] == {
+            "last_successful_at": "2026-09-25T11:00:00Z",
+            "source": {
+                "calendar": "calendar_coverages.last_successful_at",
+                "odds": "odds_observations.retrieved_at",
+                "predictions": "predictions.prediction_ts",
+            }[component],
+            "status": "known",
+        }
+    assert dto["summary"] == json.loads(
+        repo.get("new-failure").summary_json or "{}"  # type: ignore[union-attr]
+    )
+
+
+@pytest.mark.parametrize(
+    ("partial_stage", "failed_stage", "required", "expected"),
+    [
+        (None, None, NHL_REQUIRED_STAGES, "success"),
+        ("data_odds", None, NHL_REQUIRED_STAGES, "partial_success"),
+        (None, "archive_sync", NHL_REQUIRED_STAGES, "failed"),
+        (None, "archive_sync", FOOTBALL_REQUIRED_STAGES, "partial_success"),
+    ],
+)
+def test_finish_run_auto_uses_stage_and_pipeline_policy(
+    session: Session,
+    partial_stage: str | None,
+    failed_stage: str | None,
+    required: frozenset[str],
+    expected: str,
+) -> None:
+    """Auto terminal status follows producer results and required-stage policy."""
+    repo = DataCycleRunRepository(session)
+    repo.create(run_id="auto-run", tournament="nhl", reason="scheduled")
+    for stage in ("calendar", "data_odds", "quality", "predictions", "publication", "archive_sync"):
+        repo.start_stage("auto-run", stage)
+        result = (
+            "failed"
+            if stage == failed_stage
+            else "partial_success"
+            if stage == partial_stage
+            else "success"
+        )
+        repo.finish_stage(
+            "auto-run",
+            stage,
+            status=result,
+            failure_code="archive_sync_failed" if result == "failed" else None,
+        )
+
+    repo.finish_run("auto-run", status="auto", required_stages=required)
+
+    run = repo.get("auto-run")
+    assert run is not None and run.status == expected
 
 
 def test_supplemental_summary_cannot_override_stage_derived_coverage(session: Session) -> None:
@@ -356,12 +618,12 @@ def test_supplemental_summary_cannot_override_stage_derived_coverage(session: Se
         run_id,
         "data_odds",
         status="partial_success",
-        counts={"independently_observed_events": 2},
+        counts={"odds_eligible_events": 4, "odds_ready": 2},
     )
     repo.start_stage(run_id, "quality")
     repo.finish_stage(run_id, "quality", status="success", counts={"eligible_events": 4})
     repo.start_stage(run_id, "predictions")
-    repo.finish_stage(run_id, "predictions", status="success", counts={"predictions": 3})
+    repo.finish_stage(run_id, "predictions", status="success", counts={"predictions_ready": 3})
     repo.start_stage(run_id, "publication")
     repo.finish_stage(run_id, "publication", status="success")
 
@@ -383,7 +645,13 @@ def test_supplemental_summary_cannot_override_stage_derived_coverage(session: Se
     assert summary["events_found"] == 5
     assert summary["eligible_events"] == 4
     assert summary["predictions_ready"] == 3
-    assert summary["prediction_coverage"] == {"numerator": 3, "denominator": 4, "ratio": 0.75}
+    assert summary["prediction_coverage"] == {
+        "numerator": 3,
+        "denominator": 4,
+        "ratio": 0.75,
+        "status": "known",
+        "reason_code": None,
+    }
     assert summary["errors"] == 0
 
 
@@ -463,3 +731,7 @@ def test_executor_failure_code_uses_current_stage(
     assert stage.failure_code == expected_failure_code
     assert run.summary_json is not None
     assert json.loads(run.summary_json)["errors"] == 1
+    if stage_name == "quality":
+        updates = json.loads(run.summary_json)["last_successful_updates"]
+        assert {item["status"] for item in updates.values()} == {"unknown"}
+        assert {item["last_successful_at"] for item in updates.values()} == {None}

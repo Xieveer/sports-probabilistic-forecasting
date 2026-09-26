@@ -317,10 +317,11 @@ class DataCycleRun(Base):
     run_id: str = Column(String(128), nullable=False, unique=True)
     tournament: str = Column(String(64), nullable=False, index=True)
     reason: str = Column(String(16), nullable=False)
-    status: str = Column(String(24), nullable=False)
+    status: str = Column(String(24), nullable=False, server_default="waiting")
     current_stage: str | None = Column(String(32), nullable=True)
     failure_code: str | None = Column(String(64), nullable=True)
     summary_json: str | None = Column(Text, nullable=True)
+    scheduled_for: datetime | None = Column(DateTime, nullable=True)
     requested_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
     started_at: datetime | None = Column(DateTime, nullable=True)
     heartbeat_at: datetime | None = Column(DateTime, nullable=True)
@@ -352,7 +353,7 @@ class DataCycleStageResult(Base):
     id: int = Column(Integer, primary_key=True, autoincrement=True)
     run_id: str = Column(ForeignKey("data_cycle_runs.run_id"), nullable=False, index=True)
     stage: str = Column(String(32), nullable=False)
-    status: str = Column(String(24), nullable=False)
+    status: str = Column(String(24), nullable=False, server_default="waiting")
     failure_code: str | None = Column(String(64), nullable=True)
     counts_json: str | None = Column(Text, nullable=True)
     started_at: datetime | None = Column(DateTime, nullable=True)
@@ -369,6 +370,54 @@ class DataCycleStageResult(Base):
         ),
         Index("ix_data_cycle_stages_run_status", "run_id", "status"),
     )
+
+
+class PipelineSchedule(Base):
+    """Персистентная бизнес-настройка расписания pipeline."""
+
+    __tablename__ = "pipeline_schedules"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    pipeline_id: str = Column(String(64), nullable=False, unique=True)
+    enabled: bool = Column(Boolean, nullable=False, default=False)
+    base_time: str = Column(String(5), nullable=False, default="10:00")
+    timezone: str = Column(String(64), nullable=False, default="Europe/Moscow")
+    interval_hours: int = Column(Integer, nullable=False, default=24)
+    revision: int = Column(Integer, nullable=False, default=1)
+    next_run_at: datetime | None = Column(DateTime, nullable=True)
+    last_run_at: datetime | None = Column(DateTime, nullable=True)
+    last_missed_slots: int = Column(Integer, nullable=False, default=0)
+    updated_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("interval_hours IN (4,6,8,12,24)"),
+        CheckConstraint("revision >= 1"),
+        CheckConstraint("last_missed_slots >= 0"),
+    )
+
+
+class DataCycleControlRequest(Base):
+    """Идемпотентный ключ принятого API/dispatcher запроса на Data Cycle."""
+
+    __tablename__ = "data_cycle_control_requests"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    idempotency_key: str = Column(String(192), nullable=False, unique=True)
+    pipeline_id: str = Column(String(64), nullable=False)
+    run_id: str = Column(ForeignKey("data_cycle_runs.run_id"), nullable=False)
+    created_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (Index("ix_data_cycle_control_requests_run", "run_id"),)
+
+
+class DataCycleDispatcherState(Base):
+    """Heartbeat host dispatcher для объяснимости просроченного scheduler."""
+
+    __tablename__ = "data_cycle_dispatcher_state"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    dispatcher_id: str = Column(String(64), nullable=False, unique=True)
+    heartbeat_at: datetime = Column(DateTime, nullable=False)
 
 
 class RefreshWatermark(Base):

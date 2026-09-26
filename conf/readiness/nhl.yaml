@@ -1,4 +1,5 @@
 # Readiness policy для NHL. Сроки независимы от календарного горизонта.
+eligibility_window_days: 30
 prediction_freshness_hours: 24
 odds_freshness_hours: 6
 preparation_deadline_hours: 6

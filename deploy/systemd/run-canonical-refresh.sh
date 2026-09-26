@@ -2,9 +2,18 @@
 # Один scheduler run с durable Data Cycle outcome.
 set -euo pipefail
 
-profile="${1:?нужен идентификатор tournament profile}"
-if [[ ! "$profile" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
-  echo "Недопустимый идентификатор tournament profile" >&2
+pipeline_id="${1:?нужен идентификатор pipeline}"
+run_id="${2:?нужен заранее созданный run UUID}"
+if (( $# != 2 )); then
+  echo "Ожидаются аргументы: pipeline_id run_id" >&2
+  exit 2
+fi
+case "$pipeline_id" in
+  nhl) ;;
+  *) echo "Недопустимый pipeline" >&2; exit 2 ;;
+esac
+if [[ ! "$run_id" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]]; then
+  echo "Недопустимый run UUID" >&2
   exit 2
 fi
 
@@ -14,14 +23,16 @@ fi
 : "${SF_ALGORITHM:?нужен SF_ALGORITHM}"
 : "${SF_FEATURES:?нужен SF_FEATURES}"
 
-export SF_WORKER_RUN_ID="${profile}-$(date -u +%Y%m%dT%H%M%SZ)-$(uuidgen)"
+if [[ "$SF_TOURNAMENT" != "$pipeline_id" ]]; then
+  echo "Pipeline не соответствует фиксированному tournament profile" >&2
+  exit 2
+fi
+export SF_WORKER_RUN_ID="${run_id}"
 compose=(/usr/bin/docker compose -f docker-compose.prod.yml)
 control() {
   "${compose[@]}" --profile worker run --rm --no-deps worker \
     /app/.venv/bin/python -m sports_forecast.orchestration.data_cycle_cli "$@"
 }
-control create --run-id "${SF_WORKER_RUN_ID}" --tournament "${SF_TOURNAMENT}" \
-  --reason "${SF_DATA_CYCLE_REASON:-scheduled}"
 active_stage="calendar"
 manifest_list=""
 on_exit() {
@@ -84,5 +95,5 @@ rm -f -- "${manifest_list}"
 manifest_list=""
 control finish-stage --run-id "${SF_WORKER_RUN_ID}" --stage "${active_stage}" \
   --status success --counts "{\"artifacts\":${artifact_count}}"
-control finish-run --run-id "${SF_WORKER_RUN_ID}" --status partial_success --summary '{}'
+control finish-run --run-id "${SF_WORKER_RUN_ID}" --status auto
 trap - EXIT

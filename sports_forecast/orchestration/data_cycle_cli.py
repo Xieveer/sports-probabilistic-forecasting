@@ -42,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
     finish_run_parser = commands.add_parser("finish-run")
     finish_run_parser.add_argument("--run-id", required=True)
     finish_run_parser.add_argument(
-        "--status", choices=("success", "partial_success"), required=True
+        "--status", choices=("auto", "success", "partial_success"), required=True
     )
     finish_run_parser.add_argument("--summary", default="{}")
 

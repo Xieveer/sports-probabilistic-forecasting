@@ -1,0 +1,16 @@
+[Unit]
+Description=Dispatch due Sports Forecast Data Cycle runs
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+StartLimitIntervalSec=15min
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/sports-forecast
+EnvironmentFile=/etc/sports-forecast/refresh/dispatcher.env
+ExecStart=/opt/sports-forecast/deploy/systemd/dispatch-data-cycle.sh nhl
+TimeoutStartSec=2min
+User=root
+Group=root

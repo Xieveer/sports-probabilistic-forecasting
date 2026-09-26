@@ -1,6 +1,6 @@
 # TASK-025-10 — Полные счётчики и покрытие Data Cycle
 
-> **Статус:** backlog
+> **Статус:** done
 > **Владелец:** Developer
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -14,18 +14,18 @@
 
 ## Критерии приёмки
 
-- [ ] Summary считает найденные, новые и изменённые canonical события из
+- [x] Summary считает найденные, новые и изменённые canonical события из
   конкретной попытки календаря; не использует общее число записей БД как
   результат одного запуска.
-- [ ] Eligible для прогноза и котировок задаётся явной policy/окном;
+- [x] Eligible для прогноза и котировок задаётся явной policy/окном;
   ready/full/partial/errors считаются на том же множестве и на дату run.
-- [ ] Для каждого покрытия сохранены numerator, denominator и доля;
+- [x] Для каждого покрытия сохранены numerator, denominator и доля;
   denominator 0 даёт `n/a`, а не `0%` или `100%`. Отсутствующий producer
   обозначается `unknown` с причиной, не синтезируется нулём.
-- [ ] `success`, `partial_success` и `failed` summary не скрывают последнее
+- [x] `success`, `partial_success` и `failed` summary не скрывают последнее
   успешное обновление каждого компонента; history API из TASK-025-4 читает
   ту же сохранённую итоговую запись.
-- [ ] NHL и контрольный football fixture используют общий summary контракт,
+- [x] NHL и контрольный football fixture используют общий summary контракт,
   разные рынки и policy; fault tests проверяют отказ одной стадии и
   идемпотентный повтор без удвоения счётчиков.
 
@@ -34,3 +34,9 @@
 - После TASK-025-3/6/7. TASK-025-5 использует эти поля в Telegram.
 - Unit/integration с фиксированным временем и идентификатором run;
   независимый Reviewer и отчёт `docs/changes/done/` до release.
+
+## Выполнение
+
+Реализация завершена и прошла независимое повторное review. Подробные изменения,
+команды проверок и остаточные runtime gates зафиксированы в
+[отчёте TASK-025-10](../../changes/done/TASK-025-10-run-summary-producers.md).

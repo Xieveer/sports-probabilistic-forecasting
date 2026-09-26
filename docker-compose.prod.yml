@@ -37,13 +37,46 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL_FILE: /run/secrets/api_database_url
+      SF_CONTROL_DATABASE_URL_FILE: /run/secrets/control_database_url
+      SF_CONTROL_API_KEY_FILE: /run/secrets/control_api_key
+      SF_CONTROL_ADMIN_IDS: ${BOT_ADMIN_USER_IDS:-}
     secrets:
       - api_database_url
+      - control_database_url
+      - control_api_key
     depends_on:
       db:
         condition: service_healthy
     cpus: "1.5"
     mem_limit: 1536m
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    logging: *prod_logging
+
+  data-cycle-dispatcher:
+    image: ${SF_API_IMAGE:?set SF_API_IMAGE to an immutable ghcr image digest}
+    pull_policy: always
+    command:
+      [
+        "/app/.venv/bin/python",
+        "-m",
+        "sports_forecast.orchestration.data_cycle_dispatcher_cli",
+        "--pipeline",
+        "nhl",
+        "--dispatcher-id",
+        "${SF_DATA_CYCLE_DISPATCHER_ID:-nhl-host}",
+      ]
+    environment:
+      SF_CONTROL_DATABASE_URL_FILE: /run/secrets/control_database_url
+    secrets:
+      - control_database_url
+    profiles: ["scheduler"]
+    depends_on:
+      db:
+        condition: service_healthy
+    cpus: "0.5"
+    mem_limit: 512m
     user: "10001:10001"
     read_only: true
     tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
@@ -58,12 +91,14 @@ services:
       BOT_ALLOWED_USER_IDS: ${BOT_ALLOWED_USER_IDS:-}
       BOT_ADMIN_USER_IDS: ${BOT_ADMIN_USER_IDS:-}
       BOT_API_BASE_URL: http://api:8000
+      BOT_CONTROL_API_KEY_FILE: /run/secrets/control_api_key
       BOT_TELEGRAM_API_BASE_URL: ${BOT_TELEGRAM_API_BASE_URL:-}
     depends_on:
       api:
         condition: service_started
     secrets:
       - bot_token
+      - control_api_key
     cpus: "0.5"
     mem_limit: 384m
     user: "10001:10001"
@@ -174,6 +209,7 @@ services:
       SF_API_DB_PASSWORD_FILE: /run/secrets/api_db_password
       SF_WORKER_DB_PASSWORD_FILE: /run/secrets/worker_db_password
       SF_MIGRATOR_DB_PASSWORD_FILE: /run/secrets/migrator_db_password
+      SF_CONTROL_API_DB_PASSWORD_FILE: /run/secrets/control_api_db_password
     volumes:
       - ./deploy/postgres/init-roles.sh:/bootstrap/init-roles.sh:ro
     secrets:
@@ -181,6 +217,7 @@ services:
       - api_db_password
       - worker_db_password
       - migrator_db_password
+      - control_api_db_password
     depends_on:
       db:
         condition: service_healthy
@@ -212,12 +249,18 @@ secrets:
     file: ${SF_WORKER_DB_PASSWORD_FILE:?set SF_WORKER_DB_PASSWORD_FILE}
   migrator_db_password:
     file: ${SF_MIGRATOR_DB_PASSWORD_FILE:?set SF_MIGRATOR_DB_PASSWORD_FILE}
+  control_api_db_password:
+    file: ${SF_CONTROL_API_DB_PASSWORD_FILE:?set SF_CONTROL_API_DB_PASSWORD_FILE}
   api_database_url:
     file: ${SF_API_DATABASE_URL_FILE:?set SF_API_DATABASE_URL_FILE}
   worker_database_url:
     file: ${SF_WORKER_DATABASE_URL_FILE:?set SF_WORKER_DATABASE_URL_FILE}
   migrator_database_url:
     file: ${SF_MIGRATOR_DATABASE_URL_FILE:?set SF_MIGRATOR_DATABASE_URL_FILE}
+  control_database_url:
+    file: ${SF_CONTROL_DATABASE_URL_FILE:?set SF_CONTROL_DATABASE_URL_FILE}
+  control_api_key:
+    file: ${SF_CONTROL_API_KEY_FILE:?set SF_CONTROL_API_KEY_FILE}
   bot_token:
     file: ${SF_BOT_TOKEN_FILE:?set SF_BOT_TOKEN_FILE}
   object_storage_access_key:

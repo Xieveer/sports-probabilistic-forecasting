@@ -1,0 +1,11 @@
+[Unit]
+Description=Wake Sports Forecast Data Cycle dispatcher every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=sports-forecast-data-cycle-dispatcher.service
+
+[Install]
+WantedBy=timers.target

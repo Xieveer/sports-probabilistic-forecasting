@@ -56,6 +56,15 @@ class BootstrapImportResult:
     imported: bool
 
 
+@dataclass(frozen=True)
+class CanonicalRefreshSummary:
+    """Counters одного NHL calendar import без накопительных DB totals."""
+
+    events_found: int
+    new_events: int
+    changed_events: int
+
+
 def _canonical_json(value: object) -> str:
     """Сериализовать значение стабильно для manifest/revision identity."""
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -282,7 +291,14 @@ def import_nhl_bootstrap_bundle(bundle_path: Path, session: Session) -> Bootstra
 
 
 def refresh_nhl_canonical_from_csv(source_csv: Path, session: Session) -> int:
-    """Применить очередной NHL provider snapshot к canonical store одной транзакцией.
+    """Применить NHL snapshot и сохранить прежний count-only API результата."""
+    return refresh_nhl_canonical_with_summary_from_csv(source_csv, session).events_found
+
+
+def refresh_nhl_canonical_with_summary_from_csv(
+    source_csv: Path, session: Session
+) -> CanonicalRefreshSummary:
+    """Импортировать snapshot и вернуть counters только этой попытки.
 
     Функция не вызывает provider API и не выбирает период загрузки: она принимает
     уже полученный incremental ``source.csv`` и фиксирует только changed revisions.
@@ -298,6 +314,28 @@ def refresh_nhl_canonical_from_csv(source_csv: Path, session: Session) -> int:
     coverage_manifest = source_csv.parent / ".nhl_calendar_coverage.json"
     if not events and not coverage_manifest.exists():
         raise CanonicalBootstrapError("NHL source.csv не содержит событий")
+    events_by_id = {str(event["source_event_id"]): event for event in events}
+    canonical_columns = CanonicalEvent.__table__.c
+    existing = (
+        session.scalars(
+            select(CanonicalEvent).where(
+                canonical_columns.tournament == "nhl",
+                canonical_columns.source == "nhl_web_api",
+                canonical_columns.source_event_id.in_(events_by_id.keys()),
+            )
+        ).all()
+        if events_by_id
+        else []
+    )
+    current_by_id = {event.source_event_id: event.current_revision_sha256 for event in existing}
+    summary = CanonicalRefreshSummary(
+        events_found=len(events_by_id),
+        new_events=sum(event_id not in current_by_id for event_id in events_by_id),
+        changed_events=sum(
+            event_id in current_by_id and current_by_id[event_id] != str(event["revision_sha256"])
+            for event_id, event in events_by_id.items()
+        ),
+    )
     observed_at = datetime.now(UTC)
     try:
         for event in events:
@@ -307,8 +345,8 @@ def refresh_nhl_canonical_from_csv(source_csv: Path, session: Session) -> int:
     except Exception:
         session.rollback()
         raise
-    logger.info("NHL canonical refresh применён events=%d", len(events))
-    return len(events)
+    logger.info("NHL canonical refresh применён events=%d", summary.events_found)
+    return summary
 
 
 def _import_calendar_coverage(source_csv: Path, session: Session) -> None:

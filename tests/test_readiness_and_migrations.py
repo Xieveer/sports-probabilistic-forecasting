@@ -138,6 +138,9 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
         "odds_acquisition_attempts",
         "data_cycle_runs",
         "data_cycle_stage_results",
+        "pipeline_schedules",
+        "data_cycle_control_requests",
+        "data_cycle_dispatcher_state",
         "refresh_watermarks",
         "bootstrap_imports",
     } <= table_names
@@ -158,6 +161,9 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
     } <= odds_columns
     assert "last_successful_at" in {
         column["name"] for column in inspect(migrated_engine).get_columns("calendar_coverages")
+    }
+    assert "scheduled_for" in {
+        column["name"] for column in inspect(migrated_engine).get_columns("data_cycle_runs")
     }
     attempt_columns = {
         column["name"]
@@ -183,4 +189,30 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
         "INSERT, UPDATE, DELETE ON TABLE" in statement
         and "data_cycle_stage_results TO sf_refresh_writer" in statement
         for statement in RUNTIME_GRANTS
+    )
+    control_grants = [statement for statement in RUNTIME_GRANTS if "sf_control_api" in statement]
+    assert any(
+        "GRANT SELECT ON TABLE data_cycle_runs, data_cycle_stage_results, pipeline_schedules, "
+        "data_cycle_control_requests, data_cycle_dispatcher_state TO sf_control_api" in statement
+        for statement in control_grants
+    )
+    assert any(
+        "GRANT INSERT (run_id, tournament, reason, requested_at, scheduled_for) "
+        "ON TABLE data_cycle_runs "
+        "TO sf_control_api" in statement
+        for statement in control_grants
+    )
+    assert any(
+        "GRANT INSERT (run_id, stage) ON TABLE data_cycle_stage_results TO sf_control_api"
+        in statement
+        for statement in control_grants
+    )
+    assert not any(
+        "INSERT ON TABLE data_cycle_runs, data_cycle_stage_results" in statement
+        for statement in control_grants
+    )
+    assert not any(
+        "predictions TO sf_control_api" in statement
+        or "canonical_events TO sf_control_api" in statement
+        for statement in control_grants
     )

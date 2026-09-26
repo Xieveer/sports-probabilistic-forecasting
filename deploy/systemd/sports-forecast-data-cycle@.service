@@ -1,5 +1,5 @@
 [Unit]
-Description=Sports Forecast canonical full refresh (%i)
+Description=Sports Forecast Data Cycle (%i)
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
@@ -9,11 +9,9 @@ StartLimitBurst=3
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/sports-forecast
-EnvironmentFile=/etc/sports-forecast/refresh/%i.env
+EnvironmentFile=/etc/sports-forecast/refresh/nhl.env
 TimeoutStartSec=90m
-Restart=on-failure
-RestartSec=5m
-ExecStart=/opt/sports-forecast/deploy/systemd/dispatch-data-cycle.sh %i
+ExecStart=/usr/bin/flock -n /run/sports-forecast-refresh-nhl.lock /opt/sports-forecast/deploy/systemd/run-canonical-refresh.sh nhl %i
 
 [Install]
 WantedBy=multi-user.target

@@ -21,7 +21,7 @@ from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import and_, exists, select
+from sqlalchemy import and_, exists, func, insert, select
 from sqlalchemy.engine import ScalarResult
 from sqlalchemy.orm import Session
 
@@ -783,6 +783,7 @@ class DataCycleRunRepository:
         run_id: str,
         tournament: str,
         reason: str,
+        scheduled_for: datetime | None = None,
         at: datetime | None = None,
     ) -> DataCycleRun:
         """Создать waiting run и фиксированный набор стадий до внешних вызовов."""
@@ -791,18 +792,24 @@ class DataCycleRunRepository:
         if not run_id or len(run_id) > 128 or not tournament or len(tournament) > 64:
             raise ValueError("Некорректная идентичность Data Cycle")
         requested_at = _utc_naive_for_query(at or datetime.now(UTC))
-        run = DataCycleRun(
-            run_id=run_id,
-            tournament=tournament,
-            reason=reason,
-            status="waiting",
-            requested_at=requested_at,
-            stages=[
-                DataCycleStageResult(stage=stage, status="waiting") for stage in DATA_CYCLE_STAGES
-            ],
+        self.session.execute(
+            insert(DataCycleRun).values(
+                run_id=run_id,
+                tournament=tournament,
+                reason=reason,
+                requested_at=requested_at,
+                scheduled_for=(
+                    _utc_naive_for_query(scheduled_for) if scheduled_for is not None else None
+                ),
+            )
         )
-        self.session.add(run)
-        self.session.flush()
+        self.session.execute(
+            insert(DataCycleStageResult),
+            [{"run_id": run_id, "stage": stage} for stage in DATA_CYCLE_STAGES],
+        )
+        run = self.get(run_id)
+        if run is None:
+            raise RuntimeError("Не удалось прочитать созданный Data Cycle run")
         return run
 
     def start_stage(self, run_id: str, stage: str, *, at: datetime | None = None) -> None:
@@ -888,7 +895,7 @@ class DataCycleRunRepository:
         summary: dict[str, Any] | None = None,
     ) -> None:
         """Записать итог цикла; неисполненные стадии получают явный skipped."""
-        if status not in {"success", "partial_success", "failed"}:
+        if status not in {"auto", "success", "partial_success", "failed"}:
             raise ValueError("Недопустимый terminal status Data Cycle")
         required = frozenset(required_stages)
         if not required or not required <= set(DATA_CYCLE_STAGES):
@@ -905,6 +912,23 @@ class DataCycleRunRepository:
             for stage in run.stages
         }
         failed_required = sorted(stage for stage in required if states.get(stage) == "failed")
+        if status == "auto":
+            if failed_required:
+                status = "failed"
+                if run.failure_code is None:
+                    run.failure_code = next(
+                        stage.failure_code
+                        for stage in run.stages
+                        if stage.stage == failed_required[0] and stage.failure_code is not None
+                    )
+            elif any(states.get(stage) not in {"success", "partial_success"} for stage in required):
+                raise ValueError("Нельзя автоматически завершить незапущенную обязательную стадию")
+            else:
+                status = (
+                    "partial_success"
+                    if any(result != "success" for result in states.values())
+                    else "success"
+                )
         if failed_required and status != "failed":
             raise ValueError(
                 "Data Cycle не может скрыть failed обязательную стадию: "
@@ -932,7 +956,16 @@ class DataCycleRunRepository:
         from sports_forecast.service.data_cycle_history import build_run_summary
 
         run.summary_json = json.dumps(
-            build_run_summary(run, at=now, supplemental=summary),
+            build_run_summary(
+                run,
+                at=now,
+                supplemental={
+                    **(summary or {}),
+                    "last_successful_updates": self._last_successful_component_updates(
+                        run.tournament, as_of=now
+                    ),
+                },
+            ),
             sort_keys=True,
             separators=(",", ":"),
         )
@@ -970,10 +1003,78 @@ class DataCycleRunRepository:
         from sports_forecast.service.data_cycle_history import build_run_summary
 
         run.summary_json = json.dumps(
-            build_run_summary(run, at=now),
+            build_run_summary(
+                run,
+                at=now,
+                supplemental={
+                    "last_successful_updates": self._last_successful_component_updates(
+                        run.tournament, as_of=now
+                    )
+                },
+            ),
             sort_keys=True,
             separators=(",", ":"),
         )
+
+    def _last_successful_component_updates(
+        self, tournament: str, *, as_of: datetime
+    ) -> dict[str, Any]:
+        """Читать реальные timestamps успешных данных на момент завершения run."""
+        self.session.flush()
+        cutoff = _utc_naive_for_query(as_of)
+        coverage_columns = CalendarCoverage.__table__.c
+        odds_columns = OddsObservation.__table__.c
+        event_columns = CanonicalEvent.__table__.c
+        prediction_columns = Prediction.__table__.c
+        updates_by_component = {
+            "calendar": (
+                self.session.scalar(
+                    select(func.max(coverage_columns.last_successful_at)).where(
+                        coverage_columns.tournament == tournament,
+                        coverage_columns.last_successful_at <= cutoff,
+                    )
+                ),
+                "calendar_coverages.last_successful_at",
+            ),
+            "odds": (
+                self.session.scalar(
+                    select(func.max(odds_columns.retrieved_at))
+                    .select_from(OddsObservation)
+                    .join(CanonicalEvent, event_columns.id == odds_columns.canonical_event_id)
+                    .where(
+                        event_columns.tournament == tournament,
+                        odds_columns.retrieved_at.is_not(None),
+                        odds_columns.retrieved_at <= cutoff,
+                    )
+                ),
+                "odds_observations.retrieved_at",
+            ),
+            "predictions": (
+                self.session.scalar(
+                    select(func.max(prediction_columns.prediction_ts)).where(
+                        prediction_columns.tournament == tournament,
+                        prediction_columns.status == "ok",
+                        prediction_columns.prediction_ts <= cutoff,
+                    )
+                ),
+                "predictions.prediction_ts",
+            ),
+        }
+        updates: dict[str, Any] = {}
+        for component, (updated_at, source) in updates_by_component.items():
+            if updated_at is not None:
+                timestamp = (
+                    updated_at.replace(tzinfo=UTC)
+                    if updated_at.tzinfo is None
+                    else updated_at.astimezone(UTC)
+                )
+                updates[component] = {
+                    "last_successful_at": timestamp.isoformat().replace("+00:00", "Z"),
+                    "source": source,
+                }
+            else:
+                updates[component] = {"last_successful_at": None, "source": source}
+        return updates
 
     def record_calendar_failure(
         self,
