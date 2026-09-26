@@ -30,6 +30,7 @@ WINNER_COLUMNS = OddsMarketColumns(
     market_spec="winner_withOT",
     bookmaker="pinnacle",
     value_columns=("pinnacle_winner_withOT_home_close", "pinnacle_winner_withOT_away_close"),
+    provider_timestamp_column="pinnacle_winner_withOT_provider_observed_at",
 )
 
 
@@ -49,6 +50,7 @@ def _row(fetched_at: str, commence_time: str = "2026-10-01T23:00:00Z") -> dict[s
         "away_team_norm": "PITTSBURGH PENGUINS",
         "commence_time_utc": commence_time,
         "fetched_at": fetched_at,
+        "pinnacle_winner_withOT_provider_observed_at": fetched_at,
         "pinnacle_winner_withOT_home_close": 1.95,
         "pinnacle_winner_withOT_away_close": 1.88,
     }
@@ -76,6 +78,44 @@ def test_odds_link_requires_unique_exact_event_identity_and_preserves_fetched_at
         "pinnacle_winner_withOT_home_close": 1.95,
         "pinnacle_winner_withOT_away_close": 1.88,
     }
+
+
+def test_odds_link_rejects_legacy_row_without_market_provider_timestamp() -> None:
+    """Store retrieval timestamp alone cannot prove market freshness or semantics."""
+    registry = TeamNameRegistry.from_source_sections(
+        {"NYR": "NYR", "PIT": "PIT"},
+        {"NEWYORKRANGERS": "NYR", "PITTSBURGHPENGUINS": "PIT"},
+    )
+    legacy_row = _row("2026-10-01T22:00:00Z")
+    legacy_row.pop("pinnacle_winner_withOT_provider_observed_at")
+    assert (
+        project_odds_rows(
+            [_event(1, datetime(2026, 10, 1, 23, tzinfo=UTC))],
+            pd.DataFrame([legacy_row]),
+            [WINNER_COLUMNS],
+            registry,
+        )
+        == []
+    )
+
+
+def test_odds_link_uses_market_provider_timestamp_not_store_fetch_timestamp() -> None:
+    registry = TeamNameRegistry.from_source_sections(
+        {"NYR": "NYR", "PIT": "PIT"},
+        {"NEWYORKRANGERS": "NYR", "PITTSBURGHPENGUINS": "PIT"},
+    )
+    row = {
+        **_row("2026-10-01T22:00:00Z"),
+        "pinnacle_winner_withOT_provider_observed_at": "2026-10-01T20:00:00Z",
+    }
+    linked = project_odds_rows(
+        [_event(1, datetime(2026, 10, 1, 23, tzinfo=UTC))],
+        pd.DataFrame([row]),
+        [WINNER_COLUMNS],
+        registry,
+    )
+    assert len(linked) == 1
+    assert linked[0].observed_at == datetime(2026, 10, 1, 20, tzinfo=UTC)
 
 
 def test_odds_link_leaves_same_team_day_ambiguity_unlinked() -> None:
@@ -200,6 +240,7 @@ def test_odds_store_sync_is_idempotent_and_keeps_link_after_event_move() -> None
                 "market_spec": "winner_withOT",
                 "bookmaker": "pinnacle",
                 "value_columns": list(WINNER_COLUMNS.value_columns),
+                "provider_timestamp_column": WINNER_COLUMNS.provider_timestamp_column,
             }
         ]
     }

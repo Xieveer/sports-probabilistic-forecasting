@@ -12,3 +12,4 @@ odds_markets:
     value_columns:
       - pinnacle_winner_withOT_home_close
       - pinnacle_winner_withOT_away_close
+    provider_timestamp_column: pinnacle_winner_withOT_provider_observed_at

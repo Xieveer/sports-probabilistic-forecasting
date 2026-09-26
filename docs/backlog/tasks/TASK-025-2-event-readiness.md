@@ -28,6 +28,8 @@ acquisition будет добавлена в TASK-025-3; до этого API н�
   не выводятся из `Prediction.odds_raw`.
 - [ ] Odds status `failed` основан на persisted failed-attempt record; отложено
   до [TASK-025-3](TASK-025-3-data-cycle-runs.md).
+- [x] Legacy OddsStore winner observation допускается только при подтверждённом
+  2-way h2h и provider `market.last_update`; `fetched_at` не доказывает свежесть.
 - [x] Состояния календаря, прогноза и коэффициентов имеют проверяемые reason codes
   и не зависят от наличия Prediction row.
 - [x] Наличие старого прогноза/коэффициентов не означает `ready`; отдельные

@@ -25,8 +25,12 @@ Prediction сопоставляется только по паре `(tournament,
 это разные идентификаторы.
 
 Добавлена `odds_observations` и мост из сохранённого OddsStore. Используется
-реальный `fetched_at`; строки привязываются по нормализованным участникам и
-точному UTC kickoff, только если найден ровно один canonical event. Совпадение
+provider `market.last_update` для h2h; store `fetched_at` считается временем
+сохранения и не доказывает freshness линии. Legacy OddsStore строки без provider
+timestamp не попадают в readiness projection. Для профиля `has_draw=False`
+извлечение отклоняет h2h с исходом Draw; sidecar timestamp сохраняется только
+для подтверждённого 2-way рынка. Строки привязываются по нормализованным участникам
+и точному UTC kickoff, только если найден ровно один canonical event. Совпадение
 только по дате, несколько одинаковых кандидатов и несовпавший старый kickoff
 не создают привязку. UPSERT не заменяет более свежее observation старым, поэтому
 повтор bridge безопасен. Odds values хранятся отдельно от `Prediction.odds_raw`.
@@ -77,9 +81,16 @@ Production migration или production smoke не запускались.
   неоднозначной пары и переноса kickoff. В correction cycle regression tests
   воспроизвели два дефекта: свежая prediction со статусом `error` считалась
   готовой, а сохранённая линия оставалась готовой после переноса события.
+  Отдельные проверки закрепили отказ legacy строки без market timestamp и
+  3-way h2h с Draw при требуемом `winner_withOT`. В следующем review-cycle
+  red-тесты воспроизвели смешение close odds с open kickoff при переносе и
+  пропуск Draw outcome, у которого отсутствовала числовая цена.
 - **Green:** linker, projection таблица, readiness evaluator/API поля и football
   fixture реализованы; ошибка prediction остаётся `failed`, а несовпадение
-  event identity snapshot немедленно делает odds `stale`.
+  event identity snapshot немедленно делает odds `stale`. Подтверждённый 2-way
+  h2h использует `market.last_update`; retrieval timestamp OddsStore не заменяет
+  provider time. Close snapshot выбирается только при равенстве нормализованных
+  команд и точного kickoff; наличие Draw/Tie распознаётся независимо от цены.
 - **Refactor:** DB grants ограничены необходимыми API read/worker write правами;
   API загружает readiness rows пакетно, а не выполняет запрос на компонент для
   каждого события.
@@ -87,10 +98,17 @@ Production migration или production smoke не запускались.
 ## Проверки
 
 - `uv run pytest -q tests/test_event_readiness.py tests/test_calendar_api.py tests/test_odds_refresh.py tests/test_readiness_and_migrations.py tests/test_prediction_repository_upcoming.py tests/test_prediction_publication.py` — 47 passed после correction cycle.
+- `uv run pytest -q tests/test_event_readiness.py tests/test_calendar_api.py tests/test_odds_refresh.py tests/test_readiness_and_migrations.py tests/test_prediction_repository_upcoming.py tests/test_prediction_publication.py tests/test_odds_enrichment.py tests/test_odds_store.py` — 92 passed после odds provenance correction.
+- `uv run pytest -q tests/test_event_readiness.py tests/test_calendar_api.py tests/test_odds_refresh.py tests/test_readiness_and_migrations.py tests/test_prediction_repository_upcoming.py tests/test_prediction_publication.py tests/test_odds_enrichment.py tests/test_odds_store.py tests/test_odds_pipeline_v2_integration.py` — 95 passed после snapshot/Draw correction.
 - `make lint` — passed.
 - `uv run pre-commit run mypy --files sports_forecast/service/event_readiness.py sports_forecast/service/odds_projection.py sports_forecast/service/db/models.py sports_forecast/service/db/repository.py sports_forecast/service/routers/calendar.py sports_forecast/service/schemas.py` — passed.
 - `uv run alembic heads` — единственный head `0011_event_odds_observations`.
 - `git diff --check` — passed.
+- Повторные общие gates после параллельного TASK-025-3 изменения: `make lint` сейчас
+  блокируется двумя unused import в `tests/test_data_cycle_lifecycle.py`; targeted
+  mypy сообщает `Any` return в `sports_forecast/service/db/repository.py:819`.
+  Эти строки принадлежат параллельной реализации TASK-025-3. `ruff check` по
+  принадлежащим этому срезу odds/readiness файлам и `git diff --check` проходят.
 
 Независимый Reviewer нашёл два P1: свежий `Prediction.status=error` ошибочно
 становился `ready`, а odds observation после переноса оставался `ready` до TTL.

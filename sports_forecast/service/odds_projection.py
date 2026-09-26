@@ -25,6 +25,7 @@ class OddsMarketColumns:
     market_spec: str
     bookmaker: str
     value_columns: tuple[str, ...]
+    provider_timestamp_column: str | None = None
 
 
 @dataclass(frozen=True)
@@ -80,17 +81,23 @@ def project_odds_rows(
     output: list[OddsObservationInput] = []
     for _, row in odds_rows.iterrows():
         kickoff = _parse_timestamp(row.get("commence_time_utc"))
-        observed_at = _parse_timestamp(row.get("fetched_at"))
         home = team_registry.resolve(str(row.get("home_team_norm") or ""))
         away = team_registry.resolve(str(row.get("away_team_norm") or ""))
         candidates = event_index.get((home, away, kickoff), []) if kickoff is not None else []
-        if observed_at is None or len(candidates) != 1:
+        if len(candidates) != 1:
             continue
         event = candidates[0]
         event_scheduled_at = _parse_timestamp(event.scheduled_at)
         if event_scheduled_at is None:
             continue
         for market in market_columns:
+            observed_at = (
+                _parse_timestamp(row.get(market.provider_timestamp_column))
+                if market.provider_timestamp_column
+                else None
+            )
+            if observed_at is None:
+                continue
             values: dict[str, float] = {}
             for column in market.value_columns:
                 raw_value = row.get(column)
@@ -138,6 +145,11 @@ def sync_odds_store_observations(
             market_spec=str(item["market_spec"]),
             bookmaker=str(item["bookmaker"]),
             value_columns=tuple(str(value) for value in item["value_columns"]),
+            provider_timestamp_column=(
+                str(item["provider_timestamp_column"])
+                if item.get("provider_timestamp_column")
+                else None
+            ),
         )
         for item in policy.get("odds_markets", [])
     ]
