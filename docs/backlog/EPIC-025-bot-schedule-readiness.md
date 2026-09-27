@@ -18,7 +18,7 @@
   `initiative/epic-025-v1_2_6-odds-optional` и
   `initiative/epic-025-v1_2_7-calendar-grant` и
   `initiative/epic-025-v1_2_8-archive-runner`.
-- Workflow / этап: `release correction / v1.2.7 serving healthy, manual Data Cycle failed at archive_sync; v1.2.8 candidate`.
+- Workflow / этап: `release evidence / v1.2.8 tag CI/Docker и exact first-rollout прошли; production manual gate открыт`.
 - Исходная цель: календарь NHL независимо от прогноза, готовность событий,
   админ-управление Data Cycle и выпуск `1.2.1`;
   [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
@@ -169,6 +169,12 @@
   `sync`. После host stop proof active0, одно итоговое уведомление доставлено;
   оба timer disabled. Исправление и проверка реальной команды до tag —
   [TASK-025-21](tasks/TASK-025-21-archive-sync-runner-command.md), v1.2.8.
+  v1.2.8 correction прошёл независимое review без P0–P2, полный локальный
+  first-rollout на clean SHA `61e201e` с двумя архивами через Compose/MinIO,
+  затем PR и tag CI/Security/Docker с first-rollout на merged source commit
+  `ab1626e`. Перед production rollout свежий backup прошёл isolated restore,
+  off-host hash и третью копию; точечная очистка неиспользуемых v1.1.14
+  образов освободила 7 188 197 376 bytes, v1.2.7 rollback сохранён.
 - Решения: [ADR-026](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
   принят после независимого review: календарь независим от прогноза, control
   state в PostgreSQL, ограниченный control API и systemd dispatcher;
@@ -176,11 +182,11 @@
   ручная команда повторяет data job без перезапуска служб; футбол проверяется
   по общему контракту без включения в `1.2.1`.
 - Артефакты: [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
-- Предыдущая роль: Operations — v1.2.7 backup, serving rollout, безопасное
-  закрытие failed run; Reviewer — v1.2.7 full first-rollout/evidence.
-- Следующая роль: Developer — TASK-025-21; Reviewer — независимый review;
-  Operations — локальная проверка реального runner до тега и production
-  manual; Product Owner — v1.2.8 release gates.
+- Предыдущая роль: Developer — TASK-025-21; Reviewer — код и local
+  first-rollout evidence без P0–P2; Operations — pre-v1.2.8 backup и disk.
+- Следующая роль: Reviewer — immutable evidence bundle; Operations —
+  production serving и ручной OFF Data Cycle; Product Owner — первый
+  плановый run и приёмка.
 - Открытые вопросы / блокеры: 30-дневное coverage подтверждено (187 матчей),
   три provider keys недействительны, isolated publication подтверждена,
   production manual run v1.2.7 завершился ошибкой archive_sync. Оба NHL

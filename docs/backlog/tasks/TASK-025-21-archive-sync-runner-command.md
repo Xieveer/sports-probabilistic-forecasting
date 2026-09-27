@@ -21,7 +21,7 @@ Compose заменил CMD образа на системный `sync`, кото
 - [x] Production runner явно запускает Python archive-sync CLI внутри
   approved образа и передаёт проверенный immutable artifact, state root и
   prefix для обоих видов архива.
-- [ ] Локальный first-rollout до immutable tag выполняет **ту же команду**
+- [x] Локальный first-rollout до immutable tag выполняет **ту же команду**
   через Compose с S3 fixture и проверяет результат, а не отдельный путь.
 - [x] Red→green regression обнаруживает прежний вызов системного `sync`;
   fault-case оставляет цикл failed, без ложного archive success.

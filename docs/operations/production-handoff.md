@@ -17,8 +17,22 @@
   [TASK-025-20](../backlog/tasks/TASK-025-20-calendar-stage-read-grant.md),
   [TASK-025-21](../backlog/tasks/TASK-025-21-archive-sync-runner-command.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
-- source_tag: `v1.2.8` (после независимого review и terminal PR CI).
-- source_commit: exact merged `main` commit фиксируется перед tag.
+- source_tag: `v1.2.8`.
+- source_commit: `ab1626e4736c615f1be5f36c08fce2528ee3bd55`.
+- evidence_tag: `v1.2.8-evidence.1`.
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36337234005
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36337233997
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36337250121
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36337250121/job/108671316221
+
+Published linux/amd64, scan и provenance подтверждены terminal Docker
+workflow для каждого приложения:
+
+- api: `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:64849be03763238d74c84838272b8eeb39f10592811c0a55076517f53943997f` — published linux/amd64 scan provenance.
+- worker: `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:055dc235111c620879303445f421d1eb7c7a35f9df95bfcb9f8d0e2b15920c4e` — published linux/amd64 scan provenance.
+- telegram_bot: `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:7a8c5d7bc3429db079e40c638c2d6c3a96a1b1cee52c67f21a61a3a41b1a8906` — published linux/amd64 scan provenance.
+- archive_sync: `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:7be825c3ac001a1a81386a79fcfa2cdb065fd1430ed910243af041aabf6304bd` — published linux/amd64 scan provenance.
+- postgres: `postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94` — без изменения.
 
 По решению владельца v1.2.6 добавил явный режим без future odds. Он
 пропускает запрос к провайдеру, оставляет готовность коэффициентов `missing`
@@ -118,8 +132,15 @@ checksum/catalog, isolated restore на exact PostgreSQL image, off-host
 upload/download hash и третью локальную копию. Перед v1.2.7 rollout
 дамп 57 840 045 bytes, SHA-256 с префиксом `d5d409e4`, прошёл эти
 проверки: Alembic 0017, 22 496 canonical events, шесть run records.
-После успешной publication v1.2.7 данные изменились: Operations создаёт
-новый backup и фиксирует полный hash в root-only change record.
+После успешной publication v1.2.7 данные изменились: Operations создал
+новый backup и зафиксировал полный hash в root-only change record. Свежий
+pre-v1.2.8 dump 57 920 636 bytes, SHA-256
+`8353ab80697aed246c35a0e7e7d23a191b578bfa8814322cb6831ea05b856070`
+прошёл catalog, isolated restore на exact PostgreSQL image (0017,
+22 496 canonical events, семь run records), off-host upload/download hash
+и третью локальную копию. После узкой очистки четырёх неиспользуемых
+v1.1.14 app images свободно 12 499 116 032 bytes; v1.2.7 rollback,
+PostgreSQL, volumes и backup сохранены.
 Bucket retention/encryption текущему service account недоступны.
 
 Схема остаётся на `0017_data_cycle_notification_outbox`; role-bootstrap/

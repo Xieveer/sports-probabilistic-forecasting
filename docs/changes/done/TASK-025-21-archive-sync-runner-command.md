@@ -1,6 +1,6 @@
 # TASK-025-21 — Команда archive-sync production runner
 
-> **Статус:** in_progress — код, review и runtime gate открыты
+> **Статус:** in_progress — код/review/локальный runtime подтверждены; production gate открыт
 > **Задача:** [TASK-025-21](../../backlog/tasks/TASK-025-21-archive-sync-runner-command.md)
 
 ## Граница
@@ -33,8 +33,9 @@ Developer: 68 целевых тестов прошли после исходно
 `git diff --check` прошли. Independent Reviewer: P0–P2 нет, 54 целевых
 теста, `bash -n` и diff-check прошли. Product Owner: `make lint`,
 `make production-check`, 13 release-version тестов и `make docs`
-(155 предупреждений) прошли. Полный локальный Docker first-rollout,
-PR/tag/evidence CI и production manual run пока открыты.
+(155 предупреждений) прошли. PR и tag CI/Security, Docker pipeline с
+first-rollout, scan и provenance прошли; evidence CI и production manual
+run пока открыты.
 
 Первый full first-rollout на clean SHA `3522811` остановился **до MinIO**:
 host harness не мог обойти временные архивные каталоги mode 0700,
@@ -44,4 +45,10 @@ cleanup завершился без оставшихся контейнеров.
 права архивов не ослаблялись. Developer подтвердил красный тест старого
 host-side вызова и 41 прошедший целевой тест, Reviewer — P0–P2 нет,
 29 first-rollout contract тестов и Ruff. Повторный full first-rollout
-требуется на новом clean SHA.
+на clean SHA `61e201eaea47e88c1bb656386b3f1de5a84af8d9` прошёл:
+оба вида archive-sync через Compose/MinIO, Worker, API calendar 0/7/30,
+бот, role-grants и isolated PostgreSQL restore. Обезличенный evidence
+SHA-256 `0eb39b4a15adae32633b7e18e55a1368ee4b66868be43288162799c76dd8877c`
+проверен независимым Reviewer без P0–P2. Его caveat: fixture данные
+пересоздавались между попытками; повторно использованы те же exact images,
+поскольку входы Docker build не менялись.

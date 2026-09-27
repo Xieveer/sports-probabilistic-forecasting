@@ -9,11 +9,12 @@
 > v1.2.7 обслуживает календарь: 187 матчей за 30 дней, coverage `complete`.
 > Ручной OFF-цикл записал 1 834 прогноза, но завершился
 > `failed/archive_sync_failed` из-за команды системного `sync` вместо CLI.
-> Готовится v1.2.8; оба NHL timer выключены.
+> v1.2.8 tag и Docker gates прошли; production rollout ещё не начат.
+> Оба NHL timer выключены.
 
 ## Результат
 
-Довести исправленный release candidate до immutable tag `v1.2.8`,
+Довести проверенный release candidate `v1.2.8` до production,
 запустить NHL Data Cycle по
 расписанию и подтвердить работу бота, API и ежедневного scheduler на
 production. Тег `v1.2.1` остаётся неизменным; футбольный production pipeline
