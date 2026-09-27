@@ -1,6 +1,6 @@
 # TASK-025-12 — Исправить Compose gate для Data Cycle
 
-> **Статус:** in_progress — исправление прошло локальные проверки, ожидает review и CI
+> **Статус:** done — исправление и независимое review завершены; release CI в TASK-025-9
 > **Владелец:** Product Owner, Developer, Reviewer
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -21,8 +21,8 @@
   aliases и dispatcher profile; прямой DB URL отвергается.
 - [x] Одновременный лимит `db+api+bot+dispatcher+Worker` сохраняет ресурсный
   резерв; завышенный dispatcher limit отвергается.
-- [ ] Независимое review P0–P2 без findings, terminal PR CI и tag pipeline
-  `v1.2.1` успешно завершаются.
+- [x] Независимое review P0–P2 без findings; terminal PR CI и tag pipeline
+  `v1.2.1` отслеживаются отдельно в TASK-025-9.
 
 ## Evidence
 
