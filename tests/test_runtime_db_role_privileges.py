@@ -51,6 +51,23 @@ def test_control_and_reader_roles_cannot_cross_their_database_boundaries() -> No
             connection.execute(
                 text("SELECT count(*) FROM data_cycle_control_requests")
             ).scalar_one()
+        with reader_engine.connect() as connection:
+            assert (
+                connection.execute(
+                    text("SELECT count(*) FROM data_cycle_stage_results")
+                ).scalar_one()
+                >= 0
+            )
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT count(*) FROM data_cycle_stage_results AS stage "
+                        "JOIN data_cycle_runs AS run ON run.run_id = stage.run_id "
+                        "WHERE run.tournament = 'nhl' AND stage.stage = 'data_odds'"
+                    )
+                ).scalar_one()
+                >= 0
+            )
     finally:
         control_engine.dispose()
         reader_engine.dispose()

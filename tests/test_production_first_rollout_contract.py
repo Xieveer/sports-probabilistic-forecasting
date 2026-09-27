@@ -19,8 +19,10 @@ from scripts.run_production_first_rollout import (
     _disk_usage_delta,
     _parse_df_disk_usage,
     _parse_memory_usage_bytes,
+    _probe_runtime_identities,
     _restore_fixture_mount_ownership,
     _restore_runtime_root_ownership,
+    _smoke_calendar_endpoints,
     _start_s3_fixture,
 )
 from scripts.verify_production_compose_contract import verify_contract
@@ -295,6 +297,26 @@ def test_first_rollout_runner_and_tag_gate_are_checked_in() -> None:
     assert '"all_service_logs_redacted"' in runner_source
     assert '"model_pointer"' in runner_source
     assert "has_table_privilege" in runner_source
+    assert (
+        "has_table_privilege('sf_api_reader', 'public.data_cycle_stage_results', 'SELECT')"
+        in runner_source
+    )
+    assert (
+        "has_column_privilege('sf_api_reader', 'public.data_cycle_runs', 'run_id', 'SELECT')"
+        in runner_source
+    )
+    assert (
+        "has_column_privilege('sf_api_reader', 'public.data_cycle_runs', 'tournament', 'SELECT')"
+        in runner_source
+    )
+    assert "JOIN data_cycle_runs" in runner_source
+    assert 'if role_contract != "t|t|t|t|f|f":' in runner_source
+    assert runner_source.index('evidence["health"]["api_ready"] = "ok"') < runner_source.index(
+        "_smoke_calendar_endpoints(compose)"
+    )
+    assert runner_source.index("_smoke_calendar_endpoints(compose)") < runner_source.index(
+        'up", "-d", "telegram-bot'
+    )
     assert "rollout_restore_sentinel" in runner_source
     assert "_clean_worktree_issues" in runner_source
     assert '"--untracked-files=all"' in runner_source
@@ -306,6 +328,52 @@ def test_first_rollout_runner_and_tag_gate_are_checked_in() -> None:
     assert "first-rollout:" in docker_workflow
     assert "needs: [verify, build-artifacts, first-rollout]" in docker_workflow
     assert "workflow_dispatch:" not in docker_workflow
+
+
+def test_first_rollout_api_reader_probe_executes_calendar_stage_join(monkeypatch) -> None:
+    """First-rollout role probe runs the exact join used by calendar readiness."""
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        "scripts.run_production_first_rollout._run_one_shot_checked",
+        lambda command, **_kwargs: commands.append(command),
+    )
+
+    _probe_runtime_identities(
+        project_name="fixture",
+        values={
+            "SF_API_DATABASE_URL_FILE": "/tmp/api-url",
+            "SF_WORKER_DATABASE_URL_FILE": "/tmp/worker-url",
+        },
+        postgres_image="postgres:fixture",
+    )
+
+    api_probe_command = commands[0][-1]
+    assert "JOIN data_cycle_runs AS run ON run.run_id = stage.run_id" in api_probe_command
+    assert "WHERE run.tournament = 'nhl' AND stage.stage = 'data_odds'" in api_probe_command
+    syntax = subprocess.run(
+        ["sh", "-n", "-c", api_probe_command], capture_output=True, text=True, check=False
+    )
+    assert syntax.returncode == 0, syntax.stderr
+
+
+def test_first_rollout_smokes_calendar_periods_without_logging_payloads(monkeypatch) -> None:
+    """Local release rehearsal checks NHL calendar 0/7/30 through API container."""
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        "scripts.run_production_first_rollout._run",
+        lambda command, **_kwargs: commands.append(command),
+    )
+
+    _smoke_calendar_endpoints(["docker", "compose", "-f", "docker-compose.prod.yml"])
+
+    assert [command[-1] for command in commands] == [
+        "http://localhost:8000/calendar/nhl?period=today",
+        "http://localhost:8000/calendar/nhl?period=7",
+        "http://localhost:8000/calendar/nhl?period=30",
+    ]
+    for command in commands:
+        assert command[-5:-1] == ["curl", "-fsS", "-o", "/dev/null"]
+        assert command[:3] == ["docker", "compose", "-f"]
 
 
 def test_first_rollout_tests_prebuilt_image_archives_before_exact_publish() -> None:
