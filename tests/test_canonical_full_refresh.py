@@ -11,6 +11,8 @@ import pytest
 from omegaconf import OmegaConf
 from sqlalchemy import create_engine
 
+from sports_forecast.deploy.model_bundle import BundleVerificationError
+from sports_forecast.orchestration.canonical_full_refresh import _load_bundle_features_config
 from sports_forecast.service.db.engine import get_session, init_db, reset_engine
 from sports_forecast.service.db.models import (
     CanonicalEvent,
@@ -41,6 +43,28 @@ def _cfg() -> object:
             },
         }
     )
+
+
+@pytest.mark.parametrize(
+    ("contract", "runtime_algorithm"),
+    [
+        ({"algorithm": "catboost", "featureset": "missing_featureset"}, "catboost"),
+        ({"algorithm": "other_algorithm", "featureset": "advanced"}, "catboost"),
+    ],
+)
+def test_bundle_feature_contract_rejects_mismatch_before_feature_generation(
+    tmp_path: Path, contract: dict[str, str], runtime_algorithm: str
+) -> None:
+    """Неизвестный featureset или другой algorithm отклоняется до feature generation."""
+    bundle_path = tmp_path / "bundle"
+    bundle_path.mkdir()
+    (bundle_path / "deploy.yaml").write_text(
+        f"model:\n  algorithm: {contract['algorithm']}\n  featureset: {contract['featureset']}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BundleVerificationError):
+        _load_bundle_features_config(bundle_path, algorithm=runtime_algorithm)
 
 
 def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
@@ -89,6 +113,11 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
         clean = MagicMock()
         features = MagicMock()
         materialize = MagicMock(return_value=True)
+        bundle_path = tmp_path / "bundle"
+        bundle_path.mkdir()
+        (bundle_path / "deploy.yaml").write_text(
+            "model:\n  algorithm: catboost\n  featureset: advanced\n", encoding="utf-8"
+        )
         odds_provider = MagicMock()
         odds_provider.fetch_future_nhl_odds.return_value = []
         odds_provider.last_quota.return_value.requests_remaining = 20
@@ -100,7 +129,7 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
             ),
             patch(
                 "sports_forecast.orchestration.canonical_full_refresh.load_current_model_bundle",
-                return_value=MagicMock(path=tmp_path / "bundle"),
+                return_value=MagicMock(path=bundle_path),
             ),
             patch(
                 "sports_forecast.orchestration.canonical_full_refresh.load_tournament_config",
@@ -135,6 +164,7 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
         assert result.published is True
         assert clean.call_count == 1
         assert features.call_count == 1
+        assert features.call_args.args[3].name == "advanced"
         raw_path = clean.call_args.args[0] / "matches.parquet"
         assert raw_path.name == "matches.parquet"
         assert raw_path.parent.name == "nhl"

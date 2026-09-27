@@ -1,18 +1,18 @@
 # TASK-025-9 — Production выпуск и проверка NHL
 
-> **Статус:** in_progress — v1.2.3 serving healthy; Worker logging failed
+> **Статус:** in_progress — v1.2.4 serving healthy; календарь готов, odds и publication failed
 > **Владелец:** Product Owner и Operations Agent
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
 > **ADR:** [ADR-026](../../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
 
-> v1.2.3 устранил дефект closing line и опубликовал source snapshot. Ручной
-> цикл выявил ошибку Hydra file logging в read-only Worker; готовится v1.2.4. Критерии NHL
-> production acceptance ниже не меняются.
+> v1.2.4 заполнил календарь: 187 матчей за 30 дней, coverage `complete`.
+> Ручной цикл выявил ошибки конфигурации Odds API и публикации прогнозов;
+> готовится v1.2.5. Критерии NHL production acceptance ниже не меняются.
 
 ## Результат
 
-Довести исправленный release candidate до immutable tag `v1.2.4`,
+Довести исправленный release candidate до immutable tag `v1.2.5`,
 запустить NHL Data Cycle по
 расписанию и подтвердить работу бота, API и ежедневного scheduler на
 production. Тег `v1.2.1` остаётся неизменным; футбольный production pipeline
@@ -22,7 +22,7 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
 
 - [ ] Все функциональные TASK инициативы прошли независимое review, full EPIC
   review, локальные проверки и terminal PR CI нового кандидата.
-  `pyproject.toml` и handoff указывают `1.2.4 candidate`;
+  `pyproject.toml` и handoff указывают `1.2.5 candidate`;
   `make production-check` должен пройти для final candidate.
 - [ ] Operations имеет привилегированное read-only evidence текущих image
   digests, Docker/DB состояния, последнего NHL run, календарного покрытия,
@@ -47,7 +47,7 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
   допустимый журнал и отсутствие дубля цикла. Проверка не публикует секреты
   или полный внешний ответ.
 - [ ] До Worker run установлен и проверен immutable model bundle с
-  `app_version=1.2.4` из неизменённых одобренных весов/features; старый
+  `app_version=1.2.5` из неизменённых одобренных весов/features; старый
   `current` и checksums сохранены для rollback.
 - [ ] После первого scheduled запуска подтверждены run_id, дата/время,
   стадии, фактическое 30-дневное coverage и сообщение администратору.
@@ -82,6 +82,20 @@ v1.2.3 tag/evidence, backup и ограниченный serving rollout прош
 log file в read-only `/app`. Host stop proof, terminalization и одно
 уведомление подтверждены; календарь 0/7/30 остаётся пустым, оба timer
 disabled. Исправление в [TASK-025-15](TASK-025-15-readonly-worker-hydra-logging.md).
+
+v1.2.4 tag/evidence, backup и ограниченный serving rollout прошли. Ручной run
+`dcd54406-7b88-4061-85b0-c60d76aef127` импортировал 34 NHL матча за
+7 дней и 187 за 30 дней, coverage `complete`, API календаря отвечает 200.
+Odds stage сохранила `provider_not_configured`: production Worker не получал
+mounted secret files, а клиент не читал `*_FILE`. Publication вернула
+`materialization_failed`; изолированный replay подтвердил mismatch 139
+`basic` против 489 `advanced` признаков promoted-модели.
+После host stop proof run закрыт, уведомление доставлено один раз; оба timer
+disabled. [TASK-025-16](TASK-025-16-odds-secret-files-and-stdout-logging.md)
+исправляет secret-file contract и stdout-логи;
+[TASK-025-17](TASK-025-17-promoted-feature-contract.md) закрепляет сбор
+признаков по promoted contract. Для v1.2.5 нужен новый
+model wrapper с прежними весами и features.
 
 Исторический preflight до ограниченного rollout v1.2.1: Operations Agent 2026-09-26
 подтвердил установленный unit/drop-in NHL timer и конфигурацию 10:00

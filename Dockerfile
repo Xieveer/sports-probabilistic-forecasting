@@ -73,7 +73,7 @@ HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
     CMD /app/.venv/bin/python -m sports_forecast.bot.heartbeat --path /tmp/sf-bot-heartbeat.json --max-age-seconds 120
 
 ENTRYPOINT ["/app/runtime-entrypoint.sh"]
-CMD ["/app/.venv/bin/python", "-m", "sports_forecast.bot", "hydra/job_logging=disabled", \
+CMD ["/app/.venv/bin/python", "-m", "sports_forecast.bot", "hydra/job_logging=stdout", \
      "hydra.output_subdir=null"]
 
 # ── Worker stage (batch prediction / materialize) ──────────────
@@ -84,7 +84,7 @@ USER sf
 ENTRYPOINT ["/app/runtime-entrypoint.sh"]
 CMD ["/app/.venv/bin/python", "-m", "sports_forecast.orchestration.canonical_full_refresh_cli", \
      "tournament=nhl", "market=winner_withOT", "market_spec=winner_withOT", \
-     "algorithm=catboost_reg", "features=advanced", "hydra/job_logging=disabled", \
+     "algorithm=catboost_reg", "features=advanced", "hydra/job_logging=stdout", \
      "hydra.output_subdir=null"]
 
 # ── Archive sync (отдельный Object Storage credential boundary) ──
