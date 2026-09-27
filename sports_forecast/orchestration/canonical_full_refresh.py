@@ -12,11 +12,17 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import yaml
+from hydra._internal.config_loader_impl import ConfigLoaderImpl
+from hydra._internal.utils import create_config_search_path
+from hydra.errors import HydraException
+from hydra.types import RunMode
 from omegaconf import DictConfig, OmegaConf, open_dict
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from sports_forecast.config.loaders import (
+    PROJECT_ROOT,
     load_tournament_config,  # noqa: F401 - публичная точка подмены для теста.
     load_tournament_quality_gate_config,
 )
@@ -102,6 +108,47 @@ def _runtime_cfg(cfg: DictConfig, root: Path, bundle_path: Path) -> DictConfig:
         runtime_cfg.paths.predictions_dir = str(root / "predictions")
         runtime_cfg.runtime_model_bundle = str(bundle_path)
     return runtime_cfg
+
+
+def _load_bundle_features_config(bundle_path: Path, *, algorithm: str) -> DictConfig:
+    """Скомпоновать featureset из проверенного bundle и проверить runtime algorithm."""
+    try:
+        deploy_config = yaml.safe_load((bundle_path / "deploy.yaml").read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, yaml.YAMLError) as exc:
+        raise BundleVerificationError("promoted model contract is unavailable or invalid") from exc
+
+    model_config = deploy_config.get("model") if isinstance(deploy_config, dict) else None
+    deployed_algorithm = model_config.get("algorithm") if isinstance(model_config, dict) else None
+    featureset = model_config.get("featureset") if isinstance(model_config, dict) else None
+    if (
+        not isinstance(deployed_algorithm, str)
+        or not deployed_algorithm.strip()
+        or deployed_algorithm != algorithm
+        or not isinstance(featureset, str)
+        or not featureset.strip()
+        or Path(featureset).name != featureset
+    ):
+        raise BundleVerificationError("promoted model contract does not match runtime config")
+
+    config_dir = (PROJECT_ROOT / "conf").resolve()
+    config_loader = ConfigLoaderImpl(create_config_search_path(str(config_dir)))
+    try:
+        composed = config_loader.load_configuration(
+            config_name=f"features/{featureset}", overrides=[], run_mode=RunMode.RUN
+        )
+    except HydraException as exc:
+        raise BundleVerificationError(
+            "promoted featureset config is unavailable or invalid"
+        ) from exc
+
+    features_config = composed.get("features")
+    if (
+        not isinstance(features_config, DictConfig)
+        or features_config.get("name") != featureset
+        or not isinstance(features_config.get("generators"), DictConfig)
+    ):
+        raise BundleVerificationError("promoted featureset config is invalid")
+    return features_config
 
 
 def _provenance_id(value: object) -> str:
@@ -346,11 +393,15 @@ def run_full_refresh(
         _finish_cycle_stage(run_id, "quality", status="success")
         _start_cycle_stage(run_id, "predictions")
         bundle = load_current_model_bundle(runtime_root, app_version=app_version)
+        features_config = _load_bundle_features_config(
+            bundle.path, algorithm=str(cfg.algorithm.name)
+        )
         snapshot = _canonical_rows(tournament)
         with tempfile.TemporaryDirectory(prefix=f"canonical-refresh-{tournament}-") as directory:
             root = Path(directory)
             runtime_cfg = _runtime_cfg(cfg, root, bundle.path)
             with open_dict(runtime_cfg):
+                runtime_cfg.features = features_config
                 runtime_cfg.refresh_run_id = run_id
                 runtime_cfg.canonical_snapshot_id = _provenance_id(snapshot)
                 runtime_cfg.feature_contract_id = _provenance_id(runtime_cfg.features)

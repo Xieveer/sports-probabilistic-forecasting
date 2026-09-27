@@ -13,7 +13,7 @@ import requests
 from omegaconf import OmegaConf
 from requests.adapters import HTTPAdapter
 
-from sports_forecast.data.providers.odds.client import OddsApiClient
+from sports_forecast.data.providers.odds.client import OddsApiClient, configured_odds_api_keys
 
 
 @pytest.fixture
@@ -195,6 +195,113 @@ def test_cache_filename_hashes_explicit_key_without_secret(
     cache_path = client._cache_path("contains-secret-api-key")
 
     assert "secret-api-key" not in cache_path.name
+
+
+def test_configured_odds_api_keys_reads_restricted_file_and_prefers_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """*_FILE поддерживает секреты с ограниченными правами; raw env имеет precedence."""
+    free_file = tmp_path / "free-key"
+    free_file.write_text("file-free-secret\n", encoding="utf-8")
+    free_file.chmod(0o600)
+    paid_file = tmp_path / "paid-key"
+    paid_file.write_text("file-paid-secret\n", encoding="utf-8")
+    paid_file.chmod(0o600)
+    for name in (
+        "ODDS_API_KEY_FREE",
+        "ODDS_API_KEY_20K",
+        "ODDS_API_KEY_100K",
+        "ODDS_API_KEY",
+        "ODDS_API_KEY_FILE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("ODDS_API_KEY_FREE", "env-free-secret")
+    monkeypatch.setenv("ODDS_API_KEY_FREE_FILE", str(free_file))
+    monkeypatch.setenv("ODDS_API_KEY_20K_FILE", str(paid_file))
+
+    keys = configured_odds_api_keys()
+
+    assert free_file.stat().st_mode & 0o777 == 0o600
+    assert [(key.tier, key.value) for key in keys] == [
+        ("free", "env-free-secret"),
+        ("20k", "file-paid-secret"),
+    ]
+
+
+def test_configured_odds_api_keys_reports_missing_file_without_exposing_path_or_secret(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Отсутствующий объявленный secret file — явная ошибка без вывода его пути."""
+    missing_file = tmp_path / "private-secret-path"
+    for name in (
+        "ODDS_API_KEY_FREE",
+        "ODDS_API_KEY_20K",
+        "ODDS_API_KEY_100K",
+        "ODDS_API_KEY",
+        "ODDS_API_KEY_FREE_FILE",
+        "ODDS_API_KEY_20K_FILE",
+        "ODDS_API_KEY_100K_FILE",
+        "ODDS_API_KEY_FILE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("ODDS_API_KEY_FREE_FILE", str(missing_file))
+
+    with pytest.raises(ValueError, match="ODDS_API_KEY_FREE_FILE") as error:
+        configured_odds_api_keys()
+
+    assert str(missing_file) not in str(error.value)
+
+
+def test_configured_odds_api_keys_reports_unreadable_file_without_exposing_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ошибка прав доступа к mounted secret остаётся безопасной диагностикой."""
+    secret_file = tmp_path / "restricted-key"
+    secret_file.write_text("must-not-appear", encoding="utf-8")
+    secret_file.chmod(0o600)
+    original_read_text = Path.read_text
+    for name in (
+        "ODDS_API_KEY_FREE",
+        "ODDS_API_KEY_20K",
+        "ODDS_API_KEY_100K",
+        "ODDS_API_KEY",
+        "ODDS_API_KEY_FILE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("ODDS_API_KEY_FREE_FILE", str(secret_file))
+
+    def deny_secret_file(path: Path, *args: Any, **kwargs: Any) -> str:
+        if path == secret_file:
+            raise PermissionError("permission denied")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", deny_secret_file)
+
+    with pytest.raises(ValueError, match="ODDS_API_KEY_FREE_FILE") as error:
+        configured_odds_api_keys()
+
+    assert str(secret_file) not in str(error.value)
+    assert "must-not-appear" not in str(error.value)
+
+
+def test_configured_odds_api_keys_reads_legacy_file_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Старое имя ODDS_API_KEY поддерживает тот же raw-env-over-file fallback."""
+    secret_file = tmp_path / "legacy-key"
+    secret_file.write_text("legacy-file-secret", encoding="utf-8")
+    for name in (
+        "ODDS_API_KEY_FREE",
+        "ODDS_API_KEY_20K",
+        "ODDS_API_KEY_100K",
+        "ODDS_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("ODDS_API_KEY_FILE", str(secret_file))
+
+    assert [(key.tier, key.value) for key in configured_odds_api_keys()] == [
+        ("legacy", "legacy-file-secret")
+    ]
 
 
 def test_quota_limit_retries_request_with_next_configured_key(

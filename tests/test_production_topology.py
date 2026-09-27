@@ -234,6 +234,10 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
         "SF_APP_VERSION": "${SF_APP_VERSION:?set SF_APP_VERSION}",
         "SF_CANONICAL_SOURCE_CSV": "/app/data/source/nhl/current.csv",
         "SF_OPERATIONAL_ARCHIVE_ROOT": "/app/archive",
+        "ODDS_API_KEY_FREE_FILE": "/run/secrets/odds_api_key_free",
+        "ODDS_API_KEY_20K_FILE": "/run/secrets/odds_api_key_20k",
+        "ODDS_API_KEY_100K_FILE": "/run/secrets/odds_api_key_100k",
+        "ODDS_API_KEY_FILE": "/run/secrets/odds_api_key",
     }
     assert worker["labels"] == {
         "com.sfp.data-cycle.run-id": "${SF_DATA_CYCLE_RUN_ID:-untracked}",
@@ -246,6 +250,12 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
         "${SF_OPERATIONAL_ARCHIVE_ROOT:?set SF_OPERATIONAL_ARCHIVE_ROOT}:/app/archive",
     ]
     assert "SF_OBJECT_STORAGE_ACCESS_KEY_ID" not in cast(dict[str, str], worker["environment"])
+    assert {
+        "odds_api_key_free",
+        "odds_api_key_20k",
+        "odds_api_key_100k",
+        "odds_api_key",
+    }.issubset(set(cast(list[str], worker["secrets"])))
     assert source_acquirer["environment"] == {
         "DATABASE_URL_FILE": "/run/secrets/worker_database_url",
         "SF_DATA_CYCLE_RUN_ID": "${SF_DATA_CYCLE_RUN_ID:-untracked}",

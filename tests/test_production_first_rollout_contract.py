@@ -146,7 +146,8 @@ def test_runtime_commands_use_installed_environment_and_read_only_contract() -> 
         "sports_forecast.deploy.archive_sync_cli",
     ]
     assert "canonical_full_refresh_cli" in dockerfile
-    assert '"sports_forecast.bot", "hydra/job_logging=disabled"' in dockerfile
+    assert dockerfile.count('"hydra/job_logging=stdout"') == 2
+    assert dockerfile.count('"hydra.output_subdir=null"') == 2
     assert services["source-acquirer"]["command"] == [
         "/app/.venv/bin/python",
         "-m",

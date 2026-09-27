@@ -52,12 +52,12 @@ def test_lifecycle_cli_heartbeat_uses_claimed_generation(monkeypatch) -> None:
     assert calls == [("run-long", 7)]
 
 
-def test_canonical_full_refresh_disables_hydra_filesystem_logging() -> None:
-    """Явная Compose-команда сохраняет read-only overrides из Docker CMD."""
+def test_canonical_full_refresh_uses_stdout_hydra_logging_without_output_dir() -> None:
+    """Явная команда сохраняет stdout logging и read-only overrides из Docker CMD."""
     runner = (PROJECT_ROOT / "deploy/systemd/run-canonical-refresh.sh").read_text(encoding="utf-8")
     command = runner.split("canonical_full_refresh_cli \\", 1)[1].split(
         'active_stage="pipeline"', 1
     )[0]
 
-    assert '"hydra/job_logging=disabled"' in command
+    assert '"hydra/job_logging=stdout"' in command
     assert '"hydra.output_subdir=null"' in command
