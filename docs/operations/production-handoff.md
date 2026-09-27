@@ -1,24 +1,23 @@
-# Передача сервиса в эксплуатацию: v1.2.1 candidate
+# Передача сервиса в эксплуатацию: v1.2.2 candidate
 
 > Фактическое состояние на 2026-09-27: v1.2.1 частично развёрнут на VPS,
 > первый NHL Data Cycle завершился `failed/source_fetch_failed`, оба NHL timer
-> выключены. Исправления в TASK-025-13 / PR #42 ожидают нового immutable
-> release. Этот handoff не подтверждает production acceptance.
+> выключены. Исправления в TASK-025-13 / PR #42 слиты в `main`; новый
+> immutable release ещё не опубликован. Этот handoff не подтверждает
+> production acceptance.
 
 - Статус подготовки: `candidate`
 - Сервис: sports-probabilistic-forecasting
 - Canonical repository: Xieveer/sports-probabilistic-forecasting
 - Инициатива: EPIC-025, TASK-025-9.
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
-- source_tag: `v1.2.1`
-- source_commit: `0c56bf10d52e9802d75627988605f455714cef96`.
+- source_tag: `v1.2.2` (выпуск подтверждён владельцем; tag gate ожидается).
+- source_commit: определяется после terminal PR CI из exact main commit.
 
-Этот handoff относится к согласованному production-выпуску 1.2.1. Тег v1.2.0
-остался неизменным: его release gate завершился ошибкой до сборки образов.
-CI/evidence v1.2.1, production backup и ограниченный rollout выполнены;
-первый Data Cycle failed, поэтому статус handoff остаётся `candidate` до
-исправленного релиза и runtime acceptance. Тег указывает на commit,
-содержащий код, версию и исходный release contract.
+Этот handoff готовит исправленный patch release после неуспешного первого
+цикла v1.2.1. Теги v1.2.0 и v1.2.1 неизменны. CI/evidence v1.2.1,
+production backup и ограниченный rollout выполнены; первый Data Cycle failed.
+Для v1.2.2 нужны terminal CI, immutable manifest и runtime acceptance.
 
 ## Идентификация и ответственность
 
@@ -28,12 +27,12 @@ Telegram, защиту от второго исполнителя и итого�
 контракт проверяется на fixture; футбольный production pipeline не включается.
 Ручная команда запускает новый цикл, не перезапуская службы.
 
-Read-only preflight 2026-09-26/27 подтвердил текущий v1.1.22 commit
-97b24b3c95f10ced132a581cbec36cab06eb101b: running API, bot и PostgreSQL
-healthy, без рестартов, их digests совпадают с release manifest. В production
-БД 0 будущих NHL матчей на 30 дней, старый NHL timer disabled/inactive, без
-last/next trigger. PostgreSQL занимает 87 MB, на root filesystem свободно
-20 GiB. Повторить проверку непосредственно перед rollout.
+Production VPS сейчас на v1.2.1 commit
+`0c56bf10d52e9802d75627988605f455714cef96`: API, bot и PostgreSQL
+healthy, Alembic head `0017_data_cycle_notification_outbox`, оба NHL timer
+disabled. Первый run `5d9be516-13b6-4ea7-9709-0fbe26b1b649` terminal
+`failed/source_fetch_failed`; уведомление доставлено. Перед v1.2.2 rollout
+повторить привилегированный preflight и убедиться, что второго executor нет.
 
 ## Runtime и конфигурация
 
@@ -80,20 +79,19 @@ backup, неверный image/manifest, не-200 health/readiness, второй
 
 ## Данные и совместимость
 
-До migrations повторить privileged preflight по operations runbook
-sports-forecast-v1.2.0-readonly-preflight.md. Создать root-only PostgreSQL
-pg_dump -Fc непосредственно перед миграциями, проверить checksum/catalog и
-isolated restore на exact PostgreSQL image по operations runbook
-sports-forecast-v1.2.0-postgres-backup-restore.md. Подтвердить off-host copy,
-retention и restore evidence; локальный dump не защищает от потери VPS.
+Перед v1.2.2 rollout повторить privileged preflight по operations runbook,
+создать свежий root-only PostgreSQL `pg_dump -Fc`, проверить checksum/catalog,
+изолированное восстановление на exact PostgreSQL image и off-host
+download/hash. Backup v1.2.1 от 2026-09-27 восстановлен на VPS и проверен
+после скачивания из Object Storage; bucket retention/encryption текущий
+service account не может прочитать. Это открытый operational risk.
 
-Проверить фактический Alembic revision v1.1.22 и release head; неизвестный
-revision останавливает rollout. После preflight и backup сначала выполнить
-role-bootstrap для создания ограниченных ролей, затем migrator: additive
-Alembic migrations и применение least-privilege grants после создания таблиц.
-API и Worker не выполняют DDL при старте. Текущая БД
-не содержит таблиц calendar coverage и Data Cycle; canonical_events и
-OddsStore сохраняются.
+Фактический Alembic head перед и после v1.2.2 должен остаться
+`0017_data_cycle_notification_outbox`: hotfix не добавляет миграций.
+Повторно применить idempotent `database_roles` grant bootstrap из нового API
+image и подтвердить `sf_control_api` INSERT на `executor_generation`.
+Сохранить точные running v1.2.1 digests и конфигурацию для возврата serving
+API/bot при ошибке; v1.2.1 Data Cycle не является работающим rollback target.
 
 ## Наблюдаемость
 
@@ -106,30 +104,30 @@ Docker/DB логи, external payload или значения secrets. Истёк
 
 ## Артефакт и откат
 
-После независимого review и terminal PR CI Reviewer ставит annotated tag
-v1.2.1 на проверенном commit main. Tag pipeline должен завершить CI, Security,
+После независимого review и terminal PR CI
+Reviewer ставит annotated tag v1.2.2 на проверенном commit main. Tag pipeline
+должен завершить CI, Security,
 isolated first-rollout contract, публикацию linux/amd64 images, scan и
 provenance. Release owner запускает manual evidence gate с
 --handoff docs/operations/production-handoff.md; Operations сверяет exact
 digests с approved manifest. Mutable tag не служит runtime identifier.
 
-Root-owned wrapper принимает только команду:
+Действующий root-owned deploy wrapper пока разрешает только v1.1.22 и не
+применим к v1.2.2. Operations использует временный audited operator access и
+пошаговый runbook либо сначала обновляет wrapper отдельным review. До
+успешного ручного цикла dispatcher timer остаётся выключенным.
 
-```text
-deploy sports-probabilistic-forecasting v1.2.1
-```
-
-До migration rollback возможен на проверенную пару v1.1.22 image digests и
-совместимые systemd units. После migration откат одних images допускается
-только после isolated проверки старого API/bot на схеме 1.2.1. Пока её нет,
-применяется forward-fix либо отдельный restore pre-migration backup с
-остановкой writers и оценкой потери последующих записей. Destructive
-downgrade запрещён. Новый dispatcher выключается до возврата старых units.
+Для serving rollback сохранить verified v1.2.1 API/bot digests; их работа на
+схеме 0017 уже наблюдалась. Возврат v1.2.1 source-acquirer запрещён, пока
+четыре runtime-дефекта не исправлены. Destructive downgrade БД запрещён;
+восстановление backup требует остановки writers и оценки записей после
+снимка.
 
 ## Нерешённые вопросы
 
-Для GO ещё нужны полное EPIC review, terminal PR/tag
-CI, verified release manifest, фактический production backup/isolated
-restore/off-host evidence, old-reader compatibility, измерение runtime/quota,
-ограниченный rollout и первый плановый NHL run. Exact deployed revision и
-результаты smoke фиксирует Operations; после них закрывается TASK-025-9.
+Для GO ещё нужны terminal PR/tag CI, verified
+release manifest, свежий production backup/restore/off-host evidence,
+подтверждение backup retention либо явно принятое исключение, измерение
+runtime/quota, полный ручной run с 30-дневным coverage и первый плановый
+NHL run. Exact deployed revision и smoke фиксирует Operations; после них
+закрывается TASK-025-9.

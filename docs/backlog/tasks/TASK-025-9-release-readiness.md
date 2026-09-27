@@ -1,4 +1,4 @@
-# TASK-025-9 — Production выпуск 1.2.1 и проверка NHL
+# TASK-025-9 — Production выпуск и проверка NHL
 
 > **Статус:** in_progress — v1.2.1 частичный rollout; первый цикл failed
 > **Владелец:** Product Owner и Operations Agent
@@ -6,17 +6,24 @@
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
 > **ADR:** [ADR-026](../../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
 
+> Исправленный release candidate `v1.2.2` подготовлен после четырёх дефектов
+> первого цикла v1.2.1. Владелец подтвердил выпуск v1.2.2; критерии NHL
+> production acceptance ниже не меняются.
+
 ## Результат
 
-Выпустить проверенный exact commit как `v1.2.1`, запустить новый NHL Data Cycle
-по расписанию и подтвердить работу бота, API и ежедневного scheduler на
-production. Футбольный production pipeline не включается.
+Довести исправленный release candidate до immutable tag `v1.2.2`,
+запустить NHL Data Cycle по
+расписанию и подтвердить работу бота, API и ежедневного scheduler на
+production. Тег `v1.2.1` остаётся неизменным; футбольный production pipeline
+не включается.
 
 ## Критерии приёмки
 
 - [ ] Все функциональные TASK инициативы прошли независимое review, full EPIC
-  review, локальные проверки и terminal PR CI. `pyproject.toml` и handoff
-  указывают `1.2.1`; `make production-check` прошёл для `candidate`.
+  review, локальные проверки и terminal PR CI нового кандидата.
+  `pyproject.toml` и handoff указывают `1.2.2 candidate`;
+  `make production-check` должен пройти для final candidate.
 - [ ] Operations имеет привилегированное read-only evidence текущих image
   digests, Docker/DB состояния, последнего NHL run, календарного покрытия,
   прав/секретов по metadata и проверенного PostgreSQL backup. До этого
@@ -33,8 +40,9 @@ production. Футбольный production pipeline не включается.
 - [ ] Reviewer создаёт tag только на проверенном commit в `main`. Tag pipeline
   завершён успешно, immutable image digests/provenance/security evidence
   проверены перед изменением VPS.
-- [ ] Operations применяет additive migrations с backup, ограниченный rollout
-  и smoke: `/health`, `/ready`, календарь 0/7/30, event readiness, admin
+- [ ] Operations подтверждает действующий Alembic head 0017, проверяет
+  свежий backup, повторяет idempotent role grants и выполняет ограниченный
+  rollout и smoke: `/health`, `/ready`, календарь 0/7/30, event readiness, admin
   status/history/schedule/manual run, terminal stages, timer next trigger,
   допустимый журнал и отсутствие дубля цикла. Проверка не публикует секреты
   или полный внешний ответ.
@@ -58,8 +66,9 @@ coverage, quota и первый плановый запуск остаются �
 retention/encryption не подтверждены доступным service account. Фактический
 change record и incident находятся в репозитории `operations-agent`.
 
-Read-only preflight Operations Agent 2026-09-26: unit/drop-in NHL timer
-установлен, конфигурация 10:00 Europe/Moscow проверена, но timer
+Исторический preflight до ограниченного rollout v1.2.1: Operations Agent 2026-09-26
+подтвердил установленный unit/drop-in NHL timer и конфигурацию 10:00
+Europe/Moscow, но timer оставался
 `disabled/inactive`, last/next trigger отсутствуют. Текущий SSH-пользователь
 не имеет доступа к Docker, DB, protected deploy record и журналу systemd;
 эти gates требуют привилегированной операционной проверки. Сервер не менялся.
@@ -96,6 +105,7 @@ off-host retention и совместимость rollback пока не подт
 
 - Зависит от всех функциональных TASK инициативы, включая TASK-025-10,
   и полного EPIC review.
-- Перед rollout обновить `docs/operations/production-handoff.md` до
-  `v1.2.1 candidate`, выполнить `make production-check`.
+- Перед следующим rollout подтвердить exact candidate в
+  `docs/operations/production-handoff.md` и выполнить
+  `make production-check`.
 - Deployment evidence и итоговый done report ожидаются после production smoke.
