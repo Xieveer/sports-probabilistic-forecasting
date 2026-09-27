@@ -2,8 +2,8 @@
 
 > Фактическое состояние на 2026-09-27: v1.2.1 частично развёрнут на VPS,
 > первый NHL Data Cycle завершился `failed/source_fetch_failed`, оба NHL timer
-> выключены. Исправления в TASK-025-13 / PR #42 слиты в `main`; новый
-> immutable release ещё не опубликован. Этот handoff не подтверждает
+> выключены. Исправления в TASK-025-13 / PR #42 слиты в `main`; tag v1.2.2
+> указывает на проверенный commit. Этот handoff не подтверждает
 > production acceptance.
 
 - Статус подготовки: `candidate`
@@ -11,13 +11,15 @@
 - Canonical repository: Xieveer/sports-probabilistic-forecasting
 - Инициатива: EPIC-025, TASK-025-9.
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
-- source_tag: `v1.2.2` (выпуск подтверждён владельцем; tag gate ожидается).
-- source_commit: определяется после terminal PR CI из exact main commit.
+- source_tag: `v1.2.2` (выпуск подтверждён владельцем).
+- source_commit: `3f2b4bb94421bdc00aa1d5185bdfaaf30a94acee`.
 
 Этот handoff готовит исправленный patch release после неуспешного первого
 цикла v1.2.1. Теги v1.2.0 и v1.2.1 неизменны. CI/evidence v1.2.1,
 production backup и ограниченный rollout выполнены; первый Data Cycle failed.
-Для v1.2.2 нужны terminal CI, immutable manifest и runtime acceptance.
+Tag pipeline `36312177063` завершился успешно, включая security, isolated
+first-rollout, публикацию и проверку exact image digests. Для v1.2.2 ещё
+нужны проверенный immutable evidence manifest и runtime acceptance.
 
 ## Идентификация и ответственность
 
@@ -79,11 +81,13 @@ backup, неверный image/manifest, не-200 health/readiness, второй
 
 ## Данные и совместимость
 
-Перед v1.2.2 rollout повторить privileged preflight по operations runbook,
-создать свежий root-only PostgreSQL `pg_dump -Fc`, проверить checksum/catalog,
-изолированное восстановление на exact PostgreSQL image и off-host
-download/hash. Backup v1.2.1 от 2026-09-27 восстановлен на VPS и проверен
-после скачивания из Object Storage; bucket retention/encryption текущий
+Перед v1.2.2 rollout повторить privileged preflight по operations runbook.
+Fresh root-only PostgreSQL `pg_dump -Fc` от 2026-09-27 10:17 UTC
+(29 312 570 bytes, SHA-256
+`996527c5880e468cdf24cd94861dd5c429a96a19ca6e6718f6512095e59d5c19`)
+прошёл catalog check, изолированное восстановление на exact PostgreSQL image
+и off-host download/hash. Дополнительная копия на машине владельца сверена
+по SHA-256. Bucket retention/encryption текущий
 service account не может прочитать. Это открытый operational risk.
 
 Фактический Alembic head перед и после v1.2.2 должен остаться
@@ -125,8 +129,7 @@ digests с approved manifest. Mutable tag не служит runtime identifier.
 
 ## Нерешённые вопросы
 
-Для GO ещё нужны terminal PR/tag CI, verified
-release manifest, свежий production backup/restore/off-host evidence,
+Для GO ещё нужны verified release manifest,
 подтверждение backup retention либо явно принятое исключение, измерение
 runtime/quota, полный ручной run с 30-дневным coverage и первый плановый
 NHL run. Exact deployed revision и smoke фиксирует Operations; после них

@@ -12,7 +12,7 @@
 - Ветка инициативы: исходная `initiative/epic-025-bot-readiness` слита;
   correction cycle `initiative/epic-025-13-runtime-hotfix` слит;
   release candidate — `initiative/epic-025-release-1_2_2`.
-- Workflow / этап: `release / v1.2.1 частично установлен; hotfix PR #42 merged; v1.2.2 одобрен владельцем, candidate PR #43`.
+- Workflow / этап: `release evidence / v1.2.1 частично установлен; v1.2.2 tag pipeline завершён; production rollout ожидается`.
 - Исходная цель: календарь NHL независимо от прогноза, готовность событий,
   админ-управление Data Cycle и выпуск `1.2.1`;
   [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
@@ -105,6 +105,11 @@
   доставлено. Выявлены четыре runtime-дефекта TASK-025-13. Их исправление
   прошло 28 Developer и 52 Reviewer теста без P0–P2; PR #42 CI прошёл и
   слит в `main` commit `35f1c6a7e80188d94b750674d11a1f0f8fd08e79`.
+  PR #43 слит в `main` commit `3f2b4bb94421bdc00aa1d5185bdfaaf30a94acee`;
+  immutable tag `v1.2.2` и tag pipeline `36312177063` завершились успешно,
+  включая first-rollout contract, публикацию и проверку exact image digests.
+  Fresh pre-v1.2.2 backup от 2026-09-27 восстановлен изолированно и сверен
+  после off-host скачивания; дополнительная копия хранится на машине владельца.
 - Решения: [ADR-026](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
   принят после независимого review: календарь независим от прогноза, control
   state в PostgreSQL, ограниченный control API и systemd dispatcher;
@@ -114,15 +119,15 @@
 - Артефакты: [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
 - Предыдущая роль: Reviewer — полный EPIC review и повторная проверка
   first-rollout fixture без P0–P2.
-- Следующая роль: Product Owner — terminal PR #43 CI, tag/evidence gate;
+- Следующая роль: Product Owner — immutable evidence gate;
   затем Operations — повторный ручной и первый
   плановый NHL run.
 - Открытые вопросы / блокеры: первый production Data Cycle failed;
   30-дневное coverage и odds quota не подтверждены. Оба NHL timer выключены.
-  Backup изолированно восстановлен на VPS; off-host копия скачана и сверена
+  Fresh backup изолированно восстановлен на VPS; off-host копия скачана и сверена
   по SHA-256. Bucket retention/encryption не удалось прочитать текущим
   service account. Production release NO-GO до
-  исправленного artifact и успешных runtime gates.
+  verified evidence manifest и успешных runtime gates.
 - Обновлено: 2026-09-27.
 
 ## Цель и границы

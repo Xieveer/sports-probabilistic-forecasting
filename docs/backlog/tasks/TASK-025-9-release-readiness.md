@@ -20,11 +20,11 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
 
 ## Критерии приёмки
 
-- [ ] Все функциональные TASK инициативы прошли независимое review, full EPIC
+- [x] Все функциональные TASK инициативы прошли независимое review, full EPIC
   review, локальные проверки и terminal PR CI нового кандидата.
   `pyproject.toml` и handoff указывают `1.2.2 candidate`;
   `make production-check` должен пройти для final candidate.
-- [ ] Operations имеет привилегированное read-only evidence текущих image
+- [x] Operations имеет привилегированное read-only evidence текущих image
   digests, Docker/DB состояния, последнего NHL run, календарного покрытия,
   прав/секретов по metadata и проверенного PostgreSQL backup. До этого
   rollback target не считается установленным.
@@ -37,7 +37,7 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
   cadence/allowlist не создают overlap. Старый timer и новый dispatcher
   переключаются взаимоисключающе, с проверкой disabled/enabled и следующего
   trigger. На preflight 2026-09-26 старый NHL timer был disabled/inactive.
-- [ ] Reviewer создаёт tag только на проверенном commit в `main`. Tag pipeline
+- [x] Reviewer создаёт tag только на проверенном commit в `main`. Tag pipeline
   завершён успешно, immutable image digests/provenance/security evidence
   проверены перед изменением VPS.
 - [ ] Operations подтверждает действующий Alembic head 0017, проверяет
@@ -65,6 +65,15 @@ heartbeat watcher. Новый и старый NHL timer оставлены disab
 coverage, quota и первый плановый запуск остаются открытыми. Bucket
 retention/encryption не подтверждены доступным service account. Фактический
 change record и incident находятся в репозитории `operations-agent`.
+PR #43 прошёл review/CI и слит в `main` commit
+`3f2b4bb94421bdc00aa1d5185bdfaaf30a94acee`; tag `v1.2.2` указывает
+на него. [Tag pipeline 36312177063](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36312177063)
+завершился успешно: security, first-rollout, публикация и проверка digest
+образов. Свежий pre-v1.2.2 dump (29 312 570 bytes, SHA-256
+`996527c5880e468cdf24cd94861dd5c429a96a19ca6e6718f6512095e59d5c19`)
+прошёл catalog и isolated restore; off-host Object Storage и локальная
+копии скачаны и сверены по checksum. Manual release-evidence gate и
+production acceptance ожидаются.
 
 Исторический preflight до ограниченного rollout v1.2.1: Operations Agent 2026-09-26
 подтвердил установленный unit/drop-in NHL timer и конфигурацию 10:00
