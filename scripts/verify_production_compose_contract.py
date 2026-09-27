@@ -8,7 +8,14 @@ from pathlib import Path
 import yaml
 
 
-APPLICATION_SERVICES = {"api", "telegram-bot", "source-acquirer", "worker", "archive-sync"}
+APPLICATION_SERVICES = {
+    "api",
+    "data-cycle-dispatcher",
+    "telegram-bot",
+    "source-acquirer",
+    "worker",
+    "archive-sync",
+}
 EXPECTED_SERVICES = APPLICATION_SERVICES | {"db", "migrator", "role-bootstrap"}
 FORBIDDEN_SERVICES = {"caddy", "mlflow", "prometheus", "grafana", "airflow", "dvc", "node-exporter"}
 
@@ -68,10 +75,43 @@ def verify_contract(rendered_path: Path, *, model_runtime_root: Path) -> None:
             f"{name}: image должен быть immutable digest",
         )
 
+    api_env = services["api"].get("environment")
+    _require(isinstance(api_env, dict), "api: environment должен быть mapping")
     _require(
-        services["api"].get("environment")
-        == {"DATABASE_URL_FILE": "/run/secrets/api_database_url"},
-        "api: DB URL должен передаваться только secret file",
+        set(api_env)
+        == {
+            "DATABASE_URL_FILE",
+            "SF_CONTROL_DATABASE_URL_FILE",
+            "SF_CONTROL_API_KEY_FILE",
+            "SF_CONTROL_ADMIN_IDS",
+            "SF_DATA_CYCLE_NOTIFICATION_ALIASES",
+        }
+        and api_env["DATABASE_URL_FILE"] == "/run/secrets/api_database_url"
+        and api_env["SF_CONTROL_DATABASE_URL_FILE"] == "/run/secrets/control_database_url"
+        and api_env["SF_CONTROL_API_KEY_FILE"] == "/run/secrets/control_api_key"
+        and bool(api_env["SF_CONTROL_ADMIN_IDS"])
+        and bool(api_env["SF_DATA_CYCLE_NOTIFICATION_ALIASES"]),
+        "api: reader/control credentials должны передаваться только secret files; admin и aliases обязательны",
+    )
+    dispatcher_env = services["data-cycle-dispatcher"].get("environment")
+    _require(
+        dispatcher_env == {"SF_CONTROL_DATABASE_URL_FILE": "/run/secrets/control_database_url"},
+        "dispatcher: control DB URL должен передаваться только secret file",
+    )
+    bot_env = services["telegram-bot"].get("environment")
+    _require(
+        isinstance(bot_env, dict)
+        and bot_env.get("BOT_CONTROL_API_KEY_FILE") == api_env["SF_CONTROL_API_KEY_FILE"]
+        and bot_env.get("BOT_NOTIFICATION_DESTINATIONS_FILE")
+        == "/run/secrets/bot_notification_destinations",
+        "bot: control key и notification destinations должны передаваться через secret files",
+    )
+    worker_env = services["worker"].get("environment")
+    _require(
+        isinstance(worker_env, dict)
+        and worker_env.get("SF_DATA_CYCLE_NOTIFICATION_ALIASES")
+        == api_env["SF_DATA_CYCLE_NOTIFICATION_ALIASES"],
+        "worker: aliases должны совпадать с API",
     )
     migration_dependency = services["migrator"].get("depends_on", {}).get("role-bootstrap", {})
     _require(
@@ -88,7 +128,8 @@ def verify_contract(rendered_path: Path, *, model_runtime_root: Path) -> None:
         _require(services[name].get("restart") == "unless-stopped", f"{name}: restart contract")
     _require(bool(services["db"].get("healthcheck")), "db: healthcheck обязателен")
     base_memory = sum(
-        _memory_mib(services[name]["mem_limit"]) for name in ("db", "api", "telegram-bot")
+        _memory_mib(services[name]["mem_limit"])
+        for name in ("db", "api", "telegram-bot", "data-cycle-dispatcher")
     )
     job_memory = max(
         _memory_mib(services[name]["mem_limit"])

@@ -302,7 +302,7 @@ Bot доставляет только в заранее настроенные a
 5. Outbox и полный кодовый сценарий Telegram update → handler → ASGI API → DB:
    fake Telegram transport, clock/provider fixtures, без production token/сети.
 6. Operations: новые grants/secrets, миграция с backup, замена timer, измерение
-   runtime/квот, candidate handoff, release/rollback 1.2.0 и фактический daily run.
+   runtime/квот, candidate handoff, release/rollback 1.2.1 и фактический daily run.
 
 Каждый TASK заканчивается review и done evidence по правилам репозитория.
 SQLite полезен для отдельных unit tests, но не заменяет PostgreSQL concurrency
@@ -311,7 +311,7 @@ systemd adapter проверяется отдельно dry-run и затем Op
 
 Release gate должен проверить установленный timer, dispatcher heartbeat,
 terminal run/stage history, 30-дневное coverage, API readiness и новую версию
-бота. Старый handoff v1.1.22 разрешал только замену бота и не подходит 1.2.0:
+бота. Старый handoff v1.1.22 разрешал только замену бота и не подходит 1.2.1:
 Product Owner/Operations обновляют его до release. Этот proposed ADR не является
 доказательством работоспособности production или разрешением обойти gates.
 
@@ -345,6 +345,6 @@ host lock/recovery, необходимости process isolation admin API ил�
   проверено 2026-09-26: активный service не перезапускается tick; AccuracySec влияет
   на фактический момент вызова. Бизнес-расписание и recovery должны быть явными.
 - Не проверены в этой архитектурной работе: текущая схема публичного NHL API и
-  фактическое 30-дневное покрытие, server timer/version, measured runtime 1.2.0,
+  фактическое 30-дневное покрытие, server timer/version, measured runtime 1.2.1,
   quotas, значения SLA/allowlist интервалов. Адаптер проверяется по fixtures и
   разрешённому read-only provider probe; production подтверждает Operations.

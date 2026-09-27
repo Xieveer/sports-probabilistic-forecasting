@@ -511,6 +511,8 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
                     "operational-sync",
                     "--profile",
                     "source-acquisition",
+                    "--profile",
+                    "scheduler",
                     "config",
                 ]
             ).stdout,

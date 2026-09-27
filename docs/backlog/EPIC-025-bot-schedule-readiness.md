@@ -12,11 +12,12 @@
 - Ветка инициативы: `initiative/epic-025-bot-readiness` в основном каталоге проекта.
 - Workflow / этап: `release / полный EPIC review чистый; local candidate commit gate`.
 - Исходная цель: календарь NHL независимо от прогноза, готовность событий,
-  админ-управление Data Cycle и выпуск `1.2.0`;
+  админ-управление Data Cycle и выпуск `1.2.1`;
   [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
 - Критерии приёмки и DoD: подтверждены владельцем в REQ-025; независимый
   review, CI и production health/smoke входят в release gate.
-- Релиз: production `1.2.0` запрошен пользователем.
+- Релиз: пользователь запросил production `1.2.0`; после failure immutable tag
+  gate согласовал `1.2.1` как первый production выпуск.
 - Выполнено: владелец дал полную постановку в Google Doc; REQ-025 приведён к
   ней и подтверждена трактовка «Сегодня» до 08:00 МСК; ограничение API
   прогнозами, 48-часовой минимум source и расхождение `/refresh` с systemd
@@ -98,7 +99,7 @@
   state в PostgreSQL, ограниченный control API и systemd dispatcher;
   для NHL один связанный цикл;
   ручная команда повторяет data job без перезапуска служб; футбол проверяется
-  по общему контракту без включения в `1.2.0`.
+  по общему контракту без включения в `1.2.1`.
 - Артефакты: [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
 - Предыдущая роль: Reviewer — полный EPIC review и повторная проверка
   first-rollout fixture без P0–P2.
@@ -107,7 +108,7 @@
 - Открытые вопросы / блокеры: ежедневный NHL timer на VPS выключен;
   привилегированный read-only preflight подтвердил v1.1.22 и immutable
   digests запущенных сервисов, но ещё нет verified production backup/restore,
-  проверки rollback после миграций и runtime evidence цикла 1.2.0.
+  проверки rollback после миграций и runtime evidence цикла 1.2.1.
   Это production release NO-GO до исправления и проверки. EPIC-023 имеет
   статус `in_progress`, пересечение требует сверки.
 - Обновлено: 2026-09-27.
@@ -116,7 +117,7 @@
 
 Реализовать [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md):
 календарь и готовность событий, Data Cycle с управлением из Telegram,
-операционную готовность NHL и выпуск `1.2.0` в production. Футбол проверяется
+операционную готовность NHL и выпуск `1.2.1` в production. Футбол проверяется
 контрольным сценарием без включения в пользовательское меню.
 
 ## Декомпозиция
@@ -129,7 +130,8 @@
 | [TASK-025-6](tasks/TASK-025-6-future-odds.md) | Calendar-first future NHL odds | semantic evidence, quota, identity, freshness | done |
 | [TASK-025-7](tasks/TASK-025-7-data-cycle-recovery-summary.md) | Terminal stages, summary и run history query contract | stage faults, coverage, safe DTO | done; production runtime в TASK-025-9 |
 | [TASK-025-8](tasks/TASK-025-8-executor-fencing.md) | Executor recovery/fencing after crash | PostgreSQL race, no duplicate executor | done; production activation в TASK-025-9 |
-| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production v1.2.0 and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; local candidate |
+| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production v1.2.1 and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; local candidate |
+| [TASK-025-12](tasks/TASK-025-12-release-compose-gate.md) | Исправить Compose release gate | новый API/dispatcher contract и память | in_progress; review ожидается |
 | [TASK-025-10](tasks/TASK-025-10-run-summary-producers.md) | Full run summary producers and coverage | same-run counters, n/a denominator, football fixture | done |
 | [TASK-025-11](tasks/TASK-025-11-telegram-calendar.md) | Public NHL calendar in Telegram | 08:00, all horizons, no prediction, bot→API test | done |
 | [TASK-025-4](tasks/TASK-025-4-schedule-control.md) | Persisted schedule, manual control, dispatcher | admin auth, races, restart, catch-up | done; production activation в TASK-025-9 |
@@ -137,7 +139,7 @@
 
 Operations release gate зафиксирован в TASK-025-9. Immutable digests текущих
 running сервисов известны; совместимость отката после миграций и release
-inputs для 1.2.0 ещё требуют проверки.
+inputs для 1.2.1 ещё требуют проверки.
 
 ## Риски и rollout
 

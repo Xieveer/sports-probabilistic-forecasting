@@ -82,7 +82,7 @@ services:
       db:
         condition: service_healthy
     cpus: "0.5"
-    mem_limit: 512m
+    mem_limit: 192m
     user: "10001:10001"
     read_only: true
     tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
