@@ -35,3 +35,13 @@ Developer: 68 целевых тестов прошли после исходно
 `make production-check`, 13 release-version тестов и `make docs`
 (155 предупреждений) прошли. Полный локальный Docker first-rollout,
 PR/tag/evidence CI и production manual run пока открыты.
+
+Первый full first-rollout на clean SHA `3522811` остановился **до MinIO**:
+host harness не мог обойти временные архивные каталоги mode 0700,
+принадлежащие runtime UID 10001. Все пять image targets собрались, а
+cleanup завершился без оставшихся контейнеров. Перечисление manifest
+перенесено внутрь того же Compose service под UID 10001 и read-only mount;
+права архивов не ослаблялись. Developer подтвердил красный тест старого
+host-side вызова и 41 прошедший целевой тест, Reviewer — P0–P2 нет,
+29 first-rollout contract тестов и Ruff. Повторный full first-rollout
+требуется на новом clean SHA.

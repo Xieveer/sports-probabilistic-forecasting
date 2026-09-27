@@ -394,10 +394,37 @@ def _sync_operational_archives(
 ) -> int:
     """Синхронизировать все manifest artifacts через тот же Compose CLI контракт."""
     archive_root = Path(values["SF_OPERATIONAL_ARCHIVE_ROOT"])
+    listing_code = (
+        "import os, sys\n"
+        "def fail(error):\n"
+        "    raise error\n"
+        "for directory, _subdirs, filenames in os.walk("
+        "'/app/archive/operational-archive', onerror=fail):\n"
+        "    for filename in filenames:\n"
+        "        if filename == 'manifest.json':\n"
+        "            path = os.path.join(directory, filename)\n"
+        "            relative = os.path.relpath(path, '/app/archive')\n"
+        "            sys.stdout.buffer.write(os.fsencode(relative) + b'\\0')\n"
+    )
     manifests_output = _run(
-        ["bash", "deploy/systemd/list-canonical-archive-manifests.sh", str(archive_root)]
+        [
+            *compose,
+            "--profile",
+            "operational-sync",
+            "run",
+            "--rm",
+            "--no-deps",
+            "archive-sync",
+            "/app/.venv/bin/python",
+            "-c",
+            listing_code,
+        ],
+        timeout=timeout,
     ).stdout
-    manifests = [Path(item) for item in manifests_output.split("\0") if item]
+    manifest_relatives = [Path(item) for item in manifests_output.split("\0") if item]
+    if any(path.is_absolute() or ".." in path.parts for path in manifest_relatives):
+        raise RuntimeError("archive-sync вернул некорректный manifest path")
+    manifests = [archive_root / relative for relative in manifest_relatives]
     if not manifests:
         raise RuntimeError("first-rollout Worker не создал immutable operational archive")
 

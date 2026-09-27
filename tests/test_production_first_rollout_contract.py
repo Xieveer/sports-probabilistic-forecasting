@@ -395,11 +395,16 @@ def test_first_rollout_syncs_each_artifact_with_runner_cli_and_matching_prefix(
         manifest.write_text("{}", encoding="utf-8")
 
     captured: list[list[str]] = []
+    listing_commands: list[list[str]] = []
+
+    def record_listing(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        listing_commands.append(command)
+        output = "\0".join(manifest.relative_to(archive_root).as_posix() for manifest in manifests)
+        return subprocess.CompletedProcess(command, 0, stdout=output + "\0", stderr="")
+
     monkeypatch.setattr(
         "scripts.run_production_first_rollout._run",
-        lambda command, **_kwargs: subprocess.CompletedProcess(
-            command, 0, stdout="\0".join(map(str, manifests)) + "\0", stderr=""
-        ),
+        record_listing,
     )
     monkeypatch.setattr(
         "scripts.run_production_first_rollout._run_one_shot_checked",
@@ -416,6 +421,21 @@ def test_first_rollout_syncs_each_artifact_with_runner_cli_and_matching_prefix(
     )
 
     assert count == 2
+    assert len(listing_commands) == 1
+    listing_command = listing_commands[0]
+    assert listing_command[:3] == ["docker", "compose", "--project-name"]
+    assert listing_command[listing_command.index("archive-sync") + 1] == ("/app/.venv/bin/python")
+    listing_code = listing_command[listing_command.index("-c") + 1]
+    assert "'/app/archive/operational-archive'" in listing_code
+    assert "os.walk" in listing_code
+    assert "sys.stdout.buffer.write(os.fsencode(relative) + b'\\0')" in listing_code
+    assert not any("list-canonical-archive-manifests.sh" in item for item in listing_command)
+    compose_services = yaml.safe_load(
+        (PROJECT_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    )["services"]
+    archive_sync_service = compose_services["archive-sync"]
+    assert archive_sync_service["user"] == "10001:10001"
+    assert any(volume.endswith(":/app/archive:ro") for volume in archive_sync_service["volumes"])
     assert len(captured) == 2
     for command in captured:
         assert command[command.index("archive-sync") + 1 : command.index("archive-sync") + 5] == [
@@ -453,7 +473,10 @@ def test_first_rollout_requires_both_canonical_and_source_state_archives(
     monkeypatch.setattr(
         "scripts.run_production_first_rollout._run",
         lambda command, **_kwargs: subprocess.CompletedProcess(
-            command, 0, stdout=f"{manifest}\0", stderr=""
+            command,
+            0,
+            stdout=f"{manifest.relative_to(archive_root).as_posix()}\0",
+            stderr="",
         ),
     )
     monkeypatch.setattr(
