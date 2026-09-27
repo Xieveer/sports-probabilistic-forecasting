@@ -63,6 +63,25 @@ def _wait_for(command: list[str], *, timeout: int = 90) -> str:
     raise RuntimeError("healthcheck не стал успешным за допустимое время")
 
 
+def _smoke_calendar_endpoints(compose: list[str]) -> None:
+    """Проверить production NHL calendar routes без чтения/логирования payload."""
+    for period in ("today", "7", "30"):
+        _run(
+            [
+                *compose,
+                "exec",
+                "-T",
+                "api",
+                "curl",
+                "-fsS",
+                "-o",
+                "/dev/null",
+                f"http://localhost:8000/calendar/nhl?period={period}",
+            ],
+            timeout=120,
+        )
+
+
 def _wait_for_docker_health(container_id: str, *, timeout: int = 120) -> None:
     """Дождаться Docker health=healthy, а не только успешного inspect."""
     deadline = time.monotonic() + timeout
@@ -404,7 +423,11 @@ def _probe_runtime_identities(
         "sed -E 's#.*://[^:]+:([^@]+)@.*#\\1#')\"; "
         "psql -h db -U sf_api_reader -d sports_forecast -v ON_ERROR_STOP=1 -tAc "
         '"SELECT count(*) FROM predictions p WHERE NOT EXISTS (SELECT 1 FROM '
-        'tournament_publication_states s WHERE s.tournament = p.tournament)"'
+        "tournament_publication_states s WHERE s.tournament = p.tournament); "
+        "SELECT count(*) FROM data_cycle_stage_results AS stage "
+        "JOIN data_cycle_runs AS run ON run.run_id = stage.run_id "
+        "WHERE run.tournament = 'nhl' AND stage.stage = 'data_odds'"
+        '"'
     )
     worker_probe = (
         'export PGPASSWORD="$(cat /run/secrets/database_url | '
@@ -694,12 +717,15 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
                     "|",
                     "-c",
                     "SELECT has_table_privilege('sf_api_reader', 'public.predictions', 'SELECT'), "
+                    "has_table_privilege('sf_api_reader', 'public.data_cycle_stage_results', 'SELECT'), "
+                    "has_column_privilege('sf_api_reader', 'public.data_cycle_runs', 'run_id', 'SELECT'), "
+                    "has_column_privilege('sf_api_reader', 'public.data_cycle_runs', 'tournament', 'SELECT'), "
                     "has_table_privilege('sf_api_reader', 'public.alembic_version', 'SELECT'), "
                     "has_table_privilege('sf_refresh_writer', 'public.alembic_version', 'SELECT')",
                 ],
                 timeout=180,
             ).stdout.strip()
-            if role_contract != "t|f|f":
+            if role_contract != "t|t|t|t|f|f":
                 raise RuntimeError("DB catalog grants не соответствуют reader/writer deny contract")
             evidence["health"]["database_role_catalog"] = "ok"
             _probe_runtime_identities(
@@ -926,6 +952,8 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
                 [*compose, "exec", "-T", "api", "curl", "-fsS", "http://localhost:8000/ready"]
             )
             evidence["health"]["api_ready"] = "ok"
+            _smoke_calendar_endpoints(compose)
+            evidence["health"]["calendar_periods"] = "ok"
             telegram_stub = f"{project_name}-telegram-test"
             _run(
                 [

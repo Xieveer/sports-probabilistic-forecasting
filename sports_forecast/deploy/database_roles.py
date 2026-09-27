@@ -9,7 +9,8 @@ from sports_forecast.service.db.engine import get_engine
 
 RUNTIME_GRANTS = (
     "GRANT USAGE ON SCHEMA public TO sf_api_reader, sf_refresh_writer, sf_control_api",
-    "GRANT SELECT ON TABLE predictions, tournament_publication_states, canonical_events, canonical_event_revisions, calendar_coverages, odds_observations, odds_acquisition_attempts TO sf_api_reader",
+    "GRANT SELECT ON TABLE predictions, tournament_publication_states, canonical_events, canonical_event_revisions, calendar_coverages, odds_observations, odds_acquisition_attempts, data_cycle_stage_results TO sf_api_reader",
+    "GRANT SELECT (run_id, tournament) ON TABLE data_cycle_runs TO sf_api_reader",
     "GRANT SELECT ON TABLE data_cycle_runs, data_cycle_stage_results, pipeline_schedules, data_cycle_control_requests, data_cycle_dispatcher_state TO sf_control_api",
     "GRANT SELECT ON TABLE data_cycle_notification_outbox TO sf_control_api",
     "GRANT UPDATE (status, attempts, available_at, lease_token, lease_until, last_error_code, delivered_at) ON TABLE data_cycle_notification_outbox TO sf_control_api",

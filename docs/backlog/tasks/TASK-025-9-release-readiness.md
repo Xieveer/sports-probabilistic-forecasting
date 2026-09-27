@@ -8,11 +8,12 @@
 
 > v1.2.5 обслуживает календарь: 187 матчей за 30 дней, coverage `complete`.
 > Три Odds API ключа получили `INVALID_KEY`; владелец выбрал продолжение
-> без odds. Готовится v1.2.6 с явным OFF-режимом, таймер пока выключен.
+> без odds. v1.2.6 OFF-режим прошёл isolated replay, но serving smoke выявил
+> calendar 500; v1.2.5 восстановлен. Готовится v1.2.7, таймер выключен.
 
 ## Результат
 
-Довести исправленный release candidate до immutable tag `v1.2.6`,
+Довести исправленный release candidate до immutable tag `v1.2.7`,
 запустить NHL Data Cycle по
 расписанию и подтвердить работу бота, API и ежедневного scheduler на
 production. Тег `v1.2.1` остаётся неизменным; футбольный production pipeline
@@ -22,7 +23,7 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
 
 - [ ] Все функциональные TASK инициативы прошли независимое review, full EPIC
   review, локальные проверки и terminal PR CI нового кандидата.
-  `pyproject.toml` и handoff указывают `1.2.6 candidate`;
+  `pyproject.toml` и handoff указывают `1.2.7 candidate`;
   `make production-check` должен пройти для final candidate.
 - [ ] Operations имеет привилегированное read-only evidence текущих image
   digests, Docker/DB состояния, последнего NHL run, календарного покрытия,
@@ -48,7 +49,7 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
   допустимый журнал и отсутствие дубля цикла. Проверка не публикует секреты
   или полный внешний ответ.
 - [ ] До Worker run установлен и проверен immutable model bundle с
-  `app_version=1.2.6` из неизменённых одобренных весов/features; старый
+  `app_version=1.2.7` из неизменённых одобренных весов/features; старый
   `current` и checksums сохранены для rollback.
 - [ ] После первого scheduled запуска подтверждены run_id, дата/время,
   стадии, фактическое 30-дневное coverage и сообщение администратору.
@@ -116,6 +117,17 @@ odds. [TASK-025-18](TASK-025-18-optional-future-odds.md) добавляет яв
 eligible future matches, но обнаружил нулевые in-transaction counters при
 `autoflush=False`. Исправление в
 [TASK-025-19](TASK-025-19-publication-count-flush.md) входит в v1.2.6.
+
+v1.2.6 PR/tag/evidence CI и isolated true OFF replay прошли: exact Worker
+опубликовал 1 834 прогнозов, `predictions_ready=187/187`, odds attempts 0.
+Свежий backup прошёл restore/off-host/third-copy, exact model contract и
+pre-switch gates прошли. После ограниченного API/bot switch `/health` и
+`/ready` были 200, но calendar smoke дал HTTP 500: API role не имела
+`SELECT` на `data_cycle_stage_results`. Serving и конфигурация восстановлены
+на v1.2.5; календарь 0/7/30 = 0/34/187, active0, оба timer disabled.
+Ручной v1.2.6 Data Cycle не запускался. Точечное исправление и release
+smoke exact JOIN находятся в
+[TASK-025-20](TASK-025-20-calendar-stage-read-grant.md).
 
 Исторический preflight до ограниченного rollout v1.2.1: Operations Agent 2026-09-26
 подтвердил установленный unit/drop-in NHL timer и конфигурацию 10:00
