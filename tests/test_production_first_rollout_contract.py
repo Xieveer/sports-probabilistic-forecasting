@@ -23,6 +23,7 @@ from scripts.run_production_first_rollout import (
     _restore_runtime_root_ownership,
     _start_s3_fixture,
 )
+from scripts.verify_production_compose_contract import verify_contract
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -95,8 +96,9 @@ def test_production_compose_fixture_renders_all_first_rollout_profiles(tmp_path:
             "operational-sync",
             "--profile",
             "source-acquisition",
+            "--profile",
+            "scheduler",
             "config",
-            "--quiet",
         ],
         cwd=PROJECT_ROOT,
         env={"PATH": str(Path(docker).parent), "HOME": str(tmp_path)},
@@ -105,6 +107,23 @@ def test_production_compose_fixture_renders_all_first_rollout_profiles(tmp_path:
         check=False,
     )
     assert result.returncode == 0, result.stderr
+    rendered = tmp_path / "rendered.yml"
+    rendered.write_text(result.stdout, encoding="utf-8")
+    verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
+
+    config = yaml.safe_load(result.stdout)
+    config["services"]["api"]["environment"]["SF_CONTROL_DATABASE_URL_FILE"] = (
+        "postgresql://unsafe@db/sports_forecast"
+    )
+    rendered.write_text(yaml.safe_dump(config), encoding="utf-8")
+    with pytest.raises(ValueError, match="reader/control credentials"):
+        verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
+
+    config = yaml.safe_load(result.stdout)
+    config["services"]["data-cycle-dispatcher"]["mem_limit"] = "512m"
+    rendered.write_text(yaml.safe_dump(config), encoding="utf-8")
+    with pytest.raises(ValueError, match="не оставляет минимум"):
+        verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
 
 
 def test_runtime_commands_use_installed_environment_and_read_only_contract() -> None:

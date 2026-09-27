@@ -1,14 +1,15 @@
-# Передача сервиса в эксплуатацию: v1.2.0 candidate
+# Передача сервиса в эксплуатацию: v1.2.1 candidate
 
 - Статус подготовки: `candidate`
 - Сервис: sports-probabilistic-forecasting
 - Canonical repository: Xieveer/sports-probabilistic-forecasting
 - Инициатива: EPIC-025, TASK-025-9.
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
-- source_tag: `v1.2.0`
-- source_commit: определяется из annotated tag v1.2.0 перед rollout.
+- source_tag: `v1.2.1`
+- source_commit: определяется из annotated tag v1.2.1 перед rollout.
 
-Этот handoff относится к запрошенному production-выпуску 1.2.0. Его статус
+Этот handoff относится к согласованному production-выпуску 1.2.1. Тег v1.2.0
+остался неизменным: его release gate завершился ошибкой до сборки образов. Статус
 candidate не означает, что CI, backup или deployment уже выполнены. Тег должен
 указывать на commit, содержащий код, версию и этот контракт.
 
@@ -99,7 +100,7 @@ Docker/DB логи, external payload или значения secrets. Истёк
 ## Артефакт и откат
 
 После независимого review и terminal PR CI Reviewer ставит annotated tag
-v1.2.0 на проверенном commit main. Tag pipeline должен завершить CI, Security,
+v1.2.1 на проверенном commit main. Tag pipeline должен завершить CI, Security,
 isolated first-rollout contract, публикацию linux/amd64 images, scan и
 provenance. Release owner запускает manual evidence gate с
 --handoff docs/operations/production-handoff.md; Operations сверяет exact
@@ -108,12 +109,12 @@ digests с approved manifest. Mutable tag не служит runtime identifier.
 Root-owned wrapper принимает только команду:
 
 ```text
-deploy sports-probabilistic-forecasting v1.2.0
+deploy sports-probabilistic-forecasting v1.2.1
 ```
 
 До migration rollback возможен на проверенную пару v1.1.22 image digests и
 совместимые systemd units. После migration откат одних images допускается
-только после isolated проверки старого API/bot на схеме 1.2.0. Пока её нет,
+только после isolated проверки старого API/bot на схеме 1.2.1. Пока её нет,
 применяется forward-fix либо отдельный restore pre-migration backup с
 остановкой writers и оценкой потери последующих записей. Destructive
 downgrade запрещён. Новый dispatcher выключается до возврата старых units.

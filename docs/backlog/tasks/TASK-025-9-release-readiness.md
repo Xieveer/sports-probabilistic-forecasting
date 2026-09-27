@@ -1,4 +1,4 @@
-# TASK-025-9 — Production выпуск 1.2.0 и проверка NHL
+# TASK-025-9 — Production выпуск 1.2.1 и проверка NHL
 
 > **Статус:** in_progress — local candidate, production gates ожидаются
 > **Владелец:** Product Owner и Operations Agent
@@ -8,7 +8,7 @@
 
 ## Результат
 
-Выпустить проверенный exact commit как `v1.2.0`, запустить новый NHL Data Cycle
+Выпустить проверенный exact commit как `v1.2.1`, запустить новый NHL Data Cycle
 по расписанию и подтвердить работу бота, API и ежедневного scheduler на
 production. Футбольный production pipeline не включается.
 
@@ -16,7 +16,7 @@ production. Футбольный production pipeline не включается.
 
 - [ ] Все функциональные TASK инициативы прошли независимое review, full EPIC
   review, локальные проверки и terminal PR CI. `pyproject.toml` и handoff
-  указывают `1.2.0`; `make production-check` прошёл для `candidate`.
+  указывают `1.2.1`; `make production-check` прошёл для `candidate`.
 - [ ] Operations имеет привилегированное read-only evidence текущих image
   digests, Docker/DB состояния, последнего NHL run, календарного покрытия,
   прав/секретов по metadata и проверенного PostgreSQL backup. До этого
@@ -69,6 +69,12 @@ Operations подготовил runbook `docs/runbooks/sports-forecast-v1.2.0-po
 checksum/catalog check и isolated restore на exact PostgreSQL image.
 Последовательность success/fault проверена локально; production backup,
 off-host retention и совместимость rollback пока не подтверждены.
+Тег `v1.2.0` указывает на merged main commit `84a2ac18e84ed58674bc5854696911498de7d879`.
+[Tag pipeline 36300221666](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36300221666)
+остановился в Compose gate: валидатор ожидал старый набор API environment,
+не включавший control secret files и aliases. Образы не строились, VPS не
+менялся. Пользователь согласовал `v1.2.1` для первого production выпуска;
+`v1.2.0` остаётся неизменным.
 Каноническое evidence хранится в отдельном operations repo:
 `docs/changes/2026-09.md` и `docs/services/sports-probabilistic-forecasting.md`.
 
@@ -77,5 +83,5 @@ off-host retention и совместимость rollback пока не подт
 - Зависит от всех функциональных TASK инициативы, включая TASK-025-10,
   и полного EPIC review.
 - Перед rollout обновить `docs/operations/production-handoff.md` до
-  `v1.2.0 candidate`, выполнить `make production-check`.
+  `v1.2.1 candidate`, выполнить `make production-check`.
 - Deployment evidence и итоговый done report ожидаются после production smoke.
