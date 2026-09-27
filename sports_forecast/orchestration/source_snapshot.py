@@ -7,7 +7,10 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from sports_forecast.orchestration.source_refresh import refresh_source_with_odds_result
+from sports_forecast.orchestration.source_refresh import (
+    refresh_source,
+    refresh_source_with_odds_result,
+)
 from sports_forecast.utils.log_config import get_logger
 
 
@@ -51,27 +54,33 @@ def publish_source_snapshot(source_csv: Path, current_csv: Path) -> Path:
     return current_csv
 
 
-def refresh_and_publish_source_snapshot(tournament: str, current_csv: Path) -> Path:
-    """Получить provider source с mandatory odds и опубликовать его для Worker.
+def refresh_and_publish_source_snapshot(
+    tournament: str, current_csv: Path, *, odds_enabled: bool = True
+) -> Path:
+    """Получить provider source с выбранным odds режимом и опубликовать его Worker.
 
     Args:
         tournament: Идентификатор tournament/provider source.
         current_csv: Scheduler-visible immutable path для canonical Worker.
+        odds_enabled: Выполнять ли odds post-step при сборе source snapshot.
 
     Returns:
         Путь опубликованного ``current_csv``.
 
     Raises:
-        SourceProviderError: Ошибка provider или обязательного odds post-step.
+        SourceProviderError: Ошибка provider или включённого odds post-step.
         ValueError: Собранный source не проходит минимальную проверку.
         OSError: Не удалось опубликовать snapshot.
     """
-    source_csv, odds_result = refresh_source_with_odds_result(tournament)
-    if odds_result is None or odds_result.quota_hit or not odds_result.merged_source:
-        raise ValueError("Обязательный odds refresh не дал полного merged source")
+    if odds_enabled:
+        source_csv, odds_result = refresh_source_with_odds_result(tournament)
+        if odds_result is None or odds_result.quota_hit or not odds_result.merged_source:
+            raise ValueError("Обязательный odds refresh не дал полного merged source")
+    else:
+        source_csv = refresh_source(tournament, skip_odds=True)
     # Будущая линия close ещё не существует. Календарь публикуется раньше
     # коэффициентов, которые отдельно собирает стадия data_odds.
-    _validate_source_csv(source_csv, require_odds=True)
+    _validate_source_csv(source_csv, require_odds=odds_enabled)
     return publish_source_snapshot(source_csv, current_csv)
 
 

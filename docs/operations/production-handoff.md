@@ -1,123 +1,132 @@
-# Передача сервиса в эксплуатацию: v1.2.5 candidate
+# Передача сервиса в эксплуатацию: v1.2.6 candidate
 
-> Фактическое состояние на 2026-09-27: API и Telegram-бот v1.2.4 healthy,
-> календарь NHL содержит 187 матчей на 30 дней с coverage `complete`.
-> Ручной цикл завершился ошибками odds acquisition и publication.
-> Оба NHL timer выключены. Production acceptance открыт.
+> Фактическое состояние на 2026-09-27: API и Telegram-бот v1.2.5 healthy,
+> PostgreSQL healthy, NHL календарь содержит 187 матчей на 30 дней с
+> coverage `complete`. Три Odds API ключа дали HTTP 401 `INVALID_KEY`;
+> два ручных v1.2.5 run завершились ошибкой из-за старого systemd profile,
+> который исправлен и проверен. Оба NHL timer выключены. Production
+> acceptance открыт.
 
 - Статус подготовки: `candidate`
 - Сервис: sports-probabilistic-forecasting
 - Canonical repository: Xieveer/sports-probabilistic-forecasting
 - Инициатива: [EPIC-025](../backlog/EPIC-025-bot-schedule-readiness.md),
   [TASK-025-9](../backlog/tasks/TASK-025-9-release-readiness.md),
-  [TASK-025-16](../backlog/tasks/TASK-025-16-odds-secret-files-and-stdout-logging.md),
-  [TASK-025-17](../backlog/tasks/TASK-025-17-promoted-feature-contract.md).
+  [TASK-025-18](../backlog/tasks/TASK-025-18-optional-future-odds.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
-- source_tag: `v1.2.5` (после независимого review и terminal PR CI).
+- source_tag: `v1.2.6` (после независимого review и terminal PR CI).
 - source_commit: exact merged `main` commit фиксируется перед tag.
 
-v1.2.5 исправляет передачу file-backed ключей Odds API в общий клиент и
-Worker, а также возвращает прикладные логи Hydra в stdout. Причина отказа
-publication установлена на изолированной копии данных: runtime basic-признаки
-не соответствовали promoted advanced-модели. Кандидат закрепляет сбор
-признаков по verified promoted contract.
-Схема БД и последовательность Data Cycle не меняются. Теги v1.2.0–v1.2.4
-остаются неизменными.
+По решению владельца v1.2.6 добавляет явный режим без future odds. Он
+пропускает запрос к провайдеру, оставляет готовность коэффициентов `missing`
+и публикует календарь/прогнозы с итогом `partial_success`, если остальные
+обязательные стадии успешны. По умолчанию поведение odds остаётся включённым.
+Схема БД не меняется. Теги v1.2.0–v1.2.5 неизменны.
+Также v1.2.6 исправляет счётчики publication внутри транзакции с
+`autoflush=False`: изолированный replay v1.2.5 записал 1 834
+prediction rows, в том числе 187 matching eligible future events, но
+сохранил нулевые counters до commit.
+Повторный internal-only replay с полной копией source state завершил Worker
+exit 0 и source archive export; все 187 eligible future events получили
+committed predictions. Это подтверждает путь публикации, но не заменяет
+production manual run и исправление in-transaction counters.
 
 ## Идентификация и ответственность
 
-Production serving API/bot используют exact v1.2.4 digests, PostgreSQL healthy,
-Alembic head `0017_data_cycle_notification_outbox`. Ручной run
-`dcd54406-7b88-4061-85b0-c60d76aef127` импортировал 34 NHL матча за
-7 дней и 187 за 30 дней; API календаря 0/7/30 отвечает 200. Odds attempt
-содержит `provider_not_configured`: 0 provider events и 187 матчей без
-линии; quota не измерена. Publication вернула `materialization_failed`:
-изолированный replay подтвердил 139 колонок при expected 489 и
-`CatBoostError` по имени признака. Прогнозы не опубликованы. После host
-stop proof run закрыт, outbox
-`nhl_admins` доставлен один раз. Активного executor нет, оба timer disabled.
+Production serving v1.2.5 API/bot используют exact approved digests,
+Alembic head `0017_data_cycle_notification_outbox`. Календарь today
+`confirmed_empty`, 7d 34 `complete`, 30d 187 `complete`.
+Ручной run `56c0ab25-b17d-496e-bb91-6b85bc6f6521` запустил Worker
+v1.2.4 из старого `nhl.env` и завершился `prediction_failed`.
+Ручной run `8d2f9806-3ffd-4441-9ba6-db653578a0e1` использовал Worker
+v1.2.5, но `SF_ALGORITHM=catboost` не совпал с promoted
+`catboost_reg`, поэтому publication не запускалась. Для обоих run host
+stop proof, owner-fenced terminalization, один delivered outbox и active0
+подтверждены. После второго run все три distinct tier keys проверены
+ограниченными probes: HTTP 401 `INVALID_KEY`, quota headers отсутствуют.
+Секреты не менялись. Старый и новый NHL timer disabled.
 
 ## Runtime и конфигурация
 
-Compose получает только immutable `IMAGE@sha256:DIGEST` из проверенного
-release manifest и защищённые `*_FILE` paths. Odds keys монтируются
-read-only в Worker и source-acquirer, а значения не попадают в Compose,
-environment, handoff или логи. DB URL, Telegram token, chat ID и пароли
-также не записываются в Git. Приложение работает без host ports под
-UID/GID `10001:10001`. Alias `nhl_admins` должен совпадать между API,
-Worker и bot-only destination map.
+Compose получает только immutable `IMAGE@sha256:DIGEST` из release manifest
+и защищённые `*_FILE` paths; значения секретов не попадают в Git, env
+контейнера, handoff или логи. API/Worker/bot работают без host ports под
+UID/GID `10001:10001`. Alias `nhl_admins` должен совпадать у API, Worker
+и bot-only destination map.
 
-До первого v1.2.5 Worker Operations создаёт и проверяет immutable model
-bundle `app_version=1.2.5` из тех же одобренных весов и feature names.
-Активный v1.2.4 bundle:
-`sha256:2a29c3ebe13b37ac1d39b24bf1c32bf97b92391804292244714d643aef8d6293`.
-Проверить SHA-256, model identity, feature contract и загрузку в exact
-v1.2.5 Worker; сохранить прежний pointer для rollback.
-Protected NHL runtime setting `SF_FEATURES=advanced` сверяется с bundle,
-но feature processing берёт конфигурацию из verified promoted contract.
+Перед v1.2.6 run Operations сверяет **фактический** systemd
+`SF_COMPOSE_ENV_FILE` и `/etc/sports-forecast/refresh/nhl.env`:
+`SF_APP_VERSION`, все пять image refs, tournament/market/spec/algorithm/
+features selectors и `SF_DATA_ODDS_ENABLED=false`. Проверка должна
+сопоставить их с exact manifest и promoted `deploy.yaml`, а затем пройти
+Compose dry-run. Ошибка или неизвестное значение switch блокирует запуск.
+Это закрывает preflight gap v1.2.5, где проверялся только
+`production.env.candidate`, но executor читал другой файл.
+
+Текущий v1.2.5 model bundle
+`sha256:108eb6db273f284cb605d2800df1ccc8d1cd73da018b306c132c17926dafd69e`
+содержит те же одобренные веса и 489 features. До v1.2.6 Worker создать
+новый content-addressed wrapper с `app_version=1.2.6`, проверить SHA-256,
+model identity, feature contract и загрузку в exact Worker. Сохранить
+v1.2.5 pointer и serving digests для rollback.
 
 ## Healthcheck и smoke-проверка
 
-После ограниченного rollout сверить exact running digests, `/health`,
-`/ready`, NHL calendar API 0/7/30 суток, coverage и readiness. Кодовый
-smoke Telegram проверяет публичный календарь, admin status/history/schedule
-и manual run без второго исполнителя. Один ручной цикл должен завершиться
-terminal success, фактическим 30-дневным coverage, измеренными future
-odds/quota, опубликованными прогнозами и одним итоговым уведомлением с тем
-же run ID. Успех job без свежего календаря не считается готовностью NHL.
+После ограниченного rollout сверить running digests, healthy/restart counts,
+`/health`, `/ready`, NHL calendar API 0/7/30, readiness и admin
+status/history/schedule. Кодовый Telegram smoke проверяет публичный
+календарь и admin control без второго executor. Один ручной цикл с
+`SF_DATA_ODDS_ENABLED=false` должен дать terminal `partial_success`,
+нулевые HTTP-запросы к Odds API, 30-дневное coverage, ненулевую публикацию
+прогнозов для eligible событий, odds `missing`, archive success и одно
+итоговое уведомление с тем же run ID. Длительность и отсутствие overlap
+сверяются до включения таймера.
 
-Operations запускает `make acceptance-check` только с утверждёнными runtime
+Operations запускает `make acceptance-check` с утверждёнными runtime
 inputs после health/smoke. Старый NHL timer остаётся выключенным. Новый
-dispatcher timer включать лишь после успешного ручного цикла; затем
+dispatcher timer включать только после успешного ручного цикла; затем
 проверить next trigger, первый плановый run и сообщение администратору.
-При ошибке оставить timer выключенным, сохранить безопасные failure codes
-и выполнить host stop proof до нового run.
+При ошибке timer остаётся выключенным; recovery требует host stop proof,
+никаких слепых повторов.
 
 ## Данные и совместимость
 
-Перед v1.2.5 изменением создать свежий root-only `pg_dump -Fc` после
-последнего failed run, проверить checksum/catalog, isolated restore на exact
-PostgreSQL image и off-host download/hash. Проверенный pre-v1.2.4 dump
-29 313 196 bytes, SHA-256
-`ea217fde1ef82abc173b1482af8bfcf75e97f9b5f870ded346b5a97439499594`,
-устарел после календарной записи; его нельзя использовать как единственную
-точку отката. Bucket retention/encryption текущему service account
-недоступны; третья сверенная копия хранится на машине владельца.
+Перед v1.2.6 rollout создать свежий root-only `pg_dump -Fc` после двух
+failed v1.2.5 runs, проверить checksum/catalog, isolated restore на exact
+PostgreSQL image, off-host upload/download hash и третью локальную копию.
+Последний проверенный post-failure dump: 57 854 273 bytes,
+SHA-256 `a77fbf3b911ddaec280c160df2e098fa32d6d1922c9f17c6a3804e3fccf2e6be`,
+Alembic 0017, 22 496 canonical events, пять run records; off-host и
+локальная копии совпали. Перед новым rollout проверить актуальность.
+Bucket retention/encryption текущему service account недоступны.
 
-Схема должна остаться на `0017_data_cycle_notification_outbox`;
-role-bootstrap/migrator повторяются idempotently только из approved image.
-Serving rollback на v1.2.4 API/bot возможен по сохранённым digest и env;
-его Data Cycle всё ещё не публикует прогнозы. Destructive downgrade БД
-запрещён.
+Схема остаётся на `0017_data_cycle_notification_outbox`; role-bootstrap/
+migrator повторяются idempotently только из approved image. Serving rollback
+на v1.2.5 возможен по сохранённым digest/env/model pointer. Destructive
+downgrade БД запрещён.
 
 ## Наблюдаемость
 
-В production change record сохранить UTC-время, source commit, manifest hash,
-running image IDs, restart counts, DB revision, backup hash, model bundle ID,
-run/stage statuses, 30-дневное coverage, odds quota, notification delivery и
-timer last/next trigger. Не публиковать полные Docker/DB логи, external
-payload или значения secrets. Истёкший heartbeat сам по себе не разрешает
-второго исполнителя: recovery требует host stop proof.
+В production change record сохранить UTC, source commit, manifest hash,
+running image IDs, restart counts, DB revision, backup hash, bundle ID,
+run/stage statuses, coverage, число опубликованных прогнозов, 0 provider
+requests в OFF-режиме, notification delivery и timer last/next trigger.
+Не публиковать ключи, полные Docker/DB логи или ответы провайдера.
 
 ## Артефакт и откат
 
 После независимого review и terminal PR CI Reviewer создаёт annotated
-`v1.2.5` на exact merged commit `main`. Tag pipeline должен завершить CI,
-Security, first-rollout contract, публикацию linux/amd64 images, scan и
-provenance. Release owner создаёт отдельный immutable evidence commit/tag;
-validator вызывается с `--handoff docs/operations/production-handoff.md`.
-Operations сверяет manifest и только после этого меняет VPS.
-
-Operations использует временный audited operator access и пошаговый runbook
-в репозитории `operations-agent`. Перед изменением source/env/model pointer
-сохранить root-only копии. Rollback serving не восстанавливает работу Data
-Cycle; после неуспеха нужен forward fix или отдельное восстановление
-проверенного backup с оценкой записей после снимка.
+`v1.2.6` на exact merged commit `main`. Tag pipeline должен завершить CI,
+Security, first-rollout contract, linux/amd64 images, scan и provenance.
+Release owner создаёт отдельный immutable evidence commit/tag; validator
+вызывается с `--handoff docs/operations/production-handoff.md`.
+Operations сверяет manifest и только затем меняет VPS по runbook в
+`operations-agent`, сохранив root-only rollback копии.
 
 ## Нерешённые вопросы
 
-Для GO ещё нужны red→green correction publication, terminal PR/tag/evidence
-CI, свежий backup/restore/off-host evidence, совместимый v1.2.5 model bundle,
-полный успешный ручной цикл с 30-дневным coverage, измерение future
-odds/quota и первый плановый NHL run. TASK-025-9 и EPIC-025 остаются
-`in_progress` до этих runtime gates.
+Для GO нужны red→green и review optional odds, terminal PR/tag/evidence CI,
+свежий backup/restore/off-host evidence, совместимый v1.2.6 model bundle,
+полный ручной цикл без odds, затем первый плановый NHL run. TASK-025-9 и
+EPIC-025 остаются `in_progress` до этих gates. Действующие Odds API ключи
+отсутствуют; повторное включение odds требует отдельного provider preflight.

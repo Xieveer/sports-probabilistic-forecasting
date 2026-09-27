@@ -31,6 +31,7 @@ def evaluate_event_readiness(
     policy: dict[str, Any] | None,
     now: datetime,
     odds_attempts: Sequence[OddsAcquisitionAttempt] = (),
+    odds_enabled: bool = True,
 ) -> dict[str, Any]:
     """Вычислить состояния по persisted timestamps, не выводя сбои из отсутствия строк."""
     reference = _utc(now)
@@ -88,15 +89,22 @@ def evaluate_event_readiness(
             or item.event_away_participant != event.away_participant
         ),
     )
-    _apply_odds_attempt_state(
-        odds_readiness,
-        event=event,
-        observations=odds,
-        attempts=odds_attempts,
-        required=odds_policy,
-        now=reference,
-        deadline=deadline,
-    )
+    if odds_enabled:
+        _apply_odds_attempt_state(
+            odds_readiness,
+            event=event,
+            observations=odds,
+            attempts=odds_attempts,
+            required=odds_policy,
+            now=reference,
+            deadline=deadline,
+        )
+    else:
+        odds_readiness.update(
+            status="missing",
+            reason_code="collection_disabled",
+            available=[],
+        )
 
     required_prediction_keys = {
         (str(item["market"]), str(item["market_spec"])) for item in prediction_policy

@@ -1,6 +1,10 @@
 """Contract for the durable cycle wrapper around the production NHL runner."""
 
+import os
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from sports_forecast.orchestration import data_cycle_cli
 
@@ -21,6 +25,8 @@ def test_runner_executes_reserved_cycle_and_uses_measured_terminal_summary() -> 
     assert "control create" not in runner
     assert runner.index("control claim") < runner.index("control start-stage")
     assert runner.index("control start-stage") < runner.index("source_snapshot_cli")
+    source_command = runner.split("source_snapshot_cli \\", 1)[1].split("# WorkerExecution", 1)[0]
+    assert '--odds-enabled "${data_odds_enabled}"' in source_command
     assert "--calendar-attempt" in runner
     assert 'finish-run --run-id "${SF_WORKER_RUN_ID}" --status auto' in runner
 
@@ -61,3 +67,52 @@ def test_canonical_full_refresh_uses_stdout_hydra_logging_without_output_dir() -
 
     assert '"hydra/job_logging=stdout"' in command
     assert '"hydra.output_subdir=null"' in command
+
+
+@pytest.mark.parametrize("setting", ["", "off", "TRUE", "1"])
+def test_runner_rejects_invalid_data_odds_setting_before_dispatch(setting: str) -> None:
+    """Некорректный odds switch закрывает cycle до claim и любых acquisition stages."""
+    runner = PROJECT_ROOT / "deploy/systemd/run-canonical-refresh.sh"
+    environment = os.environ.copy()
+    environment["SF_DATA_ODDS_ENABLED"] = setting
+
+    result = subprocess.run(
+        ["bash", str(runner), "nhl", "00000000-0000-0000-0000-000000000000"],
+        capture_output=True,
+        text=True,
+        env=environment,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "SF_DATA_ODDS_ENABLED" in result.stderr
+    assert "claim" not in result.stderr
+
+
+@pytest.mark.parametrize("setting", [None, "true", "false"])
+def test_runner_accepts_strict_data_odds_values_and_passes_config(setting: str | None) -> None:
+    """Только буквальные значения true/false попадают в Hydra config."""
+    runner_path = PROJECT_ROOT / "deploy/systemd/run-canonical-refresh.sh"
+    runner = runner_path.read_text(encoding="utf-8")
+    root_config = (PROJECT_ROOT / "conf/config.yaml").read_text(encoding="utf-8")
+    environment = os.environ.copy()
+    if setting is None:
+        environment.pop("SF_DATA_ODDS_ENABLED", None)
+    else:
+        environment["SF_DATA_ODDS_ENABLED"] = setting
+
+    result = subprocess.run(
+        ["bash", str(runner_path), "nhl", "00000000-0000-0000-0000-000000000000"],
+        capture_output=True,
+        text=True,
+        env=environment,
+        check=False,
+    )
+
+    assert 'case "$data_odds_enabled" in' in runner
+    assert "true|false)" in runner
+    assert "data_odds_enabled=${data_odds_enabled}" in runner
+    assert "data_odds_enabled: true" in root_config
+    assert result.returncode == 1
+    assert "SF_TOURNAMENT" in result.stderr
+    assert "SF_DATA_ODDS_ENABLED" not in result.stderr

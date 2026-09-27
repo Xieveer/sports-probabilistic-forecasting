@@ -8,13 +8,18 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
+import pytest
 from omegaconf import OmegaConf
+from sqlalchemy import create_engine
 
 from sports_forecast.materialize import (
     _aggregate_long_predictions,
     _resolve_model_provenance,
     materialize_predictions,
 )
+from sports_forecast.service.db.engine import get_session, init_db, reset_engine
+from sports_forecast.service.db.models import Prediction
+from sports_forecast.service.db.repository import PredictionRepository
 
 
 def _build_cfg() -> dict:
@@ -165,3 +170,71 @@ def test_resolve_model_provenance_uses_active_pointer_for_explicit_pool() -> Non
         "football_nationals_winner",
         "pool:football_nationals_winner:winner:immutable",
     )
+
+
+def test_external_materialization_failure_rolls_back_stale_transition(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Failure after mark_stale propagates so caller rolls back and keeps prior showcase."""
+    reset_engine()
+    engine = create_engine("sqlite:///:memory:")
+    init_db(engine)
+    try:
+        with get_session(engine=engine) as session:
+            PredictionRepository(session).upsert_prediction(
+                match_id="old",
+                tournament="uel_kz_1",
+                market="winner",
+                market_spec="winner",
+                predictions={"home_win": 0.6, "away_win": 0.4},
+                model_version="old-prod",
+                algorithm="catboost",
+                featureset="basic",
+            )
+
+        bundle = tmp_path / "models" / "uel_kz_1" / "winner" / "best"
+        bundle.mkdir(parents=True)
+        (bundle / "deploy.yaml").write_text(
+            "model:\n  algorithm: catboost\n  featureset: basic\n", encoding="utf-8"
+        )
+        processed = tmp_path / "data" / "processed" / "uel_kz_1"
+        processed.mkdir(parents=True)
+        pd.DataFrame(
+            {
+                "id": ["new", "new"],
+                "side": ["h", "a"],
+                "datetime": ["2026-10-01T12:00:00"] * 2,
+                "f1": [1.0, 2.0],
+                "odds_raw": [None, None],
+            }
+        ).to_parquet(processed / "inference_long.parquet", index=False)
+
+        cfg = OmegaConf.create(_build_cfg())
+        model_file = bundle / "model_prod.cbm"
+        monkeypatch.setattr("sports_forecast.materialize.PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(
+            "sports_forecast.materialize.find_model_file", lambda *_a, **_k: model_file
+        )
+        monkeypatch.setattr("sports_forecast.materialize.load_feature_names", lambda _path: ["f1"])
+        model = MagicMock()
+        model.predict_proba.return_value = np.array([[0.2, 0.8], [0.6, 0.4]])
+        monkeypatch.setattr("sports_forecast.materialize.load_model_from_path", lambda *_a: model)
+
+        def fail_after_stale(self, _records):
+            previous = self.session.query(Prediction).filter_by(match_id="old").one()
+            assert previous.status == "stale"
+            raise RuntimeError("simulated bulk upsert failure")
+
+        monkeypatch.setattr(PredictionRepository, "bulk_upsert", fail_after_stale)
+        with (
+            pytest.raises(RuntimeError, match="simulated bulk upsert failure"),
+            get_session(engine=engine) as session,
+        ):
+            materialize_predictions(cfg, version="prod", session=session)
+
+        with get_session(engine=engine) as session:
+            rows = session.query(Prediction).all()
+            assert [(row.match_id, row.status) for row in rows] == [("old", "ok")]
+    finally:
+        reset_engine()
+        engine.dispose()

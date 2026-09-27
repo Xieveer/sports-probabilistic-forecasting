@@ -13,9 +13,10 @@
   correction cycle `initiative/epic-025-13-runtime-hotfix` слит;
   release candidate — `initiative/epic-025-release-1_2_2`; correction
   cycles — `initiative/epic-025-v1_2_3-calendar-snapshot`,
-  `initiative/epic-025-v1_2_4-worker-logging` и
-  `initiative/epic-025-v1_2_5-runtime-odds-publication`.
-- Workflow / этап: `release correction / v1.2.4 serving healthy; 30-day calendar complete; odds and publication failed; v1.2.5 candidate`.
+  `initiative/epic-025-v1_2_4-worker-logging`,
+  `initiative/epic-025-v1_2_5-runtime-odds-publication` и
+  `initiative/epic-025-v1_2_6-odds-optional`.
+- Workflow / этап: `release correction / v1.2.5 serving healthy; 30-day calendar complete; odds credentials invalid; v1.2.6 candidate without odds`.
 - Исходная цель: календарь NHL независимо от прогноза, готовность событий,
   админ-управление Data Cycle и выпуск `1.2.1`;
   [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
@@ -137,6 +138,18 @@
   timer выключены. TASK-025-16 исправляет контракт secret files и
   stdout-логи; TASK-025-17 исправляет publication; следующий кандидат —
   v1.2.5.
+  v1.2.5 PR/tag/evidence и serving rollout прошли; API/bot healthy,
+  календарь 187/30d complete. Два ручных run выявили старый systemd
+  `nhl.env`: Worker/version v1.2.4, затем algorithm `catboost` вместо
+  promoted `catboost_reg`. Оба run закрыты после host stop proof, outbox
+  доставлен по одному разу, timers disabled. Runtime profile исправлен и
+  проверен fail-closed по actual systemd EnvironmentFiles и model contract.
+  Три distinct Odds API tier keys дали HTTP 401 `INVALID_KEY`; владелец
+  выбрал продолжение без odds. TASK-025-18 делает явный OFF-режим future
+  odds, чтобы публиковать календарь/прогнозы без запросов к провайдеру;
+  следующий кандидат v1.2.6. Изолированный replay publication обнаружил
+  TASK-025-19: прогнозы записаны, но counters внутри transaction нулевые
+  из-за `autoflush=False`; после commit 187 из 187 eligible готовы.
 - Решения: [ADR-026](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
   принят после независимого review: календарь независим от прогноза, control
   state в PostgreSQL, ограниченный control API и systemd dispatcher;
@@ -144,17 +157,18 @@
   ручная команда повторяет data job без перезапуска служб; футбол проверяется
   по общему контракту без включения в `1.2.1`.
 - Артефакты: [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
-- Предыдущая роль: Reviewer — TASK-025-16/17 code diff без P0–P2;
-  документация синхронизирована после review.
-- Следующая роль: Product Owner — v1.2.5 PR/tag/evidence; Operations — свежий
-  backup, совместимый bundle, повторный ручной и первый плановый NHL run.
+- Предыдущая роль: Operations — v1.2.5 failed-run diagnosis, systemd profile
+  correction и проверенный backup; Developer — TASK-025-18/19;
+  Reviewer — независимый review и pre-commit без блокирующих замечаний.
+- Следующая роль: Product Owner — PR и terminal CI; Operations — v1.2.6
+  rollout, ручной и первый плановый NHL run после release gates.
 - Открытые вопросы / блокеры: 30-дневное coverage подтверждено (187 матчей),
-  odds quota и публикация прогнозов не подтверждены. Оба NHL timer выключены.
-  Проверенный pre-v1.2.4 backup устарел после календарной записи; нужен
-  свежий backup/restore/off-host hash перед v1.2.5 rollout. Bucket
-  retention/encryption не удалось прочитать текущим service account.
-  Production release NO-GO до исправленного v1.2.5 artifact, совместимого
-  model bundle и успешных runtime gates.
+  три provider keys недействительны, публикация прогнозов ещё не
+  подтверждена. Оба NHL timer выключены. Последний post-failure backup
+  `a77fbf3b…` прошёл restore/off-host/third-copy; перед v1.2.6 rollout
+  проверить актуальность. Bucket retention/encryption не удалось прочитать
+  текущим service account. Daily NHL scheduler NO-GO до v1.2.6 artifact,
+  совместимого bundle и успешных runtime gates без odds.
 - Обновлено: 2026-09-27.
 
 ## Цель и границы
@@ -174,23 +188,25 @@
 | [TASK-025-6](tasks/TASK-025-6-future-odds.md) | Calendar-first future NHL odds | semantic evidence, quota, identity, freshness | done |
 | [TASK-025-7](tasks/TASK-025-7-data-cycle-recovery-summary.md) | Terminal stages, summary и run history query contract | stage faults, coverage, safe DTO | done; production runtime в TASK-025-9 |
 | [TASK-025-8](tasks/TASK-025-8-executor-fencing.md) | Executor recovery/fencing after crash | PostgreSQL race, no duplicate executor | done; production activation в TASK-025-9 |
-| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.4 calendar complete, odds/publication failed |
+| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.5 serving, timer disabled |
 | [TASK-025-13](tasks/TASK-025-13-production-runtime-hotfixes.md) | Исправить четыре runtime-дефекта первого цикла | grants, source DB, runner, heartbeat | done; PR #42 merged |
 | [TASK-025-14](tasks/TASK-025-14-future-close-odds-snapshot.md) | Публиковать source snapshot без closing line будущего матча | red/green, source/canonical tests, production snapshot | done; опубликован v1.2.3 snapshot |
 | [TASK-025-15](tasks/TASK-025-15-readonly-worker-hydra-logging.md) | Безопасный Hydra CLI в read-only Worker | red/green, stdout, no filesystem write | done; runtime gate в TASK-025-9 |
 | [TASK-025-16](tasks/TASK-025-16-odds-secret-files-and-stdout-logging.md) | File-backed Odds API keys и stdout-логи | red/green, secret mounts, review | in_progress; код и review готовы, runtime gate открыт |
 | [TASK-025-17](tasks/TASK-025-17-promoted-feature-contract.md) | Feature config из promoted bundle | basic→advanced, invalid contract, review | in_progress; код и review готовы, runtime gate открыт |
+| [TASK-025-18](tasks/TASK-025-18-optional-future-odds.md) | Явный режим без будущих odds | zero HTTP, partial_success, публикация прогнозов | in_progress; v1.2.6 candidate |
+| [TASK-025-19](tasks/TASK-025-19-publication-count-flush.md) | Корректные counters publication | no-autoflush, 187 eligible, atomicity | in_progress; v1.2.6 candidate |
 | [TASK-025-12](tasks/TASK-025-12-release-compose-gate.md) | Исправить Compose release gate | новый API/dispatcher contract и память | done; PR CI в TASK-025-9 |
 | [TASK-025-10](tasks/TASK-025-10-run-summary-producers.md) | Full run summary producers and coverage | same-run counters, n/a denominator, football fixture | done |
 | [TASK-025-11](tasks/TASK-025-11-telegram-calendar.md) | Public NHL calendar in Telegram | 08:00, all horizons, no prediction, bot→API test | done |
 | [TASK-025-4](tasks/TASK-025-4-schedule-control.md) | Persisted schedule, manual control, dispatcher | admin auth, races, restart, catch-up | done; production activation в TASK-025-9 |
 | [TASK-025-5](tasks/TASK-025-5-telegram-experience.md) | Telegram calendar, admin controls, notifications, code-based E2E | 08:00, auth, idempotency, bot→API | done; delivery activation в TASK-025-9 |
 
-Operations release gate зафиксирован в TASK-025-9. Running v1.2.4 API/bot
+Operations release gate зафиксирован в TASK-025-9. Running v1.2.5 API/bot
 healthy, календарь 30 суток содержит 187 матчей с coverage `complete`;
-схема 0017. Serving rollback на v1.2.4 совместим, но его Data Cycle не
-является работающим rollback target. Для исправленного v1.2.5 кандидата
-нужны tag/evidence, свежий backup, compatible model bundle и успешный цикл.
+схема 0017. Serving rollback на v1.2.5 совместим, но его Data Cycle без
+действующего Odds API ключа продолжает делать HTTP 401. Для v1.2.6 нужны
+tag/evidence, свежий backup, compatible model bundle и успешный цикл без odds.
 
 ## Риски и rollout
 
