@@ -10,6 +10,12 @@ dispatcher profile. Негативный тест отвергает прямо�
 уменьшен до 192 МиБ. Immutable `v1.2.0` не менялся; согласованный выпуск —
 `v1.2.1`.
 
+После создания `v1.2.1` обнаружено, что tagged evidence validator ожидает
+Compose без scheduler profile. Manual evidence workflow теперь сначала
+проверяет полный Compose с dispatcher tagged production validator, затем
+передаёт legacy subset tagged evidence validator. Application tag и runtime
+образы при этом не меняются.
+
 ## Проверки
 
 - Red: актуальный rendered Compose отвергался старым валидатором.
@@ -20,6 +26,8 @@ dispatcher profile. Негативный тест отвергает прямо�
 - Commit hooks: Ruff, mypy, YAML/TOML и AI validation — passed.
 - Независимый Reviewer подтвердил отсутствие P0–P2 findings после
   исправления расчёта памяти; повторно выполнил 37 целевых тестов.
+- Evidence workflow correction: 19 целевых тестов passed; независимый
+  Reviewer не нашёл P0–P2 findings. Terminal workflow run остаётся release gate.
 
 ## Передача
 

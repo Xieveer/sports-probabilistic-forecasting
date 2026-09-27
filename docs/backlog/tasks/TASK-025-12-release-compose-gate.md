@@ -21,6 +21,8 @@
   aliases и dispatcher profile; прямой DB URL отвергается.
 - [x] Одновременный лимит `db+api+bot+dispatcher+Worker` сохраняет ресурсный
   резерв; завышенный dispatcher limit отвергается.
+- [x] Manual evidence workflow проверяет полный Compose с dispatcher и
+  передаёт legacy subset tagged evidence validator без изменения source tag.
 - [x] Независимое review P0–P2 без findings; terminal PR CI и tag pipeline
   `v1.2.1` отслеживаются отдельно в TASK-025-9.
 
