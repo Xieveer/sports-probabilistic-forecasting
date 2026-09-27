@@ -11,9 +11,10 @@
 - Инициатива: `EPIC-025`.
 - Ветка инициативы: исходная `initiative/epic-025-bot-readiness` слита;
   correction cycle `initiative/epic-025-13-runtime-hotfix` слит;
-  release candidate — `initiative/epic-025-release-1_2_2`; новый correction
-  cycle — `initiative/epic-025-v1_2_3-calendar-snapshot`.
-- Workflow / этап: `release correction / v1.2.2 serving healthy; calendar stage failed; v1.2.3 candidate`.
+  release candidate — `initiative/epic-025-release-1_2_2`; correction
+  cycles — `initiative/epic-025-v1_2_3-calendar-snapshot` и
+  `initiative/epic-025-v1_2_4-worker-logging`.
+- Workflow / этап: `release correction / v1.2.3 serving healthy; source snapshot published; Worker logging failed; v1.2.4 candidate`.
 - Исходная цель: календарь NHL независимо от прогноза, готовность событий,
   админ-управление Data Cycle и выпуск `1.2.1`;
   [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
@@ -113,6 +114,15 @@
   В TASK-025-14 red-тест воспроизвёл ValueError; исправление прошло 24
   целевых теста. Активный model bundle имеет app_version 1.1.14 и требует
   проверенной repackage перед v1.2.3 Worker.
+  v1.2.3 PR/tag/evidence прошли, проверенный backup и совместимый model bundle
+  установлены. Serving API/bot healthy. Ручной run
+  `e96868fa-04cd-4c3a-bff8-c5b34f51b709` опубликовал source snapshot
+  181 826 590 bytes, затем read-only Worker отказал при создании Hydra log
+  в `/app`. После host stop proof run закрыт как `failed/source_fetch_failed`,
+  outbox доставлен один раз; календарь пока пуст, оба timer выключены.
+  TASK-025-15 исправляет потерю console-only Hydra overrides при `compose run`;
+  новый release candidate — v1.2.4. Веса модели не меняются, но Worker
+  требует новый совместимый wrapper `app_version=1.2.4`.
 - Решения: [ADR-026](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
   принят после независимого review: календарь независим от прогноза, control
   state в PostgreSQL, ограниченный control API и systemd dispatcher;
@@ -120,17 +130,16 @@
   ручная команда повторяет data job без перезапуска служб; футбол проверяется
   по общему контракту без включения в `1.2.1`.
 - Артефакты: [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
-- Предыдущая роль: Reviewer — полный EPIC review и повторная проверка
-  first-rollout fixture без P0–P2.
-- Следующая роль: Reviewer — исправление TASK-025-14; затем Product Owner —
-  v1.2.3 PR/tag/evidence; Operations — повторный ручной и первый
+- Предыдущая роль: Reviewer — TASK-025-15 code/release diff без P0–P2;
+  ранее полный EPIC review и first-rollout fixture без P0–P2.
+- Следующая роль: Product Owner — v1.2.4 PR/tag/evidence; Operations — повторный ручной и первый
   плановый NHL run.
 - Открытые вопросы / блокеры: первый production Data Cycle failed;
   30-дневное coverage и odds quota не подтверждены. Оба NHL timer выключены.
   Backup изолированно восстановлен на VPS; off-host копия скачана и сверена
   по SHA-256. Bucket retention/encryption не удалось прочитать текущим
   service account. Production release NO-GO до
-  исправленного v1.2.3 artifact, compatible model bundle и успешных runtime gates.
+  исправленного v1.2.4 artifact, compatible model bundle и успешных runtime gates.
 - Обновлено: 2026-09-27.
 
 ## Цель и границы
@@ -150,9 +159,10 @@
 | [TASK-025-6](tasks/TASK-025-6-future-odds.md) | Calendar-first future NHL odds | semantic evidence, quota, identity, freshness | done |
 | [TASK-025-7](tasks/TASK-025-7-data-cycle-recovery-summary.md) | Terminal stages, summary и run history query contract | stage faults, coverage, safe DTO | done; production runtime в TASK-025-9 |
 | [TASK-025-8](tasks/TASK-025-8-executor-fencing.md) | Executor recovery/fencing after crash | PostgreSQL race, no duplicate executor | done; production activation в TASK-025-9 |
-| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.2 calendar stage failed |
+| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.3 Worker stage failed |
 | [TASK-025-13](tasks/TASK-025-13-production-runtime-hotfixes.md) | Исправить четыре runtime-дефекта первого цикла | grants, source DB, runner, heartbeat | done; PR #42 merged |
-| [TASK-025-14](tasks/TASK-025-14-future-close-odds-snapshot.md) | Публиковать календарь без closing line будущего матча | red/green, source/canonical tests, production cycle | in_progress; review ожидается |
+| [TASK-025-14](tasks/TASK-025-14-future-close-odds-snapshot.md) | Публиковать source snapshot без closing line будущего матча | red/green, source/canonical tests, production snapshot | done; опубликован v1.2.3 snapshot |
+| [TASK-025-15](tasks/TASK-025-15-readonly-worker-hydra-logging.md) | Безопасный Hydra CLI в read-only Worker | red/green, stdout, no filesystem write | done; runtime gate в TASK-025-9 |
 | [TASK-025-12](tasks/TASK-025-12-release-compose-gate.md) | Исправить Compose release gate | новый API/dispatcher contract и память | done; PR CI в TASK-025-9 |
 | [TASK-025-10](tasks/TASK-025-10-run-summary-producers.md) | Full run summary producers and coverage | same-run counters, n/a denominator, football fixture | done |
 | [TASK-025-11](tasks/TASK-025-11-telegram-calendar.md) | Public NHL calendar in Telegram | 08:00, all horizons, no prediction, bot→API test | done |
@@ -160,9 +170,9 @@
 | [TASK-025-5](tasks/TASK-025-5-telegram-experience.md) | Telegram calendar, admin controls, notifications, code-based E2E | 08:00, auth, idempotency, bot→API | done; delivery activation в TASK-025-9 |
 
 Operations release gate зафиксирован в TASK-025-9. Immutable digests текущих
-running v1.2.2 сервисов известны; serving rollback совместим с текущей
-схемой 0017, но v1.2.2 Data Cycle не является работающим rollback target.
-Для исправленного кандидата ещё нужны tag/evidence, compatible model bundle
+running v1.2.3 сервисов известны; serving rollback совместим с текущей
+схемой 0017, но v1.2.3 Data Cycle не является работающим rollback target.
+Для исправленного v1.2.4 кандидата ещё нужны tag/evidence, compatible model bundle
 и успешный цикл.
 
 ## Риски и rollout

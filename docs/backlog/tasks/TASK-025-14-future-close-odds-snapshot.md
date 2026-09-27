@@ -1,6 +1,6 @@
 # TASK-025-14 — Публиковать будущий календарь без closing line
 
-> **Статус:** in_progress — код и review завершены, production gate ожидается
+> **Статус:** done — код, review и публикация source snapshot подтверждены
 > **Владелец:** Developer
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -26,8 +26,10 @@ closing line у каждого будущего матча и не публик�
   соседние source/canonical тесты проходят.
 - [x] Независимый Reviewer проверил source→snapshot→canonical path, безопасность,
   версию и документы без P0–P2; целевой набор дал 37 passed.
-- [ ] Terminal PR/tag/evidence CI и production ручной цикл
-  v1.2.3 подтверждают 30-дневный календарь и безопасное завершение.
+- [x] Terminal PR/tag/evidence CI v1.2.3 прошли. Ручной run v1.2.3
+  опубликовал source snapshot 181 826 590 bytes; дальнейший Worker отказал
+  на файловом логировании Hydra. 30-дневный canonical календарь и безопасное
+  завершение полного цикла остаются runtime gate TASK-025-9/15.
 
 ## Handoff
 
