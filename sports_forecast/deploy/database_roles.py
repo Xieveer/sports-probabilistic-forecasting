@@ -15,7 +15,7 @@ RUNTIME_GRANTS = (
     "GRANT UPDATE (status, attempts, available_at, lease_token, lease_until, last_error_code, delivered_at) ON TABLE data_cycle_notification_outbox TO sf_control_api",
     "GRANT INSERT, UPDATE ON TABLE pipeline_schedules, data_cycle_dispatcher_state TO sf_control_api",
     "GRANT EXECUTE ON FUNCTION public.mark_data_cycle_executor_stalled(text) TO sf_control_api",
-    "GRANT INSERT (run_id, tournament, reason, requested_at, scheduled_for) ON TABLE data_cycle_runs TO sf_control_api",
+    "GRANT INSERT (run_id, tournament, reason, requested_at, scheduled_for, executor_generation) ON TABLE data_cycle_runs TO sf_control_api",
     "GRANT INSERT (run_id, stage) ON TABLE data_cycle_stage_results TO sf_control_api",
     "GRANT INSERT ON TABLE data_cycle_control_requests TO sf_control_api",
     "GRANT USAGE, SELECT ON SEQUENCE pipeline_schedules_id_seq, data_cycle_control_requests_id_seq, data_cycle_dispatcher_state_id_seq, data_cycle_runs_id_seq, data_cycle_stage_results_id_seq TO sf_control_api",

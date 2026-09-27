@@ -11,6 +11,7 @@ Operations Agent.
 | `api` | `SF_API_DATABASE_URL_FILE`, read-only витрина; `SF_CONTROL_DATABASE_URL_FILE`, ограниченный control state | нет | нет |
 | `telegram-bot` | нет, только внутренний API | нет | нет |
 | `data-cycle-dispatcher` | `SF_CONTROL_DATABASE_URL_FILE`, schedule/run reservation и heartbeat | нет | нет |
+| `source-acquirer` | `SF_WORKER_DATABASE_URL_FILE`, calendar/odds projection и acquisition attempts | source snapshot read-write | odds provider keys |
 | `worker` | `SF_WORKER_DATABASE_URL_FILE`, canonical refresh/write | `${SF_MODEL_RUNTIME_ROOT}:/app/models:ro`, source snapshot read-only, archive staging read-write | нет |
 | `archive-sync` | нет | archive staging read-only, отдельный sync state read-write | write/read verify только `operational-archive/*`, включая `nhl-source-state/v1/` |
 

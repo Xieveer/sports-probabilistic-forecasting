@@ -247,6 +247,7 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     ]
     assert "SF_OBJECT_STORAGE_ACCESS_KEY_ID" not in cast(dict[str, str], worker["environment"])
     assert source_acquirer["environment"] == {
+        "DATABASE_URL_FILE": "/run/secrets/worker_database_url",
         "SF_DATA_CYCLE_RUN_ID": "${SF_DATA_CYCLE_RUN_ID:-untracked}",
         "SF_DATA_CYCLE_GENERATION": "${SF_DATA_CYCLE_GENERATION:-0}",
         "SF_DATA_CYCLE_OWNER_ID": "${SF_DATA_CYCLE_OWNER_ID:-untracked}",
@@ -259,6 +260,7 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     assert source_acquirer["volumes"] == [
         "${SF_CANONICAL_SOURCE_ROOT:?set SF_CANONICAL_SOURCE_ROOT}:/app/data/source/nhl",
     ]
+    assert "worker_database_url" in cast(list[str], source_acquirer["secrets"])
     assert source_acquirer["labels"] == worker["labels"]
     assert archive_sync["labels"] == worker["labels"]
     assert archive_sync["profiles"] == ["operational-sync"]
@@ -293,6 +295,7 @@ def test_systemd_scheduler_has_durable_cycle_before_calendar_acquisition() -> No
     )
     bridge = (SYSTEMD_DIR / "dispatch-data-cycle.sh").read_text(encoding="utf-8")
     runner = (SYSTEMD_DIR / "run-canonical-refresh.sh").read_text(encoding="utf-8")
+    runner_path = SYSTEMD_DIR / "run-canonical-refresh.sh"
     recovery = (SYSTEMD_DIR / "recover-data-cycle.sh").read_text(encoding="utf-8")
 
     assert "EnvironmentFile=/etc/sports-forecast/refresh/%i.env" in service
@@ -312,6 +315,7 @@ def test_systemd_scheduler_has_durable_cycle_before_calendar_acquisition() -> No
     assert 'pipeline" != "nhl"' in bridge
     assert "EnvironmentFile=/etc/sports-forecast/refresh/nhl.env" in cycle_service
     assert "run-canonical-refresh.sh nhl %i" in cycle_service
+    assert runner_path.stat().st_mode & 0o111, "systemd ExecStart target must be executable"
     assert "TimeoutStartSec=90m" in cycle_service
     assert "flock -n" in cycle_service
     assert "canonical_full_refresh_cli" in runner
@@ -473,6 +477,95 @@ data_cycle_run_with_heartbeat fake_compose_client
     )
 
     assert result.returncode == 23
+    assert (tmp_path / "recovery-required").exists()
+
+
+def test_failed_stage_returns_when_jobs_reports_stale_running_pid() -> None:
+    """Завершённая команда не зависит от устаревшего списка shell jobs."""
+    guard = shlex.quote(str(SYSTEMD_DIR / "data-cycle-owner-guard.sh"))
+    script = f"""
+set -uo pipefail
+source {guard}
+jobs() {{ printf '%s\\n' "${{stage_pid}}"; }}
+sleep() {{ :; }}
+control() {{ return 0; }}
+SF_WORKER_RUN_ID=run-stale-jobs
+failing_stage() {{ return 23; }}
+data_cycle_run_with_heartbeat failing_stage
+"""
+    process = subprocess.Popen(
+        ["bash", "-c", script],
+        cwd=PROJECT_ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=2)
+        pytest.fail("завершившаяся стадия продолжает считаться работающей")
+
+    assert process.returncode == 23
+
+
+def test_long_running_stage_receives_periodic_heartbeat(tmp_path: Path) -> None:
+    """Отдельный heartbeat watcher сохраняет lease во время долгой стадии."""
+    guard = shlex.quote(str(SYSTEMD_DIR / "data-cycle-owner-guard.sh"))
+    heartbeat_marker = shlex.quote(str(tmp_path / "heartbeat-called"))
+    script = f"""
+set -euo pipefail
+source {guard}
+sleep() {{ /bin/sleep 0.001; }}
+control() {{ touch {heartbeat_marker}; }}
+SF_WORKER_RUN_ID=run-long-stage
+long_stage() {{ /bin/sleep 4; }}
+data_cycle_run_with_heartbeat long_stage
+"""
+    result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=6,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "heartbeat-called").exists()
+
+
+def test_failed_heartbeat_stops_stage_and_requires_host_recovery(tmp_path: Path) -> None:
+    """Потеря heartbeat останавливает stage и оставляет terminal outcome recovery."""
+    guard = shlex.quote(str(SYSTEMD_DIR / "data-cycle-owner-guard.sh"))
+    recovery_marker = shlex.quote(str(tmp_path / "recovery-required"))
+    script = f"""
+set -euo pipefail
+source {guard}
+data_cycle_mark_recovery_required() {{ data_cycle_recovery_required=1; touch {recovery_marker}; }}
+sleep() {{ /bin/sleep 0.001; }}
+control() {{ return 1; }}
+SF_WORKER_RUN_ID=run-lost-heartbeat
+long_stage() {{ exec /bin/sleep 3; }}
+if data_cycle_run_with_heartbeat long_stage; then
+  exit 99
+else
+  result=$?
+fi
+[[ "$result" -eq 1 ]]
+[[ "$data_cycle_recovery_required" -eq 1 ]]
+"""
+    result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=3,
+    )
+
+    assert result.returncode == 0, result.stderr
     assert (tmp_path / "recovery-required").exists()
 
 

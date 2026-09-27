@@ -198,7 +198,7 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
         for statement in control_grants
     )
     assert any(
-        "GRANT INSERT (run_id, tournament, reason, requested_at, scheduled_for) "
+        "GRANT INSERT (run_id, tournament, reason, requested_at, scheduled_for, executor_generation) "
         "ON TABLE data_cycle_runs "
         "TO sf_control_api" in statement
         for statement in control_grants

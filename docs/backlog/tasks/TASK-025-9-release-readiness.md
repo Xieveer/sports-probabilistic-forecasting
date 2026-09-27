@@ -1,6 +1,6 @@
 # TASK-025-9 — Production выпуск 1.2.1 и проверка NHL
 
-> **Статус:** in_progress — local candidate, production gates ожидаются
+> **Статус:** in_progress — v1.2.1 частичный rollout; первый цикл failed
 > **Владелец:** Product Owner и Operations Agent
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -43,6 +43,20 @@ production. Футбольный production pipeline не включается.
   Неуспех запускает документированный rollback/forward fix, не ложный DoD.
 
 ## Текущее evidence и блокеры
+
+Ограниченный rollout 2026-09-27 выполнен после verified pre-migration dump,
+isolated restore и off-host download/hash проверки. БД обновлена до Alembic
+`0017_data_cycle_notification_outbox`; exact v1.2.1 API и bot healthy,
+`/health`, `/ready`, календарь today/7/30 и admin schedule отвечают 200.
+Persisted schedule: 10:00 Europe/Moscow, интервал 24h. Первый run
+`5d9be516-13b6-4ea7-9709-0fbe26b1b649` завершился
+`failed/source_fetch_failed`; уведомление `nhl_admins` доставлено один раз.
+Обнаружены четыре дефекта [TASK-025-13](TASK-025-13-production-runtime-hotfixes.md):
+Control API column grant, исполняемость скрипта, DB URL source-acquirer и
+heartbeat watcher. Новый и старый NHL timer оставлены disabled. 30-дневное
+coverage, quota и первый плановый запуск остаются открытыми. Bucket
+retention/encryption не подтверждены доступным service account. Фактический
+change record и incident находятся в репозитории `operations-agent`.
 
 Read-only preflight Operations Agent 2026-09-26: unit/drop-in NHL timer
 установлен, конфигурация 10:00 Europe/Moscow проверена, но timer

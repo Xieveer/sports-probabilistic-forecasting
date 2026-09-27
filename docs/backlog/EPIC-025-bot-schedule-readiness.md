@@ -9,8 +9,9 @@
 ## Память Product Owner
 
 - Инициатива: `EPIC-025`.
-- Ветка инициативы: `initiative/epic-025-bot-readiness` в основном каталоге проекта.
-- Workflow / этап: `release / полный EPIC review чистый; local candidate commit gate`.
+- Ветка инициативы: исходная `initiative/epic-025-bot-readiness` слита;
+  correction cycle — `initiative/epic-025-13-runtime-hotfix`.
+- Workflow / этап: `release / v1.2.1 частично установлен; первый NHL Data Cycle failed; hotfix PR #42`.
 - Исходная цель: календарь NHL независимо от прогноза, готовность событий,
   админ-управление Data Cycle и выпуск `1.2.1`;
   [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
@@ -94,6 +95,12 @@
   fixture correction: 1202 passed, 5 PostgreSQL-gated skips; отдельный PG16
   role/race gate: 33 passed. `make lint`, `make docs` (24 warnings),
   `make security`, `make production-check`, `make ai-validate` прошли.
+  Evidence gate v1.2.1 и verified pre-migration backup, isolated restore и
+  off-host read-back прошли. Production schema обновлена до 0017, API и бот
+  v1.2.1 healthy. Первый run `5d9be516-13b6-4ea7-9709-0fbe26b1b649`
+  завершился `failed/source_fetch_failed`; одно итоговое уведомление
+  доставлено. Выявлены четыре runtime-дефекта TASK-025-13. Их исправление
+  прошло 28 Developer и 52 Reviewer теста без P0–P2, PR #42 ожидает CI.
 - Решения: [ADR-026](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
   принят после независимого review: календарь независим от прогноза, control
   state в PostgreSQL, ограниченный control API и systemd dispatcher;
@@ -103,14 +110,15 @@
 - Артефакты: [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
 - Предыдущая роль: Reviewer — полный EPIC review и повторная проверка
   first-rollout fixture без P0–P2.
-- Следующая роль: Reviewer — candidate commit gate; затем Product Owner
-  для PR/terminal CI и Operations rollout.
-- Открытые вопросы / блокеры: ежедневный NHL timer на VPS выключен;
-  привилегированный read-only preflight подтвердил v1.1.22 и immutable
-  digests запущенных сервисов, но ещё нет verified production backup/restore,
-  проверки rollback после миграций и runtime evidence цикла 1.2.1.
-  Это production release NO-GO до исправления и проверки. EPIC-023 имеет
-  статус `in_progress`, пересечение требует сверки.
+- Следующая роль: Product Owner — terminal PR #42 CI и решение о новом
+  immutable patch release; затем Operations — повторный ручной и первый
+  плановый NHL run.
+- Открытые вопросы / блокеры: первый production Data Cycle failed;
+  30-дневное coverage и odds quota не подтверждены. Оба NHL timer выключены.
+  Backup изолированно восстановлен на VPS; off-host копия скачана и сверена
+  по SHA-256. Bucket retention/encryption не удалось прочитать текущим
+  service account. Production release NO-GO до
+  исправленного artifact и успешных runtime gates.
 - Обновлено: 2026-09-27.
 
 ## Цель и границы
@@ -130,7 +138,8 @@
 | [TASK-025-6](tasks/TASK-025-6-future-odds.md) | Calendar-first future NHL odds | semantic evidence, quota, identity, freshness | done |
 | [TASK-025-7](tasks/TASK-025-7-data-cycle-recovery-summary.md) | Terminal stages, summary и run history query contract | stage faults, coverage, safe DTO | done; production runtime в TASK-025-9 |
 | [TASK-025-8](tasks/TASK-025-8-executor-fencing.md) | Executor recovery/fencing after crash | PostgreSQL race, no duplicate executor | done; production activation в TASK-025-9 |
-| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production v1.2.1 and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; local candidate |
+| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.1 cycle failed |
+| [TASK-025-13](tasks/TASK-025-13-production-runtime-hotfixes.md) | Исправить четыре runtime-дефекта первого цикла | grants, source DB, runner, heartbeat | done; PR #42 CI ожидается |
 | [TASK-025-12](tasks/TASK-025-12-release-compose-gate.md) | Исправить Compose release gate | новый API/dispatcher contract и память | done; PR CI в TASK-025-9 |
 | [TASK-025-10](tasks/TASK-025-10-run-summary-producers.md) | Full run summary producers and coverage | same-run counters, n/a denominator, football fixture | done |
 | [TASK-025-11](tasks/TASK-025-11-telegram-calendar.md) | Public NHL calendar in Telegram | 08:00, all horizons, no prediction, bot→API test | done |
