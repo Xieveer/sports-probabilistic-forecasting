@@ -1,9 +1,8 @@
 # TASK-025-7 — Итог и query DTO Data Cycle
 
-> **Статус:** частичный срез прошёл повторное независимое review; TASK остаётся
-> `blocked` до подключения фактических summary producers и admin API.
-> Полный admin HTTP API принадлежит TASK-025-4, а crash recovery/fencing и
-> PostgreSQL concurrent claim — TASK-025-8.
+> **Статус:** done после закрытия зависимых TASK-025-4/6/8/10.
+> Этот отчёт сохраняет evidence исходного terminal/query среза `9dd511a`;
+> последующие реализации и их проверки описаны в отдельных отчётах задач.
 
 ## Результат
 
@@ -23,12 +22,12 @@
   через `load_required_stages` и отвергает отсутствующую или некорректную policy.
 - Summary/query schema поддерживает поля events, eligible, forecasts,
   independent odds observations, readiness, errors, duration и явные
-  числитель/знаменатель coverage. Producers для части полей ещё не подключены,
-  поэтому не записанное значение остаётся `null`;
+  числитель/знаменатель coverage. На момент исходного среза producers части
+  полей ещё не были подключены; не записанное значение остаётся `null`;
   знаменатель 0 не превращается в 100%.
 - NHL odds readiness не выводится из legacy forecast data. Summary показывает
-  только записанное значение `independently_observed_events`; TASK-025-6 добавит
-  полноценное stage wiring.
+  только записанное значение `independently_observed_events`; stage wiring
+  подключён в TASK-025-6.
 - Обычный terminal outcome `finish_run` и executor failure `fail_run` оба
   сохраняют агрегированное summary; проверка ошибок подтверждает terminal
   summary даже при прерванной стадии.
@@ -54,20 +53,18 @@
 прошёл полностью. Тесты запускались с локальным SQLite; PostgreSQL race/runtime
 не проверялись.
 
-## Границы и остатки
+## Границы исходного среза и закрытие зависимостей
 
-- HTTP endpoints намеренно не добавлены: до TASK-025-4 нет service credential,
-  допустимого admin principal и отдельного control-reader DB session. История не
-  выставляется unauthenticated и не выдаёт `sf_api_reader` права на control tables.
-- Crash/timeout recovery и executor fencing переведены Product Owner в
+- HTTP endpoints исходного среза намеренно не добавлялись. TASK-025-4 позднее
+  добавил service credential, допустимого admin principal и отдельный control
+  DB session; история не выставляется unauthenticated.
+- Crash/timeout recovery и executor fencing реализованы в
   [TASK-025-8](../../backlog/tasks/TASK-025-8-executor-fencing.md). Истечение
-  heartbeat не запускает второго владельца.
-- Stage producers пока не фиксируют new/changed/eligible/full readiness counts.
-  Canonical calendar import должен передать found/new/changed; prediction
-  preparation/materializer — eligible/ready forecasts; TASK-025-6 — ready odds;
-  event-readiness aggregation должен считать full/partial для одинакового
-  bookmaker window. Product Owner выделил это в
-  [TASK-025-10](../../backlog/tasks/TASK-025-10-run-summary-producers.md).
+  heartbeat не запускает второго владельца; production проверка — TASK-025-9.
+- Stage producers для found/new/changed, eligible/ready forecasts и
+  full/partial readiness подключены в
+  [TASK-025-10](../../backlog/tasks/TASK-025-10-run-summary-producers.md),
+  ready odds — в TASK-025-6. Их отдельные отчёты содержат итоговые проверки.
 
 ## Изменённые файлы
 

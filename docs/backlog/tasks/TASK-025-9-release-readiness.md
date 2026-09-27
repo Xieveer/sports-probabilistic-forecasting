@@ -1,6 +1,6 @@
 # TASK-025-9 — Production выпуск 1.2.0 и проверка NHL
 
-> **Статус:** backlog
+> **Статус:** in_progress — local candidate, production gates ожидаются
 > **Владелец:** Product Owner и Operations Agent
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -21,6 +21,11 @@ production. Футбольный production pipeline не включается.
   digests, Docker/DB состояния, последнего NHL run, календарного покрытия,
   прав/секретов по metadata и проверенного PostgreSQL backup. До этого
   rollback target не считается установленным.
+- [ ] Production alias map уведомлений настроен и проверен: непустой
+  `SF_DATA_CYCLE_NOTIFICATION_ALIASES` одинаков у API и Worker, защищённый
+  `BOT_NOTIFICATION_DESTINATIONS_FILE` доступен только боту, каждый alias
+  соответствует ровно одному chat ID и оба списка совпадают. Отсутствие
+  или расхождение блокирует включение Data Cycle.
 - [ ] Измерены длительность полного NHL цикла и quota future odds; выбранные
   cadence/allowlist не создают overlap. Старый timer и новый dispatcher
   переключаются взаимоисключающе, с проверкой disabled/enabled и следующего
@@ -44,6 +49,26 @@ Read-only preflight Operations Agent 2026-09-26: unit/drop-in NHL timer
 `disabled/inactive`, last/next trigger отсутствуют. Текущий SSH-пользователь
 не имеет доступа к Docker, DB, protected deploy record и журналу systemd;
 эти gates требуют привилегированной операционной проверки. Сервер не менялся.
+Привилегированный вывод владельца от 2026-09-26T18:14:20Z подтвердил
+healthy контейнеры `sports-forecast` API, Telegram bot и PostgreSQL; в
+защищённом deployment record перечислен `release-manifest-v1.1.22.json`.
+Следующий read-only вывод подтвердил совпадение running image digests этих
+трёх сервисов с manifest `v1.1.22` и source commit
+`97b24b3c95f10ced132a581cbec36cab06eb101b`. В production DB таблица
+`canonical_events` существует, таблиц calendar coverage и Data Cycle ещё нет,
+а будущих NHL событий на 30 дней — `0`. Текущий immutable rollback target
+для запущенных сервисов установлен; backup/restore evidence и совместимость
+отката после migrations ещё не подтверждены.
+Read-only проверка 2026-09-27 показала `87 MB` (`90 881 047` bytes) для
+production DB, `20 GiB` свободного места на root filesystem и `6.1 GiB`
+доступной RAM. NHL timer по-прежнему `disabled/inactive`. Backup должен быть
+создан и проверен непосредственно перед additive migrations; текущие
+ресурсы сами по себе не являются backup/restore evidence.
+Operations подготовил runbook `docs/runbooks/sports-forecast-v1.2.0-postgres-backup-restore.md`
+в отдельном репозитории `operations-agent` (`f425102`): root-only dump,
+checksum/catalog check и isolated restore на exact PostgreSQL image.
+Последовательность success/fault проверена локально; production backup,
+off-host retention и совместимость rollback пока не подтверждены.
 Каноническое evidence хранится в отдельном operations repo:
 `docs/changes/2026-09.md` и `docs/services/sports-probabilistic-forecasting.md`.
 

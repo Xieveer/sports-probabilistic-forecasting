@@ -27,6 +27,7 @@ def test_failed_publication_keeps_last_valid_prediction_showcase(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Ошибка между stale и upsert не публикует частичную витрину."""
+    reset_engine()
     engine = create_engine("sqlite:///:memory:")
     init_db(engine)
     try:

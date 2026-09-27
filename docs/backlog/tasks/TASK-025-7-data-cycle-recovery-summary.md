@@ -1,6 +1,6 @@
 # TASK-025-7 — Итог и query-контракт Data Cycle
 
-> **Статус:** blocked — terminal/query DTO reviewed; полный summary и endpoint в TASK-025-10/4
+> **Статус:** done — зависимые TASK-025-4/6/8/10 завершены; runtime gate в TASK-025-9
 > **Владелец:** Developer
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -14,7 +14,7 @@ query DTO, которые могут использовать admin API и dispa
 
 ## Критерии приёмки
 
-- [ ] Сбой/timeout executor не оставляет вечный `running`. Повторный claim
+- [x] Сбой/timeout executor не оставляет вечный `running`. Повторный claim
   запрещён, пока прежний владелец не остановлен или не fenced; PostgreSQL
   concurrency test подтверждает ровно один активный цикл на pipeline/турнир.
 - [x] Quality failure блокирует старт publication и не может быть скрыт итогом
@@ -24,26 +24,26 @@ query DTO, которые могут использовать admin API и dispa
   `success` требует success всех стадий, partial не скрывает failed mandatory.
   Required stage set приходит из tournament profile
   (`conf/tournament/nhl.yaml`), не задаётся в боте.
-- [ ] Каждая стадия calendar, data/odds, quality, predictions, publication,
+- [x] Каждая стадия calendar, data/odds, quality, predictions, publication,
   archive имеет фактический `success`, `partial_success`, `failed` или `skipped`,
   timestamps, safe reason code и проверяемые счётчики. Не запущенная стадия
   обозначается явно; обязательный quality failure блокирует publication.
-- [ ] `failed` означает срыв обязательного результата, `partial_success` —
+- [x] `failed` означает срыв обязательного результата, `partial_success` —
   достигнутый основной результат с неполным optional scope. Отсутствующий
   будущий odds acquisition до TASK-025-6 не маскируется `success`.
-- [ ] Summary формирует найденные/новые/изменённые события, eligible события,
+- [x] Summary формирует найденные/новые/изменённые события, eligible события,
   готовые прогнозы и котировки, полностью/частично готовые, ошибки, время и
   числитель/знаменатель покрытия из сохранённых stage counters. Отсутствующие
   источники остаются unknown, нулевой знаменатель сериализуется как `null` (`n/a`).
 - [x] Query summary оставляет ещё не измеренные producer counters nullable и
   рассчитывает дробь покрытия только при наличии числителя и ненулевого знаменателя.
-- [ ] Ограниченный API отдаёт текущий и последние run со стадиями, временем,
+- [x] Ограниченный API отдаёт текущий и последние run со стадиями, временем,
   причиной, итогом и summary без секретов, сырых внешних ответов и персональных
   данных. Предыдущий успешный run сохраняется отдельно от последней ошибки.
 - [x] Generic current/history query для любого tournament отдаёт ограниченный
   список safe DTO; предыдущие терминальные результаты сохраняются вместе с
   активным run.
-- [ ] Fault injection по каждой обязательной стадии, partial failures,
+- [x] Fault injection по каждой обязательной стадии, partial failures,
   process crash/timeout и PostgreSQL race проходят; football fixture
   подтверждает общий контракт run/stage без NHL-specific полей.
 
@@ -73,4 +73,9 @@ Product Owner в [TASK-025-8](TASK-025-8-executor-fencing.md): TTL или
 - [Отчёт выполнения и проверки](../../changes/done/TASK-025-7-data-cycle-summary.md).
 - Review: после correction cycle повторный независимый Reviewer не нашёл
   блокирующих findings; 22 целевых теста прошли при re-review.
-- Commit/push: ожидается после review.
+- Исходный DTO/terminal срез опубликован коммитом `9dd511a`; зависимости
+  опубликованы коммитами TASK-025-4/6/8/10.
+- Зависимые реализации: TASK-025-4/6/8/10 прошли отдельные review и
+  опубликованы; fault injection по шести стадиям и football fixture покрыты
+  тестами lifecycle. Фактические host recovery, terminal notification и
+  production run проверяются в TASK-025-9 после выпуска.

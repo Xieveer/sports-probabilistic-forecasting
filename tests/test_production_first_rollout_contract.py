@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 import yaml
 
+from scripts.build_production_compose_env_fixture import build_fixture
 from scripts.run_production_first_rollout import (
     _assert_logs_are_redacted,
     _clean_worktree_issues,
@@ -23,6 +26,85 @@ from scripts.run_production_first_rollout import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_production_compose_fixture_supplies_control_and_notification_requirements(
+    tmp_path: Path,
+) -> None:
+    """First-rollout fixture создаёт только фиктивные secret files и admin mapping."""
+    env_file = tmp_path / "production.env"
+    build_fixture(env_file, root=tmp_path, app_version="1.2.0")
+    values = dict(
+        line.split("=", 1)
+        for line in env_file.read_text(encoding="utf-8").splitlines()
+        if "=" in line
+    )
+
+    required_values = {
+        "SF_CONTROL_API_DB_PASSWORD_FILE",
+        "SF_CONTROL_DATABASE_URL_FILE",
+        "SF_CONTROL_API_KEY_FILE",
+        "SF_DATA_CYCLE_NOTIFICATION_ALIASES",
+        "BOT_ADMIN_USER_IDS",
+        "BOT_NOTIFICATION_DESTINATIONS_FILE",
+    }
+    assert required_values <= values.keys()
+    assert values["SF_DATA_CYCLE_NOTIFICATION_ALIASES"] == "nhl_admins"
+    assert values["BOT_ADMIN_USER_IDS"] == "1"
+    for key in required_values - {
+        "SF_DATA_CYCLE_NOTIFICATION_ALIASES",
+        "BOT_ADMIN_USER_IDS",
+    }:
+        assert Path(values[key]).is_file()
+    assert Path(values["SF_CONTROL_API_DB_PASSWORD_FILE"]).read_text(encoding="utf-8") == (
+        "fixture-control-api-password"
+    )
+    assert Path(values["SF_CONTROL_DATABASE_URL_FILE"]).read_text(encoding="utf-8") == (
+        "postgresql://sf_control_api:fixture-control-api-password@db:5432/sports_forecast"
+    )
+    assert Path(values["SF_CONTROL_API_KEY_FILE"]).read_text(encoding="utf-8") == (
+        "fixture-control-api-key"
+    )
+    assert Path(values["BOT_NOTIFICATION_DESTINATIONS_FILE"]).read_text(encoding="utf-8") == (
+        '{"nhl_admins":-1001234567890}'
+    )
+
+
+def test_production_compose_fixture_renders_all_first_rollout_profiles(tmp_path: Path) -> None:
+    """Fixture закрывает Compose interpolation для migration и runtime profiles."""
+    docker = shutil.which("docker")
+    if docker is None:
+        pytest.skip("Docker Compose недоступен для rendered production config")
+    env_file = tmp_path / "production.env"
+    build_fixture(env_file, root=tmp_path, app_version="1.2.0")
+    result = subprocess.run(
+        [
+            docker,
+            "compose",
+            "--project-name",
+            "sf-first-rollout-fixture",
+            "--env-file",
+            str(env_file),
+            "-f",
+            str(PROJECT_ROOT / "docker-compose.prod.yml"),
+            "--profile",
+            "migration",
+            "--profile",
+            "worker",
+            "--profile",
+            "operational-sync",
+            "--profile",
+            "source-acquisition",
+            "config",
+            "--quiet",
+        ],
+        cwd=PROJECT_ROOT,
+        env={"PATH": str(Path(docker).parent), "HOME": str(tmp_path)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_runtime_commands_use_installed_environment_and_read_only_contract() -> None:
