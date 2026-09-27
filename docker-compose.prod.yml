@@ -118,6 +118,7 @@ services:
     image: ${SF_WORKER_IMAGE:?set SF_WORKER_IMAGE to an immutable ghcr image digest}
     pull_policy: always
     environment:
+      DATABASE_URL_FILE: /run/secrets/worker_database_url
       SF_DATA_CYCLE_RUN_ID: ${SF_DATA_CYCLE_RUN_ID:-untracked}
       SF_DATA_CYCLE_GENERATION: ${SF_DATA_CYCLE_GENERATION:-0}
       SF_DATA_CYCLE_OWNER_ID: ${SF_DATA_CYCLE_OWNER_ID:-untracked}
@@ -130,6 +131,7 @@ services:
     volumes:
       - ${SF_CANONICAL_SOURCE_ROOT:?set SF_CANONICAL_SOURCE_ROOT}:/app/data/source/nhl
     secrets:
+      - worker_database_url
       - odds_api_key_free
       - odds_api_key_20k
       - odds_api_key_100k
