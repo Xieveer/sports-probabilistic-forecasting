@@ -105,13 +105,13 @@ def test_refresh_and_publish_keeps_current_when_mandatory_odds_incomplete(
     assert current.read_text(encoding="utf-8") == previous
 
 
-def test_refresh_and_publish_rejects_future_event_without_odds(
+def test_refresh_and_publish_rejects_missing_merged_odds_column(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Наличие merge не заменяет coverage gate для будущих матчей."""
+    """Merged source сохраняет обязательную схему odds без требования линии close."""
     source = tmp_path / "source.csv"
     source.write_text(
-        "id,datetime,match_is_end,pinnacle_winner_withOT_home_close\n2,2026-09-29T21:00:00Z,0,\n",
+        "id,datetime,match_is_end\n2,2026-09-29T21:00:00Z,0\n",
         encoding="utf-8",
     )
     current = tmp_path / "current.csv"
@@ -121,5 +121,27 @@ def test_refresh_and_publish_rejects_future_event_without_odds(
         lambda _tournament: (source, SimpleNamespace(quota_hit=False, merged_source=True)),
     )
 
-    with pytest.raises(ValueError, match="будущие события без обязательных odds"):
+    with pytest.raises(ValueError, match="обязательную колонку odds"):
         refresh_and_publish_source_snapshot("nhl", current)
+
+
+def test_refresh_and_publish_keeps_future_calendar_event_without_close_odds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Календарь публикуется до появления линии close у будущего матча."""
+    source = tmp_path / "source.csv"
+    source.write_text(
+        "id,datetime,match_is_end,pinnacle_winner_withOT_home_close\n"
+        "1,2026-09-27T21:00:00Z,1,1.91\n"
+        "2,2026-09-30T21:00:00Z,0,\n",
+        encoding="utf-8",
+    )
+    current = tmp_path / "current.csv"
+    current.write_text("old snapshot\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "sports_forecast.orchestration.source_snapshot.refresh_source_with_odds_result",
+        lambda _tournament: (source, SimpleNamespace(quota_hit=False, merged_source=True)),
+    )
+
+    assert refresh_and_publish_source_snapshot("nhl", current) == current
+    assert current.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")

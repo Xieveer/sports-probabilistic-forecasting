@@ -69,6 +69,8 @@ def refresh_and_publish_source_snapshot(tournament: str, current_csv: Path) -> P
     source_csv, odds_result = refresh_source_with_odds_result(tournament)
     if odds_result is None or odds_result.quota_hit or not odds_result.merged_source:
         raise ValueError("Обязательный odds refresh не дал полного merged source")
+    # Будущая линия close ещё не существует. Календарь публикуется раньше
+    # коэффициентов, которые отдельно собирает стадия data_odds.
     _validate_source_csv(source_csv, require_odds=True)
     return publish_source_snapshot(source_csv, current_csv)
 
@@ -90,18 +92,3 @@ def _validate_source_csv(source_csv: Path, *, require_odds: bool = False) -> Non
         )
         if odds_column is None:
             raise ValueError("source CSV не содержит обязательную колонку odds")
-        missing_odds = [
-            row["id"]
-            for row in rows
-            if not _is_finished(row["match_is_end"]) and not str(row.get(odds_column) or "").strip()
-        ]
-        if missing_odds:
-            raise ValueError(
-                "source CSV содержит будущие события без обязательных odds: "
-                + ", ".join(missing_odds[:5])
-            )
-
-
-def _is_finished(value: str | None) -> bool:
-    """Проверить признак завершённого матча в CSV provider source."""
-    return str(value or "").strip().lower() in {"1", "true", "yes"}
