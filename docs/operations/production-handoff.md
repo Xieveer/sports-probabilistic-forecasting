@@ -14,8 +14,21 @@
   [TASK-025-9](../backlog/tasks/TASK-025-9-release-readiness.md),
   [TASK-025-18](../backlog/tasks/TASK-025-18-optional-future-odds.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
-- source_tag: `v1.2.6` (после независимого review и terminal PR CI).
-- source_commit: exact merged `main` commit фиксируется перед tag.
+- source_tag: `v1.2.6`.
+- source_commit: `f5697d388328ea0446fb4cd85cff0800aa0c6b4f`.
+- evidence_tag: `v1.2.6-evidence.1`.
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36327167297
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36327167332
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36327191554
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36327191554/job/108642959557
+
+Проверенные runtime references для production manifest:
+
+- postgres: `postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94`.
+- api: `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:776e53a504afb754e43333d3865ac21f6908a761a0b3d5b9b3f818f2c5cbe8ea` — published linux/amd64, scan, provenance.
+- worker: `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:8c1db5a1e317c0dcb6ea816baa8d556be82d4922400791a09e68ff97616ff231` — published linux/amd64, scan, provenance.
+- telegram_bot: `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:446bf9906989cc8700a4ee85307105753a71f3f45871a06b5df05b70ae43a83f` — published linux/amd64, scan, provenance.
+- archive_sync: `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:98cdc570f38cdb2b11a30905f30f94dadca535188ab29432d1641f6ecf24c3bf` — published linux/amd64, scan, provenance.
 
 По решению владельца v1.2.6 добавляет явный режим без future odds. Он
 пропускает запрос к провайдеру, оставляет готовность коэффициентов `missing`
@@ -65,10 +78,14 @@ Compose dry-run. Ошибка или неизвестное значение swi
 
 Текущий v1.2.5 model bundle
 `sha256:108eb6db273f284cb605d2800df1ccc8d1cd73da018b306c132c17926dafd69e`
-содержит те же одобренные веса и 489 features. До v1.2.6 Worker создать
-новый content-addressed wrapper с `app_version=1.2.6`, проверить SHA-256,
-model identity, feature contract и загрузку в exact Worker. Сохранить
-v1.2.5 pointer и serving digests для rollback.
+содержит одобренные веса и 489 features. Operations уже staged новый
+content-addressed wrapper `sha256:9d193525d816e55e40b4dd95fb875e39058e0154cebbc5f4668d87846f002123`
+с `app_version=1.2.6`; manifest SHA-256
+`ed748e385bcfc4c128c77c8e223413ba45a0b4fb7c859fa3ed2719e43f123d17`.
+Три model file SHA и набор из 489 признаков совпали с текущим bundle;
+`current`/`previous` pointers не менялись. Загрузка wrapper и feature
+contract в exact v1.2.6 Worker остаются открытым gate. Для rollback
+сохранить v1.2.5 pointer и serving digests.
 
 ## Healthcheck и smoke-проверка
 
@@ -115,18 +132,20 @@ requests в OFF-режиме, notification delivery и timer last/next trigger.
 
 ## Артефакт и откат
 
-После независимого review и terminal PR CI Reviewer создаёт annotated
-`v1.2.6` на exact merged commit `main`. Tag pipeline должен завершить CI,
-Security, first-rollout contract, linux/amd64 images, scan и provenance.
-Release owner создаёт отдельный immutable evidence commit/tag; validator
-вызывается с `--handoff docs/operations/production-handoff.md`.
-Operations сверяет manifest и только затем меняет VPS по runbook в
-`operations-agent`, сохранив root-only rollback копии.
+Annotated `v1.2.6` указывает на exact merged commit
+`f5697d388328ea0446fb4cd85cff0800aa0c6b4f`. Merge CI/Security и
+tag Docker pipeline завершились успешно; first-rollout contract,
+linux/amd64 images, scan и provenance прошли. Отдельный immutable
+evidence commit/tag `v1.2.6-evidence.1` проходит независимый review;
+validator вызывается с `--handoff docs/operations/production-handoff.md`.
+После terminal evidence CI Operations сверяет manifest и только затем
+меняет VPS по runbook в `operations-agent`, сохранив root-only rollback копии.
 
 ## Нерешённые вопросы
 
-Для GO нужны red→green и review optional odds, terminal PR/tag/evidence CI,
-свежий backup/restore/off-host evidence, совместимый v1.2.6 model bundle,
-полный ручной цикл без odds, затем первый плановый NHL run. TASK-025-9 и
-EPIC-025 остаются `in_progress` до этих gates. Действующие Odds API ключи
+Для GO остаются terminal evidence CI, загрузка staged wrapper в exact
+v1.2.6 Worker, true OFF replay на изолированной копии данных,
+актуальный backup/restore/off-host evidence, production rollout и полный
+ручной цикл без odds, затем первый плановый NHL run. TASK-025-9 и EPIC-025
+остаются `in_progress` до этих gates. Действующие Odds API ключи
 отсутствуют; повторное включение odds требует отдельного provider preflight.
