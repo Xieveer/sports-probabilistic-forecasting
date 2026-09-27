@@ -26,3 +26,7 @@ table-wide SELECT и доступа к `failure_code`. Полный unit suite:
 1227 passed, 13 deselected; `make lint`, `make production-check` и
 `make docs` (155 warnings) прошли. Полный локальный first-rollout из
 clean commit, PR CI и production gate пока открыты.
+
+Проверенный content commit: `30cc56e81663f5c9835158832265e7e187c49f23`.
+Reviewer повторно выполнил `make pre-commit` и целевой набор:
+42 passed, 2 PostgreSQL integration skipped без disposable URLs.
