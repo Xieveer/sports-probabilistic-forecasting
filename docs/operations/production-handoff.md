@@ -17,8 +17,21 @@
   [TASK-025-18](../backlog/tasks/TASK-025-18-optional-future-odds.md),
   [TASK-025-20](../backlog/tasks/TASK-025-20-calendar-stage-read-grant.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
-- source_tag: `v1.2.7` (после независимого review и terminal PR CI).
-- source_commit: exact merged `main` commit фиксируется перед tag.
+- source_tag: `v1.2.7`.
+- source_commit: `455a7a52b78aacc8ab1bf716bcc7411e390799a5`.
+- evidence_tag: `v1.2.7-evidence.1`.
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36332668406
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36332668416
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36332705281
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36332705281/job/108658533821
+
+Проверенные runtime references для production manifest:
+
+- postgres: `postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94`.
+- api: `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:24ae057a28ec496336bba0d2f04e158a7b1474d47afefc6b49de752929d51226` — published linux/amd64, scan, provenance.
+- worker: `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:0a20ab5d8545754dc04c5ae5559208c028690071ed75e6228f0ddc82cf95c98d` — published linux/amd64, scan, provenance.
+- telegram_bot: `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:f49422fb88048f0a0f8baf5df05fcd58b67391433c0baef52f9a846ce5c09afd` — published linux/amd64, scan, provenance.
+- archive_sync: `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:8520f90dc6b6972c0040b2420447e340d77f65b36ed183c6a58b2404aec375a0` — published linux/amd64, scan, provenance.
 
 По решению владельца v1.2.6 добавил явный режим без future odds. Он
 пропускает запрос к провайдеру, оставляет готовность коэффициентов `missing`
@@ -77,12 +90,24 @@ Compose dry-run. Ошибка или неизвестное значение swi
 содержит одобренные веса и 489 features. Staged v1.2.6 wrapper
 `sha256:9d193525d816e55e40b4dd95fb875e39058e0154cebbc5f4668d87846f002123`
 загрузился в exact v1.2.6 Worker; `current`/`previous` pointers не
-менялись. До v1.2.7 rollout создать content-addressed wrapper с
-`app_version=1.2.7`, проверить SHA-256, identity, 489 ordered features
-и загрузку в exact v1.2.7 Worker. Сохранить v1.2.5 pointer и serving
-digests для rollback.
+менялись. Operations staged новый content-addressed v1.2.7 wrapper
+`sha256:a408b8b6cc6f7c8ce9ac5098846cfda8737370bd57a242bc9f45255fc7a2a42f`,
+manifest SHA-256 `fbafb595b76da1767a36ff9d7abdf30b61e42513efa1736a0308b6ba07dcbc61`;
+три file SHA и 489 ordered features совпали с текущим bundle.
+`current`/`previous` pointers не переключались. Загрузка staged wrapper
+в exact v1.2.7 Worker остаётся runtime gate. Для rollback сохранить
+v1.2.5 pointer и serving digests.
 
 ## Healthcheck и smoke-проверка
+
+До immutable tag полный локальный first-rollout на clean commit
+`85a8a6ffd1f5d5617520f6f853aad9716e93ce5d` прошёл за 121.634 с:
+роль API выполнила exact JOIN, HTTP-календарь today/7/30, Worker,
+archive-sync и бот прошли; rollback тестовой БД, zero restarts и zero
+host ports подтверждены. Redacted evidence SHA-256
+`03a5f662664ac84316566615f28a27eefaf83832df96d60f7d51b8ffc8d29c8d`
+проверено независимым Reviewer. Tag first-rollout повторно прошёл на
+exact merge commit. Это локальное evidence, production acceptance открыт.
 
 После ограниченного rollout **до ручного Data Cycle** сверить running digests,
 healthy/restart counts, `/health`, `/ready`, NHL calendar API 0/7/30 под
@@ -128,20 +153,20 @@ requests в OFF-режиме, notification delivery и timer last/next trigger.
 
 ## Артефакт и откат
 
-После независимого review и terminal PR CI Reviewer создаёт annotated
-`v1.2.7` на exact merged commit `main`. Tag pipeline должен завершить CI,
-Security, first-rollout contract, linux/amd64 images, scan и provenance.
-Release owner создаёт отдельный immutable evidence commit/tag; validator
+Annotated `v1.2.7` указывает на exact merged commit
+`455a7a52b78aacc8ab1bf716bcc7411e390799a5`. Merge CI/Security и
+tag Docker pipeline завершились успешно; first-rollout contract,
+linux/amd64 images, scan и provenance прошли. Release owner создаёт
+отдельный immutable evidence commit/tag; validator
 вызывается с `--handoff docs/operations/production-handoff.md`.
 Operations сверяет manifest и только затем меняет VPS по runbook в
 `operations-agent`, сохранив root-only rollback копии.
 
 ## Нерешённые вопросы
 
-Для GO нужны red→green и review точечных role grants, полный локальный
-first-rollout под production DB roles и HTTP-календарь до immutable tag,
-terminal PR/tag/evidence CI, актуальный backup/restore/off-host evidence,
-совместимый v1.2.7 model bundle, успешный calendar smoke под API role,
+Для GO остаются terminal evidence CI, актуальный backup/restore/off-host
+evidence, загрузка staged v1.2.7 model bundle в exact Worker, успешный
+production calendar smoke под API role,
 полный ручной цикл без odds, затем первый плановый NHL run. TASK-025-9 и
 EPIC-025 остаются `in_progress` до этих gates. Действующие Odds API ключи
 отсутствуют; повторное включение odds требует отдельного provider preflight.
