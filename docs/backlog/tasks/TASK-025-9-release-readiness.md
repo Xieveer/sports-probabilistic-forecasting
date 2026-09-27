@@ -1,28 +1,28 @@
 # TASK-025-9 — Production выпуск и проверка NHL
 
-> **Статус:** in_progress — v1.2.1 частичный rollout; первый цикл failed
+> **Статус:** in_progress — v1.2.2 serving healthy; calendar stage failed
 > **Владелец:** Product Owner и Operations Agent
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
 > **ADR:** [ADR-026](../../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
 
-> Исправленный release candidate `v1.2.2` подготовлен после четырёх дефектов
-> первого цикла v1.2.1. Владелец подтвердил выпуск v1.2.2; критерии NHL
+> После четырёх дефектов v1.2.1 был выпущен v1.2.2. Его ручной цикл выявил
+> дефект closing line будущих матчей; готовится v1.2.3. Критерии NHL
 > production acceptance ниже не меняются.
 
 ## Результат
 
-Довести исправленный release candidate до immutable tag `v1.2.2`,
+Довести исправленный release candidate до immutable tag `v1.2.3`,
 запустить NHL Data Cycle по
 расписанию и подтвердить работу бота, API и ежедневного scheduler на
 production. Тег `v1.2.1` остаётся неизменным; футбольный production pipeline
-не включается.
+не включается. Тег `v1.2.2` остаётся неизменным.
 
 ## Критерии приёмки
 
 - [ ] Все функциональные TASK инициативы прошли независимое review, full EPIC
   review, локальные проверки и terminal PR CI нового кандидата.
-  `pyproject.toml` и handoff указывают `1.2.2 candidate`;
+  `pyproject.toml` и handoff указывают `1.2.3 candidate`;
   `make production-check` должен пройти для final candidate.
 - [ ] Operations имеет привилегированное read-only evidence текущих image
   digests, Docker/DB состояния, последнего NHL run, календарного покрытия,
@@ -46,6 +46,9 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
   status/history/schedule/manual run, terminal stages, timer next trigger,
   допустимый журнал и отсутствие дубля цикла. Проверка не публикует секреты
   или полный внешний ответ.
+- [ ] До Worker run установлен и проверен immutable model bundle с
+  `app_version=1.2.3` из неизменённых одобренных весов/features; старый
+  `current` и checksums сохранены для rollback.
 - [ ] После первого scheduled запуска подтверждены run_id, дата/время,
   стадии, фактическое 30-дневное coverage и сообщение администратору.
   Неуспех запускает документированный rollback/forward fix, не ложный DoD.
@@ -65,6 +68,14 @@ heartbeat watcher. Новый и старый NHL timer оставлены disab
 coverage, quota и первый плановый запуск остаются открытыми. Bucket
 retention/encryption не подтверждены доступным service account. Фактический
 change record и incident находятся в репозитории `operations-agent`.
+v1.2.2 tag/evidence CI прошли, serving API/bot healthy. Ручной run
+`b4e312c2-59c2-4917-8e06-8483cd06a3b3` завершился
+`failed/source_fetch_failed`: snapshot ошибочно требовал closing line у
+1 899 будущих матчей. Host stop proof, terminalization и одно уведомление
+подтверждены; оба timer disabled. Дефект исправляется в
+[TASK-025-14](TASK-025-14-future-close-odds-snapshot.md). Active model bundle
+пока совместим с 1.1.14, но не с 1.2.3, поэтому repackage/promotion —
+отдельный release gate.
 
 Исторический preflight до ограниченного rollout v1.2.1: Operations Agent 2026-09-26
 подтвердил установленный unit/drop-in NHL timer и конфигурацию 10:00
