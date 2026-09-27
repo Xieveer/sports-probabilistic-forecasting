@@ -1,17 +1,24 @@
 # Передача сервиса в эксплуатацию: v1.2.1 candidate
 
+> Фактическое состояние на 2026-09-27: v1.2.1 частично развёрнут на VPS,
+> первый NHL Data Cycle завершился `failed/source_fetch_failed`, оба NHL timer
+> выключены. Исправления в TASK-025-13 / PR #42 ожидают нового immutable
+> release. Этот handoff не подтверждает production acceptance.
+
 - Статус подготовки: `candidate`
 - Сервис: sports-probabilistic-forecasting
 - Canonical repository: Xieveer/sports-probabilistic-forecasting
 - Инициатива: EPIC-025, TASK-025-9.
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
 - source_tag: `v1.2.1`
-- source_commit: определяется из annotated tag v1.2.1 перед rollout.
+- source_commit: `0c56bf10d52e9802d75627988605f455714cef96`.
 
 Этот handoff относится к согласованному production-выпуску 1.2.1. Тег v1.2.0
-остался неизменным: его release gate завершился ошибкой до сборки образов. Статус
-candidate не означает, что CI, backup или deployment уже выполнены. Тег должен
-указывать на commit, содержащий код, версию и этот контракт.
+остался неизменным: его release gate завершился ошибкой до сборки образов.
+CI/evidence v1.2.1, production backup и ограниченный rollout выполнены;
+первый Data Cycle failed, поэтому статус handoff остаётся `candidate` до
+исправленного релиза и runtime acceptance. Тег указывает на commit,
+содержащий код, версию и исходный release contract.
 
 ## Идентификация и ответственность
 
