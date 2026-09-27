@@ -12,8 +12,21 @@
   [TASK-025-9](../backlog/tasks/TASK-025-9-release-readiness.md),
   [TASK-025-14](../backlog/tasks/TASK-025-14-future-close-odds-snapshot.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
-- source_tag: `v1.2.3` (после независимого review и terminal PR CI).
-- source_commit: exact merged `main` commit фиксируется перед tag.
+- source_tag: `v1.2.3`.
+- source_commit: `6c077a3f929fb6c3aea506c8b1b0e1cdb18d9fef`.
+- evidence_tag: `v1.2.3-evidence.1` (candidate до terminal evidence gate).
+
+## Проверяемые release-свидетельства
+
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36314798336
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36314798318
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36314811274
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36314811274/job/108608161362
+- postgres: `postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94`
+- api: published linux/amd64 scan provenance `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:033f36eb9af0a4e3859e35ebb04aa4ed0c7655b72cb3e7135372260ce5f346f9`
+- worker: published linux/amd64 scan provenance `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:bd95ab27ba04dda70d1a4c053534f1ba9d85a953ab5a535d441668684cc69086`
+- telegram_bot: published linux/amd64 scan provenance `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:0461fc39c28721a4c109a18f9b0d47268c28e5e0fa8bb9f18d0badf0e3892d4d`
+- archive_sync: published linux/amd64 scan provenance `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:e576a4469d224e44ca9f65b7ce2fe70cf7805951a8f992c9ab636f98d2bf820e`
 
 v1.2.3 убирает требование исторической closing line у будущего NHL матча при
 публикации source snapshot. Это следует из [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md):
@@ -44,6 +57,11 @@ chat ID и пароли не записываются в Git, handoff, чат и
 Перед выпуском проверить, что активный model bundle совместим с `1.2.3`.
 Сейчас `current` указывает на manifest с `app_version=1.1.14`; без явной
 проверенной repackage/promotion Worker остановится на compatibility gate.
+На VPS подготовлен, но не активирован bundle
+`sha256:d11cee7e1f7531e095d5d9ba416507e562604a250101acc427a512e112b9ac5e`:
+три SHA файлов совпали с прежним bundle, 489 feature names уникальны и
+соответствуют модели; `current` и `previous` пока не менялись. Перед promotion
+повторить verify в approved v1.2.3 Worker image.
 Существующие веса и feature files нельзя менять или переобучать в этом
 release; новый content-addressed wrapper допускается только после сверки
 checksums, model identity и feature contract. Сохранить старый bundle и
