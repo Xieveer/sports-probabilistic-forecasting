@@ -74,6 +74,10 @@ PR #43 прошёл review/CI и слит в `main` commit
 прошёл catalog и isolated restore; off-host Object Storage и локальная
 копии скачаны и сверены по checksum. Manual release-evidence gate и
 production acceptance ожидаются.
+Первый immutable evidence tag `v1.2.2-evidence.1` не прошёл validator:
+handoff не содержал обязательных URL и exact image refs. Для исправленного
+handoff подготовлен новый tag `v1.2.2-evidence.2`; source tag и образы не
+изменялись.
 
 Исторический preflight до ограниченного rollout v1.2.1: Operations Agent 2026-09-26
 подтвердил установленный unit/drop-in NHL timer и конфигурацию 10:00

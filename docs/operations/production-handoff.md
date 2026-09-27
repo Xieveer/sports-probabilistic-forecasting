@@ -13,6 +13,23 @@
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
 - source_tag: `v1.2.2` (выпуск подтверждён владельцем).
 - source_commit: `3f2b4bb94421bdc00aa1d5185bdfaaf30a94acee`.
+- evidence_tag: `v1.2.2-evidence.2` (candidate до повторного evidence gate).
+
+Первый immutable `v1.2.2-evidence.1` завершился ошибкой валидации handoff:
+отсутствовали ссылки и exact image evidence. Он остаётся неизменным;
+исправления записаны только в `v1.2.2-evidence.2`.
+
+## Подтверждённые release artifacts
+
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36312049914
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36312049906
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36312177063
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36312177063/job/108600952503
+- postgres: `postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94`
+- api: published linux/amd64 scan provenance `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:2f6ec243050f0b3511fa6c44d78cd721589a1eca59dfb6e924af7762bdc9e90c`
+- worker: published linux/amd64 scan provenance `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:806f67832dfeaeb6eeef24d2b401ead8f8e81283c48d9c145fa857ce12a26546`
+- telegram_bot: published linux/amd64 scan provenance `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:fb1afdb415a842282276a298dfa30448eadffefff2c9fa4f4f0ee6d72326fb4b`
+- archive_sync: published linux/amd64 scan provenance `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:85516f66f9da6b70b257ce23b066878f78b4131dd36a39f7d9259240dda956d0`
 
 Этот handoff готовит исправленный patch release после неуспешного первого
 цикла v1.2.1. Теги v1.2.0 и v1.2.1 неизменны. CI/evidence v1.2.1,
