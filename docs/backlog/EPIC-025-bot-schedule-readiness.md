@@ -10,7 +10,7 @@
 
 - Инициатива: `EPIC-025`.
 - Ветка инициативы: `initiative/epic-025-bot-readiness` в основном каталоге проекта.
-- Workflow / этап: `release / полный EPIC review чистый; local candidate commit gate`.
+- Workflow / этап: `release / v1.2.1 tag pipeline green; evidence candidate и VPS gates`.
 - Исходная цель: календарь NHL независимо от прогноза, готовность событий,
   админ-управление Data Cycle и выпуск `1.2.1`;
   [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
@@ -103,12 +103,14 @@
 - Артефакты: [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
 - Предыдущая роль: Reviewer — полный EPIC review и повторная проверка
   first-rollout fixture без P0–P2.
-- Следующая роль: Reviewer — candidate commit gate; затем Product Owner
-  для PR/terminal CI и Operations rollout.
+- Следующая роль: Reviewer — immutable evidence gate; затем Operations для
+  server secrets, backup/restore, rollout и первого scheduled NHL run.
 - Открытые вопросы / блокеры: ежедневный NHL timer на VPS выключен;
   привилегированный read-only preflight подтвердил v1.1.22 и immutable
   digests запущенных сервисов, но ещё нет verified production backup/restore,
   проверки rollback после миграций и runtime evidence цикла 1.2.1.
+  Control secret files, notification destinations и dispatcher.env на VPS
+  ещё отсутствуют; manual evidence gate ещё ожидает запуска.
   Это production release NO-GO до исправления и проверки. EPIC-023 имеет
   статус `in_progress`, пересечение требует сверки.
 - Обновлено: 2026-09-27.

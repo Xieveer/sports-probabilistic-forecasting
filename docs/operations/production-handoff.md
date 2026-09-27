@@ -6,12 +6,30 @@
 - Инициатива: EPIC-025, TASK-025-9.
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
 - source_tag: `v1.2.1`
-- source_commit: определяется из annotated tag v1.2.1 перед rollout.
+- source_commit: `0c56bf10d52e9802d75627988605f455714cef96`
+- evidence_tag: `v1.2.1-evidence.1` (candidate до evidence gate).
 
 Этот handoff относится к согласованному production-выпуску 1.2.1. Тег v1.2.0
 остался неизменным: его release gate завершился ошибкой до сборки образов. Статус
-candidate не означает, что CI, backup или deployment уже выполнены. Тег должен
-указывать на commit, содержащий код, версию и этот контракт.
+candidate не означает, что production backup или deployment уже выполнены. Source
+tag указывает на commit с кодом, версией и исходным handoff.
+
+## Подтверждённые release artifacts
+
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36305197394
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36305197306
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36305286708
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36305286708/job/108581362432
+- postgres: `postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94`
+- api: published linux/amd64 scan provenance `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:084e0b2c3d2bbeabffbfb623e4775b36f0c4c2972759738e3483e98ed0fed858`
+- worker: published linux/amd64 scan provenance `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:4767d244b09ca38de5b2720d8d89fc36bfa562f15ecac3a840389f18032f68d1`
+- telegram_bot: published linux/amd64 scan provenance `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:b0b905b67b0277276506dc0a4441117841a9acc92694f9e7985dde087a0c83a2`
+- archive_sync: published linux/amd64 scan provenance `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:5790cf459f6cfff796129a5f8ca2358f61e058d26081680194e9ec5b3306af23`
+
+Tag pipeline завершился успешно. First-rollout fixture достиг migration revision
+`0017_data_cycle_notification_outbox`, проверил isolated restore и health
+API/bot/Worker; Worker peak RSS в fixture составил 238236467 bytes. Эти
+измерения не заменяют production runtime и quota evidence.
 
 ## Идентификация и ответственность
 

@@ -14,7 +14,7 @@ production. Футбольный production pipeline не включается.
 
 ## Критерии приёмки
 
-- [ ] Все функциональные TASK инициативы прошли независимое review, full EPIC
+- [x] Все функциональные TASK инициативы прошли независимое review, full EPIC
   review, локальные проверки и terminal PR CI. `pyproject.toml` и handoff
   указывают `1.2.1`; `make production-check` прошёл для `candidate`.
 - [ ] Operations имеет привилегированное read-only evidence текущих image
@@ -30,7 +30,7 @@ production. Футбольный production pipeline не включается.
   cadence/allowlist не создают overlap. Старый timer и новый dispatcher
   переключаются взаимоисключающе, с проверкой disabled/enabled и следующего
   trigger. На preflight 2026-09-26 старый NHL timer был disabled/inactive.
-- [ ] Reviewer создаёт tag только на проверенном commit в `main`. Tag pipeline
+- [x] Reviewer создаёт tag только на проверенном commit в `main`. Tag pipeline
   завершён успешно, immutable image digests/provenance/security evidence
   проверены перед изменением VPS.
 - [ ] Operations применяет additive migrations с backup, ограниченный rollout
@@ -75,6 +75,19 @@ off-host retention и совместимость rollback пока не подт
 не включавший control secret files и aliases. Образы не строились, VPS не
 менялся. Пользователь согласовал `v1.2.1` для первого production выпуска;
 `v1.2.0` остаётся неизменным.
+`v1.2.1` указывает на merge commit `0c56bf10d52e9802d75627988605f455714cef96`.
+[Tag pipeline 36305286708](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36305286708)
+завершился успешно: release gates, пять build artifacts, isolated first-rollout,
+четыре publish/scan/provenance jobs. GHCR manifest digest и `linux/amd64`
+сверены для каждого application image; candidate evidence manifest находится
+в `deploy/release-manifest.json`. Fixture first-rollout подтвердил migration
+`0017_data_cycle_notification_outbox`, тестовый isolated restore и health
+контракты. Manual evidence gate ещё ожидает отдельного запуска.
+Привилегированный preflight 2026-09-27 выявил, что серверные control DB/key,
+notification destinations и dispatcher.env ещё не созданы. Действующие API и
+бот используют secret files в `/etc/operations/services/sports-probabilistic-forecasting/secrets`;
+новые пути нужно готовить там после сверки actual runtime config. Секретные
+значения не публиковались.
 Каноническое evidence хранится в отдельном operations repo:
 `docs/changes/2026-09.md` и `docs/services/sports-probabilistic-forecasting.md`.
 
