@@ -7,13 +7,13 @@
 > **ADR:** [ADR-026](../../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
 
 > Исправленный release candidate `v1.2.2` подготовлен после четырёх дефектов
-> первого цикла v1.2.1. Версия ожидает решения владельца; критерии NHL
+> первого цикла v1.2.1. Владелец подтвердил выпуск v1.2.2; критерии NHL
 > production acceptance ниже не меняются.
 
 ## Результат
 
-Довести исправленный release candidate до immutable tag после решения
-владельца о версии (предложен `v1.2.2`), запустить NHL Data Cycle по
+Довести исправленный release candidate до immutable tag `v1.2.2`,
+запустить NHL Data Cycle по
 расписанию и подтвердить работу бота, API и ежедневного scheduler на
 production. Тег `v1.2.1` остаётся неизменным; футбольный production pipeline
 не включается.
@@ -22,7 +22,7 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
 
 - [ ] Все функциональные TASK инициативы прошли независимое review, full EPIC
   review, локальные проверки и terminal PR CI нового кандидата.
-  `pyproject.toml` и handoff указывают `1.2.2 candidate` до решения владельца;
+  `pyproject.toml` и handoff указывают `1.2.2 candidate`;
   `make production-check` должен пройти для final candidate.
 - [ ] Operations имеет привилегированное read-only evidence текущих image
   digests, Docker/DB состояния, последнего NHL run, календарного покрытия,
@@ -105,7 +105,7 @@ off-host retention и совместимость rollback пока не подт
 
 - Зависит от всех функциональных TASK инициативы, включая TASK-025-10,
   и полного EPIC review.
-- Перед следующим rollout согласовать версию, обновить
-  `docs/operations/production-handoff.md` для exact candidate и выполнить
+- Перед следующим rollout подтвердить exact candidate в
+  `docs/operations/production-handoff.md` и выполнить
   `make production-check`.
 - Deployment evidence и итоговый done report ожидаются после production smoke.

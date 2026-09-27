@@ -12,7 +12,7 @@
 - Ветка инициативы: исходная `initiative/epic-025-bot-readiness` слита;
   correction cycle `initiative/epic-025-13-runtime-hotfix` слит;
   release candidate — `initiative/epic-025-release-1_2_2`.
-- Workflow / этап: `release / v1.2.1 частично установлен; hotfix PR #42 merged; v1.2.2 candidate ждёт решения владельца`.
+- Workflow / этап: `release / v1.2.1 частично установлен; hotfix PR #42 merged; v1.2.2 одобрен владельцем, candidate PR #43`.
 - Исходная цель: календарь NHL независимо от прогноза, готовность событий,
   админ-управление Data Cycle и выпуск `1.2.1`;
   [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
@@ -20,7 +20,8 @@
   review, CI и production health/smoke входят в release gate.
 - Релиз: пользователь запросил production `1.2.0`; после failure immutable tag
   gate согласовал `1.2.1` как первый production выпуск. После неуспешного
-  первого цикла подготовлен `1.2.2` candidate; решение о новой версии ожидается.
+  первого цикла подготовлен `1.2.2` candidate; владелец подтвердил выпуск
+  2026-09-27.
 - Выполнено: владелец дал полную постановку в Google Doc; REQ-025 приведён к
   ней и подтверждена трактовка «Сегодня» до 08:00 МСК; ограничение API
   прогнозами, 48-часовой минимум source и расхождение `/refresh` с systemd
@@ -113,7 +114,7 @@
 - Артефакты: [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
 - Предыдущая роль: Reviewer — полный EPIC review и повторная проверка
   first-rollout fixture без P0–P2.
-- Следующая роль: Product Owner — решение о `v1.2.2` и candidate PR/CI;
+- Следующая роль: Product Owner — terminal PR #43 CI, tag/evidence gate;
   затем Operations — повторный ручной и первый
   плановый NHL run.
 - Открытые вопросы / блокеры: первый production Data Cycle failed;

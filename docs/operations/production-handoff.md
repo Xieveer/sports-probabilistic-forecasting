@@ -11,7 +11,7 @@
 - Canonical repository: Xieveer/sports-probabilistic-forecasting
 - Инициатива: EPIC-025, TASK-025-9.
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
-- source_tag: `v1.2.2` (candidate, до approval и tag gate).
+- source_tag: `v1.2.2` (выпуск подтверждён владельцем; tag gate ожидается).
 - source_commit: определяется после terminal PR CI из exact main commit.
 
 Этот handoff готовит исправленный patch release после неуспешного первого
@@ -104,7 +104,7 @@ Docker/DB логи, external payload или значения secrets. Истёк
 
 ## Артефакт и откат
 
-После решения владельца о версии, независимого review и terminal PR CI
+После независимого review и terminal PR CI
 Reviewer ставит annotated tag v1.2.2 на проверенном commit main. Tag pipeline
 должен завершить CI, Security,
 isolated first-rollout contract, публикацию linux/amd64 images, scan и
@@ -125,7 +125,7 @@ digests с approved manifest. Mutable tag не служит runtime identifier.
 
 ## Нерешённые вопросы
 
-Для GO ещё нужны решение владельца о v1.2.2, terminal PR/tag CI, verified
+Для GO ещё нужны terminal PR/tag CI, verified
 release manifest, свежий production backup/restore/off-host evidence,
 подтверждение backup retention либо явно принятое исключение, измерение
 runtime/quota, полный ручной run с 30-дневным coverage и первый плановый
