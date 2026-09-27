@@ -14,7 +14,20 @@
   [TASK-025-17](../backlog/tasks/TASK-025-17-promoted-feature-contract.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
 - source_tag: `v1.2.5` (после независимого review и terminal PR CI).
-- source_commit: exact merged `main` commit фиксируется перед tag.
+- source_commit: `eef3c505e83450ebad0eea85330474ec22e410df`.
+- evidence_tag: `v1.2.5-evidence.1`.
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36320719100
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36320719102
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36320742510
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36320742510/job/108624733621
+
+Проверенные runtime references для production manifest:
+
+- postgres: `postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94`.
+- api: `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:b7bd92cf2d804395c84cb7786e9ffab850d0b0600ad9c77d283237b515966523` — published linux/amd64, scan, provenance.
+- worker: `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:e0acab2da966edc18715e20ac3496edcc74e7878facaf9c6d4f641eef158039b` — published linux/amd64, scan, provenance.
+- telegram_bot: `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:f441950cafd332263ff930ef3364a35fcc2dfdb6ffe370220c93bf7027b182ee` — published linux/amd64, scan, provenance.
+- archive_sync: `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:2088ea2745c99ee436873001ce61ecc3b1853ecfb06cd636a174da37406a11f1` — published linux/amd64, scan, provenance.
 
 v1.2.5 исправляет передачу file-backed ключей Odds API в общий клиент и
 Worker, а также возвращает прикладные логи Hydra в stdout. Причина отказа
@@ -75,9 +88,13 @@ dispatcher timer включать лишь после успешного руч�
 
 ## Данные и совместимость
 
-Перед v1.2.5 изменением создать свежий root-only `pg_dump -Fc` после
-последнего failed run, проверить checksum/catalog, isolated restore на exact
-PostgreSQL image и off-host download/hash. Проверенный pre-v1.2.4 dump
+Перед v1.2.5 изменением создан свежий root-only `pg_dump -Fc` после
+последнего failed run: 57 853 192 bytes, SHA-256
+`385f9e2da24e0fe16238fe1946c9f30bf0df1776e7576b958a135b1c6a747d41`.
+Catalog и isolated restore на exact PostgreSQL image подтвердили Alembic
+0017, 22 496 events и четыре run records; off-host upload/download hash и
+третья локальная копия с правами 0600 совпали. Перед rollout Operations
+проверяет актуальность снимка и отсутствие writers. Проверенный pre-v1.2.4 dump
 29 313 196 bytes, SHA-256
 `ea217fde1ef82abc173b1482af8bfcf75e97f9b5f870ded346b5a97439499594`,
 устарел после календарной записи; его нельзя использовать как единственную
