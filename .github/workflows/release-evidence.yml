@@ -75,7 +75,8 @@ jobs:
             --api-image "$(jq --raw-output '.images.api' "$manifest")" \
             --worker-image "$(jq --raw-output '.images.worker' "$manifest")" \
             --bot-image "$(jq --raw-output '.images.telegram_bot' "$manifest")" \
-            --archive-sync-image "$(jq --raw-output '.images.archive_sync' "$manifest")"
+            --archive-sync-image "$(jq --raw-output '.images.archive_sync' "$manifest")" \
+            --s3-fixture-image "ghcr.io/fixture/s3-fixture@sha256:0000000000000000000000000000000000000000000000000000000000000000"
           docker compose --env-file "$fixture_root/production.env" -f "$source_path/docker-compose.prod.yml" --profile migration --profile worker --profile source-acquisition --profile operational-sync --profile scheduler config > "$fixture_root/rendered-with-scheduler.yml"
           uv run --directory "$source_path" python "$source_path/scripts/verify_production_compose_contract.py" \
             --rendered "$fixture_root/rendered-with-scheduler.yml" \
