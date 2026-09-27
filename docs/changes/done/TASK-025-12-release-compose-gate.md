@@ -15,6 +15,10 @@ Compose без scheduler profile. Manual evidence workflow теперь снач
 проверяет полный Compose с dispatcher tagged production validator, затем
 передаёт legacy subset tagged evidence validator. Application tag и runtime
 образы при этом не меняются.
+Локальный evidence gate также выявил, что tagged fixture builder требует
+шестой ref для тестового S3, иначе подставляет фиктивные refs для всех образов.
+Workflow передаёт явный фиктивный S3 ref; он не входит в runtime manifest и
+не запускается в evidence gate.
 
 ## Проверки
 

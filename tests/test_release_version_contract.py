@@ -64,6 +64,7 @@ def test_evidence_workflow_is_manual_and_keeps_dynamic_facts_outside_application
     assert 'mkdir -p "$fixture_root"' in command
     assert '"$source_path/scripts/verify_release_evidence.py"' in command
     assert '"$source_path/scripts/build_production_compose_env_fixture.py"' in command
+    assert '--s3-fixture-image "ghcr.io/fixture/s3-fixture@sha256:' in command
     assert '"$fixture_root/rendered-with-scheduler.yml"' in command
     assert '"$source_path/scripts/verify_production_compose_contract.py"' in command
     assert command.index('"$fixture_root/rendered-with-scheduler.yml"') < command.index(
