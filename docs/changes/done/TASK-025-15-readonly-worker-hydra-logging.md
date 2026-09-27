@@ -24,5 +24,7 @@ read-only `/sys` воспроизвёл исходный `PermissionError` пр�
 повторный запуск прошёл все hooks. Независимый Reviewer проверил весь diff,
 Hydra config, Docker CMD/Compose read-only contract, logger и выполнил 28
 целевых тестов, `bash -n`, `git diff HEAD --check`; P0–P2 findings нет.
+Проверенный diff зафиксирован commit
+`2e8278f473438bb87b164f74bdb3562aad7bc910`.
 Production acceptance ведётся в
 [TASK-025-9](../../backlog/tasks/TASK-025-9-release-readiness.md).
