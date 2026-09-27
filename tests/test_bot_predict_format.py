@@ -86,6 +86,7 @@ def test_help_describes_schedule_without_obsolete_tournament_argument() -> None:
     text = message.answer.await_args.args[0]
     assert "/upcoming — календарь NHL: сегодня, завтра, 3/7/14/30 дней" in text
     assert "/upcoming [турнир]" not in text
+    assert "/cycle" not in text
 
 
 def test_schedule_tournament_requests_period_and_persists_choice(monkeypatch) -> None:

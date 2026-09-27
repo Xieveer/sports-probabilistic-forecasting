@@ -323,6 +323,14 @@ make materialize TOURNAMENT=uel_kz_1
 Локальный сценарий бота и API, проверки UTF-16/HTML лимитов и результаты
 независимого review зафиксированы в [отчёте TASK-025-11](docs/changes/done/TASK-025-11-telegram-calendar.md).
 
+Администраторы из `BOT_ADMIN_USER_IDS` могут управлять NHL Data Cycle командами
+`/cycle` (состояние расписания, текущий запуск и история), `/cycle_time HH:MM`
+и `/cycle_interval N` (время и частота), `/cycle_history` и `/refresh` (ручной
+запуск цикла). Уведомление о terminal результате отправляется по настроенному
+alias; bot destination mapping хранится только в runtime secret. Ошибка Control
+API не отключает публичные `/upcoming` и календарь. Подробности локальной проверки
+есть в [руководстве Telegram admin testing](docs/development/telegram-admin-testing.md).
+
 `GET /calendar/{tournament}` сохраняет события без прогнозов. Для каждого события
 `prediction_readiness` сообщает `pending`, `ready`, `partial`, `failed` или
 `unavailable`; `odds_readiness` сообщает `missing`, `partial`, `ready`, `stale`

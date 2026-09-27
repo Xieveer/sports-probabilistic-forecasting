@@ -65,7 +65,29 @@ def test_database_identities_are_file_backed_and_migration_is_explicit() -> None
     assert "SF_MIGRATOR_DATABASE_URL_FILE" in compose_text
     assert "migrator" in services
     assert "role-bootstrap" in services
-    assert services["api"]["environment"] == {"DATABASE_URL_FILE": "/run/secrets/api_database_url"}
+    assert services["api"]["environment"]["DATABASE_URL_FILE"] == "/run/secrets/api_database_url"
+    assert services["api"]["environment"]["SF_CONTROL_DATABASE_URL_FILE"] == (
+        "/run/secrets/control_database_url"
+    )
+    assert services["api"]["environment"]["SF_CONTROL_API_KEY_FILE"] == (
+        "/run/secrets/control_api_key"
+    )
+    assert services["api"]["environment"]["SF_DATA_CYCLE_NOTIFICATION_ALIASES"] == (
+        "${SF_DATA_CYCLE_NOTIFICATION_ALIASES:?set safe notification aliases}"
+    )
+    assert services["worker"]["environment"]["SF_DATA_CYCLE_NOTIFICATION_ALIASES"] == (
+        "${SF_DATA_CYCLE_NOTIFICATION_ALIASES:?set safe notification aliases}"
+    )
+    bot = services["telegram-bot"]
+    assert bot["environment"]["BOT_NOTIFICATION_DESTINATIONS_FILE"] == (
+        "/run/secrets/bot_notification_destinations"
+    )
+    assert "bot_notification_destinations" in bot["secrets"]
+    assert "BOT_NOTIFICATION_DESTINATIONS_FILE" not in services["api"]["environment"]
+    assert compose["secrets"]["bot_notification_destinations"]["file"] == (
+        "${BOT_NOTIFICATION_DESTINATIONS_FILE:?set BOT_NOTIFICATION_DESTINATIONS_FILE}"
+    )
+    assert "-1001234567890" not in compose_text
     assert (
         services["worker"]["environment"]["DATABASE_URL_FILE"] == "/run/secrets/worker_database_url"
     )
@@ -76,18 +98,40 @@ def test_database_identities_are_file_backed_and_migration_is_explicit() -> None
         encoding="utf-8"
     )
     grants = (PROJECT_ROOT / "sports_forecast/deploy/database_roles.py").read_text(encoding="utf-8")
-    assert (
-        "GRANT SELECT ON TABLE predictions, tournament_publication_states TO sf_api_reader"
-        in grants
-    )
+    assert "GRANT SELECT ON TABLE predictions, tournament_publication_states," in grants
     assert "GRANT SELECT ON ALL TABLES IN SCHEMA public TO sf_api_reader" not in grants
     assert "ON ALL TABLES IN SCHEMA public TO sf_refresh_writer" not in grants
+    worker_grant = next(
+        statement
+        for statement in grants.splitlines()
+        if "sf_refresh_writer" in statement and "GRANT SELECT, INSERT, UPDATE, DELETE" in statement
+    )
+    for table in (
+        "predictions",
+        "tournament_publication_states",
+        "worker_executions",
+        "model_deployments",
+        "refresh_locks",
+        "canonical_events",
+        "canonical_event_revisions",
+        "calendar_coverages",
+        "refresh_watermarks",
+        "bootstrap_imports",
+    ):
+        assert table in worker_grant
     assert (
-        "ON TABLE predictions, tournament_publication_states, worker_executions, model_deployments, "
-        "refresh_locks, canonical_events, canonical_event_revisions, refresh_watermarks, bootstrap_imports"
+        "REVOKE ALL ON TABLE alembic_version FROM sf_api_reader, sf_control_api, sf_refresh_writer"
         in grants
     )
-    assert "REVOKE ALL ON TABLE alembic_version FROM sf_api_reader, sf_refresh_writer" in grants
+    assert "GRANT SELECT ON TABLE data_cycle_notification_outbox TO sf_control_api" in grants
+    assert (
+        "GRANT UPDATE (status, attempts, available_at, lease_token, lease_until, last_error_code, delivered_at)"
+        " ON TABLE data_cycle_notification_outbox TO sf_control_api"
+    ) in grants
+    assert (
+        "GRANT USAGE, SELECT ON SEQUENCE data_cycle_notification_outbox_id_seq TO sf_control_api"
+        not in grants
+    )
     assert "ON ALL SEQUENCES IN SCHEMA public" not in grants
     assert "ALTER DEFAULT PRIVILEGES" not in grants
     bootstrap = (PROJECT_ROOT / "deploy/postgres/init-roles.sh").read_text(encoding="utf-8")
@@ -103,7 +147,18 @@ def test_runtime_grants_cover_actual_api_and_worker_tables() -> None:
     """Whitelist grants соответствуют tables, к которым обращаются runtime commands."""
     grants = (PROJECT_ROOT / "sports_forecast/deploy/database_roles.py").read_text(encoding="utf-8")
 
-    assert "tournament_publication_states TO sf_api_reader" in grants
+    reader_grant = next(
+        statement
+        for statement in grants.splitlines()
+        if statement.startswith('    "GRANT SELECT ON TABLE') and "sf_api_reader" in statement
+    )
+    assert "tournament_publication_states" in reader_grant
+    control_outbox_update = next(
+        statement
+        for statement in grants.splitlines()
+        if "UPDATE (status, attempts" in statement and "data_cycle_notification_outbox" in statement
+    )
+    assert "data_cycle_runs" not in control_outbox_update
     for table in (
         "predictions",
         "tournament_publication_states",

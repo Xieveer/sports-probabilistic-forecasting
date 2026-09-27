@@ -67,7 +67,7 @@ LIGHT_PATH_EDGE_HTML = (
     "🔄 <b>Лёгкий путь · котировки/edge</b>\n"
     "Актуальные коэффициенты через API (<code>/predict/upcoming</code>, "
     "<code>live_pinnacle</code>); вероятности из витрины <b>без пересчёта</b>.\n"
-    "Не путать с админским <code>/refresh</code> — полный пайплайн данных.\n\n"
+    "Администратор может отдельно управлять Data Cycle командами <code>/cycle</code> и <code>/refresh</code>.\n\n"
 )
 
 

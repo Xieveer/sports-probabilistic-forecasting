@@ -141,6 +141,7 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
         "pipeline_schedules",
         "data_cycle_control_requests",
         "data_cycle_dispatcher_state",
+        "data_cycle_notification_outbox",
         "refresh_watermarks",
         "bootstrap_imports",
     } <= table_names
@@ -210,6 +211,34 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
     assert any(
         "GRANT EXECUTE ON FUNCTION public.mark_data_cycle_executor_stalled(text)" in statement
         for statement in control_grants
+    )
+    assert any(
+        "GRANT SELECT ON TABLE data_cycle_notification_outbox TO sf_control_api" in statement
+        for statement in control_grants
+    )
+    assert any(
+        "GRANT UPDATE (status, attempts, available_at, lease_token, lease_until, "
+        "last_error_code, delivered_at) ON TABLE data_cycle_notification_outbox TO sf_control_api"
+        in statement
+        for statement in control_grants
+    )
+    assert not any(
+        "INSERT" in statement and "data_cycle_notification_outbox TO sf_control_api" in statement
+        for statement in control_grants
+    )
+    assert not any(
+        "data_cycle_notification_outbox_id_seq" in statement and "sf_control_api" in statement
+        for statement in control_grants
+    )
+    assert any(
+        "GRANT SELECT, INSERT ON TABLE data_cycle_notification_outbox TO sf_refresh_writer"
+        in statement
+        for statement in RUNTIME_GRANTS
+    )
+    assert any(
+        "GRANT USAGE, SELECT ON SEQUENCE data_cycle_notification_outbox_id_seq "
+        "TO sf_refresh_writer" in statement
+        for statement in RUNTIME_GRANTS
     )
     assert not any("UPDATE (executor_stalled_at)" in statement for statement in control_grants)
     assert not any(

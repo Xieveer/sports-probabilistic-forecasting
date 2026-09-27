@@ -18,17 +18,20 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
+from uuid import uuid4
 
-from sqlalchemy import and_, exists, func, insert, select, update
+from sqlalchemy import and_, exists, func, insert, or_, select, update
 from sqlalchemy.engine import ScalarResult
 from sqlalchemy.orm import Session
 
 from sports_forecast.service.db.models import (
     CalendarCoverage,
     CanonicalEvent,
+    DataCycleNotificationOutbox,
     DataCycleRun,
     DataCycleStageResult,
     LineupNotificationOutbox,
@@ -67,6 +70,23 @@ DATA_CYCLE_FAILURE_CODES = frozenset(
         "run_locked",
     }
 )
+_NOTIFICATION_ALIAS_PATTERN = re.compile(r"[a-z][a-z0-9_-]{0,63}")
+_NOTIFICATION_LEASE = timedelta(minutes=2)
+_NOTIFICATION_RETRY_BASE = 30
+_NOTIFICATION_RETRY_MAX = 6 * 60 * 60
+
+
+def _data_cycle_notification_aliases() -> tuple[str, ...]:
+    """Прочитать список безопасных destination aliases без Telegram IDs."""
+    raw = os.environ.get("SF_DATA_CYCLE_NOTIFICATION_ALIASES", "")
+    if not raw.strip():
+        return ()
+    aliases = tuple(part.strip() for part in raw.split(","))
+    if any(_NOTIFICATION_ALIAS_PATTERN.fullmatch(alias) is None for alias in aliases) or len(
+        set(aliases)
+    ) != len(aliases):
+        raise ValueError("Некорректный Data Cycle notification alias config")
+    return aliases
 
 
 def _utc_naive_for_query(dt: datetime) -> datetime:
@@ -1120,6 +1140,7 @@ class DataCycleRunRepository:
             sort_keys=True,
             separators=(",", ":"),
         )
+        self._enqueue_terminal_notifications(run, at=now)
 
     def fail_run(
         self,
@@ -1173,6 +1194,34 @@ class DataCycleRunRepository:
             sort_keys=True,
             separators=(",", ":"),
         )
+        self._enqueue_terminal_notifications(run, at=now)
+
+    def _enqueue_terminal_notifications(self, run: DataCycleRun, *, at: datetime) -> None:
+        """Добавить по одному outbox item на configured alias в текущую транзакцию."""
+        aliases = _data_cycle_notification_aliases()
+        if not aliases:
+            return
+        existing = set(
+            self.session.scalars(
+                select(DataCycleNotificationOutbox.destination_alias).where(
+                    DataCycleNotificationOutbox.run_id == run.run_id
+                )
+            )
+        )
+        now = _utc_naive_for_query(at)
+        self.session.add_all(
+            DataCycleNotificationOutbox(
+                run_id=run.run_id,
+                destination_alias=alias,
+                status="pending",
+                attempts=0,
+                available_at=now,
+                created_at=now,
+            )
+            for alias in aliases
+            if alias not in existing
+        )
+        self.session.flush()
 
     def _last_successful_component_updates(
         self, tournament: str, *, as_of: datetime
@@ -1310,6 +1359,111 @@ class DataCycleRunRepository:
         if run.executor_owner_id is None and owner_generation is not None:
             raise RuntimeError("Data Cycle run has no matching executor claim")
         return cast(DataCycleRun, run)
+
+
+class DataCycleNotificationOutboxRepository:
+    """Concurrent lease, retry и acknowledgement terminal Data Cycle messages."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def claim_due(
+        self, *, limit: int = 20, at: datetime | None = None
+    ) -> list[DataCycleNotificationOutbox]:
+        """Захватить due rows и истёкшие leases для одного bot worker."""
+        if not 1 <= limit <= 50:
+            raise ValueError("Notification claim limit должен быть от 1 до 50")
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        rows = list(
+            self.session.scalars(
+                select(DataCycleNotificationOutbox)
+                .where(
+                    or_(
+                        and_(
+                            DataCycleNotificationOutbox.status == "pending",
+                            DataCycleNotificationOutbox.available_at <= now,
+                        ),
+                        and_(
+                            DataCycleNotificationOutbox.status == "leased",
+                            DataCycleNotificationOutbox.lease_until <= now,
+                        ),
+                    )
+                )
+                .order_by(DataCycleNotificationOutbox.created_at, DataCycleNotificationOutbox.id)
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+        )
+        for row in rows:
+            row.status = "leased"
+            row.attempts += 1
+            row.lease_token = str(uuid4())
+            row.lease_until = now + _NOTIFICATION_LEASE
+        self.session.flush()
+        return rows
+
+    def acknowledge(self, notification_id: int, lease_token: str, *, at: datetime) -> bool:
+        """Подтвердить только текущую lease; повторный ack того же lease idempotent."""
+        row = self.session.scalar(
+            select(DataCycleNotificationOutbox)
+            .where(DataCycleNotificationOutbox.id == notification_id)
+            .with_for_update()
+        )
+        if row is None:
+            return False
+        if row.status == "delivered" and row.lease_token == lease_token:
+            return True
+        now = _utc_naive_for_query(at)
+        if (
+            row.status != "leased"
+            or row.lease_token != lease_token
+            or row.lease_until is None
+            or row.lease_until <= now
+        ):
+            return False
+        row.status = "delivered"
+        row.lease_until = None
+        row.delivered_at = now
+        row.last_error_code = None
+        self.session.flush()
+        return True
+
+    def retry(
+        self,
+        notification_id: int,
+        lease_token: str,
+        *,
+        error_code: str,
+        at: datetime,
+    ) -> bool:
+        """Отпустить текущую lease с bounded exponential backoff."""
+        if error_code != "telegram_send_failed":
+            raise ValueError("Недопустимый notification retry error code")
+        row = self.session.scalar(
+            select(DataCycleNotificationOutbox)
+            .where(DataCycleNotificationOutbox.id == notification_id)
+            .with_for_update()
+        )
+        now = _utc_naive_for_query(at)
+        if (
+            row is None
+            or row.status != "leased"
+            or row.lease_token != lease_token
+            or row.lease_until is None
+            or row.lease_until <= now
+        ):
+            return False
+        delay = min(
+            _NOTIFICATION_RETRY_BASE * (2 ** min(max(row.attempts - 1, 0), 10)),
+            _NOTIFICATION_RETRY_MAX,
+        )
+        row.status = "pending"
+        row.available_at = now + timedelta(seconds=delay)
+        row.lease_until = None
+        row.lease_token = None
+        row.last_error_code = error_code
+        self.session.flush()
+        return True
 
 
 class ModelRegistryRepository:

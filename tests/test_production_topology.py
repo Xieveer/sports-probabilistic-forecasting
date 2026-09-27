@@ -206,6 +206,9 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
         "SF_CONTROL_DATABASE_URL_FILE": "/run/secrets/control_database_url",
         "SF_CONTROL_API_KEY_FILE": "/run/secrets/control_api_key",
         "SF_CONTROL_ADMIN_IDS": "${BOT_ADMIN_USER_IDS:-}",
+        "SF_DATA_CYCLE_NOTIFICATION_ALIASES": (
+            "${SF_DATA_CYCLE_NOTIFICATION_ALIASES:?set safe notification aliases}"
+        ),
     }
     assert "volumes" not in api
     assert "volumes" not in bot
@@ -213,10 +216,17 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     bot_environment = cast(dict[str, str], bot["environment"])
     assert bot_environment["BOT_TOKEN_FILE"] == "/run/secrets/bot_token"
     assert bot_environment["BOT_CONTROL_API_KEY_FILE"] == "/run/secrets/control_api_key"
+    assert bot_environment["BOT_NOTIFICATION_DESTINATIONS_FILE"] == (
+        "/run/secrets/bot_notification_destinations"
+    )
+    assert "bot_notification_destinations" in cast(list[str], bot["secrets"])
     assert bot_environment["BOT_TELEGRAM_API_BASE_URL"] == "${BOT_TELEGRAM_API_BASE_URL:-}"
     assert worker["environment"] == {
         "DATABASE_URL_FILE": "/run/secrets/worker_database_url",
         "SF_WORKER_RUN_ID": "${SF_WORKER_RUN_ID:?set a scheduler-generated id}",
+        "SF_DATA_CYCLE_NOTIFICATION_ALIASES": (
+            "${SF_DATA_CYCLE_NOTIFICATION_ALIASES:?set safe notification aliases}"
+        ),
         "SF_DATA_CYCLE_RUN_ID": "${SF_DATA_CYCLE_RUN_ID:-untracked}",
         "SF_DATA_CYCLE_GENERATION": "${SF_DATA_CYCLE_GENERATION:-0}",
         "SF_DATA_CYCLE_OWNER_ID": "${SF_DATA_CYCLE_OWNER_ID:-untracked}",

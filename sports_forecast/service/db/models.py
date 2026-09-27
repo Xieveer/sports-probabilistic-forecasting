@@ -427,6 +427,40 @@ class DataCycleDispatcherState(Base):
     heartbeat_at: datetime = Column(DateTime, nullable=False)
 
 
+class DataCycleNotificationOutbox(Base):
+    """Durable terminal notification per Data Cycle run and safe destination alias."""
+
+    __tablename__ = "data_cycle_notification_outbox"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    run_id: str = Column(ForeignKey("data_cycle_runs.run_id"), nullable=False)
+    destination_alias: str = Column(String(64), nullable=False)
+    status: str = Column(String(16), nullable=False, server_default="pending")
+    attempts: int = Column(Integer, nullable=False, server_default="0")
+    available_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+    lease_token: str | None = Column(String(36), nullable=True)
+    lease_until: datetime | None = Column(DateTime, nullable=True)
+    last_error_code: str | None = Column(String(32), nullable=True)
+    created_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+    delivered_at: datetime | None = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id", "destination_alias", name="uq_data_cycle_notification_run_alias"
+        ),
+        CheckConstraint("status IN ('pending','leased','delivered')"),
+        CheckConstraint("attempts >= 0"),
+        CheckConstraint("length(destination_alias) BETWEEN 1 AND 64"),
+        Index(
+            "ix_data_cycle_notification_claim",
+            "status",
+            "available_at",
+            "lease_until",
+            "created_at",
+        ),
+    )
+
+
 class RefreshWatermark(Base):
     """Последний успешно imported canonical snapshot одного турнира."""
 

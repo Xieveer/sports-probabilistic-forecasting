@@ -42,6 +42,7 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: "postgresql://sf_user:${POSTGRES_PASSWORD:-sf_dev_password}@db:5432/sports_forecast"
+      SF_DATA_CYCLE_NOTIFICATION_ALIASES: ${SF_DATA_CYCLE_NOTIFICATION_ALIASES:-}
     depends_on:
       db:
         condition: service_healthy
@@ -60,6 +61,8 @@ services:
       BOT_ALLOWED_USER_IDS: ${BOT_ALLOWED_USER_IDS:-}
       BOT_ADMIN_USER_IDS: ${BOT_ADMIN_USER_IDS:-}
       BOT_API_BASE_URL: http://api:8000
+      BOT_CONTROL_API_KEY_FILE: ${BOT_CONTROL_API_KEY_FILE:-}
+      BOT_NOTIFICATION_DESTINATIONS_FILE: ${BOT_NOTIFICATION_DESTINATIONS_FILE:-}
     depends_on:
       api:
         condition: service_started
@@ -96,6 +99,7 @@ services:
       target: worker
     environment:
       DATABASE_URL: "postgresql://sf_user:${POSTGRES_PASSWORD:-sf_dev_password}@db:5432/sports_forecast"
+      SF_DATA_CYCLE_NOTIFICATION_ALIASES: ${SF_DATA_CYCLE_NOTIFICATION_ALIASES:-}
       MLFLOW_TRACKING_URI: "http://mlflow:5000"
     depends_on:
       db:

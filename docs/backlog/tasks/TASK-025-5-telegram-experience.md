@@ -1,6 +1,6 @@
 # TASK-025-5 — Управление циклом в Telegram и уведомления
 
-> **Статус:** backlog
+> **Статус:** done
 > **Владелец:** Developer
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -14,28 +14,43 @@
 
 ## Критерии приёмки
 
-- [ ] Публичный календарь TASK-025-11 остаётся доступен при ошибке или
+- [x] Публичный календарь TASK-025-11 остаётся доступен при ошибке или
   отключении административного control API.
-- [ ] Администратор видит enabled, время/зону/интервал, следующий и прошлый
+- [x] Администратор видит enabled, время/зону/интервал, следующий и прошлый
   запуск, текущий этап, историю и числовое покрытие; может изменить допустимые
   настройки и запросить новый цикл. Повтор callback идемпотентен, активный
   `run_id` показан без запуска дубля.
-- [ ] После ручного запуска бот сообщает принятие с `run_id`, затем итог;
+- [x] После ручного запуска бот сообщает принятие с `run_id`, затем итог;
   после планового отправляет один компактный итог. `partial_success` и `failed`
-  обозначены явно; повторная доставка не создаёт дублирующих сообщений.
-- [ ] Неадминистратор не видит административные действия и не может вызвать
+  обозначены явно. Обычный повтор запроса и retry не создают дублирующих
+  сообщений. При аварии между Telegram send и записью ack возможна повторная
+  доставка с тем же `run_id` согласно at-least-once контракту ADR-026.
+- [x] Неадминистратор не видит административные действия и не может вызвать
   control API через подмену callback. Существующие команды прогнозов остаются
   работоспособными по своему контракту.
-- [ ] Кодовый сценарий admin Telegram handler → authenticated control API →
+- [x] Кодовый сценарий admin Telegram handler → authenticated control API →
   persisted schedule/run/history и notification outbox проходит локально и в
   CI без браузера, production token и production-запросов.
 
 ## План реализации
 
-1. Red: тесты auth, дубля callback, истории и результата run.
-2. Green: административные handlers, клиент ограниченного control API,
-   доставка итогов из durable outbox.
-3. Refactor: единые подписи статусов, помощь и runbook тестирования бота.
+1. [x] Red: тесты Telegram ID, дубля callback, истории и результата run;
+   первый запуск нового E2E завершился ожидаемым отсутствием `/cycle` handler.
+2. [x] Bot-only green: административные handlers и клиент ограниченного
+   authenticated control API; callback и legacy `/refresh` запускают цикл
+   идемпотентно. Кодовый E2E проверяет persisted schedule/run/history.
+3. [x] Refactor: русские подписи состояний, admin-only help/menu и руководство
+   локальной проверкой бота.
+4. [x] Bot-only terminal notification formatter/poller и fake transport tests:
+   lease claim → alias routing → Telegram send → ack/retry; неизвестный alias
+   не подтверждается, при send→ack crash повтор узнаётся по `run_id`.
+5. [x] Durable outbox producer, migration и authenticated claim/ack/retry API:
+   terminal producer пишет по одной записи на safe alias в транзакции завершения;
+   claim использует lease/attempt/backoff; bot mapping содержит ровно один chat ID
+   на alias и монтируется только в bot. SQLite/ASGI→fake Telegram E2E и migration
+   checks проходят. Disposable PostgreSQL 16 gate прошёл: Alembic upgrade до
+   0017 выполнен ролью NOSUPERUSER `sf_migrator`, runtime grants применены;
+   lease race и runtime-role suite — 33 passed.
 
 ## Зависимости и проверка
 
@@ -43,9 +58,16 @@
   outbox Data Cycle, без прямого управления службами из процесса бота.
 - Целевые unit/ASGI/bot integration tests с fake clock и fake Telegram
   transport; регрессия старых команд; lint.
+- Bot-only проверки и runtime alias file описаны в
+  [руководстве локальной проверки](../../development/telegram-admin-testing.md).
 
 ## Handoff и отчёт
 
-- Отчёт выполнения: ожидается в `docs/changes/done/`.
-- Review: ожидается независимый Reviewer.
-- Commit/push: ожидается после review.
+- Отчёт выполнения: [TASK-025-5 outbox](../../changes/done/TASK-025-5-telegram-admin-outbox.md).
+- Review: независимый Reviewer подтвердил отсутствие findings P0–P2.
+- Release evidence: `make test` — 1202 passed, 5 gated skips; `make lint`,
+  `make docs` (24 warnings), `make production-check`, `make security` и
+  `make ai-validate` прошли. Подробности и ограничения доставки — в отчёте done.
+- Commit/push: TASK5-owned files коммитятся отдельно; production deployment
+  требует выполнения alias mapping и остальных production gates из
+  [TASK-025-9](TASK-025-9-release-readiness.md).

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -24,7 +24,10 @@ from sports_forecast.service.data_cycle_history import (
 )
 from sports_forecast.service.db.engine import get_control_session
 from sports_forecast.service.db.models import DataCycleDispatcherState
-from sports_forecast.service.db.repository import DataCycleRunRepository
+from sports_forecast.service.db.repository import (
+    DataCycleNotificationOutboxRepository,
+    DataCycleRunRepository,
+)
 
 
 router = APIRouter(prefix="/admin", tags=["admin-control"])
@@ -39,6 +42,24 @@ class ScheduleUpdate(BaseModel):
     base_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     timezone: str = Field(min_length=1, max_length=64)
     interval_hours: int
+
+
+class NotificationClaimRequest(BaseModel):
+    """Ограничить число outbox rows одной polling итерации."""
+
+    limit: int = Field(default=20, ge=1, le=20)
+
+
+class NotificationLeaseRequest(BaseModel):
+    """Одноразовый opaque token выданного delivery lease."""
+
+    lease_token: str = Field(min_length=36, max_length=36)
+
+
+class NotificationRetryRequest(NotificationLeaseRequest):
+    """Retry принимает только безопасную классификацию сбоя транспорта."""
+
+    error_code: Literal["telegram_send_failed"]
 
 
 def _pipeline(pipeline_id: str) -> None:
@@ -151,9 +172,12 @@ def create_manual_run(
     now = datetime.now(UTC)
     try:
         with get_control_session() as session:
-            run, created = request_manual_run(session, pipeline_id, idempotency_key, now=now)
+            run, created, duplicate_request = request_manual_run(
+                session, pipeline_id, idempotency_key, now=now
+            )
             response = serialize_run(run)
             response["created"] = created
+            response["duplicate_request"] = duplicate_request
             response["active_run"] = run.status in {"waiting", "running"}
             return response
     except ValueError as exc:
@@ -186,3 +210,74 @@ def get_run(
         if run is None:
             raise HTTPException(status_code=404, detail="Run не найден")
         return serialize_run(run)
+
+
+@router.post("/notifications/claim")
+def claim_notifications(
+    body: NotificationClaimRequest,
+    _admin: Annotated[str, Depends(require_control_admin)],
+) -> dict[str, Any]:
+    """Выдать короткую lease на ограниченную партию outbox rows."""
+    now = datetime.now(UTC)
+    with get_control_session() as session:
+        repository = DataCycleNotificationOutboxRepository(session)
+        rows = repository.claim_due(limit=body.limit, at=now)
+        notifications = []
+        for row in rows:
+            run = DataCycleRunRepository(session).get(row.run_id)
+            if run is None:
+                raise HTTPException(status_code=500, detail="Notification run отсутствует")
+            run_dto = serialize_run(run)
+            notifications.append(
+                {
+                    "notification_id": row.id,
+                    "lease_token": row.lease_token,
+                    "destination_alias": row.destination_alias,
+                    "run_id": run.run_id,
+                    "pipeline_id": run.tournament,
+                    "reason": run_dto["reason"],
+                    "status": run_dto["status"],
+                    "failure_code": run_dto["failure_code"],
+                    "summary": run_dto["summary"],
+                    "attempts": row.attempts,
+                }
+            )
+    return {"notifications": notifications}
+
+
+@router.post("/notifications/{notification_id}/ack")
+def acknowledge_notification(
+    notification_id: int,
+    body: NotificationLeaseRequest,
+    _admin: Annotated[str, Depends(require_control_admin)],
+) -> dict[str, bool]:
+    """Отметить доставку только владельцем текущей lease."""
+    with get_control_session() as session:
+        acknowledged = DataCycleNotificationOutboxRepository(session).acknowledge(
+            notification_id, body.lease_token, at=datetime.now(UTC)
+        )
+        if not acknowledged:
+            raise HTTPException(status_code=409, detail="Notification lease устарела")
+    return {"acknowledged": True}
+
+
+@router.post("/notifications/{notification_id}/retry")
+def retry_notification(
+    notification_id: int,
+    body: NotificationRetryRequest,
+    _admin: Annotated[str, Depends(require_control_admin)],
+) -> dict[str, bool]:
+    """Поставить delivery на ограниченный exponential backoff."""
+    try:
+        with get_control_session() as session:
+            scheduled = DataCycleNotificationOutboxRepository(session).retry(
+                notification_id,
+                body.lease_token,
+                error_code=body.error_code,
+                at=datetime.now(UTC),
+            )
+            if not scheduled:
+                raise HTTPException(status_code=409, detail="Notification lease устарела")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Некорректный retry request") from exc
+    return {"retry_scheduled": True}

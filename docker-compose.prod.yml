@@ -45,6 +45,7 @@ services:
       SF_CONTROL_DATABASE_URL_FILE: /run/secrets/control_database_url
       SF_CONTROL_API_KEY_FILE: /run/secrets/control_api_key
       SF_CONTROL_ADMIN_IDS: ${BOT_ADMIN_USER_IDS:-}
+      SF_DATA_CYCLE_NOTIFICATION_ALIASES: ${SF_DATA_CYCLE_NOTIFICATION_ALIASES:?set safe notification aliases}
     secrets:
       - api_database_url
       - control_database_url
@@ -97,6 +98,7 @@ services:
       BOT_ADMIN_USER_IDS: ${BOT_ADMIN_USER_IDS:-}
       BOT_API_BASE_URL: http://api:8000
       BOT_CONTROL_API_KEY_FILE: /run/secrets/control_api_key
+      BOT_NOTIFICATION_DESTINATIONS_FILE: /run/secrets/bot_notification_destinations
       BOT_TELEGRAM_API_BASE_URL: ${BOT_TELEGRAM_API_BASE_URL:-}
     depends_on:
       api:
@@ -104,6 +106,7 @@ services:
     secrets:
       - bot_token
       - control_api_key
+      - bot_notification_destinations
     cpus: "0.5"
     mem_limit: 384m
     user: "10001:10001"
@@ -146,6 +149,7 @@ services:
     environment:
       DATABASE_URL_FILE: /run/secrets/worker_database_url
       SF_WORKER_RUN_ID: ${SF_WORKER_RUN_ID:?set a scheduler-generated id}
+      SF_DATA_CYCLE_NOTIFICATION_ALIASES: ${SF_DATA_CYCLE_NOTIFICATION_ALIASES:?set safe notification aliases}
       SF_DATA_CYCLE_RUN_ID: ${SF_DATA_CYCLE_RUN_ID:-untracked}
       SF_DATA_CYCLE_GENERATION: ${SF_DATA_CYCLE_GENERATION:-0}
       SF_DATA_CYCLE_OWNER_ID: ${SF_DATA_CYCLE_OWNER_ID:-untracked}
@@ -280,6 +284,8 @@ secrets:
     file: ${SF_CONTROL_API_KEY_FILE:?set SF_CONTROL_API_KEY_FILE}
   bot_token:
     file: ${SF_BOT_TOKEN_FILE:?set SF_BOT_TOKEN_FILE}
+  bot_notification_destinations:
+    file: ${BOT_NOTIFICATION_DESTINATIONS_FILE:?set BOT_NOTIFICATION_DESTINATIONS_FILE}
   object_storage_access_key:
     file: ${SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE:?set SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE}
   object_storage_secret_key:

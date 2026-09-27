@@ -115,8 +115,9 @@ def test_dispatcher_delivers_manual_waiting_run_while_schedule_is_disabled() -> 
                 interval_hours=24,
                 now=now,
             )
-            run, created = request_manual_run(session, "nhl", "manual-test", now=now)
+            run, created, duplicate = request_manual_run(session, "nhl", "manual-test", now=now)
             assert created is True
+            assert duplicate is False
             delivered, _ = dispatch_due_run(session, "nhl", "host-test", now=now)
             assert delivered is not None
             assert delivered.run_id == run.run_id
@@ -172,7 +173,7 @@ def test_postgresql_serializes_due_dispatch_and_manual_idempotency() -> None:
         def request_manual() -> str:
             with Session(scoped_engine, expire_on_commit=False) as session:
                 manual_start.wait(timeout=5)
-                run, _created = request_manual_run(
+                run, _created, _duplicate = request_manual_run(
                     session,
                     "nhl",
                     "callback:single-update",

@@ -36,6 +36,12 @@ Docker volume. До запуска Worker Operations убеждается, чт�
    `SF_CONTROL_API_KEY_FILE` в защищённых secret files вне Git. Только API и
    Telegram bot получают service key; dispatcher получает только control DB URL.
    `BOT_ADMIN_USER_IDS` передаётся Control API как allowlist principal.
+   `SF_DATA_CYCLE_NOTIFICATION_ALIASES` задаёт непустой production allowlist
+   safe alias-ов для transactional outbox. Значения совпадают с ключами JSON
+   файла `BOT_NOTIFICATION_DESTINATIONS_FILE`; этот файл монтируется только в
+   Telegram bot и содержит ровно один chat ID на alias. Chat IDs не попадают в
+   DB/outbox. Пустой allowlist или отсутствующий alias file — ошибка Compose/API
+   startup и блокирует release candidate.
 2. Скопировать `refresh-profile.env.example` в
    `/etc/sports-forecast/refresh/nhl.env` и `dispatcher.conf.example` в
    `/etc/sports-forecast/refresh/dispatcher.env`, права `0600 root:root`.

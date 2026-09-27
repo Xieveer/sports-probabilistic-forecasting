@@ -25,7 +25,11 @@ _PUBLIC_COMMANDS = (
 )
 _ADMIN_COMMANDS = (
     BotCommand(command="status", description="Готовность API"),
-    BotCommand(command="refresh", description="Запустить полный refresh"),
+    BotCommand(command="cycle", description="Управление циклом NHL"),
+    BotCommand(command="cycle_time", description="Изменить основное время цикла"),
+    BotCommand(command="cycle_interval", description="Изменить интервал цикла"),
+    BotCommand(command="cycle_history", description="История циклов NHL"),
+    BotCommand(command="refresh", description="Повторить цикл NHL сейчас"),
     BotCommand(command="models", description="Список моделей"),
 )
 

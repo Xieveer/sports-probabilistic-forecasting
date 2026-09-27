@@ -112,7 +112,7 @@ def update_schedule(
 
 def request_manual_run(
     session: Session, pipeline_id: str, idempotency_key: str, *, now: datetime
-) -> tuple[DataCycleRun, bool]:
+) -> tuple[DataCycleRun, bool, bool]:
     """Идемпотентно принять ручной запуск либо вернуть текущий active run."""
     _validate_pipeline(pipeline_id)
     if re.fullmatch(r"[A-Za-z0-9:_-]{1,192}", idempotency_key) is None:
@@ -127,7 +127,7 @@ def request_manual_run(
         run = DataCycleRunRepository(session).get(prior.run_id)
         if run is None:
             raise RuntimeError("Control request ссылается на отсутствующий run")
-        return run, False
+        return run, False, True
 
     repository = DataCycleRunRepository(session)
     active = repository.get_current(pipeline_id)
@@ -147,7 +147,7 @@ def request_manual_run(
                 )
             )
             session.flush()
-        return run, active is None
+        return run, active is None, False
     except IntegrityError:
         existing_request = session.scalar(
             select(DataCycleControlRequest).where(
@@ -157,10 +157,10 @@ def request_manual_run(
         if existing_request is not None:
             run = repository.get(existing_request.run_id)
             if run is not None:
-                return run, False
+                return run, False, True
         active = repository.get_current(pipeline_id)
         if active is not None:
-            return active, False
+            return active, False, False
         raise
 
 
