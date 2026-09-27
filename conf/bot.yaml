@@ -17,11 +17,17 @@ bot:
   polling_timeout_sec: 30
   # Базовый URL FastAPI (тот же хост, что видит пользователь сервиса)
   api_base_url: "http://127.0.0.1:8000"
+  # Отдельный control credential доступен боту только для защищённых /admin endpoints.
+  control_api_key_file: ${oc.env:BOT_CONTROL_API_KEY_FILE, ""}
+  # JSON alias → один chat ID; несколько получателей задаются разными aliases.
+  notification_destinations_file: ${oc.env:BOT_NOTIFICATION_DESTINATIONS_FILE, ""}
+  notification_destinations: {}
+  notification_poll_interval_seconds: 10
   # Whitelist: список Telegram user_id (int). Пустой список = доступ запрещён всем.
   # R41: пользователям доступен только /edge,/predict,/upcoming (GET к FastAPI); /refresh только admin_ids.
   allowed_user_ids: []
   admin_user_ids: []
-  # Опционально: тяжёлый пайплайн — POST к Airflow REST (админ-команда /refresh)
+  # Устаревшие Airflow параметры оставлены только для совместимости конфигурации.
   airflow_base_url: ""
   airflow_username: ""
   airflow_password: ""

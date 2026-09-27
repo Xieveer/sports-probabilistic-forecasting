@@ -25,9 +25,9 @@ def test_edge_callback_matches_light_contract() -> None:
     assert "api/v1/dags" not in src
 
 
-def test_cmd_refresh_still_posts_to_airflow() -> None:
+def test_cmd_refresh_uses_data_cycle_control_api() -> None:
     from sports_forecast.bot.handlers import admin
 
     src = inspect.getsource(admin.cmd_refresh)
-    assert "api/v1/dags/" in src
-    assert '.post("' in src or ".post(url" in src or "client.post" in src
+    assert "_request_manual_cycle" in src
+    assert "airflow" not in src.casefold()

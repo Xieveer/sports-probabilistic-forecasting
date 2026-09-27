@@ -123,6 +123,7 @@ ODDS_STORE_COLUMNS_V3: Final[tuple[str, ...]] = (
     "onexbet_total_under_t15",
     "t15_provider_observed_at",
     "t15_retrieved_at",
+    "pinnacle_winner_withOT_provider_observed_at",
 )
 
 #: Публичный кортеж колонок V3 с additive provenance historical ``t15``.

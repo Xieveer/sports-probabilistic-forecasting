@@ -27,6 +27,38 @@
 
 Ключ API — только из переменных окружения / секретов (например `ODDS_API_KEY`), не в репозитории. Запросы к API экономить: кэш ответов, идемпотентный backfill, приоритет окна 2–3 сезонов для валидации.
 
+## Будущие NHL линии для Telegram readiness
+
+Data Cycle запрашивает будущий календарный диапазон одним запросом
+`GET /v4/sports/icehockey_nhl/odds` с параметрами `bookmakers=pinnacle`,
+`markets=h2h`, `oddsFormat=decimal`, `dateFormat=iso` и UTC параметрами
+`commenceTimeFrom` / `commenceTimeTo`. Для этого прохода дисковый cache выключен,
+transport retries и redirects отключены, предел клиента — один реальный GET на
+цикл. Для одного события верхняя граница расширяется на одну секунду, чтобы
+соблюсти контракт API `commenceTimeTo > commenceTimeFrom`; linker всё равно
+сопоставляет kickoff точно. Фильтр букмекера выбирается вместо
+`regions`; сам response и API key не сохраняются в журнале попытки.
+
+Наблюдение `winner_withOT` создаётся только при точной связи API события с
+canonical event по нормализованным участникам и UTC kickoff, при одном
+`pinnacle/h2h` рынке, ровно двух исходах участников и валидных decimal prices.
+Дубликат provider event для одного canonical identity, как и дубли Pinnacle
+bookmaker или `h2h` market, отклоняется как ambiguous.
+Provider `market.last_update` записывается в `observed_at`, если timestamp есть
+на market. В стандартном v4 odds response официальная схема показывает
+`last_update` на bookmaker, поэтому fallback на него допустим только для
+единственного запрошенного рынка `h2h`. Точный путь timestamp сохраняется как
+provenance; отсутствующее или невалидное время не заменяется локальным `now`.
+Provider timestamp не может опережать retrieval более чем на пять минут;
+readiness также не выдаёт `ready`, пока provider timestamp находится в будущем.
+Момент получения ответа и provider event ID хранятся отдельно. Отсутствующая линия остаётся
+`missing`, в том числе для событий на дальнем горизонте. Ошибка, включая
+ограничение квоты, отдельно фиксируется как результат попытки Data Cycle.
+Draw/третьи исходы и отсутствующий provider timestamp не дают readiness.
+
+Этот путь не использует prediction rows и не меняет historical V3 OddsStore.
+Футбольного production adapter он не добавляет.
+
 ## Historical reference T−15
 
 Утренний коэффициент, использованный для текущего прогноза, и исторический

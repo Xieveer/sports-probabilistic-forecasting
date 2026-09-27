@@ -198,6 +198,36 @@ def _h2h_prices(
     return home_p, away_p, draw_p
 
 
+def _h2h_provider_observed_at(bm: dict[str, Any]) -> str | None:
+    """Вернуть timestamp провайдера для h2h, не время получения ответа."""
+    for market in bm.get("markets") or []:
+        if isinstance(market, dict) and str(market.get("key")) == "h2h":
+            raw = market.get("last_update")
+            if isinstance(raw, str):
+                try:
+                    parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(tzinfo=UTC)
+                    return parsed.astimezone(UTC).isoformat()
+                except ValueError:
+                    return None
+            return None
+    return None
+
+
+def _h2h_has_draw_outcome(bm: dict[str, Any]) -> bool:
+    """Проверить наличие Draw/Tie даже при пустой или некорректной цене исхода."""
+    for market in bm.get("markets") or []:
+        if not isinstance(market, dict) or str(market.get("key")) != "h2h":
+            continue
+        return any(
+            isinstance(outcome, dict)
+            and str(outcome.get("name", "")).strip().lower() in {"draw", "tie"}
+            for outcome in market.get("outcomes") or []
+        )
+    return False
+
+
 def _totals_line_and_prices(bm: dict[str, Any]) -> tuple[float | None, float | None, float | None]:
     """База тотала (``point``) и цены over/under для первого рынка ``totals``."""
     for mkt in bm.get("markets") or []:
@@ -296,6 +326,11 @@ def extract_bookmaker_row_from_event(
         away_name,
         team_registry=team_registry,
     )
+    provider_observed_at = _h2h_provider_observed_at(bm)
+    if not profile.has_draw and _h2h_has_draw_outcome(bm):
+        # 3-way h2h cannot be relabelled as a valid 2-way winner_withOT market.
+        hh = aa = None
+        provider_observed_at = None
     t_line, over_p, under_p = _totals_line_and_prices(bm)
     pfx = profile.column_prefix
     w_s = profile.winner_semantics
@@ -306,6 +341,8 @@ def extract_bookmaker_row_from_event(
 
     def _t(suffix: str, part: str) -> str:
         return f"{pfx}_{t_s}_{suffix}_{part}"
+
+    out[f"{pfx}_{w_s}_provider_observed_at"] = provider_observed_at
 
     if snapshot_role == "open":
         out[_w("home", "open")] = hh
@@ -427,13 +464,15 @@ def _events_to_odds_frame_v2(
     team_registry: TeamNameRegistry | None = None,
 ) -> pd.DataFrame:
     """Собрать кадр мультибукмекера: только V3 close-колонки (см. R21.10)."""
-    close_idx: dict[str, dict[str, Any]] = {}
+    close_idx: dict[tuple[str, str, str], dict[str, Any]] = {}
     for ev in events_close or []:
         if not isinstance(ev, dict):
             continue
         hk = _team_key(str(ev.get("home_team", "")), team_registry)
         ak = _team_key(str(ev.get("away_team", "")), team_registry)
-        close_idx[f"{hk}|{ak}"] = ev
+        commence_utc = _parse_commence_time_utc(ev)
+        if commence_utc is not None:
+            close_idx[(hk, ak, commence_utc)] = ev
 
     rows: list[dict[str, Any]] = []
     for ev in events_open:
@@ -453,7 +492,7 @@ def _events_to_odds_frame_v2(
         hk = _team_key(home, team_registry)
         ak = _team_key(away, team_registry)
         c_utc = _parse_commence_time_utc(ev)
-        ev_for_odds = close_idx.get(f"{hk}|{ak}", ev) if events_close else ev
+        ev_for_odds = close_idx.get((hk, ak, c_utc), ev) if events_close and c_utc else ev
         row: dict[str, Any] = {
             "game_date": game_date,
             "home_team_norm": hk,

@@ -39,6 +39,8 @@ _DEFAULT_DB_URL = "sqlite:///predictions.db"
 
 _engine: Engine | None = None
 _SessionFactory: sessionmaker[Session] | None = None
+_control_engine: Engine | None = None
+_ControlSessionFactory: sessionmaker[Session] | None = None
 
 
 def get_database_url() -> str:
@@ -92,6 +94,29 @@ def get_engine(database_url: str | None = None) -> Engine:
     return _engine
 
 
+def get_control_engine() -> Engine:
+    """Получить отдельное соединение control API из SF_CONTROL_DATABASE_URL_FILE."""
+    global _control_engine  # noqa: PLW0603
+    if _control_engine is None:
+        secret_path = os.environ.get("SF_CONTROL_DATABASE_URL_FILE", "").strip()
+        if not secret_path:
+            raise ValueError("SF_CONTROL_DATABASE_URL_FILE не настроен")
+        try:
+            database_url = Path(secret_path).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise ValueError("SF_CONTROL_DATABASE_URL_FILE недоступен") from exc
+        if not database_url:
+            raise ValueError("SF_CONTROL_DATABASE_URL_FILE не содержит URL")
+        connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+        _control_engine = create_engine(
+            database_url,
+            connect_args=connect_args,
+            pool_pre_ping=True,
+            echo=False,
+        )
+    return _control_engine
+
+
 def get_session_factory(engine: Engine | None = None) -> sessionmaker[Session]:
     """Получить фабрику сессий (singleton).
 
@@ -110,6 +135,16 @@ def get_session_factory(engine: Engine | None = None) -> sessionmaker[Session]:
     return _SessionFactory
 
 
+def get_control_session_factory() -> sessionmaker[Session]:
+    """Создать фабрику сессий с отдельной least-privilege control ролью."""
+    global _ControlSessionFactory  # noqa: PLW0603
+    if _ControlSessionFactory is None:
+        _ControlSessionFactory = sessionmaker(
+            bind=get_control_engine(), autoflush=False, expire_on_commit=False
+        )
+    return _ControlSessionFactory
+
+
 @contextmanager
 def get_session(engine: Engine | None = None) -> Generator[Session, None, None]:
     """Context manager для сессии БД.
@@ -126,6 +161,20 @@ def get_session(engine: Engine | None = None) -> Generator[Session, None, None]:
     """
     factory = get_session_factory(engine)
     session = factory()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+@contextmanager
+def get_control_session() -> Generator[Session, None, None]:
+    """Транзакционная control DB сессия; не использует sf_api_reader connection."""
+    session = get_control_session_factory()()
     try:
         yield session
         session.commit()
@@ -180,8 +229,12 @@ def init_db(engine: Engine | None = None) -> None:
 
 def reset_engine() -> None:
     """Сбросить singleton engine (для тестов)."""
-    global _engine, _SessionFactory  # noqa: PLW0603
+    global _engine, _SessionFactory, _control_engine, _ControlSessionFactory  # noqa: PLW0603
     if _engine is not None:
         _engine.dispose()
+    if _control_engine is not None:
+        _control_engine.dispose()
     _engine = None
     _SessionFactory = None
+    _control_engine = None
+    _ControlSessionFactory = None

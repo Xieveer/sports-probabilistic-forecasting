@@ -20,6 +20,7 @@ from sports_forecast.deploy.serving_data import ArchiveArtifact, archive_snapsho
 from sports_forecast.service.db.engine import get_session
 from sports_forecast.service.db.models import (
     BootstrapImport,
+    CalendarCoverage,
     CanonicalEvent,
     CanonicalEventRevision,
     RefreshWatermark,
@@ -55,6 +56,15 @@ class BootstrapImportResult:
     imported: bool
 
 
+@dataclass(frozen=True)
+class CanonicalRefreshSummary:
+    """Counters одного NHL calendar import без накопительных DB totals."""
+
+    events_found: int
+    new_events: int
+    changed_events: int
+
+
 def _canonical_json(value: object) -> str:
     """Сериализовать значение стабильно для manifest/revision identity."""
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -88,7 +98,20 @@ def _event_from_nhl_row(row: dict[str, str]) -> dict[str, Any]:
     scheduled_at = _parse_datetime(str(row["datetime"]))
     result = {column: row.get(column) or None for column in _NHL_RESULT_COLUMNS}
     payload = {key: value for key, value in row.items() if key is not None}
-    is_finished = str(row["match_is_end"]) == "1"
+    raw_state = str(row.get("game_state") or "").strip().upper()
+    schedule_state = str(row.get("game_schedule_state") or "").strip().upper()
+    if schedule_state in {"PPD", "POSTPONED"}:
+        status = "postponed"
+    elif schedule_state in {"CANCELLED", "CANCELED"} or raw_state in {"CANCELLED", "CANCELED"}:
+        status = "cancelled"
+    elif raw_state in {"LIVE", "CRIT", "IN_PROGRESS"}:
+        status = "started"
+    elif str(row["match_is_end"]) == "1" or raw_state in {"OFF", "FINAL"}:
+        status = "finished"
+    elif raw_state in {"FUT", "PRE", "SCHEDULED", "UPCOMING"}:
+        status = "scheduled"
+    else:
+        status = "needs_review"
     return {
         "schema_version": _SCHEMA_VERSION,
         "sport": "ice_hockey",
@@ -96,9 +119,11 @@ def _event_from_nhl_row(row: dict[str, str]) -> dict[str, Any]:
         "source": "nhl_web_api",
         "source_event_id": str(row["id"]),
         "scheduled_at": scheduled_at.isoformat().replace("+00:00", "Z"),
-        "status": "finished" if is_finished else "upcoming",
+        "status": status,
         "result": result,
         "payload": payload,
+        "home_participant": row.get("home_team") or None,
+        "away_participant": row.get("away_team") or None,
         "revision_sha256": _revision_sha256(payload, result),
     }
 
@@ -126,7 +151,8 @@ def build_nhl_bootstrap_bundle(source_csv: Path, bundle_root: Path) -> ArchiveAr
             events = [_event_from_nhl_row(dict(row)) for row in reader]
     except OSError as exc:
         raise CanonicalBootstrapError(f"NHL source.csv недоступен: {source_csv}") from exc
-    if not events:
+    coverage_manifest = source_csv.parent / ".nhl_calendar_coverage.json"
+    if not events and not coverage_manifest.exists():
         raise CanonicalBootstrapError("NHL source.csv не содержит событий")
     event_ids = [str(event["source_event_id"]) for event in events]
     if len(event_ids) != len(set(event_ids)):
@@ -224,7 +250,12 @@ def import_nhl_bootstrap_bundle(bundle_path: Path, session: Session) -> Bootstra
     observed_at = _parse_datetime(artifact.created_at)
     try:
         for event_data in events:
-            _import_event(session, event_data, source_observed_at=observed_at)
+            _import_event(
+                session,
+                event_data,
+                source_observed_at=observed_at,
+                preserve_existing_projection=True,
+            )
         session.add(
             BootstrapImport(
                 artifact_id=artifact.artifact_id,
@@ -260,7 +291,14 @@ def import_nhl_bootstrap_bundle(bundle_path: Path, session: Session) -> Bootstra
 
 
 def refresh_nhl_canonical_from_csv(source_csv: Path, session: Session) -> int:
-    """Применить очередной NHL provider snapshot к canonical store одной транзакцией.
+    """Применить NHL snapshot и сохранить прежний count-only API результата."""
+    return refresh_nhl_canonical_with_summary_from_csv(source_csv, session).events_found
+
+
+def refresh_nhl_canonical_with_summary_from_csv(
+    source_csv: Path, session: Session
+) -> CanonicalRefreshSummary:
+    """Импортировать snapshot и вернуть counters только этой попытки.
 
     Функция не вызывает provider API и не выбирает период загрузки: она принимает
     уже полученный incremental ``source.csv`` и фиксирует только changed revisions.
@@ -273,18 +311,81 @@ def refresh_nhl_canonical_from_csv(source_csv: Path, session: Session) -> int:
             events = [_event_from_nhl_row(dict(row)) for row in reader]
     except OSError as exc:
         raise CanonicalBootstrapError(f"NHL source.csv недоступен: {source_csv}") from exc
-    if not events:
+    coverage_manifest = source_csv.parent / ".nhl_calendar_coverage.json"
+    if not events and not coverage_manifest.exists():
         raise CanonicalBootstrapError("NHL source.csv не содержит событий")
+    events_by_id = {str(event["source_event_id"]): event for event in events}
+    canonical_columns = CanonicalEvent.__table__.c
+    existing = (
+        session.scalars(
+            select(CanonicalEvent).where(
+                canonical_columns.tournament == "nhl",
+                canonical_columns.source == "nhl_web_api",
+                canonical_columns.source_event_id.in_(events_by_id.keys()),
+            )
+        ).all()
+        if events_by_id
+        else []
+    )
+    current_by_id = {event.source_event_id: event.current_revision_sha256 for event in existing}
+    summary = CanonicalRefreshSummary(
+        events_found=len(events_by_id),
+        new_events=sum(event_id not in current_by_id for event_id in events_by_id),
+        changed_events=sum(
+            event_id in current_by_id and current_by_id[event_id] != str(event["revision_sha256"])
+            for event_id, event in events_by_id.items()
+        ),
+    )
     observed_at = datetime.now(UTC)
     try:
         for event in events:
             _import_event(session, event, source_observed_at=observed_at)
+        _import_calendar_coverage(source_csv, session)
         session.commit()
     except Exception:
         session.rollback()
         raise
-    logger.info("NHL canonical refresh применён events=%d", len(events))
-    return len(events)
+    logger.info("NHL canonical refresh применён events=%d", summary.events_found)
+    return summary
+
+
+def _import_calendar_coverage(source_csv: Path, session: Session) -> None:
+    """Сохранить только coverage manifest, созданный успешным NHL schedule fetch."""
+    manifest_path = source_csv.parent / ".nhl_calendar_coverage.json"
+    if not manifest_path.exists():
+        return
+    try:
+        raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if raw.get("version") != 1 or raw.get("complete") is not True:
+            raise CanonicalBootstrapError("NHL calendar coverage не подтверждён")
+        covered_from = _parse_datetime(str(raw["covered_from"]))
+        covered_until = _parse_datetime(str(raw["covered_until"]))
+        checked_at = _parse_datetime(str(raw["checked_at"]))
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        if isinstance(exc, CanonicalBootstrapError):
+            raise
+        raise CanonicalBootstrapError("NHL calendar coverage manifest некорректен") from exc
+    if covered_until <= covered_from:
+        raise CanonicalBootstrapError("NHL calendar coverage окно некорректно")
+    row = session.scalar(
+        select(CalendarCoverage).where(
+            CalendarCoverage.tournament == "nhl",
+            CalendarCoverage.source == "nhl_web_api",
+        )
+    )
+    values = {
+        "covered_from": covered_from.replace(tzinfo=None),
+        "covered_until": covered_until.replace(tzinfo=None),
+        "complete": True,
+        "checked_at": checked_at.replace(tzinfo=None),
+        "last_successful_at": checked_at.replace(tzinfo=None),
+        "failure_code": None,
+    }
+    if row is None:
+        session.add(CalendarCoverage(tournament="nhl", source="nhl_web_api", **values))
+    else:
+        for key, value in values.items():
+            setattr(row, key, value)
 
 
 def _import_event(
@@ -292,6 +393,7 @@ def _import_event(
     event_data: dict[str, Any],
     *,
     source_observed_at: datetime,
+    preserve_existing_projection: bool = False,
 ) -> None:
     """Создать canonical event и immutable revision из одного verified envelope."""
     required = {
@@ -311,7 +413,16 @@ def _import_event(
         event_data["sport"] != "ice_hockey"
         or event_data["tournament"] != "nhl"
         or event_data["source"] != "nhl_web_api"
-        or event_data["status"] not in {"finished", "upcoming"}
+        or event_data["status"]
+        not in {
+            "finished",
+            "upcoming",
+            "scheduled",
+            "postponed",
+            "cancelled",
+            "started",
+            "needs_review",
+        }
         or not isinstance(event_data["payload"], dict)
         or not isinstance(event_data["result"], dict)
         or not isinstance(event_data["revision_sha256"], str)
@@ -338,13 +449,18 @@ def _import_event(
             scheduled_at=scheduled_at,
             status=str(event_data["status"]),
             current_revision_sha256=str(event_data["revision_sha256"]),
+            home_participant=event_data.get("home_participant"),
+            away_participant=event_data.get("away_participant"),
         )
         session.add(event)
         session.flush()
     else:
-        event.scheduled_at = scheduled_at
-        event.status = str(event_data["status"])
-        event.current_revision_sha256 = str(event_data["revision_sha256"])
+        if not preserve_existing_projection:
+            event.scheduled_at = scheduled_at
+            event.status = str(event_data["status"])
+            event.current_revision_sha256 = str(event_data["revision_sha256"])
+            event.home_participant = event_data.get("home_participant")
+            event.away_participant = event_data.get("away_participant")
 
     revision = session.scalar(
         select(CanonicalEventRevision).where(

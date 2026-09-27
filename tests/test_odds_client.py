@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -10,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 import requests
 from omegaconf import OmegaConf
+from requests.adapters import HTTPAdapter
 
 from sports_forecast.data.providers.odds.client import OddsApiClient
 
@@ -117,6 +119,68 @@ def test_live_request_without_cache_does_not_persist_key_or_response(
     client.get_json("/sports/x/odds", {"regions": "eu"}, use_cache=False)
 
     assert not cache_dir.exists()
+
+
+def test_future_nhl_request_uses_one_bookmaker_market_and_utc_window(
+    tmp_path: Path,
+    odds_cfg_dict: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ODDS_API_KEY", "test-key")
+    response = MagicMock()
+    response.status_code = 200
+    response.headers = {"x-requests-remaining": "22", "x-requests-used": "9"}
+    response.json.return_value = []
+    response.raise_for_status = MagicMock()
+    session = MagicMock()
+    session.get.return_value = response
+    client = OddsApiClient(
+        bookmaker_cfg=OmegaConf.create(odds_cfg_dict),
+        cache_dir=tmp_path,
+        session=session,
+        max_real_http_requests=1,
+    )
+
+    payload = client.fetch_future_nhl_odds(
+        commence_time_from=datetime(2026, 9, 26, 8, tzinfo=UTC),
+        commence_time_to=datetime(2026, 10, 26, 8, tzinfo=UTC),
+    )
+
+    assert payload == []
+    session.get.assert_called_once()
+    url = session.get.call_args.args[0]
+    params = session.get.call_args.kwargs["params"]
+    assert url.endswith("/v4/sports/icehockey_nhl/odds")
+    assert params["bookmakers"] == "pinnacle"
+    assert params["markets"] == "h2h"
+    assert params["oddsFormat"] == "decimal"
+    assert params["dateFormat"] == "iso"
+    assert params["commenceTimeFrom"] == "2026-09-26T08:00:00Z"
+    assert params["commenceTimeTo"] == "2026-10-26T08:00:00Z"
+    assert session.get.call_args.kwargs["allow_redirects"] is False
+    assert client.last_quota().requests_remaining == 22
+
+
+def test_future_batch_transport_has_no_automatic_retries(
+    tmp_path: Path,
+    odds_cfg_dict: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ODDS_API_KEY", "test-key")
+    client = OddsApiClient(
+        bookmaker_cfg=OmegaConf.create(odds_cfg_dict),
+        cache_dir=tmp_path,
+        max_real_http_requests=1,
+        max_retries=0,
+    )
+    adapter = client._session.get_adapter("https://api.the-odds-api.com")
+    assert isinstance(adapter, HTTPAdapter)
+
+    assert adapter.max_retries.total == 0
+    assert adapter.max_retries.connect == 0
+    assert adapter.max_retries.read == 0
+    assert adapter.max_retries.status == 0
+    assert adapter.max_retries.redirect == 0
 
 
 def test_cache_filename_hashes_explicit_key_without_secret(

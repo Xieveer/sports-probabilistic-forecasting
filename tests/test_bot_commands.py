@@ -30,6 +30,10 @@ def test_register_commands_sets_public_and_admin_scoped_menus() -> None:
             "upcoming",
             "edge",
             "status",
+            "cycle",
+            "cycle_time",
+            "cycle_interval",
+            "cycle_history",
             "refresh",
             "models",
         ]

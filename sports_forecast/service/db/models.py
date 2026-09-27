@@ -20,6 +20,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     Float,
@@ -30,8 +31,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, relationship
 
 
 class Base(DeclarativeBase):
@@ -190,6 +192,8 @@ class CanonicalEvent(Base):
     scheduled_at: datetime = Column(DateTime, nullable=False, index=True)
     status: str = Column(String(16), nullable=False)
     current_revision_sha256: str = Column(String(64), nullable=False)
+    home_participant: str | None = Column(String(128), nullable=True)
+    away_participant: str | None = Column(String(128), nullable=True)
     first_ingested_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
     last_ingested_at: datetime = Column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
@@ -219,6 +223,240 @@ class CanonicalEventRevision(Base):
     __table_args__ = (
         UniqueConstraint(
             "canonical_event_id", "revision_sha256", name="uq_canonical_event_revision"
+        ),
+    )
+
+
+class CalendarCoverage(Base):
+    """Последняя проверка полноты календарного окна по источнику."""
+
+    __tablename__ = "calendar_coverages"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    tournament: str = Column(String(64), nullable=False)
+    source: str = Column(String(128), nullable=False)
+    covered_from: datetime = Column(DateTime, nullable=False)
+    covered_until: datetime = Column(DateTime, nullable=False)
+    complete: bool = Column(Boolean, nullable=False)
+    checked_at: datetime = Column(DateTime, nullable=False)
+    last_successful_at: datetime | None = Column(DateTime, nullable=True)
+    failure_code: str | None = Column(String(64), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("tournament", "source", name="uq_calendar_coverage_source"),
+        Index("ix_calendar_coverages_window", "tournament", "covered_from", "covered_until"),
+    )
+
+
+class OddsObservation(Base):
+    """Последняя подтверждённая линия для canonical event, рынка и букмекера."""
+
+    __tablename__ = "odds_observations"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    canonical_event_id: int = Column(ForeignKey("canonical_events.id"), nullable=False, index=True)
+    market: str = Column(String(32), nullable=False)
+    market_spec: str = Column(String(64), nullable=False)
+    bookmaker: str = Column(String(64), nullable=False)
+    event_scheduled_at: datetime = Column(DateTime, nullable=False)
+    event_home_participant: str = Column(String(128), nullable=False)
+    event_away_participant: str = Column(String(128), nullable=False)
+    observed_at: datetime = Column(DateTime, nullable=False)
+    observed_at_source: str | None = Column(String(64), nullable=True)
+    retrieved_at: datetime | None = Column(DateTime, nullable=True)
+    provider_event_id: str | None = Column(String(128), nullable=True)
+    values_json: str = Column(Text, nullable=False)
+    source: str = Column(String(128), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "canonical_event_id",
+            "market",
+            "market_spec",
+            "bookmaker",
+            name="uq_odds_observation_event_market_bookmaker",
+        ),
+        Index("ix_odds_observation_event", "canonical_event_id", "observed_at"),
+    )
+
+
+class OddsAcquisitionAttempt(Base):
+    """Безопасный outcome одной batch-попытки получения будущих odds."""
+
+    __tablename__ = "odds_acquisition_attempts"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    run_id: str = Column(ForeignKey("data_cycle_runs.run_id"), nullable=False)
+    tournament: str = Column(String(64), nullable=False)
+    provider: str = Column(String(64), nullable=False)
+    status: str = Column(String(16), nullable=False)
+    failure_code: str | None = Column(String(64), nullable=True)
+    retrieved_at: datetime = Column(DateTime, nullable=False)
+    window_from: datetime | None = Column(DateTime, nullable=True)
+    window_to: datetime | None = Column(DateTime, nullable=True)
+    provider_events: int = Column(Integer, nullable=False, default=0)
+    matched_events: int = Column(Integer, nullable=False, default=0)
+    missing_events: int = Column(Integer, nullable=False, default=0)
+    rejected_events: int = Column(Integer, nullable=False, default=0)
+    requests_remaining: int | None = Column(Integer, nullable=True)
+    requests_used: int | None = Column(Integer, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('success','partial_success','failed')"),
+        UniqueConstraint("run_id", "provider", name="uq_odds_attempt_run_provider"),
+        Index("ix_odds_acquisition_attempt_tournament", "tournament", "retrieved_at"),
+    )
+
+
+class DataCycleRun(Base):
+    """Долговечный итог полного цикла сбора данных и публикации."""
+
+    __tablename__ = "data_cycle_runs"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    run_id: str = Column(String(128), nullable=False, unique=True)
+    tournament: str = Column(String(64), nullable=False, index=True)
+    reason: str = Column(String(16), nullable=False)
+    status: str = Column(String(24), nullable=False, server_default="waiting")
+    current_stage: str | None = Column(String(32), nullable=True)
+    failure_code: str | None = Column(String(64), nullable=True)
+    summary_json: str | None = Column(Text, nullable=True)
+    scheduled_for: datetime | None = Column(DateTime, nullable=True)
+    requested_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+    started_at: datetime | None = Column(DateTime, nullable=True)
+    heartbeat_at: datetime | None = Column(DateTime, nullable=True)
+    completed_at: datetime | None = Column(DateTime, nullable=True)
+    executor_generation: int = Column(Integer, nullable=False, default=0, server_default="0")
+    executor_owner_id: str | None = Column(String(64), nullable=True)
+    executor_stalled_at: datetime | None = Column(DateTime, nullable=True)
+    owner_stop_verified_at: datetime | None = Column(DateTime, nullable=True)
+    stopped_container_count: int | None = Column(Integer, nullable=True)
+
+    stages = relationship(
+        "DataCycleStageResult", back_populates="run", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        CheckConstraint("status IN ('waiting','running','success','partial_success','failed')"),
+        CheckConstraint("reason IN ('scheduled','manual','retry')"),
+        CheckConstraint("executor_generation >= 0"),
+        CheckConstraint("stopped_container_count IS NULL OR stopped_container_count >= 0"),
+        Index(
+            "uq_data_cycle_active_tournament",
+            "tournament",
+            unique=True,
+            sqlite_where=text("status IN ('waiting', 'running')"),
+            postgresql_where=text("status IN ('waiting', 'running')"),
+        ),
+        Index("ix_data_cycle_runs_requested", "tournament", "requested_at"),
+    )
+
+
+class DataCycleStageResult(Base):
+    """Состояние и счётчики одной фиксированной стадии Data Cycle."""
+
+    __tablename__ = "data_cycle_stage_results"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    run_id: str = Column(ForeignKey("data_cycle_runs.run_id"), nullable=False, index=True)
+    stage: str = Column(String(32), nullable=False)
+    status: str = Column(String(24), nullable=False, server_default="waiting")
+    failure_code: str | None = Column(String(64), nullable=True)
+    counts_json: str | None = Column(Text, nullable=True)
+    started_at: datetime | None = Column(DateTime, nullable=True)
+    completed_at: datetime | None = Column(DateTime, nullable=True)
+    run = relationship("DataCycleRun", back_populates="stages")
+
+    __table_args__ = (
+        UniqueConstraint("run_id", "stage", name="uq_data_cycle_stage"),
+        CheckConstraint(
+            "stage IN ('calendar','data_odds','quality','predictions','publication','archive_sync')"
+        ),
+        CheckConstraint(
+            "status IN ('waiting','running','success','partial_success','failed','skipped')"
+        ),
+        Index("ix_data_cycle_stages_run_status", "run_id", "status"),
+    )
+
+
+class PipelineSchedule(Base):
+    """Персистентная бизнес-настройка расписания pipeline."""
+
+    __tablename__ = "pipeline_schedules"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    pipeline_id: str = Column(String(64), nullable=False, unique=True)
+    enabled: bool = Column(Boolean, nullable=False, default=False)
+    base_time: str = Column(String(5), nullable=False, default="10:00")
+    timezone: str = Column(String(64), nullable=False, default="Europe/Moscow")
+    interval_hours: int = Column(Integer, nullable=False, default=24)
+    revision: int = Column(Integer, nullable=False, default=1)
+    next_run_at: datetime | None = Column(DateTime, nullable=True)
+    last_run_at: datetime | None = Column(DateTime, nullable=True)
+    last_missed_slots: int = Column(Integer, nullable=False, default=0)
+    updated_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("interval_hours IN (4,6,8,12,24)"),
+        CheckConstraint("revision >= 1"),
+        CheckConstraint("last_missed_slots >= 0"),
+    )
+
+
+class DataCycleControlRequest(Base):
+    """Идемпотентный ключ принятого API/dispatcher запроса на Data Cycle."""
+
+    __tablename__ = "data_cycle_control_requests"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    idempotency_key: str = Column(String(192), nullable=False, unique=True)
+    pipeline_id: str = Column(String(64), nullable=False)
+    run_id: str = Column(ForeignKey("data_cycle_runs.run_id"), nullable=False)
+    created_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (Index("ix_data_cycle_control_requests_run", "run_id"),)
+
+
+class DataCycleDispatcherState(Base):
+    """Heartbeat host dispatcher для объяснимости просроченного scheduler."""
+
+    __tablename__ = "data_cycle_dispatcher_state"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    dispatcher_id: str = Column(String(64), nullable=False, unique=True)
+    heartbeat_at: datetime = Column(DateTime, nullable=False)
+
+
+class DataCycleNotificationOutbox(Base):
+    """Durable terminal notification per Data Cycle run and safe destination alias."""
+
+    __tablename__ = "data_cycle_notification_outbox"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    run_id: str = Column(ForeignKey("data_cycle_runs.run_id"), nullable=False)
+    destination_alias: str = Column(String(64), nullable=False)
+    status: str = Column(String(16), nullable=False, server_default="pending")
+    attempts: int = Column(Integer, nullable=False, server_default="0")
+    available_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+    lease_token: str | None = Column(String(36), nullable=True)
+    lease_until: datetime | None = Column(DateTime, nullable=True)
+    last_error_code: str | None = Column(String(32), nullable=True)
+    created_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+    delivered_at: datetime | None = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id", "destination_alias", name="uq_data_cycle_notification_run_alias"
+        ),
+        CheckConstraint("status IN ('pending','leased','delivered')"),
+        CheckConstraint("attempts >= 0"),
+        CheckConstraint("length(destination_alias) BETWEEN 1 AND 64"),
+        Index(
+            "ix_data_cycle_notification_claim",
+            "status",
+            "available_at",
+            "lease_until",
+            "created_at",
         ),
     )
 

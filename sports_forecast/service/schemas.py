@@ -93,6 +93,66 @@ class PredictionListResponse(BaseModel):
     predictions: list[PredictionResponse]
 
 
+class ComponentReadinessResponse(BaseModel):
+    """Состояние одного независимого источника данных события."""
+
+    status: str
+    reason_code: str
+    last_success_at: datetime | None = None
+    last_attempt_at: datetime | None = None
+    required: list[str] = Field(default_factory=list)
+    available: list[str] = Field(default_factory=list)
+
+
+class EventReadinessResponse(BaseModel):
+    """Агрегированная пригодность события для Telegram."""
+
+    status: str
+    reason_code: str
+    deadline_at: datetime | None = None
+    computed_at: datetime
+
+
+class CalendarEventResponse(BaseModel):
+    """Source event календаря с независимыми состояниями компонентов."""
+
+    event_id: str
+    tournament: str
+    scheduled_at: datetime
+    status: str
+    home_participant: str | None
+    away_participant: str | None
+    calendar_updated_at: datetime
+    calendar_readiness: str
+    prediction_readiness: ComponentReadinessResponse
+    odds_readiness: ComponentReadinessResponse
+    readiness: EventReadinessResponse
+
+
+class CalendarCoverageResponse(BaseModel):
+    """Доказательство полноты source calendar для выбранного окна."""
+
+    status: str
+    covered_from: datetime | None = None
+    covered_until: datetime | None = None
+    checked_at: datetime | None = None
+    last_successful_at: datetime | None = None
+
+
+class CalendarResponse(BaseModel):
+    """Страница календарных событий с отдельным состоянием покрытия."""
+
+    tournament: str
+    period: str
+    start_at: datetime
+    end_at: datetime
+    total: int
+    limit: int
+    offset: int
+    coverage: CalendarCoverageResponse
+    events: list[CalendarEventResponse]
+
+
 class HealthResponse(BaseModel):
     """Ответ healthcheck."""
 

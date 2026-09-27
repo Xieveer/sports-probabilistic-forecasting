@@ -5,6 +5,11 @@
 # Worker. Airflow, MLflow, DVC, Prometheus, Grafana и node-exporter остаются
 # вне production Compose. Alloy управляется инфраструктурным репозиторием.
 
+x-data-cycle-labels: &data_cycle_labels
+  com.sfp.data-cycle.run-id: ${SF_DATA_CYCLE_RUN_ID:-untracked}
+  com.sfp.data-cycle.owner-generation: ${SF_DATA_CYCLE_GENERATION:-0}
+  com.sfp.data-cycle.owner-id: ${SF_DATA_CYCLE_OWNER_ID:-untracked}
+
 services:
   db:
     image: ${SF_POSTGRES_IMAGE:?set SF_POSTGRES_IMAGE to an immutable postgres digest}
@@ -37,13 +42,47 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL_FILE: /run/secrets/api_database_url
+      SF_CONTROL_DATABASE_URL_FILE: /run/secrets/control_database_url
+      SF_CONTROL_API_KEY_FILE: /run/secrets/control_api_key
+      SF_CONTROL_ADMIN_IDS: ${BOT_ADMIN_USER_IDS:-}
+      SF_DATA_CYCLE_NOTIFICATION_ALIASES: ${SF_DATA_CYCLE_NOTIFICATION_ALIASES:?set safe notification aliases}
     secrets:
       - api_database_url
+      - control_database_url
+      - control_api_key
     depends_on:
       db:
         condition: service_healthy
     cpus: "1.5"
     mem_limit: 1536m
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    logging: *prod_logging
+
+  data-cycle-dispatcher:
+    image: ${SF_API_IMAGE:?set SF_API_IMAGE to an immutable ghcr image digest}
+    pull_policy: always
+    command:
+      [
+        "/app/.venv/bin/python",
+        "-m",
+        "sports_forecast.orchestration.data_cycle_dispatcher_cli",
+        "--pipeline",
+        "nhl",
+        "--dispatcher-id",
+        "${SF_DATA_CYCLE_DISPATCHER_ID:-nhl-host}",
+      ]
+    environment:
+      SF_CONTROL_DATABASE_URL_FILE: /run/secrets/control_database_url
+    secrets:
+      - control_database_url
+    profiles: ["scheduler"]
+    depends_on:
+      db:
+        condition: service_healthy
+    cpus: "0.5"
+    mem_limit: 512m
     user: "10001:10001"
     read_only: true
     tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
@@ -58,12 +97,16 @@ services:
       BOT_ALLOWED_USER_IDS: ${BOT_ALLOWED_USER_IDS:-}
       BOT_ADMIN_USER_IDS: ${BOT_ADMIN_USER_IDS:-}
       BOT_API_BASE_URL: http://api:8000
+      BOT_CONTROL_API_KEY_FILE: /run/secrets/control_api_key
+      BOT_NOTIFICATION_DESTINATIONS_FILE: /run/secrets/bot_notification_destinations
       BOT_TELEGRAM_API_BASE_URL: ${BOT_TELEGRAM_API_BASE_URL:-}
     depends_on:
       api:
         condition: service_started
     secrets:
       - bot_token
+      - control_api_key
+      - bot_notification_destinations
     cpus: "0.5"
     mem_limit: 384m
     user: "10001:10001"
@@ -75,6 +118,9 @@ services:
     image: ${SF_WORKER_IMAGE:?set SF_WORKER_IMAGE to an immutable ghcr image digest}
     pull_policy: always
     environment:
+      SF_DATA_CYCLE_RUN_ID: ${SF_DATA_CYCLE_RUN_ID:-untracked}
+      SF_DATA_CYCLE_GENERATION: ${SF_DATA_CYCLE_GENERATION:-0}
+      SF_DATA_CYCLE_OWNER_ID: ${SF_DATA_CYCLE_OWNER_ID:-untracked}
       SF_CANONICAL_SOURCE_SNAPSHOT: /app/data/source/nhl/current.csv
       ODDS_API_KEY_FREE_FILE: /run/secrets/odds_api_key_free
       ODDS_API_KEY_20K_FILE: /run/secrets/odds_api_key_20k
@@ -89,6 +135,7 @@ services:
       - odds_api_key_100k
       - odds_api_key
     profiles: ["source-acquisition"]
+    labels: *data_cycle_labels
     cpus: "1.0"
     mem_limit: 1024m
     user: "10001:10001"
@@ -102,6 +149,10 @@ services:
     environment:
       DATABASE_URL_FILE: /run/secrets/worker_database_url
       SF_WORKER_RUN_ID: ${SF_WORKER_RUN_ID:?set a scheduler-generated id}
+      SF_DATA_CYCLE_NOTIFICATION_ALIASES: ${SF_DATA_CYCLE_NOTIFICATION_ALIASES:?set safe notification aliases}
+      SF_DATA_CYCLE_RUN_ID: ${SF_DATA_CYCLE_RUN_ID:-untracked}
+      SF_DATA_CYCLE_GENERATION: ${SF_DATA_CYCLE_GENERATION:-0}
+      SF_DATA_CYCLE_OWNER_ID: ${SF_DATA_CYCLE_OWNER_ID:-untracked}
       SF_MODEL_RUNTIME_ROOT: /app/models
       SF_APP_VERSION: ${SF_APP_VERSION:?set SF_APP_VERSION}
       SF_CANONICAL_SOURCE_CSV: /app/data/source/nhl/current.csv
@@ -116,6 +167,7 @@ services:
     secrets:
       - worker_database_url
     profiles: ["worker"]
+    labels: *data_cycle_labels
     cpus: "2.0"
     mem_limit: 3g
     user: "10001:10001"
@@ -127,6 +179,9 @@ services:
     image: ${SF_ARCHIVE_SYNC_IMAGE:?set SF_ARCHIVE_SYNC_IMAGE to an immutable sync image digest}
     pull_policy: always
     environment:
+      SF_DATA_CYCLE_RUN_ID: ${SF_DATA_CYCLE_RUN_ID:-untracked}
+      SF_DATA_CYCLE_GENERATION: ${SF_DATA_CYCLE_GENERATION:-0}
+      SF_DATA_CYCLE_OWNER_ID: ${SF_DATA_CYCLE_OWNER_ID:-untracked}
       SF_OBJECT_STORAGE_ENDPOINT: ${SF_OBJECT_STORAGE_ENDPOINT:?set SF_OBJECT_STORAGE_ENDPOINT}
       SF_OBJECT_STORAGE_BUCKET: ${SF_OBJECT_STORAGE_BUCKET:?set SF_OBJECT_STORAGE_BUCKET}
       SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE: /run/secrets/object_storage_access_key
@@ -140,6 +195,7 @@ services:
       - object_storage_access_key
       - object_storage_secret_key
     profiles: ["operational-sync"]
+    labels: *data_cycle_labels
     cpus: "0.5"
     mem_limit: 512m
     user: "10001:10001"
@@ -174,6 +230,7 @@ services:
       SF_API_DB_PASSWORD_FILE: /run/secrets/api_db_password
       SF_WORKER_DB_PASSWORD_FILE: /run/secrets/worker_db_password
       SF_MIGRATOR_DB_PASSWORD_FILE: /run/secrets/migrator_db_password
+      SF_CONTROL_API_DB_PASSWORD_FILE: /run/secrets/control_api_db_password
     volumes:
       - ./deploy/postgres/init-roles.sh:/bootstrap/init-roles.sh:ro
     secrets:
@@ -181,6 +238,7 @@ services:
       - api_db_password
       - worker_db_password
       - migrator_db_password
+      - control_api_db_password
     depends_on:
       db:
         condition: service_healthy
@@ -212,14 +270,22 @@ secrets:
     file: ${SF_WORKER_DB_PASSWORD_FILE:?set SF_WORKER_DB_PASSWORD_FILE}
   migrator_db_password:
     file: ${SF_MIGRATOR_DB_PASSWORD_FILE:?set SF_MIGRATOR_DB_PASSWORD_FILE}
+  control_api_db_password:
+    file: ${SF_CONTROL_API_DB_PASSWORD_FILE:?set SF_CONTROL_API_DB_PASSWORD_FILE}
   api_database_url:
     file: ${SF_API_DATABASE_URL_FILE:?set SF_API_DATABASE_URL_FILE}
   worker_database_url:
     file: ${SF_WORKER_DATABASE_URL_FILE:?set SF_WORKER_DATABASE_URL_FILE}
   migrator_database_url:
     file: ${SF_MIGRATOR_DATABASE_URL_FILE:?set SF_MIGRATOR_DATABASE_URL_FILE}
+  control_database_url:
+    file: ${SF_CONTROL_DATABASE_URL_FILE:?set SF_CONTROL_DATABASE_URL_FILE}
+  control_api_key:
+    file: ${SF_CONTROL_API_KEY_FILE:?set SF_CONTROL_API_KEY_FILE}
   bot_token:
     file: ${SF_BOT_TOKEN_FILE:?set SF_BOT_TOKEN_FILE}
+  bot_notification_destinations:
+    file: ${BOT_NOTIFICATION_DESTINATIONS_FILE:?set BOT_NOTIFICATION_DESTINATIONS_FILE}
   object_storage_access_key:
     file: ${SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE:?set SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE}
   object_storage_secret_key:

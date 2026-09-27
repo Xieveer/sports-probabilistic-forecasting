@@ -17,23 +17,76 @@ CRUD операции над таблицей ``predictions``.
 from __future__ import annotations
 
 import json
+import os
+import re
+from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
+from uuid import uuid4
 
-from sqlalchemy import and_, exists
+from sqlalchemy import and_, exists, func, insert, or_, select, update
+from sqlalchemy.engine import ScalarResult
 from sqlalchemy.orm import Session
 
 from sports_forecast.service.db.models import (
+    CalendarCoverage,
+    CanonicalEvent,
+    DataCycleNotificationOutbox,
+    DataCycleRun,
+    DataCycleStageResult,
     LineupNotificationOutbox,
     LineupPredictionRevision,
     ModelDeployment,
     NotificationCycle,
     NotificationDelivery,
     NotificationLineState,
+    OddsAcquisitionAttempt,
+    OddsObservation,
     Prediction,
     TournamentPublicationState,
     WorkerExecution,
 )
+
+
+DATA_CYCLE_STAGES = (
+    "calendar",
+    "data_odds",
+    "quality",
+    "predictions",
+    "publication",
+    "archive_sync",
+)
+DATA_CYCLE_FAILURE_CODES = frozenset(
+    {
+        "source_fetch_failed",
+        "calendar_acquisition_failed",
+        "odds_acquisition_failed",
+        "quality_failed",
+        "prediction_failed",
+        "publication_failed",
+        "archive_sync_failed",
+        "executor_interrupted",
+        "executor_timeout",
+        "run_locked",
+    }
+)
+_NOTIFICATION_ALIAS_PATTERN = re.compile(r"[a-z][a-z0-9_-]{0,63}")
+_NOTIFICATION_LEASE = timedelta(minutes=2)
+_NOTIFICATION_RETRY_BASE = 30
+_NOTIFICATION_RETRY_MAX = 6 * 60 * 60
+
+
+def _data_cycle_notification_aliases() -> tuple[str, ...]:
+    """Прочитать список безопасных destination aliases без Telegram IDs."""
+    raw = os.environ.get("SF_DATA_CYCLE_NOTIFICATION_ALIASES", "")
+    if not raw.strip():
+        return ()
+    aliases = tuple(part.strip() for part in raw.split(","))
+    if any(_NOTIFICATION_ALIAS_PATTERN.fullmatch(alias) is None for alias in aliases) or len(
+        set(aliases)
+    ) != len(aliases):
+        raise ValueError("Некорректный Data Cycle notification alias config")
+    return aliases
 
 
 def _utc_naive_for_query(dt: datetime) -> datetime:
@@ -44,6 +97,218 @@ def _utc_naive_for_query(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt
     return dt.astimezone(UTC).replace(tzinfo=None)
+
+
+class CalendarRepository:
+    """Чтение source calendar и coverage без зависимости от prediction store."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def list_events(
+        self,
+        *,
+        tournament: str,
+        start_at: datetime,
+        end_at: datetime,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[CanonicalEvent], int]:
+        """Вернуть страницу событий из полуоткрытого временного окна."""
+        start = _utc_naive_for_query(start_at)
+        end = _utc_naive_for_query(end_at)
+        query = self.session.query(CanonicalEvent).filter(
+            CanonicalEvent.tournament == tournament,
+            CanonicalEvent.scheduled_at >= start,
+            CanonicalEvent.scheduled_at < end,
+            CanonicalEvent.__table__.c.status.not_in(("started", "finished")),
+        )
+        total = query.count()
+        rows = (
+            query.order_by(CanonicalEvent.scheduled_at, CanonicalEvent.source_event_id)
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+        return rows, total
+
+    def get_coverage(
+        self,
+        *,
+        tournament: str,
+        source: str | None = None,
+    ) -> CalendarCoverage | None:
+        """Вернуть последнее состояние покрытия для турнира."""
+        statement = select(CalendarCoverage).where(CalendarCoverage.tournament == tournament)
+        if source is not None:
+            statement = statement.where(CalendarCoverage.source == source)
+        statement = statement.order_by(CalendarCoverage.__table__.c.checked_at.desc())
+        result: ScalarResult[CalendarCoverage] = self.session.scalars(statement)
+        return cast(CalendarCoverage | None, result.first())
+
+    def get_readiness_data(
+        self, events: list[CanonicalEvent]
+    ) -> tuple[
+        dict[int, list[Prediction]],
+        dict[int, list[OddsObservation]],
+        dict[int, list[OddsAcquisitionAttempt]],
+    ]:
+        """Пакетно загрузить predictions, odds и attempts для страницы календаря."""
+        if not events:
+            return {}, {}, {}
+        event_ids = [event.id for event in events]
+        identities = {(event.tournament, event.source_event_id) for event in events}
+        predictions = self.session.scalars(
+            select(Prediction).where(
+                Prediction.__table__.c.match_id.in_([source_id for _, source_id in identities]),
+                Prediction.__table__.c.tournament.in_([tournament for tournament, _ in identities]),
+            )
+        ).all()
+        odds = self.session.scalars(
+            select(OddsObservation).where(
+                OddsObservation.__table__.c.canonical_event_id.in_(event_ids)
+            )
+        ).all()
+        event_times = [_utc_naive_for_query(event.scheduled_at) for event in events]
+        attempt_columns = OddsAcquisitionAttempt.__table__.c
+        attempts = self.session.scalars(
+            select(OddsAcquisitionAttempt).where(
+                attempt_columns.tournament.in_([item.tournament for item in events]),
+                attempt_columns.window_from.is_not(None),
+                attempt_columns.window_to.is_not(None),
+                attempt_columns.window_from <= max(event_times),
+                attempt_columns.window_to >= min(event_times),
+            )
+        ).all()
+        predictions_by_event = {
+            event.id: [
+                row
+                for row in predictions
+                if row.tournament == event.tournament and row.match_id == event.source_event_id
+            ]
+            for event in events
+        }
+        odds_by_event: dict[int, list[OddsObservation]] = {event.id: [] for event in events}
+        for row in odds:
+            odds_by_event.setdefault(row.canonical_event_id, []).append(row)
+        attempts_by_event: dict[int, list[OddsAcquisitionAttempt]] = {
+            event.id: [] for event in events
+        }
+        for event in events:
+            scheduled = _utc_naive_for_query(event.scheduled_at)
+            attempts_by_event[event.id] = [
+                attempt
+                for attempt in attempts
+                if attempt.tournament == event.tournament
+                and attempt.window_from is not None
+                and attempt.window_to is not None
+                and _utc_naive_for_query(attempt.window_from)
+                <= scheduled
+                <= _utc_naive_for_query(attempt.window_to)
+            ]
+        return predictions_by_event, odds_by_event, attempts_by_event
+
+    def upsert_odds_observation(self, observation: Any) -> bool:
+        """Сохранить только новое или более свежее подтверждённое наблюдение."""
+        row = self.session.scalar(
+            select(OddsObservation).where(
+                OddsObservation.canonical_event_id == observation.canonical_event_id,
+                OddsObservation.market == observation.market,
+                OddsObservation.market_spec == observation.market_spec,
+                OddsObservation.bookmaker == observation.bookmaker,
+            )
+        )
+        if row is not None:
+            incoming_kickoff = observation.event_scheduled_at.replace(tzinfo=None)
+            same_event_identity = (
+                row.event_scheduled_at == incoming_kickoff
+                and row.event_home_participant == observation.event_home_participant
+                and row.event_away_participant == observation.event_away_participant
+            )
+            if same_event_identity:
+                if row.observed_at >= observation.observed_at.replace(tzinfo=None):
+                    return False
+            else:
+                incoming_retrieved_at = getattr(observation, "retrieved_at", None)
+                if row.retrieved_at is not None and (
+                    incoming_retrieved_at is None
+                    or row.retrieved_at >= incoming_retrieved_at.replace(tzinfo=None)
+                ):
+                    return False
+        if row is None:
+            row = OddsObservation(
+                canonical_event_id=observation.canonical_event_id,
+                market=observation.market,
+                market_spec=observation.market_spec,
+                bookmaker=observation.bookmaker,
+                event_scheduled_at=observation.event_scheduled_at.replace(tzinfo=None),
+                event_home_participant=observation.event_home_participant,
+                event_away_participant=observation.event_away_participant,
+                observed_at=observation.observed_at.replace(tzinfo=None),
+                observed_at_source=getattr(observation, "observed_at_source", None),
+                retrieved_at=(
+                    observation.retrieved_at.replace(tzinfo=None)
+                    if observation.retrieved_at is not None
+                    else None
+                ),
+                provider_event_id=observation.provider_event_id,
+                values_json=json.dumps(observation.values, sort_keys=True),
+                source=observation.source,
+            )
+            self.session.add(row)
+        else:
+            row.event_scheduled_at = observation.event_scheduled_at.replace(tzinfo=None)
+            row.event_home_participant = observation.event_home_participant
+            row.event_away_participant = observation.event_away_participant
+            row.observed_at = observation.observed_at.replace(tzinfo=None)
+            row.observed_at_source = getattr(observation, "observed_at_source", None)
+            row.retrieved_at = (
+                observation.retrieved_at.replace(tzinfo=None)
+                if observation.retrieved_at is not None
+                else None
+            )
+            row.provider_event_id = observation.provider_event_id
+            row.values_json = json.dumps(observation.values, sort_keys=True)
+            row.source = observation.source
+        return True
+
+    def record_odds_attempt(self, attempt: Any) -> None:
+        """Записать или идемпотентно заменить outcome batch-попытки одного run."""
+        row = self.session.scalar(
+            select(OddsAcquisitionAttempt).where(
+                OddsAcquisitionAttempt.run_id == attempt.run_id,
+                OddsAcquisitionAttempt.provider == attempt.provider,
+            )
+        )
+        fields = {
+            "tournament": attempt.tournament,
+            "status": attempt.status,
+            "failure_code": attempt.failure_code,
+            "retrieved_at": attempt.retrieved_at.replace(tzinfo=None),
+            "window_from": attempt.window_from.replace(tzinfo=None)
+            if attempt.window_from is not None
+            else None,
+            "window_to": attempt.window_to.replace(tzinfo=None)
+            if attempt.window_to is not None
+            else None,
+            "provider_events": attempt.provider_events,
+            "matched_events": attempt.matched_events,
+            "missing_events": attempt.missing_events,
+            "rejected_events": attempt.rejected_events,
+            "requests_remaining": attempt.requests_remaining,
+            "requests_used": attempt.requests_used,
+        }
+        if row is None:
+            self.session.add(
+                OddsAcquisitionAttempt(
+                    run_id=attempt.run_id,
+                    provider=attempt.provider,
+                    **fields,
+                )
+            )
+            return
+        for name, value in fields.items():
+            setattr(row, name, value)
 
 
 def _public_slice_predicate():
@@ -486,6 +751,719 @@ class WorkerExecutionRepository:
         if state is None or state.status != "running":
             raise ValueError(f"Worker run недоступен для завершения: {run_id}")
         return state
+
+
+class DataCycleRunRepository:
+    """Durable lifecycle full data pipeline-цикла и безопасный attempt календаря."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get(self, run_id: str) -> DataCycleRun | None:
+        """Получить запуск вместе с результатами стадий."""
+        return cast(
+            DataCycleRun | None,
+            self.session.query(DataCycleRun).filter_by(run_id=run_id).one_or_none(),
+        )
+
+    def get_current(self, tournament: str) -> DataCycleRun | None:
+        """Получить самый новый незавершённый run выбранного pipeline."""
+        return cast(
+            DataCycleRun | None,
+            self.session.query(DataCycleRun)
+            .filter(
+                DataCycleRun.tournament == tournament,
+                DataCycleRun.status.in_(("waiting", "running")),  # type: ignore[attr-defined]
+            )
+            .order_by(
+                DataCycleRun.requested_at.desc(),  # type: ignore[attr-defined]
+                DataCycleRun.id.desc(),  # type: ignore[attr-defined]
+            )
+            .first(),
+        )
+
+    def list_recent(self, tournament: str, *, limit: int = 10) -> list[DataCycleRun]:
+        """Получить ограниченную историю цикла без ограничения на NHL."""
+        if not 1 <= limit <= 50:
+            raise ValueError("Лимит истории должен быть от 1 до 50")
+        return cast(
+            list[DataCycleRun],
+            self.session.query(DataCycleRun)
+            .filter_by(tournament=tournament)
+            .order_by(
+                DataCycleRun.requested_at.desc(),  # type: ignore[attr-defined]
+                DataCycleRun.id.desc(),  # type: ignore[attr-defined]
+            )
+            .limit(limit)
+            .all(),
+        )
+
+    def create(
+        self,
+        *,
+        run_id: str,
+        tournament: str,
+        reason: str,
+        scheduled_for: datetime | None = None,
+        at: datetime | None = None,
+    ) -> DataCycleRun:
+        """Создать waiting run и фиксированный набор стадий до внешних вызовов."""
+        if reason not in {"scheduled", "manual", "retry"}:
+            raise ValueError("Недопустимая причина Data Cycle")
+        if not run_id or len(run_id) > 128 or not tournament or len(tournament) > 64:
+            raise ValueError("Некорректная идентичность Data Cycle")
+        requested_at = _utc_naive_for_query(at or datetime.now(UTC))
+        self.session.execute(
+            insert(DataCycleRun).values(
+                run_id=run_id,
+                tournament=tournament,
+                reason=reason,
+                requested_at=requested_at,
+                scheduled_for=(
+                    _utc_naive_for_query(scheduled_for) if scheduled_for is not None else None
+                ),
+            )
+        )
+        self.session.execute(
+            insert(DataCycleStageResult),
+            [{"run_id": run_id, "stage": stage} for stage in DATA_CYCLE_STAGES],
+        )
+        run = self.get(run_id)
+        if run is None:
+            raise RuntimeError("Не удалось прочитать созданный Data Cycle run")
+        return run
+
+    def claim_executor(
+        self,
+        run_id: str,
+        *,
+        owner_id: str,
+        at: datetime | None = None,
+    ) -> int:
+        """Атомарно принять waiting run и выдать generation конкретному systemd owner."""
+        import re
+
+        if re.fullmatch(r"[0-9a-f]{32}", owner_id) is None:
+            raise ValueError("Некорректный systemd invocation ID executor")
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        generation = self.session.scalar(
+            update(DataCycleRun)
+            .where(
+                DataCycleRun.run_id == run_id,
+                DataCycleRun.status == "waiting",
+                DataCycleRun.__table__.c.executor_owner_id.is_(None),
+            )
+            .values(
+                executor_generation=DataCycleRun.executor_generation + 1,
+                executor_owner_id=owner_id,
+                executor_stalled_at=None,
+                status="running",
+                started_at=func.coalesce(DataCycleRun.started_at, now),
+                heartbeat_at=now,
+            )
+            .returning(DataCycleRun.executor_generation)
+        )
+        if generation is None:
+            run = self.get(run_id)
+            if run is None:
+                raise ValueError("Data Cycle run отсутствует")
+            raise ValueError("Executor claim уже принадлежит другому владельцу")
+        return int(generation)
+
+    def heartbeat_executor(
+        self,
+        run_id: str,
+        *,
+        owner_generation: int,
+        at: datetime | None = None,
+    ) -> None:
+        """Обновить heartbeat только текущим владельцем run."""
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        updated = self.session.execute(
+            update(DataCycleRun)
+            .where(
+                DataCycleRun.run_id == run_id,
+                DataCycleRun.status == "running",
+                DataCycleRun.executor_generation == owner_generation,
+                DataCycleRun.executor_owner_id == os.environ.get("SF_DATA_CYCLE_OWNER_ID"),
+                DataCycleRun.__table__.c.executor_owner_id.is_not(None),
+                DataCycleRun.__table__.c.executor_stalled_at.is_(None),
+            )
+            .values(heartbeat_at=now)
+        )
+        if updated.rowcount != 1:
+            raise RuntimeError("Data Cycle executor generation fenced")
+
+    def assert_executor_owner(self, run_id: str, *, owner_generation: int) -> None:
+        """Проверить ownership непосредственно перед входом в materialize/publication."""
+        self._require_owner_if_claimed(run_id, owner_generation)
+
+    def mark_executor_stalled(
+        self,
+        run_id: str,
+        *,
+        before: datetime,
+        at: datetime | None = None,
+    ) -> bool:
+        """Пометить устаревший heartbeat как stalled; не освобождать active slot."""
+        run = self.session.scalar(
+            select(DataCycleRun).where(DataCycleRun.run_id == run_id).with_for_update()
+        )
+        if (
+            run is None
+            or run.status != "running"
+            or run.executor_owner_id is None
+            or run.heartbeat_at is None
+            or run.heartbeat_at > _utc_naive_for_query(before)
+            or run.executor_stalled_at is not None
+        ):
+            return False
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        if self.session.get_bind().dialect.name == "postgresql":
+            marked = self.session.scalar(
+                select(func.public.mark_data_cycle_executor_stalled(run_id))
+            )
+            self.session.refresh(run, attribute_names=["executor_stalled_at"])
+            return bool(marked)
+
+        result = self.session.execute(
+            update(DataCycleRun)
+            .where(
+                DataCycleRun.run_id == run_id,
+                DataCycleRun.status == "running",
+                DataCycleRun.__table__.c.executor_owner_id.is_not(None),
+                DataCycleRun.__table__.c.executor_stalled_at.is_(None),
+                DataCycleRun.heartbeat_at <= _utc_naive_for_query(before),
+            )
+            .values(executor_stalled_at=now)
+        )
+        return int(result.rowcount or 0) == 1
+
+    def recover_executor(
+        self,
+        run_id: str,
+        *,
+        recovery_evidence: Any,
+        at: datetime | None = None,
+    ) -> None:
+        """Terminalize stalled run only after host verified unit and all run containers stopped."""
+        run = self._require_active(run_id)
+        if run.executor_owner_id is None or run.executor_generation < 1:
+            raise ValueError("Data Cycle не имеет принятого executor owner")
+        if run.executor_stalled_at is None:
+            raise ValueError("Executor ещё не отмечен как stalled")
+        validate = getattr(recovery_evidence, "validate_for", None)
+        if not callable(validate):
+            raise ValueError("Не предоставлено проверяемое host evidence")
+        stopped_count = validate(
+            run_id=run.run_id,
+            owner_id=run.executor_owner_id,
+            owner_generation=run.executor_generation,
+        )
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        verified_at = _utc_naive_for_query(recovery_evidence.verified_at)
+        if verified_at > now or verified_at < _utc_naive_for_query(run.executor_stalled_at):
+            raise ValueError("Host evidence не подтверждает остановку после stall")
+        run.executor_stalled_at = None
+        self.fail_run(
+            run_id,
+            failure_code="executor_interrupted",
+            at=now,
+            owner_generation=run.executor_generation,
+        )
+        run.owner_stop_verified_at = verified_at
+        run.stopped_container_count = stopped_count
+
+    def start_stage(
+        self,
+        run_id: str,
+        stage: str,
+        *,
+        owner_generation: int | None = None,
+        at: datetime | None = None,
+    ) -> None:
+        """Атомарно отметить запуск фиксированной стадии и heartbeat цикла."""
+        if stage not in DATA_CYCLE_STAGES:
+            raise ValueError("Неизвестная стадия Data Cycle")
+        run = self._require_owner_if_claimed(run_id, owner_generation)
+        if stage in {"predictions", "publication"}:
+            quality = self._stage(run_id, "quality")
+            if quality.status not in {"success", "partial_success"}:
+                raise ValueError(f"Стадия {stage} заблокирована до успешной стадии quality")
+        if run.current_stage is not None:
+            raise ValueError("Предыдущая стадия Data Cycle ещё выполняется")
+        result = self._stage(run_id, stage)
+        if result.status != "waiting":
+            raise ValueError("Стадия Data Cycle уже запускалась")
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        result.status = "running"
+        result.started_at = now
+        run.status = "running"
+        run.current_stage = stage
+        run.started_at = run.started_at or now
+        run.heartbeat_at = now
+
+    def finish_stage(
+        self,
+        run_id: str,
+        stage: str,
+        *,
+        status: str,
+        at: datetime | None = None,
+        counts: dict[str, int] | None = None,
+        failure_code: str | None = None,
+        owner_generation: int | None = None,
+    ) -> None:
+        """Завершить стадию безопасным outcome и скалярными счётчиками."""
+        if stage not in DATA_CYCLE_STAGES or status not in {
+            "success",
+            "partial_success",
+            "failed",
+            "skipped",
+        }:
+            raise ValueError("Недопустимый результат стадии Data Cycle")
+        if failure_code is not None and failure_code not in DATA_CYCLE_FAILURE_CODES:
+            raise ValueError("Недопустимый safe failure code")
+        if status == "failed" and failure_code is None:
+            raise ValueError("Неуспешная стадия требует safe failure code")
+        if counts is not None and any(
+            not isinstance(key, str) or not isinstance(value, int) or value < 0
+            for key, value in counts.items()
+        ):
+            raise ValueError("Счётчики стадии должны быть неотрицательными целыми числами")
+        run = self._require_owner_if_claimed(run_id, owner_generation)
+        result = self._stage(run_id, stage)
+        if status == "skipped" and result.status != "waiting":
+            raise ValueError("В skipped переводится только незапущенная стадия")
+        if result.status == "waiting" and status != "skipped":
+            raise ValueError("Стадия должна быть running перед завершением")
+        if result.status == "running" and run.current_stage != stage:
+            raise ValueError("Завершить можно только текущую работающую стадию")
+        if result.status not in {"running", "waiting"}:
+            raise ValueError("Завершённую стадию нельзя переписать")
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        result.status = status
+        result.failure_code = failure_code
+        result.counts_json = (
+            json.dumps(counts, sort_keys=True, separators=(",", ":"))
+            if counts is not None
+            else None
+        )
+        result.started_at = result.started_at or now if status != "skipped" else None
+        result.completed_at = now
+        if run.current_stage == stage:
+            run.current_stage = None
+        run.heartbeat_at = now
+
+    def finish_run(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        required_stages: Collection[str],
+        at: datetime | None = None,
+        summary: dict[str, Any] | None = None,
+        owner_generation: int | None = None,
+    ) -> None:
+        """Записать итог цикла; неисполненные стадии получают явный skipped."""
+        if status not in {"auto", "success", "partial_success", "failed"}:
+            raise ValueError("Недопустимый terminal status Data Cycle")
+        required = frozenset(required_stages)
+        if not required or not required <= set(DATA_CYCLE_STAGES):
+            raise ValueError(
+                "Pipeline policy содержит неизвестный или пустой набор required stages"
+            )
+        run = self._require_owner_if_claimed(run_id, owner_generation)
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        running_stages = [stage.stage for stage in run.stages if stage.status == "running"]
+        if run.current_stage is not None or running_stages:
+            raise ValueError("Data Cycle нельзя завершить при работающей стадии")
+        states = {
+            stage.stage: ("skipped" if stage.status == "waiting" else stage.status)
+            for stage in run.stages
+        }
+        failed_required = sorted(stage for stage in required if states.get(stage) == "failed")
+        if status == "auto":
+            if failed_required:
+                status = "failed"
+                if run.failure_code is None:
+                    run.failure_code = next(
+                        stage.failure_code
+                        for stage in run.stages
+                        if stage.stage == failed_required[0] and stage.failure_code is not None
+                    )
+            elif any(states.get(stage) not in {"success", "partial_success"} for stage in required):
+                raise ValueError("Нельзя автоматически завершить незапущенную обязательную стадию")
+            else:
+                status = (
+                    "partial_success"
+                    if any(result != "success" for result in states.values())
+                    else "success"
+                )
+        if failed_required and status != "failed":
+            raise ValueError(
+                "Data Cycle не может скрыть failed обязательную стадию: "
+                + ",".join(failed_required)
+            )
+        incomplete_required = sorted(
+            stage for stage in required if states.get(stage) not in {"success", "partial_success"}
+        )
+        if status != "failed" and incomplete_required:
+            raise ValueError("Обязательные стадии не выполнены: " + ",".join(incomplete_required))
+        if status == "success":
+            incomplete = sorted(stage for stage, result in states.items() if result != "success")
+            if incomplete:
+                raise ValueError("Не все стадии завершились success: " + ",".join(incomplete))
+        if status == "partial_success" and all(result == "success" for result in states.values()):
+            raise ValueError("partial_success требует подтверждённого неполного результата")
+        for stage in run.stages:
+            if stage.status == "waiting":
+                stage.status = "skipped"
+                stage.completed_at = now
+        run.status = status
+        run.current_stage = None
+        run.completed_at = now
+        run.heartbeat_at = now
+        from sports_forecast.service.data_cycle_history import build_run_summary
+
+        run.summary_json = json.dumps(
+            build_run_summary(
+                run,
+                at=now,
+                supplemental={
+                    **(summary or {}),
+                    "last_successful_updates": self._last_successful_component_updates(
+                        run.tournament, as_of=now
+                    ),
+                },
+            ),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        self._enqueue_terminal_notifications(run, at=now)
+
+    def fail_run(
+        self,
+        run_id: str,
+        *,
+        failure_code: str,
+        owner_generation: int | None = None,
+        at: datetime | None = None,
+    ) -> None:
+        """Завершить активный цикл как failed, скрывая исходные exception details."""
+        run = self._require_owner_if_claimed(run_id, owner_generation)
+        stage_failure_codes = {
+            "calendar": "source_fetch_failed",
+            "data_odds": "odds_acquisition_failed",
+            "quality": "quality_failed",
+            "predictions": "prediction_failed",
+            "publication": "publication_failed",
+            "archive_sync": "archive_sync_failed",
+        }
+        if failure_code == "executor_interrupted" and run.current_stage is not None:
+            failure_code = stage_failure_codes[run.current_stage]
+        if failure_code not in DATA_CYCLE_FAILURE_CODES:
+            raise ValueError("Недопустимый safe failure code")
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        if run.current_stage is not None:
+            current = self._stage(run_id, run.current_stage)
+            current.status = "failed"
+            current.failure_code = failure_code
+            current.completed_at = now
+        for stage in run.stages:
+            if stage.status == "waiting":
+                stage.status = "skipped"
+                stage.completed_at = now
+        run.status = "failed"
+        run.failure_code = failure_code
+        run.current_stage = None
+        run.completed_at = now
+        run.heartbeat_at = now
+        from sports_forecast.service.data_cycle_history import build_run_summary
+
+        run.summary_json = json.dumps(
+            build_run_summary(
+                run,
+                at=now,
+                supplemental={
+                    "last_successful_updates": self._last_successful_component_updates(
+                        run.tournament, as_of=now
+                    )
+                },
+            ),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        self._enqueue_terminal_notifications(run, at=now)
+
+    def _enqueue_terminal_notifications(self, run: DataCycleRun, *, at: datetime) -> None:
+        """Добавить по одному outbox item на configured alias в текущую транзакцию."""
+        aliases = _data_cycle_notification_aliases()
+        if not aliases:
+            return
+        existing = set(
+            self.session.scalars(
+                select(DataCycleNotificationOutbox.destination_alias).where(
+                    DataCycleNotificationOutbox.run_id == run.run_id
+                )
+            )
+        )
+        now = _utc_naive_for_query(at)
+        self.session.add_all(
+            DataCycleNotificationOutbox(
+                run_id=run.run_id,
+                destination_alias=alias,
+                status="pending",
+                attempts=0,
+                available_at=now,
+                created_at=now,
+            )
+            for alias in aliases
+            if alias not in existing
+        )
+        self.session.flush()
+
+    def _last_successful_component_updates(
+        self, tournament: str, *, as_of: datetime
+    ) -> dict[str, Any]:
+        """Читать реальные timestamps успешных данных на момент завершения run."""
+        self.session.flush()
+        cutoff = _utc_naive_for_query(as_of)
+        coverage_columns = CalendarCoverage.__table__.c
+        odds_columns = OddsObservation.__table__.c
+        event_columns = CanonicalEvent.__table__.c
+        prediction_columns = Prediction.__table__.c
+        updates_by_component = {
+            "calendar": (
+                self.session.scalar(
+                    select(func.max(coverage_columns.last_successful_at)).where(
+                        coverage_columns.tournament == tournament,
+                        coverage_columns.last_successful_at <= cutoff,
+                    )
+                ),
+                "calendar_coverages.last_successful_at",
+            ),
+            "odds": (
+                self.session.scalar(
+                    select(func.max(odds_columns.retrieved_at))
+                    .select_from(OddsObservation)
+                    .join(CanonicalEvent, event_columns.id == odds_columns.canonical_event_id)
+                    .where(
+                        event_columns.tournament == tournament,
+                        odds_columns.retrieved_at.is_not(None),
+                        odds_columns.retrieved_at <= cutoff,
+                    )
+                ),
+                "odds_observations.retrieved_at",
+            ),
+            "predictions": (
+                self.session.scalar(
+                    select(func.max(prediction_columns.prediction_ts)).where(
+                        prediction_columns.tournament == tournament,
+                        prediction_columns.status == "ok",
+                        prediction_columns.prediction_ts <= cutoff,
+                    )
+                ),
+                "predictions.prediction_ts",
+            ),
+        }
+        updates: dict[str, Any] = {}
+        for component, (updated_at, source) in updates_by_component.items():
+            if updated_at is not None:
+                timestamp = (
+                    updated_at.replace(tzinfo=UTC)
+                    if updated_at.tzinfo is None
+                    else updated_at.astimezone(UTC)
+                )
+                updates[component] = {
+                    "last_successful_at": timestamp.isoformat().replace("+00:00", "Z"),
+                    "source": source,
+                }
+            else:
+                updates[component] = {"last_successful_at": None, "source": source}
+        return updates
+
+    def record_calendar_failure(
+        self,
+        *,
+        tournament: str,
+        source: str,
+        failure_code: str,
+        at: datetime | None = None,
+    ) -> None:
+        """Сохранить неуспешную попытку, не выдавая предыдущее coverage за актуальное."""
+        if failure_code not in {"source_fetch_failed", "calendar_acquisition_failed"}:
+            raise ValueError("Недопустимый calendar failure code")
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        row = (
+            self.session.query(CalendarCoverage)
+            .filter_by(tournament=tournament, source=source)
+            .one_or_none()
+        )
+        if row is None:
+            row = CalendarCoverage(
+                tournament=tournament,
+                source=source,
+                covered_from=now,
+                covered_until=now,
+                complete=False,
+                checked_at=now,
+                failure_code=failure_code,
+            )
+            self.session.add(row)
+        else:
+            row.checked_at = now
+            row.failure_code = failure_code
+
+    def _stage(self, run_id: str, stage: str) -> DataCycleStageResult:
+        result = cast(
+            DataCycleStageResult | None,
+            self.session.query(DataCycleStageResult)
+            .filter_by(run_id=run_id, stage=stage)
+            .one_or_none(),
+        )
+        if result is None:
+            raise ValueError("Стадия отсутствует в Data Cycle")
+        return result
+
+    def _require_active(self, run_id: str) -> DataCycleRun:
+        run = self.session.scalar(
+            select(DataCycleRun).where(DataCycleRun.run_id == run_id).with_for_update()
+        )
+        if run is None or run.status not in {"waiting", "running"}:
+            raise ValueError("Data Cycle run отсутствует или уже завершён")
+        return cast(DataCycleRun, run)
+
+    def _require_owner_if_claimed(self, run_id: str, owner_generation: int | None) -> DataCycleRun:
+        if owner_generation is None:
+            raw_generation = os.environ.get("SF_DATA_CYCLE_GENERATION")
+            if raw_generation:
+                try:
+                    owner_generation = int(raw_generation)
+                except ValueError as exc:
+                    raise ValueError("Некорректная executor generation") from exc
+        run = self.session.scalar(
+            select(DataCycleRun).where(DataCycleRun.run_id == run_id).with_for_update()
+        )
+        if run is None:
+            raise ValueError("Data Cycle run отсутствует")
+        if run.executor_owner_id is not None and (
+            owner_generation != run.executor_generation
+            or os.environ.get("SF_DATA_CYCLE_OWNER_ID") != run.executor_owner_id
+            or run.status not in {"waiting", "running"}
+            or run.executor_stalled_at is not None
+        ):
+            raise RuntimeError("Data Cycle executor generation fenced")
+        if run.status not in {"waiting", "running"}:
+            raise ValueError("Data Cycle run уже завершён")
+        if run.executor_owner_id is None and owner_generation is not None:
+            raise RuntimeError("Data Cycle run has no matching executor claim")
+        return cast(DataCycleRun, run)
+
+
+class DataCycleNotificationOutboxRepository:
+    """Concurrent lease, retry и acknowledgement terminal Data Cycle messages."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def claim_due(
+        self, *, limit: int = 20, at: datetime | None = None
+    ) -> list[DataCycleNotificationOutbox]:
+        """Захватить due rows и истёкшие leases для одного bot worker."""
+        if not 1 <= limit <= 50:
+            raise ValueError("Notification claim limit должен быть от 1 до 50")
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        rows = list(
+            self.session.scalars(
+                select(DataCycleNotificationOutbox)
+                .where(
+                    or_(
+                        and_(
+                            DataCycleNotificationOutbox.status == "pending",
+                            DataCycleNotificationOutbox.available_at <= now,
+                        ),
+                        and_(
+                            DataCycleNotificationOutbox.status == "leased",
+                            DataCycleNotificationOutbox.lease_until <= now,
+                        ),
+                    )
+                )
+                .order_by(DataCycleNotificationOutbox.created_at, DataCycleNotificationOutbox.id)
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+        )
+        for row in rows:
+            row.status = "leased"
+            row.attempts += 1
+            row.lease_token = str(uuid4())
+            row.lease_until = now + _NOTIFICATION_LEASE
+        self.session.flush()
+        return rows
+
+    def acknowledge(self, notification_id: int, lease_token: str, *, at: datetime) -> bool:
+        """Подтвердить только текущую lease; повторный ack того же lease idempotent."""
+        row = self.session.scalar(
+            select(DataCycleNotificationOutbox)
+            .where(DataCycleNotificationOutbox.id == notification_id)
+            .with_for_update()
+        )
+        if row is None:
+            return False
+        if row.status == "delivered" and row.lease_token == lease_token:
+            return True
+        now = _utc_naive_for_query(at)
+        if (
+            row.status != "leased"
+            or row.lease_token != lease_token
+            or row.lease_until is None
+            or row.lease_until <= now
+        ):
+            return False
+        row.status = "delivered"
+        row.lease_until = None
+        row.delivered_at = now
+        row.last_error_code = None
+        self.session.flush()
+        return True
+
+    def retry(
+        self,
+        notification_id: int,
+        lease_token: str,
+        *,
+        error_code: str,
+        at: datetime,
+    ) -> bool:
+        """Отпустить текущую lease с bounded exponential backoff."""
+        if error_code != "telegram_send_failed":
+            raise ValueError("Недопустимый notification retry error code")
+        row = self.session.scalar(
+            select(DataCycleNotificationOutbox)
+            .where(DataCycleNotificationOutbox.id == notification_id)
+            .with_for_update()
+        )
+        now = _utc_naive_for_query(at)
+        if (
+            row is None
+            or row.status != "leased"
+            or row.lease_token != lease_token
+            or row.lease_until is None
+            or row.lease_until <= now
+        ):
+            return False
+        delay = min(
+            _NOTIFICATION_RETRY_BASE * (2 ** min(max(row.attempts - 1, 0), 10)),
+            _NOTIFICATION_RETRY_MAX,
+        )
+        row.status = "pending"
+        row.available_at = now + timedelta(seconds=delay)
+        row.lease_until = None
+        row.lease_token = None
+        row.last_error_code = error_code
+        self.session.flush()
+        return True
 
 
 class ModelRegistryRepository:

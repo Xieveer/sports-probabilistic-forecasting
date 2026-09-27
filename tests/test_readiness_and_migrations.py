@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect
 
+from sports_forecast.deploy.database_roles import RUNTIME_GRANTS
 from sports_forecast.service import app as app_module
 from sports_forecast.service.db import engine as engine_module
 from sports_forecast.service.db.models import Base
@@ -132,6 +133,120 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
         "lineup_notification_outbox",
         "canonical_events",
         "canonical_event_revisions",
+        "calendar_coverages",
+        "odds_observations",
+        "odds_acquisition_attempts",
+        "data_cycle_runs",
+        "data_cycle_stage_results",
+        "pipeline_schedules",
+        "data_cycle_control_requests",
+        "data_cycle_dispatcher_state",
+        "data_cycle_notification_outbox",
         "refresh_watermarks",
         "bootstrap_imports",
     } <= table_names
+    event_columns = {
+        column["name"] for column in inspect(migrated_engine).get_columns("canonical_events")
+    }
+    assert {"home_participant", "away_participant"} <= event_columns
+    odds_columns = {
+        column["name"] for column in inspect(migrated_engine).get_columns("odds_observations")
+    }
+    assert {
+        "event_scheduled_at",
+        "event_home_participant",
+        "event_away_participant",
+        "retrieved_at",
+        "observed_at_source",
+        "provider_event_id",
+    } <= odds_columns
+    assert "last_successful_at" in {
+        column["name"] for column in inspect(migrated_engine).get_columns("calendar_coverages")
+    }
+    assert "scheduled_for" in {
+        column["name"] for column in inspect(migrated_engine).get_columns("data_cycle_runs")
+    }
+    attempt_columns = {
+        column["name"]
+        for column in inspect(migrated_engine).get_columns("odds_acquisition_attempts")
+    }
+    assert {"window_from", "window_to", "requests_remaining", "requests_used"} <= attempt_columns
+    api_grant = next(
+        statement
+        for statement in RUNTIME_GRANTS
+        if "GRANT SELECT ON TABLE" in statement and "TO sf_api_reader" in statement
+    )
+    assert all(
+        table in api_grant
+        for table in (
+            "canonical_events",
+            "canonical_event_revisions",
+            "calendar_coverages",
+            "odds_observations",
+            "odds_acquisition_attempts",
+        )
+    )
+    assert any(
+        "INSERT, UPDATE, DELETE ON TABLE" in statement
+        and "data_cycle_stage_results TO sf_refresh_writer" in statement
+        for statement in RUNTIME_GRANTS
+    )
+    control_grants = [statement for statement in RUNTIME_GRANTS if "sf_control_api" in statement]
+    assert any(
+        "GRANT SELECT ON TABLE data_cycle_runs, data_cycle_stage_results, pipeline_schedules, "
+        "data_cycle_control_requests, data_cycle_dispatcher_state TO sf_control_api" in statement
+        for statement in control_grants
+    )
+    assert any(
+        "GRANT INSERT (run_id, tournament, reason, requested_at, scheduled_for) "
+        "ON TABLE data_cycle_runs "
+        "TO sf_control_api" in statement
+        for statement in control_grants
+    )
+    assert any(
+        "GRANT INSERT (run_id, stage) ON TABLE data_cycle_stage_results TO sf_control_api"
+        in statement
+        for statement in control_grants
+    )
+    assert any(
+        "GRANT EXECUTE ON FUNCTION public.mark_data_cycle_executor_stalled(text)" in statement
+        for statement in control_grants
+    )
+    assert any(
+        "GRANT SELECT ON TABLE data_cycle_notification_outbox TO sf_control_api" in statement
+        for statement in control_grants
+    )
+    assert any(
+        "GRANT UPDATE (status, attempts, available_at, lease_token, lease_until, "
+        "last_error_code, delivered_at) ON TABLE data_cycle_notification_outbox TO sf_control_api"
+        in statement
+        for statement in control_grants
+    )
+    assert not any(
+        "INSERT" in statement and "data_cycle_notification_outbox TO sf_control_api" in statement
+        for statement in control_grants
+    )
+    assert not any(
+        "data_cycle_notification_outbox_id_seq" in statement and "sf_control_api" in statement
+        for statement in control_grants
+    )
+    assert any(
+        "GRANT SELECT, INSERT ON TABLE data_cycle_notification_outbox TO sf_refresh_writer"
+        in statement
+        for statement in RUNTIME_GRANTS
+    )
+    assert any(
+        "GRANT USAGE, SELECT ON SEQUENCE data_cycle_notification_outbox_id_seq "
+        "TO sf_refresh_writer" in statement
+        for statement in RUNTIME_GRANTS
+    )
+    assert not any("UPDATE (executor_stalled_at)" in statement for statement in control_grants)
+    assert not any(
+        "INSERT ON TABLE data_cycle_runs, data_cycle_stage_results" in statement
+        for statement in control_grants
+    )
+    assert not any(
+        "predictions TO sf_control_api" in statement
+        or "canonical_events TO sf_control_api" in statement
+        for statement in control_grants
+    )

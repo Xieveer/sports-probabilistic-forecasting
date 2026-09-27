@@ -14,7 +14,7 @@ Schema PostgreSQL изменяет только Alembic. API и Worker не вы
 
 2. Запустите идемпотентный bootstrap ролей и migration profile до API и Worker.
    PostgreSQL init создаёт owner `sf_user`; `role-bootstrap` создаёт
-   `sf_migrator`, `sf_api_reader` и `sf_refresh_writer`, а `migrator` применяет
+   `sf_migrator`, `sf_api_reader`, `sf_control_api` и `sf_refresh_writer`, а `migrator` применяет
    Alembic от `sf_migrator` и выдаёт grants. URL передаются только secrets.
 
    ```bash
@@ -28,6 +28,17 @@ Schema PostgreSQL изменяет только Alembic. API и Worker не вы
 
 3. Запустите API, дождитесь `curl -sf http://127.0.0.1:8000/ready`, затем
    разрешайте одноразовый Worker. `/health` проверяет только liveness процесса.
+
+Revision `0012_data_cycle_runs` добавляет историю полного Data Cycle и фиксированный
+набор результатов стадий. `sf_refresh_writer` получает DML только на эти таблицы;
+`sf_api_reader` их не читает. Revision `0014_pipeline_schedule_control` добавляет
+настройки pipeline, idempotency keys, dispatcher heartbeat и `scheduled_for`.
+`sf_control_api` читает только control/run state, меняет schedule/heartbeat и
+создаёт только waiting run/stage. Column-level INSERT не даёт этой роли записать
+terminal status; UPDATE run/stage остаётся у `sf_refresh_writer`. При
+ошибке acquisition он закрывает run с safe failure code и записывает failed attempt
+в `calendar_coverages`, сохраняя окно предыдущего успеха, но делая его статус
+недоступным до следующей успешной проверки. Старую историю run/stage не удаляют.
 
 ## Проверка и recovery
 

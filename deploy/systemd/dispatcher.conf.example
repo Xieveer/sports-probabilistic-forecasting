@@ -1,0 +1,6 @@
+# EnvironmentFile: /etc/sports-forecast/refresh/dispatcher.env
+# Права 0640, владелец root; секреты хранятся только в *_FILE вне этого файла.
+SF_PROJECT_DIR=/opt/sports-forecast
+# Compose reads the complete immutable image/runtime configuration from the
+# same protected profile file as the NHL executor; systemd env alone is not enough.
+SF_COMPOSE_ENV_FILE=/etc/sports-forecast/refresh/nhl.env

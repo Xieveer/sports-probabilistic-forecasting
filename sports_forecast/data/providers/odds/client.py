@@ -6,6 +6,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -87,6 +88,7 @@ class OddsApiClient:
         session: Внешняя ``requests.Session`` (для тестов).
         max_real_http_requests: Если задан, после стольки успешных сетевых GET (кэш не считается) следующий
             запрос вызовет :class:`QuotaBudgetError` до отправки; ``None`` — без лимита.
+        max_retries: Максимум transport retries; future batch использует ``0`` для точного cap.
     """
 
     def __init__(
@@ -96,6 +98,7 @@ class OddsApiClient:
         cache_dir: Path | None = None,
         session: requests.Session | None = None,
         max_real_http_requests: int | None = None,
+        max_retries: int = 5,
     ) -> None:
         cfg_in = (
             bookmaker_cfg if bookmaker_cfg is not None else load_bookmaker_config("the_odds_api")
@@ -125,14 +128,16 @@ class OddsApiClient:
 
         self._cache_dir = cache_dir or (PROJECT_ROOT / "data" / "cache" / "the_odds_api")
 
-        self._session = session or self._build_session()
+        self._session = session or self._build_session(max_retries=max_retries)
 
     @staticmethod
-    def _build_session() -> requests.Session:
+    def _build_session(*, max_retries: int = 5) -> requests.Session:
         retry = Retry(
-            total=5,
-            connect=3,
-            read=3,
+            total=max_retries,
+            connect=max_retries,
+            read=max_retries,
+            status=max_retries,
+            redirect=max_retries,
             backoff_factor=0.8,
             status_forcelist=(500, 502, 503, 504),
             allowed_methods=frozenset(["GET"]),
@@ -216,6 +221,7 @@ class OddsApiClient:
         *,
         cache_key: str | None = None,
         use_cache: bool = True,
+        allow_redirects: bool = True,
     ) -> dict[str, Any] | list[Any]:
         """GET с кэшем на диск и учётом квоты.
 
@@ -276,7 +282,9 @@ class OddsApiClient:
                 )
             q["apiKey"] = self._api_key
             self._throttle()
-            resp = self._session.get(url, params=dict(q), timeout=120)
+            resp = self._session.get(
+                url, params=dict(q), timeout=120, allow_redirects=allow_redirects
+            )
             self._last_request_ts = time.monotonic()
             self._real_http_requests += 1
             self._parse_quota_headers(resp)
@@ -339,3 +347,29 @@ class OddsApiClient:
             path = f"/sports/{sport_key}/odds"
         cache_key = f"{path}_{markets_param}_{regions}_{date_iso or 'current'}"
         return self.get_json(path, base_params, cache_key=cache_key, use_cache=use_cache)
+
+    def fetch_future_nhl_odds(
+        self,
+        *,
+        commence_time_from: datetime,
+        commence_time_to: datetime,
+        use_cache: bool = False,
+    ) -> dict[str, Any] | list[Any]:
+        """Получить один ограниченный batch NHL h2h для будущего календаря."""
+
+        def iso_utc(value: datetime) -> str:
+            normalized = (
+                value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+            )
+            return normalized.isoformat(timespec="seconds").replace("+00:00", "Z")
+
+        path = "/sports/icehockey_nhl/odds"
+        params = {
+            "bookmakers": "pinnacle",
+            "markets": "h2h",
+            "oddsFormat": "decimal",
+            "dateFormat": "iso",
+            "commenceTimeFrom": iso_utc(commence_time_from),
+            "commenceTimeTo": iso_utc(commence_time_to),
+        }
+        return self.get_json(path, params, use_cache=use_cache, allow_redirects=False)

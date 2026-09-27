@@ -1,0 +1,15 @@
+# Контрактный пример футбольного турнира с отдельным 1X2 рынком и букмекером.
+prediction_freshness_hours: 12
+odds_freshness_hours: 3
+preparation_deadline_hours: 4
+prediction_markets:
+  - market: winner
+    market_spec: winner
+odds_markets:
+  - market: winner
+    market_spec: winner
+    bookmaker: examplebook
+    value_columns:
+      - home
+      - draw
+      - away

@@ -2,10 +2,21 @@
 
 defaults:
   - /sport@_here_: ice_hockey
+  - _self_
 
 name: nhl
 region: north_america
 description: "National Hockey League (источник: nhl_web_api)"
+
+# Обязательные результаты одного полного Data Cycle. Сбор будущих котировок
+# пока optional и не разрешает итоговый success до TASK-025-6.
+data_cycle:
+  required_stages:
+    - calendar
+    - quality
+    - predictions
+    - publication
+    - archive_sync
 
 # R26: при дефолтном ``bookmaker=fonbet`` из корня ``apply_tournament_default_bookmaker`` подменяет на ``the_odds_api``.
 # R22.8 OT-рынки: ``winner_withOT``, ``total_*_withOT`` — см. HOW_TO_ADD_NEW_MARKET (NHL).

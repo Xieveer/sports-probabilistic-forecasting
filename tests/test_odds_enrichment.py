@@ -461,6 +461,170 @@ def test_pinnacle_v3_no_draw_column_for_2way_h2h() -> None:
     assert "pinnacle_winner_withOT_draw_open" not in df.columns
 
 
+def test_three_way_h2h_does_not_become_valid_two_way_winner_market() -> None:
+    profile = BookmakerExtractionProfile.from_mapping(
+        "pinnacle",
+        {
+            "key": "pinnacle",
+            "winner_semantics": "winner_withOT",
+            "total_semantics": "total_withOT",
+            "has_draw": False,
+        },
+    )
+    event = {
+        "home_team": "Team Alpha",
+        "away_team": "Team Beta",
+        "bookmakers": [
+            {
+                "key": "pinnacle",
+                "markets": [
+                    {
+                        "key": "h2h",
+                        "last_update": "2026-10-01T20:00:00Z",
+                        "outcomes": [
+                            {"name": "Team Alpha", "price": 1.7},
+                            {"name": "Draw", "price": 4.0},
+                            {"name": "Team Beta", "price": 2.1},
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    row = extract_bookmaker_row_from_event(event, profile)
+    assert row["pinnacle_winner_withOT_home_close"] is None
+    assert row["pinnacle_winner_withOT_away_close"] is None
+    assert row["pinnacle_winner_withOT_provider_observed_at"] is None
+
+
+def test_two_way_h2h_carries_market_provider_timestamp() -> None:
+    profile = BookmakerExtractionProfile.from_mapping(
+        "pinnacle",
+        {
+            "key": "pinnacle",
+            "winner_semantics": "winner_withOT",
+            "total_semantics": "total_withOT",
+            "has_draw": False,
+        },
+    )
+    event = {
+        "home_team": "Team Alpha",
+        "away_team": "Team Beta",
+        "bookmakers": [
+            {
+                "key": "pinnacle",
+                "markets": [
+                    {
+                        "key": "h2h",
+                        "last_update": "2026-10-01T20:00:00Z",
+                        "outcomes": [
+                            {"name": "Team Alpha", "price": 1.7},
+                            {"name": "Team Beta", "price": 2.1},
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    row = extract_bookmaker_row_from_event(event, profile)
+    assert row["pinnacle_winner_withOT_home_close"] == pytest.approx(1.7)
+    assert row["pinnacle_winner_withOT_away_close"] == pytest.approx(2.1)
+    assert row["pinnacle_winner_withOT_provider_observed_at"] == "2026-10-01T20:00:00+00:00"
+
+
+def test_three_way_h2h_is_rejected_even_when_draw_price_is_missing() -> None:
+    profile = BookmakerExtractionProfile.from_mapping(
+        "pinnacle",
+        {
+            "key": "pinnacle",
+            "winner_semantics": "winner_withOT",
+            "total_semantics": "total_withOT",
+            "has_draw": False,
+        },
+    )
+    event = {
+        "home_team": "Team Alpha",
+        "away_team": "Team Beta",
+        "bookmakers": [
+            {
+                "key": "pinnacle",
+                "markets": [
+                    {
+                        "key": "h2h",
+                        "last_update": "2026-10-01T20:00:00Z",
+                        "outcomes": [
+                            {"name": "Team Alpha", "price": 1.7},
+                            {"name": "Draw", "price": None},
+                            {"name": "Team Beta", "price": 2.1},
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    row = extract_bookmaker_row_from_event(event, profile)
+    assert row["pinnacle_winner_withOT_home_close"] is None
+    assert row["pinnacle_winner_withOT_away_close"] is None
+    assert row["pinnacle_winner_withOT_provider_observed_at"] is None
+
+
+def test_close_odds_are_not_combined_with_open_snapshot_after_reschedule() -> None:
+    profile = {
+        "pinnacle": {
+            "key": "pinnacle",
+            "winner_semantics": "winner_withOT",
+            "total_semantics": "total_withOT",
+            "has_draw": False,
+        }
+    }
+    open_event = _pinnacle_onexbet_single_event()[0]
+    open_event = {
+        **open_event,
+        "commence_time": "2026-10-01T20:00:00Z",
+        "bookmakers": [
+            {
+                "key": "pinnacle",
+                "markets": [
+                    {
+                        "key": "h2h",
+                        "last_update": "2026-10-01T18:00:00Z",
+                        "outcomes": [
+                            {"name": "Team Alpha", "price": 1.9},
+                            {"name": "Team Beta", "price": 2.0},
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    close_event = {
+        **open_event,
+        "commence_time": "2026-10-02T01:00:00Z",
+        "bookmakers": [
+            {
+                "key": "pinnacle",
+                "markets": [
+                    {
+                        "key": "h2h",
+                        "last_update": "2026-10-02T00:00:00Z",
+                        "outcomes": [
+                            {"name": "Team Alpha", "price": 1.6},
+                            {"name": "Team Beta", "price": 2.4},
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    frame = events_to_odds_frame(
+        [open_event], [close_event], "pinnacle", {}, bookmaker_profiles=profile
+    )
+    row = frame.iloc[0]
+    assert row["commence_time_utc"] == "2026-10-01T20:00:00Z"
+    assert row["pinnacle_winner_withOT_home_close"] == pytest.approx(1.9)
+    assert row["pinnacle_winner_withOT_provider_observed_at"] == "2026-10-01T18:00:00+00:00"
+
+
 def test_events_to_odds_frame_legacy_no_profiles_same_pinnacle_values() -> None:
     out_cols: dict = {
         "moneyline": {
