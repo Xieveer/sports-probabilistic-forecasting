@@ -154,6 +154,11 @@ outbox, миграции/DB роли, football fixture, Compose и release workf
 inputs и P2 противоречие порядка миграции в handoff. Исправления прошли
 повторное review; P0–P2 findings не осталось. Для локального candidate
 допустим commit и PR. Merge/tag возможны только после terminal PR CI.
+Проверенный content commit: `13aa7b399d9ca700f806b69c38ce34e0ee913776`;
+его commit gate прошёл Ruff, форматирование, mypy, AI validation и остальные
+применимые pre-commit hooks. Reviewer отдельно запустил два fixture tests:
+`2 passed`, включая реальный `docker compose config --quiet`, и
+`git diff --check`.
 Production остаётся NO-GO до verified backup/restore, совместимого rollback,
 миграций, runtime smoke, 30-дневного NHL coverage и первого планового запуска
 нового dispatcher; эти результаты принимает TASK-025-9.
