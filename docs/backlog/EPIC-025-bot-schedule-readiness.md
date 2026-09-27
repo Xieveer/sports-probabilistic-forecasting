@@ -16,8 +16,9 @@
   `initiative/epic-025-v1_2_4-worker-logging`,
   `initiative/epic-025-v1_2_5-runtime-odds-publication` и
   `initiative/epic-025-v1_2_6-odds-optional` и
-  `initiative/epic-025-v1_2_7-calendar-grant`.
-- Workflow / этап: `release correction / v1.2.5 restored healthy after v1.2.6 calendar 500; v1.2.7 candidate for API role grant`.
+  `initiative/epic-025-v1_2_7-calendar-grant` и
+  `initiative/epic-025-v1_2_8-archive-runner`.
+- Workflow / этап: `release correction / v1.2.7 serving healthy, manual Data Cycle failed at archive_sync; v1.2.8 candidate`.
 - Исходная цель: календарь NHL независимо от прогноза, готовность событий,
   админ-управление Data Cycle и выпуск `1.2.1`;
   [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
@@ -26,7 +27,9 @@
 - Релиз: пользователь запросил production `1.2.0`; после failure immutable tag
   gate согласовал `1.2.1` как первый production выпуск. После неуспешного
   первого цикла подготовлен `1.2.2` candidate; владелец подтвердил выпуск
-  2026-09-27.
+  2026-09-27. Для v1.2.8 владелец установил границу: при новой проблеме
+  после выпуска обеспечить безопасное состояние, зафиксировать факты и
+  остановить дальнейшие доработки/релизы до его указаний.
 - Выполнено: владелец дал полную постановку в Google Doc; REQ-025 приведён к
   ней и подтверждена трактовка «Сегодня» до 08:00 МСК; ограничение API
   прогнозами, 48-часовой минимум source и расхождение `/refresh` с systemd
@@ -159,6 +162,13 @@
   Operations откатил serving на v1.2.5; health/readiness и calendar 0/7/30
   восстановлены, active run 0, NHL timers disabled. Новый bug fix —
   [TASK-025-20](tasks/TASK-025-20-calendar-stage-read-grant.md), релиз v1.2.7.
+  v1.2.7 прошёл full first-rollout под production DB roles, PR/tag/evidence
+  gates и serving smoke. Ручной OFF Data Cycle сохранил 1 834 прогнозов,
+  готовность 187/187 будущих матчей и ноль odds attempts, но завершился
+  `failed/archive_sync_failed`: Compose заменил CMD образом на системный
+  `sync`. После host stop proof active0, одно итоговое уведомление доставлено;
+  оба timer disabled. Исправление и проверка реальной команды до tag —
+  [TASK-025-21](tasks/TASK-025-21-archive-sync-runner-command.md), v1.2.8.
 - Решения: [ADR-026](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
   принят после независимого review: календарь независим от прогноза, control
   state в PostgreSQL, ограниченный control API и systemd dispatcher;
@@ -166,19 +176,18 @@
   ручная команда повторяет data job без перезапуска служб; футбол проверяется
   по общему контракту без включения в `1.2.1`.
 - Артефакты: [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
-- Предыдущая роль: Operations — v1.2.6 isolated OFF replay, backup,
-  calendar 500 diagnosis и v1.2.5 rollback; Developer — TASK-025-20;
-  Reviewer — точечные grants/JOIN и disposable PostgreSQL probe без P0–P2.
-- Следующая роль: Reviewer — commit gate; Operations — полный локальный
-  first-rollout до тега; Product Owner — v1.2.7 CI/release; Operations —
-  production manual и первый плановый NHL run после release gates.
+- Предыдущая роль: Operations — v1.2.7 backup, serving rollout, безопасное
+  закрытие failed run; Reviewer — v1.2.7 full first-rollout/evidence.
+- Следующая роль: Developer — TASK-025-21; Reviewer — независимый review;
+  Operations — локальная проверка реального runner до тега и production
+  manual; Product Owner — v1.2.8 release gates.
 - Открытые вопросы / блокеры: 30-дневное coverage подтверждено (187 матчей),
   три provider keys недействительны, isolated publication подтверждена,
-  production manual run ещё не выполнен. Оба NHL timer выключены. Свежий
-  pre-v1.2.6 backup `9e8327ef…` прошёл restore/off-host/third-copy;
-  перед v1.2.7 rollout проверить актуальность. Bucket retention/encryption
-  не удалось прочитать текущим service account. Daily NHL scheduler NO-GO
-  до v1.2.7 calendar smoke и успешного ручного OFF-цикла.
+  production manual run v1.2.7 завершился ошибкой archive_sync. Оба NHL
+  timer выключены. Свежий pre-v1.2.7 backup `d5d409e4…` прошёл
+  restore/off-host/third-copy; перед v1.2.8 rollout проверить актуальность.
+  Bucket retention/encryption не удалось прочитать текущим service account.
+  Daily NHL scheduler NO-GO до успешного ручного OFF-цикла v1.2.8.
 - Обновлено: 2026-09-27.
 
 ## Цель и границы
@@ -198,7 +207,7 @@
 | [TASK-025-6](tasks/TASK-025-6-future-odds.md) | Calendar-first future NHL odds | semantic evidence, quota, identity, freshness | done |
 | [TASK-025-7](tasks/TASK-025-7-data-cycle-recovery-summary.md) | Terminal stages, summary и run history query contract | stage faults, coverage, safe DTO | done; production runtime в TASK-025-9 |
 | [TASK-025-8](tasks/TASK-025-8-executor-fencing.md) | Executor recovery/fencing after crash | PostgreSQL race, no duplicate executor | done; production activation в TASK-025-9 |
-| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.5 serving, timer disabled |
+| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.7 serving, timer disabled |
 | [TASK-025-13](tasks/TASK-025-13-production-runtime-hotfixes.md) | Исправить четыре runtime-дефекта первого цикла | grants, source DB, runner, heartbeat | done; PR #42 merged |
 | [TASK-025-14](tasks/TASK-025-14-future-close-odds-snapshot.md) | Публиковать source snapshot без closing line будущего матча | red/green, source/canonical tests, production snapshot | done; опубликован v1.2.3 snapshot |
 | [TASK-025-15](tasks/TASK-025-15-readonly-worker-hydra-logging.md) | Безопасный Hydra CLI в read-only Worker | red/green, stdout, no filesystem write | done; runtime gate в TASK-025-9 |
@@ -206,7 +215,8 @@
 | [TASK-025-17](tasks/TASK-025-17-promoted-feature-contract.md) | Feature config из promoted bundle | basic→advanced, invalid contract, review | in_progress; код и review готовы, runtime gate открыт |
 | [TASK-025-18](tasks/TASK-025-18-optional-future-odds.md) | Явный режим без будущих odds | zero HTTP, partial_success, публикация прогнозов | in_progress; isolated OFF replay v1.2.6 прошёл, production gate открыт |
 | [TASK-025-19](tasks/TASK-025-19-publication-count-flush.md) | Корректные counters publication | no-autoflush, 187 eligible, atomicity | in_progress; isolated counters 187/187, production gate открыт |
-| [TASK-025-20](tasks/TASK-025-20-calendar-stage-read-grant.md) | Точечное право чтения odds-стадии для календаря | role grant, first-rollout и production calendar smoke | in_progress; v1.2.7 candidate |
+| [TASK-025-20](tasks/TASK-025-20-calendar-stage-read-grant.md) | Точечное право чтения odds-стадии для календаря | role grant, first-rollout и production calendar smoke | in_progress; v1.2.7 calendar smoke 0/34/187, archive gate открыт |
+| [TASK-025-21](tasks/TASK-025-21-archive-sync-runner-command.md) | Исправить вызов archive-sync в production runner | exact Compose CLI, local S3 fixture, manual OFF run | in_progress; v1.2.8 candidate |
 | [TASK-025-12](tasks/TASK-025-12-release-compose-gate.md) | Исправить Compose release gate | новый API/dispatcher contract и память | done; PR CI в TASK-025-9 |
 | [TASK-025-10](tasks/TASK-025-10-run-summary-producers.md) | Full run summary producers and coverage | same-run counters, n/a denominator, football fixture | done |
 | [TASK-025-11](tasks/TASK-025-11-telegram-calendar.md) | Public NHL calendar in Telegram | 08:00, all horizons, no prediction, bot→API test | done |

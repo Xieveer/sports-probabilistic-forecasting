@@ -1,19 +1,19 @@
 # TASK-025-9 — Production выпуск и проверка NHL
 
-> **Статус:** in_progress — v1.2.5 serving healthy; calendar готов, таймер disabled
+> **Статус:** in_progress — v1.2.7 serving healthy; archive gate открыт, timer disabled
 > **Владелец:** Product Owner и Operations Agent
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
 > **ADR:** [ADR-026](../../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
 
-> v1.2.5 обслуживает календарь: 187 матчей за 30 дней, coverage `complete`.
-> Три Odds API ключа получили `INVALID_KEY`; владелец выбрал продолжение
-> без odds. v1.2.6 OFF-режим прошёл isolated replay, но serving smoke выявил
-> calendar 500; v1.2.5 восстановлен. Готовится v1.2.7, таймер выключен.
+> v1.2.7 обслуживает календарь: 187 матчей за 30 дней, coverage `complete`.
+> Ручной OFF-цикл записал 1 834 прогноза, но завершился
+> `failed/archive_sync_failed` из-за команды системного `sync` вместо CLI.
+> Готовится v1.2.8; оба NHL timer выключены.
 
 ## Результат
 
-Довести исправленный release candidate до immutable tag `v1.2.7`,
+Довести исправленный release candidate до immutable tag `v1.2.8`,
 запустить NHL Data Cycle по
 расписанию и подтвердить работу бота, API и ежедневного scheduler на
 production. Тег `v1.2.1` остаётся неизменным; футбольный production pipeline
@@ -23,7 +23,7 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
 
 - [ ] Все функциональные TASK инициативы прошли независимое review, full EPIC
   review, локальные проверки и terminal PR CI нового кандидата.
-  `pyproject.toml` и handoff указывают `1.2.7 candidate`;
+  `pyproject.toml` и handoff указывают `1.2.8 candidate`;
   `make production-check` должен пройти для final candidate.
 - [ ] Operations имеет привилегированное read-only evidence текущих image
   digests, Docker/DB состояния, последнего NHL run, календарного покрытия,
@@ -49,7 +49,7 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
   допустимый журнал и отсутствие дубля цикла. Проверка не публикует секреты
   или полный внешний ответ.
 - [ ] До Worker run установлен и проверен immutable model bundle с
-  `app_version=1.2.7` из неизменённых одобренных весов/features; старый
+  `app_version=1.2.8` из неизменённых одобренных весов/features; старый
   `current` и checksums сохранены для rollback.
 - [ ] После первого scheduled запуска подтверждены run_id, дата/время,
   стадии, фактическое 30-дневное coverage и сообщение администратору.
@@ -128,6 +128,18 @@ pre-switch gates прошли. После ограниченного API/bot swi
 Ручной v1.2.6 Data Cycle не запускался. Точечное исправление и release
 smoke exact JOIN находятся в
 [TASK-025-20](TASK-025-20-calendar-stage-read-grant.md).
+
+v1.2.7 PR/tag/evidence и локальный first-rollout под production DB roles
+прошли. Serving API/bot healthy, calendar 0/7/30 = 0/34/187,
+`/health`/`/ready` 200. Ручной OFF Data Cycle
+`31644fe1-f4ef-46f3-8678-791b597c498f` записал 1 834 прогнозов и
+достиг `predictions_ready=187/187`, odds attempts 0, но завершился
+`failed/archive_sync_failed`: runner запустил системный `sync` вместо
+Python CLI. Host stop proof и owner-fenced terminalization подтверждены;
+active0, одно уведомление delivered, оба NHL timer disabled.
+Локальный first-rollout проверял другой archive path и не заметил дефект.
+[TASK-025-21](TASK-025-21-archive-sync-runner-command.md) исправляет путь
+и добавляет проверку exact production Compose-команды до тега v1.2.8.
 
 Исторический preflight до ограниченного rollout v1.2.1: Operations Agent 2026-09-26
 подтвердил установленный unit/drop-in NHL timer и конфигурацию 10:00

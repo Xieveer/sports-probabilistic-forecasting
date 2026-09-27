@@ -389,6 +389,75 @@ def _run_one_shot_checked(
     return result
 
 
+def _sync_operational_archives(
+    compose: list[str], *, values: dict[str, str], timeout: int = 180
+) -> int:
+    """Синхронизировать все manifest artifacts через тот же Compose CLI контракт."""
+    archive_root = Path(values["SF_OPERATIONAL_ARCHIVE_ROOT"])
+    manifests_output = _run(
+        ["bash", "deploy/systemd/list-canonical-archive-manifests.sh", str(archive_root)]
+    ).stdout
+    manifests = [Path(item) for item in manifests_output.split("\0") if item]
+    if not manifests:
+        raise RuntimeError("first-rollout Worker не создал immutable operational archive")
+
+    artifact_types = {
+        "canonical": False,
+        "source-state": False,
+    }
+    for manifest in manifests:
+        relative = manifest.parent.relative_to(archive_root).as_posix()
+        if relative.startswith("operational-archive/nhl-source-state/v1/"):
+            artifact_types["source-state"] = True
+        elif relative.startswith("operational-archive/sha256:"):
+            artifact_types["canonical"] = True
+    missing_types = [name for name, present in artifact_types.items() if not present]
+    if missing_types:
+        missing = " и ".join(missing_types)
+        raise RuntimeError(
+            f"first-rollout Worker не создал canonical и source-state archives: {missing}"
+        )
+
+    count = 0
+    for manifest in manifests:
+        relative = manifest.parent.relative_to(archive_root).as_posix()
+        prefix = values.get("SF_OPERATIONAL_ARCHIVE_PREFIX") or "operational-archive"
+        if relative.startswith("operational-archive/nhl-source-state/v1/"):
+            prefix = (
+                values.get("SF_NHL_SOURCE_STATE_PREFIX")
+                or "operational-archive/nhl-source-state/v1"
+            )
+        _run_one_shot_checked(
+            [
+                *compose,
+                "--profile",
+                "operational-sync",
+                "run",
+                "--rm",
+                "--no-deps",
+                "--env",
+                "SF_OBJECT_STORAGE_ENDPOINT=http://minio:9000",
+                "--env",
+                "SF_OBJECT_STORAGE_BUCKET=fixture-bucket",
+                "archive-sync",
+                "/app/.venv/bin/python",
+                "-m",
+                "sports_forecast.deploy.archive_sync_cli",
+                "sync",
+                "--archive",
+                f"/app/archive/{relative}",
+                "--state-root",
+                "/app/sync-state",
+                "--prefix",
+                prefix,
+            ],
+            values=values,
+            timeout=timeout,
+        )
+        count += 1
+    return count
+
+
 def _start_s3_fixture(
     *, fixture_name: str, network: str, image: str, values: dict[str, str]
 ) -> None:
@@ -899,40 +968,9 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
                 ],
                 values=values,
             )
-            _run_one_shot_checked(
-                [
-                    "docker",
-                    "run",
-                    "--rm",
-                    "--read-only",
-                    "--user",
-                    RUNTIME_UID_GID,
-                    "--tmpfs",
-                    "/tmp:rw,noexec,nosuid,size=64m",
-                    "--network",
-                    f"{project_name}_default",
-                    "--mount",
-                    f"type=bind,src={values['SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE']},dst=/run/secrets/object_storage_access_key,readonly",
-                    "--mount",
-                    f"type=bind,src={values['SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE']},dst=/run/secrets/object_storage_secret_key,readonly",
-                    "--mount",
-                    f"type=bind,src={values['SF_OPERATIONAL_ARCHIVE_ROOT']},dst=/app/archive,readonly",
-                    "--mount",
-                    f"type=bind,src={values['SF_ARCHIVE_SYNC_STATE_ROOT']},dst=/app/sync-state",
-                    "--env",
-                    "SF_OBJECT_STORAGE_ENDPOINT=http://minio:9000",
-                    "--env",
-                    "SF_OBJECT_STORAGE_BUCKET=fixture-bucket",
-                    "--env",
-                    "SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE=/run/secrets/object_storage_access_key",
-                    "--env",
-                    "SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE=/run/secrets/object_storage_secret_key",
-                    refs["SF_ARCHIVE_SYNC_IMAGE"],
-                ],
-                values=values,
-                timeout=180,
-            )
+            artifact_count = _sync_operational_archives(compose, values=values)
             evidence["health"]["archive_sync"] = "ok"
+            evidence["health"]["archive_sync_artifacts"] = str(artifact_count)
             current = _run(
                 [
                     *compose,

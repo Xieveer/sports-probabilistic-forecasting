@@ -69,6 +69,18 @@ def test_canonical_full_refresh_uses_stdout_hydra_logging_without_output_dir() -
     assert '"hydra.output_subdir=null"' in command
 
 
+def test_archive_sync_runner_executes_the_installed_application_cli() -> None:
+    """Compose CMD override must name archive_sync_cli, not shell's system sync."""
+    runner = (PROJECT_ROOT / "deploy/systemd/run-canonical-refresh.sh").read_text(encoding="utf-8")
+    archive_command = runner.rsplit("archive-sync \\", maxsplit=1)[1]
+    archive_command = archive_command.split("control finish-stage", 1)[0]
+
+    assert "/app/.venv/bin/python -m sports_forecast.deploy.archive_sync_cli" in archive_command
+    assert 'sync --archive "${container_artifact}"' in archive_command
+    assert '--state-root /app/sync-state --prefix "${prefix}"' in archive_command
+    assert "archive-sync \\\n    sync --archive" not in archive_command
+
+
 @pytest.mark.parametrize("setting", ["", "off", "TRUE", "1"])
 def test_runner_rejects_invalid_data_odds_setting_before_dispatch(setting: str) -> None:
     """Некорректный odds switch закрывает cycle до claim и любых acquisition stages."""

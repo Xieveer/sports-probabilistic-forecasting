@@ -128,6 +128,7 @@ while IFS= read -r -d '' manifest; do
   fi
   container_artifact="/app/archive/${relative}"
   run_with_heartbeat /usr/bin/docker compose -f docker-compose.prod.yml --profile operational-sync run --rm --no-deps archive-sync \
+    /app/.venv/bin/python -m sports_forecast.deploy.archive_sync_cli \
     sync --archive "${container_artifact}" --state-root /app/sync-state --prefix "${prefix}"
   artifact_count=$((artifact_count + 1))
 done <"${manifest_list}"

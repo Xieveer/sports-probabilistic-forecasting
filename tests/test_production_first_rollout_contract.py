@@ -24,6 +24,7 @@ from scripts.run_production_first_rollout import (
     _restore_runtime_root_ownership,
     _smoke_calendar_endpoints,
     _start_s3_fixture,
+    _sync_operational_archives,
 )
 from scripts.verify_production_compose_contract import verify_contract
 
@@ -310,6 +311,8 @@ def test_first_rollout_runner_and_tag_gate_are_checked_in() -> None:
         in runner_source
     )
     assert "JOIN data_cycle_runs" in runner_source
+    assert "_sync_operational_archives(compose, values=values)" in runner_source
+    assert "sports_forecast.deploy.archive_sync_cli" in runner_source
     assert 'if role_contract != "t|t|t|t|f|f":' in runner_source
     assert runner_source.index('evidence["health"]["api_ready"] = "ok"') < runner_source.index(
         "_smoke_calendar_endpoints(compose)"
@@ -374,6 +377,95 @@ def test_first_rollout_smokes_calendar_periods_without_logging_payloads(monkeypa
     for command in commands:
         assert command[-5:-1] == ["curl", "-fsS", "-o", "/dev/null"]
         assert command[:3] == ["docker", "compose", "-f"]
+
+
+def test_first_rollout_syncs_each_artifact_with_runner_cli_and_matching_prefix(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """S3 fixture uses the production CLI, artifact path and per-artifact prefix contract."""
+    archive_root = tmp_path / "archive"
+    canonical_artifact = archive_root / "operational-archive" / f"sha256:{'a' * 64}"
+    source_state_artifact = (
+        archive_root / "operational-archive" / "nhl-source-state" / "v1" / f"sha256:{'b' * 64}"
+    )
+    canonical_artifact.mkdir(parents=True)
+    source_state_artifact.mkdir(parents=True)
+    manifests = [canonical_artifact / "manifest.json", source_state_artifact / "manifest.json"]
+    for manifest in manifests:
+        manifest.write_text("{}", encoding="utf-8")
+
+    captured: list[list[str]] = []
+    monkeypatch.setattr(
+        "scripts.run_production_first_rollout._run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(
+            command, 0, stdout="\0".join(map(str, manifests)) + "\0", stderr=""
+        ),
+    )
+    monkeypatch.setattr(
+        "scripts.run_production_first_rollout._run_one_shot_checked",
+        lambda command, **_kwargs: captured.append(command),
+    )
+
+    count = _sync_operational_archives(
+        ["docker", "compose", "--project-name", "fixture"],
+        values={
+            "SF_OPERATIONAL_ARCHIVE_ROOT": str(archive_root),
+            "SF_OPERATIONAL_ARCHIVE_PREFIX": "fixture-operational",
+            "SF_NHL_SOURCE_STATE_PREFIX": "fixture-source-state",
+        },
+    )
+
+    assert count == 2
+    assert len(captured) == 2
+    for command in captured:
+        assert command[command.index("archive-sync") + 1 : command.index("archive-sync") + 5] == [
+            "/app/.venv/bin/python",
+            "-m",
+            "sports_forecast.deploy.archive_sync_cli",
+            "sync",
+        ]
+        assert "--archive" in command
+        assert "--state-root" in command
+        assert command[command.index("--state-root") + 1] == "/app/sync-state"
+    assert captured[0][captured[0].index("--prefix") + 1] == "fixture-operational"
+    assert captured[1][captured[1].index("--prefix") + 1] == "fixture-source-state"
+
+
+@pytest.mark.parametrize(
+    ("present_type", "missing_type"),
+    (("canonical", "source-state"), ("source-state", "canonical")),
+)
+def test_first_rollout_requires_both_canonical_and_source_state_archives(
+    tmp_path: Path, monkeypatch, present_type: str, missing_type: str
+) -> None:
+    """Успешный rollout требует canonical и NHL source-state artifacts."""
+    archive_root = tmp_path / "archive"
+    if present_type == "canonical":
+        artifact = archive_root / "operational-archive" / f"sha256:{'a' * 64}"
+    else:
+        artifact = (
+            archive_root / "operational-archive" / "nhl-source-state" / "v1" / f"sha256:{'b' * 64}"
+        )
+    artifact.mkdir(parents=True)
+    manifest = artifact / "manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "scripts.run_production_first_rollout._run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(
+            command, 0, stdout=f"{manifest}\0", stderr=""
+        ),
+    )
+    monkeypatch.setattr(
+        "scripts.run_production_first_rollout._run_one_shot_checked",
+        lambda *_args, **_kwargs: None,
+    )
+
+    with pytest.raises(RuntimeError, match=f"{missing_type}"):
+        _sync_operational_archives(
+            ["docker", "compose", "--project-name", "fixture"],
+            values={"SF_OPERATIONAL_ARCHIVE_ROOT": str(archive_root)},
+        )
 
 
 def test_first_rollout_tests_prebuilt_image_archives_before_exact_publish() -> None:
