@@ -18,6 +18,10 @@ run_id="$(/usr/bin/docker compose --env-file "$compose_env_file" \
 if [[ -z "$run_id" ]]; then
   exit 0
 fi
+if [[ "$run_id" =~ ^stalled:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$ ]]; then
+  /usr/bin/bash deploy/systemd/recover-data-cycle.sh "${BASH_REMATCH[1]}"
+  exit $?
+fi
 if [[ ! "$run_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
   echo "Dispatcher вернул некорректный run id" >&2
   exit 1

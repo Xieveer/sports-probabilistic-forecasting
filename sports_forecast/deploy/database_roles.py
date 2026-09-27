@@ -12,6 +12,7 @@ RUNTIME_GRANTS = (
     "GRANT SELECT ON TABLE predictions, tournament_publication_states, canonical_events, canonical_event_revisions, calendar_coverages, odds_observations, odds_acquisition_attempts TO sf_api_reader",
     "GRANT SELECT ON TABLE data_cycle_runs, data_cycle_stage_results, pipeline_schedules, data_cycle_control_requests, data_cycle_dispatcher_state TO sf_control_api",
     "GRANT INSERT, UPDATE ON TABLE pipeline_schedules, data_cycle_dispatcher_state TO sf_control_api",
+    "GRANT EXECUTE ON FUNCTION public.mark_data_cycle_executor_stalled(text) TO sf_control_api",
     "GRANT INSERT (run_id, tournament, reason, requested_at, scheduled_for) ON TABLE data_cycle_runs TO sf_control_api",
     "GRANT INSERT (run_id, stage) ON TABLE data_cycle_stage_results TO sf_control_api",
     "GRANT INSERT ON TABLE data_cycle_control_requests TO sf_control_api",

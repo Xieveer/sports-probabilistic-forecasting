@@ -207,6 +207,11 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
         in statement
         for statement in control_grants
     )
+    assert any(
+        "GRANT EXECUTE ON FUNCTION public.mark_data_cycle_executor_stalled(text)" in statement
+        for statement in control_grants
+    )
+    assert not any("UPDATE (executor_stalled_at)" in statement for statement in control_grants)
     assert not any(
         "INSERT ON TABLE data_cycle_runs, data_cycle_stage_results" in statement
         for statement in control_grants

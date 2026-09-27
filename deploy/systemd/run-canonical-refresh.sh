@@ -2,6 +2,9 @@
 # Один scheduler run с durable Data Cycle outcome.
 set -euo pipefail
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${script_dir}/data-cycle-owner-guard.sh"
+
 pipeline_id="${1:?нужен идентификатор pipeline}"
 run_id="${2:?нужен заранее созданный run UUID}"
 if (( $# != 2 )); then
@@ -27,11 +30,21 @@ if [[ "$SF_TOURNAMENT" != "$pipeline_id" ]]; then
   echo "Pipeline не соответствует фиксированному tournament profile" >&2
   exit 2
 fi
+owner_id="${INVOCATION_ID:?systemd должен передать owner InvocationID}"
+if [[ ! "$owner_id" =~ ^[[:xdigit:]]{32}$ ]]; then
+  echo "Некорректный systemd InvocationID" >&2
+  exit 2
+fi
 export SF_WORKER_RUN_ID="${run_id}"
+export SF_DATA_CYCLE_RUN_ID="${run_id}"
+export SF_DATA_CYCLE_OWNER_ID="${owner_id,,}"
 compose=(/usr/bin/docker compose -f docker-compose.prod.yml)
 control() {
   "${compose[@]}" --profile worker run --rm --no-deps worker \
     /app/.venv/bin/python -m sports_forecast.orchestration.data_cycle_cli "$@"
+}
+run_with_heartbeat() {
+  data_cycle_run_with_heartbeat "$@"
 }
 active_stage="calendar"
 manifest_list=""
@@ -42,6 +55,10 @@ on_exit() {
     rm -f -- "${manifest_list}" || true
   fi
   if (( result != 0 )); then
+    if data_cycle_should_defer_terminal_failure; then
+      echo "Data Cycle heartbeat ownership uncertain; host recovery must prove stage stop" >&2
+      exit "${result}"
+    fi
     if [[ "${active_stage}" == "archive_sync" ]]; then
       control fail --run-id "${SF_WORKER_RUN_ID}" --code archive_sync_failed || true
     elif [[ "${SF_TOURNAMENT}" == "nhl" ]]; then
@@ -55,14 +72,23 @@ on_exit() {
   exit 0
 }
 trap on_exit EXIT
+trap 'data_cycle_handle_signal 143' TERM
+trap 'data_cycle_handle_signal 130' INT
+data_cycle_mark_claim_attempted
+generation="$(control claim --run-id "${SF_WORKER_RUN_ID}" --owner-id "${SF_DATA_CYCLE_OWNER_ID}")"
+if [[ ! "${generation}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Data Cycle claim вернул некорректную generation" >&2
+  exit 1
+fi
+export SF_DATA_CYCLE_GENERATION="${generation}"
 control start-stage --run-id "${SF_WORKER_RUN_ID}" --stage "${active_stage}"
 
-/usr/bin/docker compose -f docker-compose.prod.yml --profile source-acquisition run --rm --no-deps source-acquirer \
+run_with_heartbeat /usr/bin/docker compose -f docker-compose.prod.yml --profile source-acquisition run --rm --no-deps source-acquirer \
   /app/.venv/bin/python -m sports_forecast.orchestration.source_snapshot_cli \
   --tournament "${SF_TOURNAMENT}"
 
 # WorkerExecution remains the lower-level materialization outcome.
-/usr/bin/docker compose -f docker-compose.prod.yml --profile worker run --rm --no-deps worker \
+run_with_heartbeat /usr/bin/docker compose -f docker-compose.prod.yml --profile worker run --rm --no-deps worker \
   /app/.venv/bin/python -m sports_forecast.orchestration.canonical_full_refresh_cli \
   "tournament=${SF_TOURNAMENT}" "market=${SF_MARKET}" \
   "market_spec=${SF_MARKET_SPEC}" "algorithm=${SF_ALGORITHM}" "features=${SF_FEATURES}"
@@ -87,7 +113,7 @@ while IFS= read -r -d '' manifest; do
     prefix="${SF_NHL_SOURCE_STATE_PREFIX:-operational-archive/nhl-source-state/v1}"
   fi
   container_artifact="/app/archive/${relative}"
-  /usr/bin/docker compose -f docker-compose.prod.yml --profile operational-sync run --rm --no-deps archive-sync \
+  run_with_heartbeat /usr/bin/docker compose -f docker-compose.prod.yml --profile operational-sync run --rm --no-deps archive-sync \
     sync --archive "${container_artifact}" --state-root /app/sync-state --prefix "${prefix}"
   artifact_count=$((artifact_count + 1))
 done <"${manifest_list}"

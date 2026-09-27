@@ -1,6 +1,6 @@
 # TASK-025-8 — Восстановление Data Cycle без второго исполнителя
 
-> **Статус:** backlog
+> **Статус:** done; фактическое production включение остаётся release gate TASK-025-9
 > **Владелец:** Developer и Operations Agent
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -15,20 +15,20 @@ executor не запускается одновременно со старым.
 
 ## Критерии приёмки
 
-- [ ] Исполнитель получает уникальный generation/fencing token при claim;
+- [x] Исполнитель получает уникальный generation/fencing token при claim;
   устаревший owner не может записать terminal result или продолжить
   publication после нового claim.
-- [ ] При timeout сначала подтверждается остановка прежнего process/service
+- [x] При timeout сначала подтверждается остановка прежнего process/service
   владельца, затем выполняется recovery/новый claim. При невозможности
   подтвердить остановку run остаётся явно stalled/требует вмешательства;
   автоматического второго запуска нет.
-- [ ] Одновременно активен максимум один run на pipeline/турнир при нескольких
+- [x] Одновременно активен максимум один run на pipeline/турнир при нескольких
   API и dispatcher процессах; PostgreSQL concurrency test проверяет race.
-- [ ] Незапущенные стадии после crash получают `skipped` с безопасной причиной,
+- [x] Незапущенные стадии после crash получают `skipped` с безопасной причиной,
   фактически прерванная стадия — `failed`; история сохраняет предыдущий run.
-- [ ] Dispatcher heartbeat/owner state видны в status API и Telegram без
+- [x] Dispatcher heartbeat/owner state видны в status API и Telegram без
   раскрытия host details, секретов или произвольных команд.
-- [ ] Fault injection покрывает crash до/после claim, потерю heartbeat,
+- [x] Fault injection покрывает crash до/после claim, потерю heartbeat,
   зависший Worker, повторный callback и failover на ограниченном тестовом
   runtime. Реальный production timer включается только в release gate.
 
@@ -43,6 +43,13 @@ executor не запускается одновременно со старым.
 
 ## Handoff и отчёт
 
-- Отчёт выполнения: ожидается в `docs/changes/done/`.
-- Review: ожидается независимый Reviewer.
-- Commit/push: ожидается после review.
+- Recovery требует подтверждения systemd InvocationID и инвентаризации всех
+  Compose one-off контейнеров с совпадающими run ID, owner ID и generation;
+  если доказательство неполное, run остаётся stalled и требует ручного разбора.
+- Длительные стадии обновляют generation-guarded heartbeat; любой abnormal exit
+  после попытки claim не переводит run в terminal до host recovery.
+- [Отчёт выполнения и проверок](../../changes/done/TASK-025-8-executor-fencing.md).
+- Независимый повторный review: чистый; PostgreSQL 16 migration, grants и race
+  tests подтверждены Reviewer.
+- Runtime installation, backup/rollback evidence, включение scheduler timer и
+  первый ежедневный NHL run остаются в [TASK-025-9](TASK-025-9-release-readiness.md).

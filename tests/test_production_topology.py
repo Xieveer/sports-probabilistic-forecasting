@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import shlex
 import shutil
+import signal
 import subprocess
+import time
 import tomllib
 from pathlib import Path
 from typing import cast
@@ -213,10 +217,18 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     assert worker["environment"] == {
         "DATABASE_URL_FILE": "/run/secrets/worker_database_url",
         "SF_WORKER_RUN_ID": "${SF_WORKER_RUN_ID:?set a scheduler-generated id}",
+        "SF_DATA_CYCLE_RUN_ID": "${SF_DATA_CYCLE_RUN_ID:-untracked}",
+        "SF_DATA_CYCLE_GENERATION": "${SF_DATA_CYCLE_GENERATION:-0}",
+        "SF_DATA_CYCLE_OWNER_ID": "${SF_DATA_CYCLE_OWNER_ID:-untracked}",
         "SF_MODEL_RUNTIME_ROOT": "/app/models",
         "SF_APP_VERSION": "${SF_APP_VERSION:?set SF_APP_VERSION}",
         "SF_CANONICAL_SOURCE_CSV": "/app/data/source/nhl/current.csv",
         "SF_OPERATIONAL_ARCHIVE_ROOT": "/app/archive",
+    }
+    assert worker["labels"] == {
+        "com.sfp.data-cycle.run-id": "${SF_DATA_CYCLE_RUN_ID:-untracked}",
+        "com.sfp.data-cycle.owner-generation": "${SF_DATA_CYCLE_GENERATION:-0}",
+        "com.sfp.data-cycle.owner-id": "${SF_DATA_CYCLE_OWNER_ID:-untracked}",
     }
     assert worker["volumes"] == [
         "${SF_MODEL_RUNTIME_ROOT:?set SF_MODEL_RUNTIME_ROOT}:/app/models:ro",
@@ -225,6 +237,9 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     ]
     assert "SF_OBJECT_STORAGE_ACCESS_KEY_ID" not in cast(dict[str, str], worker["environment"])
     assert source_acquirer["environment"] == {
+        "SF_DATA_CYCLE_RUN_ID": "${SF_DATA_CYCLE_RUN_ID:-untracked}",
+        "SF_DATA_CYCLE_GENERATION": "${SF_DATA_CYCLE_GENERATION:-0}",
+        "SF_DATA_CYCLE_OWNER_ID": "${SF_DATA_CYCLE_OWNER_ID:-untracked}",
         "SF_CANONICAL_SOURCE_SNAPSHOT": "/app/data/source/nhl/current.csv",
         "ODDS_API_KEY_FREE_FILE": "/run/secrets/odds_api_key_free",
         "ODDS_API_KEY_20K_FILE": "/run/secrets/odds_api_key_20k",
@@ -234,6 +249,8 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     assert source_acquirer["volumes"] == [
         "${SF_CANONICAL_SOURCE_ROOT:?set SF_CANONICAL_SOURCE_ROOT}:/app/data/source/nhl",
     ]
+    assert source_acquirer["labels"] == worker["labels"]
+    assert archive_sync["labels"] == worker["labels"]
     assert archive_sync["profiles"] == ["operational-sync"]
     assert "entrypoint" not in archive_sync
     assert archive_sync["volumes"] == [
@@ -266,6 +283,7 @@ def test_systemd_scheduler_has_durable_cycle_before_calendar_acquisition() -> No
     )
     bridge = (SYSTEMD_DIR / "dispatch-data-cycle.sh").read_text(encoding="utf-8")
     runner = (SYSTEMD_DIR / "run-canonical-refresh.sh").read_text(encoding="utf-8")
+    recovery = (SYSTEMD_DIR / "recover-data-cycle.sh").read_text(encoding="utf-8")
 
     assert "EnvironmentFile=/etc/sports-forecast/refresh/%i.env" in service
     assert "dispatch-data-cycle.sh %i" in service
@@ -274,6 +292,12 @@ def test_systemd_scheduler_has_durable_cycle_before_calendar_acquisition() -> No
     assert "dispatch-data-cycle.sh nhl" in dispatcher_service
     assert "data-cycle-dispatcher" in bridge
     assert "systemctl start --no-block" in bridge
+    assert "recover-data-cycle.sh" in bridge
+    assert "owner-info --run-id" in recovery
+    assert "docker ps -aq" in recovery
+    assert "docker stop --time 10" in recovery
+    assert 'unit="sports-forecast-data-cycle@${run_id}.service"' in recovery
+    assert "inventory_complete" in recovery
     assert "sports-forecast-data-cycle@${run_id}.service" in bridge
     assert 'pipeline" != "nhl"' in bridge
     assert "EnvironmentFile=/etc/sports-forecast/refresh/nhl.env" in cycle_service
@@ -287,10 +311,159 @@ def test_systemd_scheduler_has_durable_cycle_before_calendar_acquisition() -> No
     assert runner.index("canonical_full_refresh_cli") < runner.index("archive-sync")
     assert "SF_NHL_SOURCE_STATE_PREFIX" in runner
     assert "SF_WORKER_RUN_ID" in runner
+    assert "claim --run-id" in runner
+    assert "SF_DATA_CYCLE_GENERATION" in runner
     assert "data_cycle_cli" in runner
     assert "--calendar-attempt" in runner
     assert "finish-run" in runner
+    assert "run_with_heartbeat()" in runner
+    assert runner.count("run_with_heartbeat /usr/bin/docker compose") >= 3
+    heartbeat_guard = (SYSTEMD_DIR / "data-cycle-owner-guard.sh").read_text(encoding="utf-8")
+    assert "control heartbeat --run-id" in heartbeat_guard
+    assert "data_cycle_mark_recovery_required" in heartbeat_guard
+    assert "host recovery must prove stage stop" in runner
+    assert 'source "${script_dir}/data-cycle-owner-guard.sh"' in runner
+    assert "trap 'data_cycle_handle_signal 143' TERM" in runner
+    assert "trap 'data_cycle_handle_signal 130' INT" in runner
+    assert runner.index("data_cycle_mark_claim_attempted") < runner.index(
+        'generation="$(control claim'
+    )
     assert "Unit=sports-forecast-canonical-refresh@%i.service" in timer
+
+
+def test_executor_term_does_not_terminalize_before_host_stop_proof(tmp_path: Path) -> None:
+    """TERM during/after claim leaves terminal failure to verified host recovery."""
+    guard = shlex.quote(str(SYSTEMD_DIR / "data-cycle-owner-guard.sh"))
+    fail_marker = shlex.quote(str(tmp_path / "terminal-fail-called"))
+    ready_marker = shlex.quote(str(tmp_path / "executor-ready"))
+    script = f"""
+set -euo pipefail
+source {guard}
+control() {{ touch {fail_marker}; }}
+on_exit() {{
+  result=$?
+  trap - EXIT
+  if (( result != 0 )); then
+    if data_cycle_should_defer_terminal_failure; then exit "${{result}}"; fi
+    control fail
+  fi
+  exit "${{result}}"
+}}
+trap on_exit EXIT
+trap 'data_cycle_handle_signal 143' TERM
+data_cycle_mark_claim_attempted
+touch {ready_marker}
+sleep 30 >/dev/null 2>&1 &
+wait $!
+"""
+    process = subprocess.Popen(
+        ["bash", "-c", script],
+        cwd=PROJECT_ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    ready = tmp_path / "executor-ready"
+    deadline = time.monotonic() + 3
+    while not ready.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert ready.exists(), "harness did not reach claimed-owner state"
+    os.killpg(process.pid, signal.SIGTERM)
+    process.wait(timeout=5)
+
+    assert process.returncode != 0
+    assert not (tmp_path / "terminal-fail-called").exists()
+
+
+def test_failed_compose_client_with_live_container_defers_terminal_failure(
+    tmp_path: Path,
+) -> None:
+    """Nonzero client status is not proof that its one-off container stopped."""
+    guard = shlex.quote(str(SYSTEMD_DIR / "data-cycle-owner-guard.sh"))
+    fail_marker = shlex.quote(str(tmp_path / "terminal-fail-called"))
+    live_container = shlex.quote(str(tmp_path / "container-still-live"))
+    script = f"""
+set -euo pipefail
+source {guard}
+control() {{ touch {fail_marker}; }}
+on_exit() {{
+  result=$?
+  trap - EXIT
+  if (( result != 0 )); then
+    if data_cycle_should_defer_terminal_failure; then exit "${{result}}"; fi
+    control fail
+  fi
+  exit "${{result}}"
+}}
+trap on_exit EXIT
+data_cycle_mark_claim_attempted
+fake_compose_client() {{ touch {live_container}; return 42; }}
+data_cycle_run_with_heartbeat fake_compose_client
+"""
+    result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=3,
+    )
+
+    assert result.returncode == 42
+    assert (tmp_path / "container-still-live").exists()
+    assert not (tmp_path / "terminal-fail-called").exists()
+
+
+def test_fast_compose_success_does_not_wait_for_heartbeat_tick(tmp_path: Path) -> None:
+    """Короткая завершившаяся стадия не ждёт polling интервал heartbeat."""
+    guard = shlex.quote(str(SYSTEMD_DIR / "data-cycle-owner-guard.sh"))
+    heartbeat_marker = shlex.quote(str(tmp_path / "heartbeat-called"))
+    script = f"""
+set -euo pipefail
+source {guard}
+control() {{ touch {heartbeat_marker}; }}
+SF_WORKER_RUN_ID=run-fast
+fake_compose_client() {{ return 0; }}
+data_cycle_run_with_heartbeat fake_compose_client
+"""
+    result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=3,
+    )
+
+    assert result.returncode == 0
+    assert not (tmp_path / "heartbeat-called").exists()
+
+
+def test_fast_compose_error_returns_without_heartbeat_hang(tmp_path: Path) -> None:
+    """Короткая ошибка стадии сразу возвращается и оставляет recovery-required."""
+    guard = shlex.quote(str(SYSTEMD_DIR / "data-cycle-owner-guard.sh"))
+    recovery_marker = shlex.quote(str(tmp_path / "recovery-required"))
+    script = f"""
+set -euo pipefail
+source {guard}
+data_cycle_mark_recovery_required() {{ data_cycle_recovery_required=1; touch {recovery_marker}; }}
+control() {{ return 0; }}
+SF_WORKER_RUN_ID=run-fast-error
+data_cycle_mark_claim_attempted
+fake_compose_client() {{ return 23; }}
+data_cycle_run_with_heartbeat fake_compose_client
+"""
+    result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=3,
+    )
+
+    assert result.returncode == 23
+    assert (tmp_path / "recovery-required").exists()
 
 
 def test_scheduler_profile_template_keeps_schedule_and_secrets_outside_repository() -> None:

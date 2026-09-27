@@ -194,9 +194,14 @@ def serialize_run(run: DataCycleRun) -> dict[str, Any]:
         "tournament": run.tournament,
         "reason": run.reason if run.reason in {"scheduled", "manual", "retry"} else None,
         "scheduled_for": run.scheduled_for,
-        "status": run.status
+        "status": (
+            "stalled"
+            if run.status == "running" and run.executor_stalled_at is not None
+            else run.status
+        )
         if run.status in {"waiting", "running", "success", "partial_success", "failed"}
         else None,
+        "executor_stalled_at": run.executor_stalled_at,
         "current_stage": run.current_stage if run.current_stage in DATA_CYCLE_STAGES else None,
         "failure_code": (
             run.failure_code if run.failure_code in DATA_CYCLE_FAILURE_CODES else None

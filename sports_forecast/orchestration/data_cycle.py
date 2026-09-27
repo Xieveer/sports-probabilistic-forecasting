@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from omegaconf import ListConfig
 
 from sports_forecast.config.loaders import load_tournament_config
+from sports_forecast.orchestration.data_cycle_recovery import HostStopEvidence
 from sports_forecast.service.db.engine import get_session
 from sports_forecast.service.db.repository import DataCycleRunRepository
 
@@ -27,6 +28,43 @@ def create_run(run_id: str, tournament: str, reason: str) -> None:
     """Зарезервировать run и результаты всех фиксированных стадий."""
     with get_session() as session:
         DataCycleRunRepository(session).create(run_id=run_id, tournament=tournament, reason=reason)
+
+
+def claim_executor(run_id: str, owner_id: str) -> int:
+    """Принять waiting run от одного systemd invocation и вернуть generation."""
+    with get_session() as session:
+        return DataCycleRunRepository(session).claim_executor(run_id, owner_id=owner_id)
+
+
+def heartbeat_executor(run_id: str, *, owner_generation: int, at: datetime | None = None) -> None:
+    """Продлить живое владение run для текущей executor generation."""
+    with get_session() as session:
+        DataCycleRunRepository(session).heartbeat_executor(
+            run_id, owner_generation=owner_generation, at=at
+        )
+
+
+def get_executor_owner(run_id: str) -> dict[str, object]:
+    """Прочитать приватную owner identity для ограниченного host recovery adapter."""
+    with get_session() as session:
+        run = DataCycleRunRepository(session).get(run_id)
+        if run is None or run.executor_owner_id is None or run.executor_generation < 1:
+            raise ValueError("Data Cycle executor owner отсутствует")
+        return {
+            "run_id": run.run_id,
+            "owner_id": run.executor_owner_id,
+            "generation": run.executor_generation,
+            "status": "stalled" if run.executor_stalled_at is not None else run.status,
+            "stalled_at": run.executor_stalled_at,
+        }
+
+
+def recover_executor(run_id: str, evidence: HostStopEvidence) -> None:
+    """Закрыть stalled run после проверки полного host evidence."""
+    with get_session() as session:
+        DataCycleRunRepository(session).recover_executor(
+            run_id, recovery_evidence=evidence, at=datetime.now(UTC)
+        )
 
 
 def start_stage(run_id: str, stage: str) -> None:

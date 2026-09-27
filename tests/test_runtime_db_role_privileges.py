@@ -31,6 +31,18 @@ def test_control_and_reader_roles_cannot_cross_their_database_boundaries() -> No
             connection.rollback()
             with pytest.raises(SQLAlchemyError):
                 connection.execute(text("UPDATE data_cycle_runs SET status='success' WHERE false"))
+            connection.rollback()
+            with pytest.raises(SQLAlchemyError):
+                connection.execute(
+                    text("UPDATE data_cycle_runs SET executor_stalled_at=NULL WHERE false")
+                )
+            connection.rollback()
+            assert (
+                connection.execute(
+                    text("SELECT public.mark_data_cycle_executor_stalled('missing-run')")
+                ).scalar_one()
+                is False
+            )
 
         with reader_engine.connect() as connection, pytest.raises(SQLAlchemyError):
             connection.execute(

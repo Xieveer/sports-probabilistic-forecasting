@@ -17,11 +17,12 @@ CRUD операции над таблицей ``predictions``.
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import and_, exists, func, insert, select
+from sqlalchemy import and_, exists, func, insert, select, update
 from sqlalchemy.engine import ScalarResult
 from sqlalchemy.orm import Session
 
@@ -812,11 +813,159 @@ class DataCycleRunRepository:
             raise RuntimeError("Не удалось прочитать созданный Data Cycle run")
         return run
 
-    def start_stage(self, run_id: str, stage: str, *, at: datetime | None = None) -> None:
+    def claim_executor(
+        self,
+        run_id: str,
+        *,
+        owner_id: str,
+        at: datetime | None = None,
+    ) -> int:
+        """Атомарно принять waiting run и выдать generation конкретному systemd owner."""
+        import re
+
+        if re.fullmatch(r"[0-9a-f]{32}", owner_id) is None:
+            raise ValueError("Некорректный systemd invocation ID executor")
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        generation = self.session.scalar(
+            update(DataCycleRun)
+            .where(
+                DataCycleRun.run_id == run_id,
+                DataCycleRun.status == "waiting",
+                DataCycleRun.__table__.c.executor_owner_id.is_(None),
+            )
+            .values(
+                executor_generation=DataCycleRun.executor_generation + 1,
+                executor_owner_id=owner_id,
+                executor_stalled_at=None,
+                status="running",
+                started_at=func.coalesce(DataCycleRun.started_at, now),
+                heartbeat_at=now,
+            )
+            .returning(DataCycleRun.executor_generation)
+        )
+        if generation is None:
+            run = self.get(run_id)
+            if run is None:
+                raise ValueError("Data Cycle run отсутствует")
+            raise ValueError("Executor claim уже принадлежит другому владельцу")
+        return int(generation)
+
+    def heartbeat_executor(
+        self,
+        run_id: str,
+        *,
+        owner_generation: int,
+        at: datetime | None = None,
+    ) -> None:
+        """Обновить heartbeat только текущим владельцем run."""
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        updated = self.session.execute(
+            update(DataCycleRun)
+            .where(
+                DataCycleRun.run_id == run_id,
+                DataCycleRun.status == "running",
+                DataCycleRun.executor_generation == owner_generation,
+                DataCycleRun.executor_owner_id == os.environ.get("SF_DATA_CYCLE_OWNER_ID"),
+                DataCycleRun.__table__.c.executor_owner_id.is_not(None),
+                DataCycleRun.__table__.c.executor_stalled_at.is_(None),
+            )
+            .values(heartbeat_at=now)
+        )
+        if updated.rowcount != 1:
+            raise RuntimeError("Data Cycle executor generation fenced")
+
+    def assert_executor_owner(self, run_id: str, *, owner_generation: int) -> None:
+        """Проверить ownership непосредственно перед входом в materialize/publication."""
+        self._require_owner_if_claimed(run_id, owner_generation)
+
+    def mark_executor_stalled(
+        self,
+        run_id: str,
+        *,
+        before: datetime,
+        at: datetime | None = None,
+    ) -> bool:
+        """Пометить устаревший heartbeat как stalled; не освобождать active slot."""
+        run = self.session.scalar(
+            select(DataCycleRun).where(DataCycleRun.run_id == run_id).with_for_update()
+        )
+        if (
+            run is None
+            or run.status != "running"
+            or run.executor_owner_id is None
+            or run.heartbeat_at is None
+            or run.heartbeat_at > _utc_naive_for_query(before)
+            or run.executor_stalled_at is not None
+        ):
+            return False
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        if self.session.get_bind().dialect.name == "postgresql":
+            marked = self.session.scalar(
+                select(func.public.mark_data_cycle_executor_stalled(run_id))
+            )
+            self.session.refresh(run, attribute_names=["executor_stalled_at"])
+            return bool(marked)
+
+        result = self.session.execute(
+            update(DataCycleRun)
+            .where(
+                DataCycleRun.run_id == run_id,
+                DataCycleRun.status == "running",
+                DataCycleRun.__table__.c.executor_owner_id.is_not(None),
+                DataCycleRun.__table__.c.executor_stalled_at.is_(None),
+                DataCycleRun.heartbeat_at <= _utc_naive_for_query(before),
+            )
+            .values(executor_stalled_at=now)
+        )
+        return int(result.rowcount or 0) == 1
+
+    def recover_executor(
+        self,
+        run_id: str,
+        *,
+        recovery_evidence: Any,
+        at: datetime | None = None,
+    ) -> None:
+        """Terminalize stalled run only after host verified unit and all run containers stopped."""
+        run = self._require_active(run_id)
+        if run.executor_owner_id is None or run.executor_generation < 1:
+            raise ValueError("Data Cycle не имеет принятого executor owner")
+        if run.executor_stalled_at is None:
+            raise ValueError("Executor ещё не отмечен как stalled")
+        validate = getattr(recovery_evidence, "validate_for", None)
+        if not callable(validate):
+            raise ValueError("Не предоставлено проверяемое host evidence")
+        stopped_count = validate(
+            run_id=run.run_id,
+            owner_id=run.executor_owner_id,
+            owner_generation=run.executor_generation,
+        )
+        now = _utc_naive_for_query(at or datetime.now(UTC))
+        verified_at = _utc_naive_for_query(recovery_evidence.verified_at)
+        if verified_at > now or verified_at < _utc_naive_for_query(run.executor_stalled_at):
+            raise ValueError("Host evidence не подтверждает остановку после stall")
+        run.executor_stalled_at = None
+        self.fail_run(
+            run_id,
+            failure_code="executor_interrupted",
+            at=now,
+            owner_generation=run.executor_generation,
+        )
+        run.owner_stop_verified_at = verified_at
+        run.stopped_container_count = stopped_count
+
+    def start_stage(
+        self,
+        run_id: str,
+        stage: str,
+        *,
+        owner_generation: int | None = None,
+        at: datetime | None = None,
+    ) -> None:
         """Атомарно отметить запуск фиксированной стадии и heartbeat цикла."""
         if stage not in DATA_CYCLE_STAGES:
             raise ValueError("Неизвестная стадия Data Cycle")
-        run = self._require_active(run_id)
+        run = self._require_owner_if_claimed(run_id, owner_generation)
         if stage in {"predictions", "publication"}:
             quality = self._stage(run_id, "quality")
             if quality.status not in {"success", "partial_success"}:
@@ -843,6 +992,7 @@ class DataCycleRunRepository:
         at: datetime | None = None,
         counts: dict[str, int] | None = None,
         failure_code: str | None = None,
+        owner_generation: int | None = None,
     ) -> None:
         """Завершить стадию безопасным outcome и скалярными счётчиками."""
         if stage not in DATA_CYCLE_STAGES or status not in {
@@ -861,7 +1011,7 @@ class DataCycleRunRepository:
             for key, value in counts.items()
         ):
             raise ValueError("Счётчики стадии должны быть неотрицательными целыми числами")
-        run = self._require_active(run_id)
+        run = self._require_owner_if_claimed(run_id, owner_generation)
         result = self._stage(run_id, stage)
         if status == "skipped" and result.status != "waiting":
             raise ValueError("В skipped переводится только незапущенная стадия")
@@ -893,6 +1043,7 @@ class DataCycleRunRepository:
         required_stages: Collection[str],
         at: datetime | None = None,
         summary: dict[str, Any] | None = None,
+        owner_generation: int | None = None,
     ) -> None:
         """Записать итог цикла; неисполненные стадии получают явный skipped."""
         if status not in {"auto", "success", "partial_success", "failed"}:
@@ -902,7 +1053,7 @@ class DataCycleRunRepository:
             raise ValueError(
                 "Pipeline policy содержит неизвестный или пустой набор required stages"
             )
-        run = self._require_active(run_id)
+        run = self._require_owner_if_claimed(run_id, owner_generation)
         now = _utc_naive_for_query(at or datetime.now(UTC))
         running_stages = [stage.stage for stage in run.stages if stage.status == "running"]
         if run.current_stage is not None or running_stages:
@@ -970,9 +1121,16 @@ class DataCycleRunRepository:
             separators=(",", ":"),
         )
 
-    def fail_run(self, run_id: str, *, failure_code: str, at: datetime | None = None) -> None:
+    def fail_run(
+        self,
+        run_id: str,
+        *,
+        failure_code: str,
+        owner_generation: int | None = None,
+        at: datetime | None = None,
+    ) -> None:
         """Завершить активный цикл как failed, скрывая исходные exception details."""
-        run = self._require_active(run_id)
+        run = self._require_owner_if_claimed(run_id, owner_generation)
         stage_failure_codes = {
             "calendar": "source_fetch_failed",
             "data_odds": "odds_acquisition_failed",
@@ -1120,10 +1278,38 @@ class DataCycleRunRepository:
         return result
 
     def _require_active(self, run_id: str) -> DataCycleRun:
-        run = self.get(run_id)
+        run = self.session.scalar(
+            select(DataCycleRun).where(DataCycleRun.run_id == run_id).with_for_update()
+        )
         if run is None or run.status not in {"waiting", "running"}:
             raise ValueError("Data Cycle run отсутствует или уже завершён")
-        return run
+        return cast(DataCycleRun, run)
+
+    def _require_owner_if_claimed(self, run_id: str, owner_generation: int | None) -> DataCycleRun:
+        if owner_generation is None:
+            raw_generation = os.environ.get("SF_DATA_CYCLE_GENERATION")
+            if raw_generation:
+                try:
+                    owner_generation = int(raw_generation)
+                except ValueError as exc:
+                    raise ValueError("Некорректная executor generation") from exc
+        run = self.session.scalar(
+            select(DataCycleRun).where(DataCycleRun.run_id == run_id).with_for_update()
+        )
+        if run is None:
+            raise ValueError("Data Cycle run отсутствует")
+        if run.executor_owner_id is not None and (
+            owner_generation != run.executor_generation
+            or os.environ.get("SF_DATA_CYCLE_OWNER_ID") != run.executor_owner_id
+            or run.status not in {"waiting", "running"}
+            or run.executor_stalled_at is not None
+        ):
+            raise RuntimeError("Data Cycle executor generation fenced")
+        if run.status not in {"waiting", "running"}:
+            raise ValueError("Data Cycle run уже завершён")
+        if run.executor_owner_id is None and owner_generation is not None:
+            raise RuntimeError("Data Cycle run has no matching executor claim")
+        return cast(DataCycleRun, run)
 
 
 class ModelRegistryRepository:

@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from omegaconf import OmegaConf
 from sqlalchemy import create_engine
 
@@ -191,7 +192,6 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
             ].completed_at.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
     finally:
         reset_engine()
-        engine.dispose()
 
 
 def test_blocked_publication_is_hidden_from_upcoming_predictions() -> None:
@@ -234,6 +234,35 @@ def test_blocked_publication_is_hidden_from_upcoming_predictions() -> None:
     finally:
         reset_engine()
         engine.dispose()
+
+
+def test_publication_transaction_rejects_stale_executor_generation(monkeypatch) -> None:
+    """Generation change after earlier stages is rejected at publication boundary."""
+    from sports_forecast.orchestration.canonical_full_refresh import (
+        _assert_run_publication_owner,
+    )
+    from sports_forecast.service.db.models import Base
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with get_session(engine=engine) as session:
+        repository = DataCycleRunRepository(session)
+        repository.create(run_id="run-stale-publication", tournament="nhl", reason="scheduled")
+        repository.claim_executor(
+            "run-stale-publication",
+            owner_id="aabbccdd00112233aabbccdd00112233",
+            at=datetime(2026, 9, 26, 10, tzinfo=UTC),
+        )
+
+    monkeypatch.setenv("SF_DATA_CYCLE_OWNER_ID", "aabbccdd00112233aabbccdd00112233")
+    monkeypatch.setenv("SF_DATA_CYCLE_GENERATION", "2")
+    with (
+        get_session(engine=engine) as session,
+        pytest.raises(RuntimeError, match="generation fenced"),
+    ):
+        _assert_run_publication_owner(session, "run-stale-publication")
+    reset_engine()
+    engine.dispose()
 
 
 def test_full_refresh_blocks_slice_when_expired_prediction_has_no_result(tmp_path: Path) -> None:

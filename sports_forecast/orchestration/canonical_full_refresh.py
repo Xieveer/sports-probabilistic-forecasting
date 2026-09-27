@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -109,12 +110,29 @@ def _provenance_id(value: object) -> str:
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
+def _assert_run_publication_owner(session: Session, run_id: str) -> None:
+    """Проверить fencing под row lock в транзакции DB publication write."""
+    cycles = DataCycleRunRepository(session)
+    run = cycles.get(run_id)
+    if run is None or run.executor_owner_id is None:
+        return
+    raw_generation = os.environ.get("SF_DATA_CYCLE_GENERATION")
+    if raw_generation is None:
+        raise RuntimeError("Data Cycle executor generation is required for publication")
+    try:
+        generation = int(raw_generation)
+    except ValueError as exc:
+        raise ValueError("Некорректная Data Cycle generation") from exc
+    cycles.assert_executor_owner(run_id, owner_generation=generation)
+
+
 def _record_publication_state(
     cfg: DictConfig, *, run_id: str, result: FullRefreshResult
 ) -> FullRefreshResult:
     """Скрыть failed slice либо открыть только успешно materialized витрину."""
     market = str(cfg.market.get("name", cfg.market.get("family", "winner")))
     with get_session() as session:
+        _assert_run_publication_owner(session, run_id)
         PredictionRepository(session).set_publication_state(
             tournament=str(cfg.tournament.name),
             market=market,
@@ -237,6 +255,8 @@ def run_full_refresh(
     """
     tournament = str(cfg.tournament.name)
     with get_session() as session:
+        cycle = DataCycleRunRepository(session)
+        _assert_run_publication_owner(session, run_id)
         locks = RefreshLockRepository(session)
         executions = WorkerExecutionRepository(session)
         if not locks.acquire(tournament=tournament, run_id=run_id):
@@ -364,6 +384,7 @@ def run_full_refresh(
             )
             _start_cycle_stage(run_id, "publication")
             with get_session() as session:
+                _assert_run_publication_owner(session, run_id)
                 published = materialize_predictions(runtime_cfg, version="prod", session=session)
                 readiness_as_of = datetime.now(UTC)
                 result = FullRefreshResult(

@@ -26,6 +26,7 @@ DEFAULT_ENABLED = True
 DEFAULT_BASE_TIME = "10:00"
 DEFAULT_TIMEZONE = "Europe/Moscow"
 DEFAULT_INTERVAL_HOURS = 24
+EXECUTOR_STALE_AFTER = timedelta(minutes=95)
 
 
 class ScheduleRevisionConflictError(Exception):
@@ -193,6 +194,16 @@ def dispatch_due_run(
     """Записать heartbeat и схлопнуть просроченные slots максимум в один run."""
     _validate_pipeline(pipeline_id)
     heartbeat_dispatcher(session, dispatcher_id, now=now)
+    repository = DataCycleRunRepository(session)
+    active = repository.get_current(pipeline_id)
+    if active is not None and active.status == "running":
+        repository.mark_executor_stalled(
+            active.run_id,
+            before=utc_naive(now - EXECUTOR_STALE_AFTER),
+            at=now,
+        )
+        if active.executor_stalled_at is not None:
+            return active, 0
     schedule = get_or_create_schedule(session, pipeline_id, now=now)
     schedule = session.scalar(
         select(PipelineSchedule).where(PipelineSchedule.id == schedule.id).with_for_update()
@@ -233,7 +244,6 @@ def dispatch_due_run(
     )
     schedule.last_run_at = now_db
 
-    repository = DataCycleRunRepository(session)
     active = repository.get_current(pipeline_id)
     if active is not None:
         schedule.last_missed_slots = due_count

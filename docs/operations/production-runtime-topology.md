@@ -59,11 +59,20 @@ index. Dispatcher блокирует schedule row на время due-slot reser
 active-run gate. Старый timer не исполняет собственную cadence поверх business
 schedule.
 
-При stale heartbeat Control API показывает dispatcher недоступным. Run `running`
-не перезапускается только из-за истечения heartbeat; recovery/fencing требует
-отдельной процедуры TASK-025-8. После rollback восстанавливается совместимая
-пара `image + systemd unit set`: старый image требует старого wrapper contract.
-Data Cycle history и additive schema не удаляются.
+При stale heartbeat Control API показывает dispatcher недоступным, а активный
+run становится `stalled`, не освобождая active slot. Следующий dispatcher tick
+передаёт stalled run в `recover-data-cycle.sh`. Скрипт сверяет owner ID с
+systemd `InvocationID`, останавливает соответствующий unit и все найденные
+Compose one-off контейнеры, сверяет их run ID/generation/owner labels и только
+после пустой проверки работающих контейнеров отправляет host evidence для
+terminal recovery. Неполная или противоречивая инвентаризация завершает recovery
+ошибкой; слот остаётся занят и требует ручного разбора. Heartbeat timeout сам
+по себе никогда не разрешает второй claim. Детали реализации и fault tests —
+[TASK-025-8](../backlog/tasks/TASK-025-8-executor-fencing.md).
+
+После rollback восстанавливается совместимая пара `image + systemd unit set`:
+старый image требует старого wrapper contract. Data Cycle history и additive
+schema не удаляются.
 
 До включения timer Operations Agent выполняет dry-run: `docker compose config`,
 `bash -n deploy/systemd/dispatch-data-cycle.sh`,

@@ -31,7 +31,14 @@ def main(argv: list[str] | None = None) -> int:
                 args.dispatcher_id,
                 now=now,
             )
-            run_id = run.run_id if run is not None and run.status == "waiting" else ""
+            if run is None:
+                run_id = ""
+            elif run.status == "waiting":
+                run_id = run.run_id
+            elif run.executor_stalled_at is not None:
+                run_id = f"stalled:{run.run_id}"
+            else:
+                run_id = ""
         print(run_id)
         return 0
     except (OSError, ValueError, SQLAlchemyError):

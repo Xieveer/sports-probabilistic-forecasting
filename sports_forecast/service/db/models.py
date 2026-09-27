@@ -326,6 +326,11 @@ class DataCycleRun(Base):
     started_at: datetime | None = Column(DateTime, nullable=True)
     heartbeat_at: datetime | None = Column(DateTime, nullable=True)
     completed_at: datetime | None = Column(DateTime, nullable=True)
+    executor_generation: int = Column(Integer, nullable=False, default=0, server_default="0")
+    executor_owner_id: str | None = Column(String(64), nullable=True)
+    executor_stalled_at: datetime | None = Column(DateTime, nullable=True)
+    owner_stop_verified_at: datetime | None = Column(DateTime, nullable=True)
+    stopped_container_count: int | None = Column(Integer, nullable=True)
 
     stages = relationship(
         "DataCycleStageResult", back_populates="run", cascade="all, delete-orphan"
@@ -334,6 +339,8 @@ class DataCycleRun(Base):
     __table_args__ = (
         CheckConstraint("status IN ('waiting','running','success','partial_success','failed')"),
         CheckConstraint("reason IN ('scheduled','manual','retry')"),
+        CheckConstraint("executor_generation >= 0"),
+        CheckConstraint("stopped_container_count IS NULL OR stopped_container_count >= 0"),
         Index(
             "uq_data_cycle_active_tournament",
             "tournament",
