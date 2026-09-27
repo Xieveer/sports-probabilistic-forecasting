@@ -417,6 +417,10 @@ def materialize_predictions(
 
     except Exception:
         logger.exception("Ошибка материализации для %s", tournament_name)
+        if session is not None:
+            # Внешний владелец транзакции обязан получить ошибку, чтобы отозвать
+            # stale-метки и любые частичные изменения публикации.
+            raise
         return False
 
 

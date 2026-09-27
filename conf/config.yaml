@@ -31,6 +31,9 @@ defaults:
 # Seed для воспроизводимости
 seed: 42
 
+# Сбор будущих коэффициентов в общем Data Cycle (runner переопределяет только true/false).
+data_odds_enabled: true
+
 # Логирование
 logging:
   level: INFO

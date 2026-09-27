@@ -20,6 +20,18 @@ if [[ ! "$run_id" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:
   exit 2
 fi
 
+data_odds_enabled=true
+if [[ ${SF_DATA_ODDS_ENABLED+x} ]]; then
+  data_odds_enabled="${SF_DATA_ODDS_ENABLED}"
+fi
+case "$data_odds_enabled" in
+  true|false) ;;
+  *)
+    echo "SF_DATA_ODDS_ENABLED должен быть true или false" >&2
+    exit 2
+    ;;
+esac
+
 : "${SF_TOURNAMENT:?нужен SF_TOURNAMENT}"
 : "${SF_MARKET:?нужен SF_MARKET}"
 : "${SF_MARKET_SPEC:?нужен SF_MARKET_SPEC}"
@@ -85,13 +97,14 @@ control start-stage --run-id "${SF_WORKER_RUN_ID}" --stage "${active_stage}"
 
 run_with_heartbeat /usr/bin/docker compose -f docker-compose.prod.yml --profile source-acquisition run --rm --no-deps source-acquirer \
   /app/.venv/bin/python -m sports_forecast.orchestration.source_snapshot_cli \
-  --tournament "${SF_TOURNAMENT}"
+  --tournament "${SF_TOURNAMENT}" --odds-enabled "${data_odds_enabled}"
 
 # WorkerExecution remains the lower-level materialization outcome.
 run_with_heartbeat /usr/bin/docker compose -f docker-compose.prod.yml --profile worker run --rm --no-deps worker \
   /app/.venv/bin/python -m sports_forecast.orchestration.canonical_full_refresh_cli \
   "tournament=${SF_TOURNAMENT}" "market=${SF_MARKET}" \
   "market_spec=${SF_MARKET_SPEC}" "algorithm=${SF_ALGORITHM}" "features=${SF_FEATURES}" \
+  "data_odds_enabled=${data_odds_enabled}" \
   "hydra/job_logging=stdout" "hydra.output_subdir=null"
 active_stage="pipeline"
 

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, Query
+from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from sports_forecast.service.db.engine import get_session
+from sports_forecast.service.db.models import DataCycleRun, DataCycleStageResult
 from sports_forecast.service.db.repository import CalendarRepository
 from sports_forecast.service.event_readiness import evaluate_event_readiness
 from sports_forecast.service.readiness_policy import load_readiness_policy
@@ -45,6 +49,43 @@ def calendar_window(now: datetime, period: CalendarPeriod) -> tuple[datetime, da
     return max(start, now.astimezone(UTC)), end
 
 
+def _latest_cycle_disables_odds(session: Session, tournament: str) -> bool:
+    """Узнать режим из последней завершённой стадии odds, пропуская незавершённые циклы."""
+    terminal_statuses = {"success", "partial_success", "failed", "skipped"}
+    run_id = cast(ColumnElement[str], DataCycleRun.run_id)
+    stage_run_id = cast(ColumnElement[str], DataCycleStageResult.run_id)
+    run_tournament = cast(ColumnElement[str], DataCycleRun.tournament)
+    stage_name = cast(ColumnElement[str], DataCycleStageResult.stage)
+    stage_status = cast(ColumnElement[str], DataCycleStageResult.status)
+    stage_completed_at = cast(ColumnElement[datetime | None], DataCycleStageResult.completed_at)
+    stage_counts = cast(ColumnElement[str | None], DataCycleStageResult.counts_json)
+    stage_id = cast(ColumnElement[int], DataCycleStageResult.id)
+    stages = (
+        session.query(DataCycleStageResult)
+        .join(DataCycleRun, run_id == stage_run_id)
+        .filter(
+            run_tournament == tournament,
+            stage_name == "data_odds",
+            stage_status.in_(terminal_statuses),
+            stage_completed_at.is_not(None),
+            stage_counts.is_not(None),
+        )
+        .order_by(stage_completed_at.desc(), stage_id.desc())
+        .all()
+    )
+    for stage in stages:
+        if not stage.counts_json:
+            continue
+        try:
+            counts = json.loads(stage.counts_json)
+        except json.JSONDecodeError:
+            continue
+        disabled = counts.get("disabled") if isinstance(counts, dict) else None
+        if isinstance(disabled, int) and not isinstance(disabled, bool) and disabled in (0, 1):
+            return disabled == 1
+    return False
+
+
 @router.get("/{tournament}", response_model=CalendarResponse)
 def get_calendar(
     tournament: str,
@@ -70,6 +111,7 @@ def get_calendar(
         predictions_by_event, odds_by_event, attempts_by_event = repository.get_readiness_data(
             events
         )
+        odds_enabled = not _latest_cycle_disables_odds(session, tournament)
         event_readiness = {
             event.id: evaluate_event_readiness(
                 event,
@@ -78,6 +120,7 @@ def get_calendar(
                 load_readiness_policy(event.tournament),
                 now,
                 odds_attempts=attempts_by_event[event.id],
+                odds_enabled=odds_enabled,
             )
             for event in events
         }

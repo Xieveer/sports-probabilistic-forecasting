@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
@@ -17,7 +18,9 @@ from sports_forecast.service.db.models import (
     CanonicalEvent,
     CanonicalEventRevision,
     DataCycleRun,
+    DataCycleStageResult,
     OddsAcquisitionAttempt,
+    OddsObservation,
 )
 from sports_forecast.service.routers import calendar
 from sports_forecast.utils.bookmaker_calendar import bookmaker_window
@@ -188,6 +191,138 @@ def test_calendar_exposes_failed_odds_attempt_for_eligible_event(monkeypatch) ->
     assert readiness["status"] == "failed"
     assert readiness["reason_code"] == "quota_exhausted"
     assert readiness["last_attempt_at"] == "2026-09-26T00:00:00Z"
+
+
+def test_disabled_latest_data_cycle_hides_historical_odds_readiness(monkeypatch) -> None:
+    """OFF run делает API readiness missing без удаления старой линии и failed attempt."""
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        event = CanonicalEvent(
+            sport="ice_hockey",
+            tournament="nhl",
+            source="nhl_web_api",
+            source_event_id="off-with-history",
+            scheduled_at=datetime(2026, 9, 26, 1),
+            status="scheduled",
+            current_revision_sha256="d" * 64,
+            home_participant="NYR",
+            away_participant="PIT",
+        )
+        session.add(event)
+        failed_run = DataCycleRun(
+            run_id="historical-failed-odds",
+            tournament="nhl",
+            reason="scheduled",
+            status="failed",
+            requested_at=datetime(2026, 9, 25, 23),
+        )
+        disabled_run = DataCycleRun(
+            run_id="latest-odds-disabled",
+            tournament="nhl",
+            reason="scheduled",
+            status="partial_success",
+            requested_at=datetime(2026, 9, 26, 0),
+        )
+        waiting_run = DataCycleRun(
+            run_id="next-cycle-waiting",
+            tournament="nhl",
+            reason="scheduled",
+            status="waiting",
+            requested_at=datetime(2026, 9, 26, 1),
+        )
+        session.add_all([failed_run, disabled_run, waiting_run])
+        session.flush()
+        session.add_all(
+            [
+                OddsAcquisitionAttempt(
+                    run_id=failed_run.run_id,
+                    tournament="nhl",
+                    provider="the_odds_api_v4",
+                    status="failed",
+                    failure_code="quota_exhausted",
+                    retrieved_at=datetime(2026, 9, 26, 0),
+                    window_from=datetime(2026, 9, 26, 1),
+                    window_to=datetime(2026, 9, 26, 1),
+                    provider_events=0,
+                    matched_events=0,
+                    missing_events=1,
+                    rejected_events=0,
+                ),
+                OddsObservation(
+                    canonical_event_id=event.id,
+                    market="winner",
+                    market_spec="winner_withOT",
+                    bookmaker="pinnacle",
+                    event_scheduled_at=event.scheduled_at,
+                    event_home_participant="NYR",
+                    event_away_participant="PIT",
+                    observed_at=datetime(2026, 9, 25, 20),
+                    retrieved_at=datetime(2026, 9, 25, 20),
+                    values_json='{"home":1.9,"away":2.0}',
+                    source="fixture",
+                ),
+                DataCycleStageResult(
+                    run_id=disabled_run.run_id,
+                    stage="data_odds",
+                    status="partial_success",
+                    counts_json=json.dumps({"disabled": 1, "canonical_events": 1}),
+                    completed_at=datetime(2026, 9, 26, 0, 30),
+                ),
+            ]
+        )
+        session.commit()
+
+    @contextmanager
+    def _get_test_session():
+        test_session = Session(engine)
+        try:
+            yield test_session
+        finally:
+            test_session.close()
+
+    monkeypatch.setattr(calendar, "get_session", _get_test_session)
+    monkeypatch.setattr(calendar, "utc_now", lambda: datetime(2026, 9, 26, 0, tzinfo=UTC))
+    try:
+        client = TestClient(app)
+        disabled_response = client.get("/calendar/nhl", params={"period": "today"})
+        with Session(engine) as session:
+            enabled_run = DataCycleRun(
+                run_id="odds-reenabled",
+                tournament="nhl",
+                reason="scheduled",
+                status="partial_success",
+                requested_at=datetime(2026, 9, 26, 2),
+            )
+            session.add(enabled_run)
+            session.flush()
+            session.add(
+                DataCycleStageResult(
+                    run_id=enabled_run.run_id,
+                    stage="data_odds",
+                    status="success",
+                    counts_json=json.dumps({"disabled": 0, "canonical_events": 1}),
+                    completed_at=datetime(2026, 9, 26, 2, 30),
+                )
+            )
+            session.commit()
+        enabled_response = client.get("/calendar/nhl", params={"period": "today"})
+    finally:
+        engine.dispose()
+
+    assert disabled_response.status_code == 200
+    odds_readiness = disabled_response.json()["events"][0]["odds_readiness"]
+    assert odds_readiness["status"] == "missing"
+    assert odds_readiness["reason_code"] == "collection_disabled"
+    assert odds_readiness["available"] == []
+    assert enabled_response.status_code == 200
+    enabled_readiness = enabled_response.json()["events"][0]["odds_readiness"]
+    assert enabled_readiness["status"] == "failed"
+    assert enabled_readiness["reason_code"] == "quota_exhausted"
 
 
 def test_calendar_distinguishes_confirmed_empty_period_from_unknown(monkeypatch) -> None:

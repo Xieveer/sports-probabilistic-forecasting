@@ -1,18 +1,18 @@
 # TASK-025-9 — Production выпуск и проверка NHL
 
-> **Статус:** in_progress — v1.2.4 serving healthy; календарь готов, odds и publication failed
+> **Статус:** in_progress — v1.2.5 serving healthy; calendar готов, таймер disabled
 > **Владелец:** Product Owner и Operations Agent
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
 > **ADR:** [ADR-026](../../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
 
-> v1.2.4 заполнил календарь: 187 матчей за 30 дней, coverage `complete`.
-> Ручной цикл выявил ошибки конфигурации Odds API и публикации прогнозов;
-> готовится v1.2.5. Критерии NHL production acceptance ниже не меняются.
+> v1.2.5 обслуживает календарь: 187 матчей за 30 дней, coverage `complete`.
+> Три Odds API ключа получили `INVALID_KEY`; владелец выбрал продолжение
+> без odds. Готовится v1.2.6 с явным OFF-режимом, таймер пока выключен.
 
 ## Результат
 
-Довести исправленный release candidate до immutable tag `v1.2.5`,
+Довести исправленный release candidate до immutable tag `v1.2.6`,
 запустить NHL Data Cycle по
 расписанию и подтвердить работу бота, API и ежедневного scheduler на
 production. Тег `v1.2.1` остаётся неизменным; футбольный production pipeline
@@ -22,7 +22,7 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
 
 - [ ] Все функциональные TASK инициативы прошли независимое review, full EPIC
   review, локальные проверки и terminal PR CI нового кандидата.
-  `pyproject.toml` и handoff указывают `1.2.5 candidate`;
+  `pyproject.toml` и handoff указывают `1.2.6 candidate`;
   `make production-check` должен пройти для final candidate.
 - [ ] Operations имеет привилегированное read-only evidence текущих image
   digests, Docker/DB состояния, последнего NHL run, календарного покрытия,
@@ -33,8 +33,9 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
   `BOT_NOTIFICATION_DESTINATIONS_FILE` доступен только боту, каждый alias
   соответствует ровно одному chat ID и оба списка совпадают. Отсутствие
   или расхождение блокирует включение Data Cycle.
-- [ ] Измерены длительность полного NHL цикла и quota future odds; выбранные
-  cadence/allowlist не создают overlap. Старый timer и новый dispatcher
+- [ ] Измерены длительность полного NHL цикла и подтверждено отсутствие
+  provider HTTP в odds OFF-режиме; выбранные cadence/allowlist не создают
+  overlap. Старый timer и новый dispatcher
   переключаются взаимоисключающе, с проверкой disabled/enabled и следующего
   trigger. На preflight 2026-09-26 старый NHL timer был disabled/inactive.
 - [ ] Reviewer создаёт tag только на проверенном commit в `main`. Tag pipeline
@@ -47,7 +48,7 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
   допустимый журнал и отсутствие дубля цикла. Проверка не публикует секреты
   или полный внешний ответ.
 - [ ] До Worker run установлен и проверен immutable model bundle с
-  `app_version=1.2.5` из неизменённых одобренных весов/features; старый
+  `app_version=1.2.6` из неизменённых одобренных весов/features; старый
   `current` и checksums сохранены для rollback.
 - [ ] После первого scheduled запуска подтверждены run_id, дата/время,
   стадии, фактическое 30-дневное coverage и сообщение администратору.
@@ -96,6 +97,25 @@ disabled. [TASK-025-16](TASK-025-16-odds-secret-files-and-stdout-logging.md)
 [TASK-025-17](TASK-025-17-promoted-feature-contract.md) закрепляет сбор
 признаков по promoted contract. Для v1.2.5 нужен новый
 model wrapper с прежними весами и features.
+
+v1.2.5 PR/tag/evidence и serving rollout прошли: API/bot healthy, calendar
+7d 34/30d 187 с coverage `complete`. Два ручных run
+`56c0ab25-b17d-496e-bb91-6b85bc6f6521` и
+`8d2f9806-3ffd-4441-9ba6-db653578a0e1` завершились
+`failed/prediction_failed`: фактический systemd `nhl.env` сначала
+указывал Worker/version v1.2.4, затем algorithm `catboost` вместо
+promoted `catboost_reg`. Profile исправлен и проверен по actual systemd
+EnvironmentFiles, exact manifest и model contract. Оба run закрыты после
+host stop proof, outbox доставлен один раз на run, active0. Три distinct
+Odds API ключа дали HTTP 401 `INVALID_KEY`; владелец решил продолжать без
+odds. [TASK-025-18](TASK-025-18-optional-future-odds.md) добавляет явное
+отключение необязательной стадии. Оба timer disabled; публикация прогнозов
+и первый плановый run остаются runtime gates. Последний post-failure backup
+`a77fbf3b…` прошёл catalog, isolated restore, off-host hash и третью копию.
+Изолированный replay v1.2.5 подтвердил запись 1 834 прогнозов и 187
+eligible future matches, но обнаружил нулевые in-transaction counters при
+`autoflush=False`. Исправление в
+[TASK-025-19](TASK-025-19-publication-count-flush.md) входит в v1.2.6.
 
 Исторический preflight до ограниченного rollout v1.2.1: Operations Agent 2026-09-26
 подтвердил установленный unit/drop-in NHL timer и конфигурацию 10:00

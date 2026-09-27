@@ -157,6 +157,30 @@ def _provenance_id(value: object) -> str:
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
+def _data_odds_enabled(cfg: DictConfig) -> bool:
+    """Принять лишь bool из Hydra config; некорректное значение закрывает refresh."""
+    value = cfg.get("data_odds_enabled", True)
+    if not isinstance(value, bool):
+        raise ValueError("data_odds_enabled должен быть boolean")
+    return value
+
+
+def _count_scheduled_data_odds_events(session: Session, *, tournament: str, at: datetime) -> int:
+    """Посчитать canonical scheduled events в стандартном 30-дневном окне Odds API."""
+    reference = at.astimezone(UTC).replace(tzinfo=None) if at.tzinfo is not None else at
+    return int(
+        session.scalar(
+            select(func.count(CanonicalEvent.id)).where(
+                CanonicalEvent.tournament == tournament,
+                CanonicalEvent.status == "scheduled",
+                CanonicalEvent.scheduled_at >= reference,
+                CanonicalEvent.scheduled_at <= reference + timedelta(days=30),
+            )
+        )
+        or 0
+    )
+
+
 def _assert_run_publication_owner(session: Session, run_id: str) -> None:
     """Проверить fencing под row lock в транзакции DB publication write."""
     cycles = DataCycleRunRepository(session)
@@ -248,6 +272,7 @@ def _readiness_counts(
     *,
     tournament: str,
     at: datetime,
+    odds_enabled: bool = True,
 ) -> dict[str, int]:
     """Count event readiness on one explicit calendar window and timestamp."""
     selected = _eligible_calendar_events(session, tournament=tournament, at=at)
@@ -272,6 +297,7 @@ def _readiness_counts(
             policy,
             at,
             attempts.get(event.id, []),
+            odds_enabled,
         )
         prediction_state = readiness["prediction_readiness"]["status"]
         odds_state = readiness["odds_readiness"]["status"]
@@ -300,6 +326,7 @@ def run_full_refresh(
     использованы execution/freshness lifecycle следующего среза. Здесь rebuild
     намеренно не читает persistent ``processed/inference_*.parquet``.
     """
+    odds_enabled = _data_odds_enabled(cfg)
     tournament = str(cfg.tournament.name)
     with get_session() as session:
         cycle = DataCycleRunRepository(session)
@@ -338,28 +365,44 @@ def run_full_refresh(
         else:
             _start_cycle_stage(run_id, "data_odds")
         if cycle_present:
-            with get_session() as session:
-                attempt = run_nhl_future_odds_batch(
-                    session,
-                    run_id=run_id,
-                    now=refreshed_at,
-                )
-            stage_status = attempt.status
-            if stage_status == "success" and attempt.missing_events > 0:
+            if odds_enabled:
+                with get_session() as session:
+                    attempt = run_nhl_future_odds_batch(
+                        session,
+                        run_id=run_id,
+                        now=refreshed_at,
+                    )
+                stage_status = attempt.status
+                canonical_events = attempt.matched_events + attempt.missing_events
+                missing_events = attempt.missing_events
+                stage_errors = int(attempt.status == "failed")
+                if stage_status == "success" and missing_events > 0:
+                    stage_status = "partial_success"
+                failure_code = "odds_acquisition_failed" if attempt.status == "failed" else None
+            else:
+                with get_session() as session:
+                    canonical_events = _count_scheduled_data_odds_events(
+                        session, tournament=tournament, at=refreshed_at
+                    )
                 stage_status = "partial_success"
+                missing_events = canonical_events
+                stage_errors = 0
+                failure_code = None
+            stage_counts = {
+                "canonical_events": canonical_events,
+                "independently_observed_events": canonical_events - missing_events,
+                "stage_errors": stage_errors,
+                "disabled": int(not odds_enabled),
+            }
+            if not odds_enabled:
+                stage_counts["missing_events"] = missing_events
             with get_session() as session:
                 DataCycleRunRepository(session).finish_stage(
                     run_id,
                     "data_odds",
                     status=stage_status,
-                    counts={
-                        "canonical_events": attempt.matched_events + attempt.missing_events,
-                        "independently_observed_events": attempt.matched_events,
-                        "stage_errors": int(attempt.status == "failed"),
-                    },
-                    failure_code=(
-                        "odds_acquisition_failed" if attempt.status == "failed" else None
-                    ),
+                    counts=stage_counts,
+                    failure_code=failure_code,
                 )
         _start_cycle_stage(run_id, "quality")
         quality_config = load_tournament_quality_gate_config(tournament)
@@ -455,6 +498,9 @@ def run_full_refresh(
                 cycle = DataCycleRunRepository(session)
                 cycle_exists = cycle.get(run_id) is not None
                 if published:
+                    # Production sessions disable autoflush; publish rows before deriving
+                    # execution and readiness counts inside this same transaction.
+                    session.flush()
                     predictions_count = int(
                         session.scalar(
                             select(func.count(Prediction.id)).where(
@@ -471,7 +517,12 @@ def run_full_refresh(
                     if cycle_exists:
                         publication_counts = {
                             "predictions": predictions_count,
-                            **_readiness_counts(session, tournament=tournament, at=readiness_as_of),
+                            **_readiness_counts(
+                                session,
+                                tournament=tournament,
+                                at=readiness_as_of,
+                                odds_enabled=odds_enabled,
+                            ),
                         }
                         cycle.finish_stage(
                             run_id,
@@ -484,7 +535,10 @@ def run_full_refresh(
                     execution.fail(run_id, failure_code="materialization_failed")
                     if cycle_exists:
                         publication_counts = _readiness_counts(
-                            session, tournament=tournament, at=readiness_as_of
+                            session,
+                            tournament=tournament,
+                            at=readiness_as_of,
+                            odds_enabled=odds_enabled,
                         )
                         cycle.finish_stage(
                             run_id,
