@@ -76,7 +76,11 @@ jobs:
             --worker-image "$(jq --raw-output '.images.worker' "$manifest")" \
             --bot-image "$(jq --raw-output '.images.telegram_bot' "$manifest")" \
             --archive-sync-image "$(jq --raw-output '.images.archive_sync' "$manifest")"
-          docker compose --env-file "$fixture_root/production.env" -f "$source_path/docker-compose.prod.yml" --profile migration --profile worker --profile source-acquisition --profile operational-sync --profile scheduler config > "$fixture_root/rendered.yml"
+          docker compose --env-file "$fixture_root/production.env" -f "$source_path/docker-compose.prod.yml" --profile migration --profile worker --profile source-acquisition --profile operational-sync --profile scheduler config > "$fixture_root/rendered-with-scheduler.yml"
+          uv run --directory "$source_path" python "$source_path/scripts/verify_production_compose_contract.py" \
+            --rendered "$fixture_root/rendered-with-scheduler.yml" \
+            --model-runtime-root "$fixture_root/runtime_models"
+          docker compose --env-file "$fixture_root/production.env" -f "$source_path/docker-compose.prod.yml" --profile migration --profile worker --profile source-acquisition --profile operational-sync config > "$fixture_root/rendered.yml"
           validator_manifest="$fixture_root/release-manifest.validator.json"
           jq --arg version "$app_version" '.evidence_tag = "v" + $version + "-evidence.1"' \
             "$manifest" > "$validator_manifest"
