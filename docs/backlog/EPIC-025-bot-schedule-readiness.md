@@ -10,15 +10,17 @@
 
 - Инициатива: `EPIC-025`.
 - Ветка инициативы: исходная `initiative/epic-025-bot-readiness` слита;
-  correction cycle — `initiative/epic-025-13-runtime-hotfix`.
-- Workflow / этап: `release / v1.2.1 частично установлен; первый NHL Data Cycle failed; hotfix PR #42`.
+  correction cycle `initiative/epic-025-13-runtime-hotfix` слит;
+  release candidate — `initiative/epic-025-release-1_2_2`.
+- Workflow / этап: `release / v1.2.1 частично установлен; hotfix PR #42 merged; v1.2.2 candidate ждёт решения владельца`.
 - Исходная цель: календарь NHL независимо от прогноза, готовность событий,
   админ-управление Data Cycle и выпуск `1.2.1`;
   [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
 - Критерии приёмки и DoD: подтверждены владельцем в REQ-025; независимый
   review, CI и production health/smoke входят в release gate.
 - Релиз: пользователь запросил production `1.2.0`; после failure immutable tag
-  gate согласовал `1.2.1` как первый production выпуск.
+  gate согласовал `1.2.1` как первый production выпуск. После неуспешного
+  первого цикла подготовлен `1.2.2` candidate; решение о новой версии ожидается.
 - Выполнено: владелец дал полную постановку в Google Doc; REQ-025 приведён к
   ней и подтверждена трактовка «Сегодня» до 08:00 МСК; ограничение API
   прогнозами, 48-часовой минимум source и расхождение `/refresh` с systemd
@@ -100,7 +102,8 @@
   v1.2.1 healthy. Первый run `5d9be516-13b6-4ea7-9709-0fbe26b1b649`
   завершился `failed/source_fetch_failed`; одно итоговое уведомление
   доставлено. Выявлены четыре runtime-дефекта TASK-025-13. Их исправление
-  прошло 28 Developer и 52 Reviewer теста без P0–P2, PR #42 ожидает CI.
+  прошло 28 Developer и 52 Reviewer теста без P0–P2; PR #42 CI прошёл и
+  слит в `main` commit `35f1c6a7e80188d94b750674d11a1f0f8fd08e79`.
 - Решения: [ADR-026](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
   принят после независимого review: календарь независим от прогноза, control
   state в PostgreSQL, ограниченный control API и systemd dispatcher;
@@ -110,8 +113,8 @@
 - Артефакты: [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
 - Предыдущая роль: Reviewer — полный EPIC review и повторная проверка
   first-rollout fixture без P0–P2.
-- Следующая роль: Product Owner — terminal PR #42 CI и решение о новом
-  immutable patch release; затем Operations — повторный ручной и первый
+- Следующая роль: Product Owner — решение о `v1.2.2` и candidate PR/CI;
+  затем Operations — повторный ручной и первый
   плановый NHL run.
 - Открытые вопросы / блокеры: первый production Data Cycle failed;
   30-дневное coverage и odds quota не подтверждены. Оба NHL timer выключены.
@@ -139,7 +142,7 @@
 | [TASK-025-7](tasks/TASK-025-7-data-cycle-recovery-summary.md) | Terminal stages, summary и run history query contract | stage faults, coverage, safe DTO | done; production runtime в TASK-025-9 |
 | [TASK-025-8](tasks/TASK-025-8-executor-fencing.md) | Executor recovery/fencing after crash | PostgreSQL race, no duplicate executor | done; production activation в TASK-025-9 |
 | [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.1 cycle failed |
-| [TASK-025-13](tasks/TASK-025-13-production-runtime-hotfixes.md) | Исправить четыре runtime-дефекта первого цикла | grants, source DB, runner, heartbeat | done; PR #42 CI ожидается |
+| [TASK-025-13](tasks/TASK-025-13-production-runtime-hotfixes.md) | Исправить четыре runtime-дефекта первого цикла | grants, source DB, runner, heartbeat | done; PR #42 merged |
 | [TASK-025-12](tasks/TASK-025-12-release-compose-gate.md) | Исправить Compose release gate | новый API/dispatcher contract и память | done; PR CI в TASK-025-9 |
 | [TASK-025-10](tasks/TASK-025-10-run-summary-producers.md) | Full run summary producers and coverage | same-run counters, n/a denominator, football fixture | done |
 | [TASK-025-11](tasks/TASK-025-11-telegram-calendar.md) | Public NHL calendar in Telegram | 08:00, all horizons, no prediction, bot→API test | done |
@@ -147,8 +150,9 @@
 | [TASK-025-5](tasks/TASK-025-5-telegram-experience.md) | Telegram calendar, admin controls, notifications, code-based E2E | 08:00, auth, idempotency, bot→API | done; delivery activation в TASK-025-9 |
 
 Operations release gate зафиксирован в TASK-025-9. Immutable digests текущих
-running сервисов известны; совместимость отката после миграций и release
-inputs для 1.2.1 ещё требуют проверки.
+running v1.2.1 сервисов известны; serving rollback совместим с текущей
+схемой 0017, но v1.2.1 Data Cycle не является работающим rollback target.
+Для исправленного кандидата ещё нужны tag/evidence и успешный цикл.
 
 ## Риски и rollout
 
