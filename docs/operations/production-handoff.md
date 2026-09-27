@@ -13,8 +13,21 @@
   [TASK-025-14](../backlog/tasks/TASK-025-14-future-close-odds-snapshot.md),
   [TASK-025-15](../backlog/tasks/TASK-025-15-readonly-worker-hydra-logging.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
-- source_tag: `v1.2.4` (после независимого review и terminal PR CI).
-- source_commit: exact merged `main` commit фиксируется перед tag.
+- source_tag: `v1.2.4`.
+- source_commit: `56d9a0a5e9d7397113906ec6d4e37f7ef9f290f4`.
+- evidence_tag: `v1.2.4-evidence.1` (candidate до terminal evidence gate).
+
+## Проверяемые release-свидетельства
+
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36317259733
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36317259727
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36317288101
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36317288101/job/108615113134
+- postgres: `postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94`
+- api: published linux/amd64 scan provenance `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:f700b997838eb27909947f93f3744db83b125de5cab12d34970f2063ce1df202`
+- worker: published linux/amd64 scan provenance `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:c0e4ccf3ff69932a2e34f2fd7036ba310066cf6ab2f39dc23d62aac9809d7a14`
+- telegram_bot: published linux/amd64 scan provenance `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:02b3d52f32434e6d04934c482808827a02ef01012629190781339485c131c655`
+- archive_sync: published linux/amd64 scan provenance `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:75170dda3ee99b4cb1cc09e3a1c495e299c526bc4e88a2683a5e67def6a0ee58`
 
 v1.2.4 сохраняет публикацию будущих NHL матчей без closing line и исправляет
 запуск Hydra CLI в read-only Worker: логи идут в stdout, Hydra не создаёт
@@ -49,6 +62,9 @@ exact version gate не пропустит его в v1.2.4 Worker. Собрат
 content-addressed wrapper из тех же трёх файлов без изменения весов и 489
 feature names. Проверить SHA-256, model identity, feature contract и загрузку
 в exact v1.2.4 Worker; сохранить прежний pointer для rollback.
+Staged bundle `sha256:2a29c3ebe13b37ac1d39b24bf1c32bf97b92391804292244714d643aef8d6293`
+подготовлен без pointer switch: три файла и 489 признаков совпадают с текущей
+моделью. Перед promotion повторить verify в approved v1.2.4 Worker image.
 
 ## Healthcheck и smoke-проверка
 
