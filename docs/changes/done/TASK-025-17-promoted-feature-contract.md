@@ -19,3 +19,5 @@ feature builder. Несовместимый algorithm и неизвестный 
 отклоняются до сборки. 72 целевых и 1207 unit тестов прошли,
 `make lint`, `make production-check` и `make docs` (155 warnings) прошли.
 Независимый Reviewer не нашёл P0–P2. Runtime release gate открыт.
+Проверенный diff зафиксирован commit
+`82d4502acc4b39b54d801e3ef55699b1be54c93a`.

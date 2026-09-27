@@ -17,3 +17,5 @@ Green: 72 целевых теста вместе с TASK-025-17 и полный 
 `make docs` (155 warnings) прошли 2026-09-27. Независимый Reviewer не нашёл
 P0–P2 в коде; release CI и production gate открыты. Изолированный replay
 подтвердил отдельную причину publication failure в TASK-025-17.
+Проверенный diff зафиксирован commit
+`82d4502acc4b39b54d801e3ef55699b1be54c93a`.
