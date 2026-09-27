@@ -1,13 +1,12 @@
-# Передача сервиса в эксплуатацию: v1.2.7 candidate
+# Передача сервиса в эксплуатацию: v1.2.8 candidate
 
-> Фактическое состояние на 2026-09-27: API и Telegram-бот v1.2.5 healthy,
+> Фактическое состояние на 2026-09-27: API и Telegram-бот v1.2.7 healthy,
 > PostgreSQL healthy, NHL календарь содержит 187 матчей на 30 дней с
 > coverage `complete`. Три Odds API ключа дали HTTP 401 `INVALID_KEY`;
-> два ручных v1.2.5 run завершились ошибкой из-за старого systemd profile,
-> который исправлен и проверен. Serving v1.2.6 откатили после calendar 500:
-> у API role нет SELECT на `data_cycle_stage_results` и `data_cycle_runs`.
-> Оба NHL timer
-> выключены. Production acceptance открыт.
+> ручной OFF Data Cycle записал 1 834 прогнозов, но завершился
+> `failed/archive_sync_failed`: Compose запустил системный `sync` вместо
+> archive-sync CLI. Run закрыт после host stop proof, active0, одно
+> уведомление доставлено. Оба NHL timer выключены. Production acceptance открыт.
 
 - Статус подготовки: `candidate`
 - Сервис: sports-probabilistic-forecasting
@@ -15,9 +14,10 @@
 - Инициатива: [EPIC-025](../backlog/EPIC-025-bot-schedule-readiness.md),
   [TASK-025-9](../backlog/tasks/TASK-025-9-release-readiness.md),
   [TASK-025-18](../backlog/tasks/TASK-025-18-optional-future-odds.md),
-  [TASK-025-20](../backlog/tasks/TASK-025-20-calendar-stage-read-grant.md).
+  [TASK-025-20](../backlog/tasks/TASK-025-20-calendar-stage-read-grant.md),
+  [TASK-025-21](../backlog/tasks/TASK-025-21-archive-sync-runner-command.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
-- source_tag: `v1.2.7` (после независимого review и terminal PR CI).
+- source_tag: `v1.2.8` (после независимого review и terminal PR CI).
 - source_commit: exact merged `main` commit фиксируется перед tag.
 
 По решению владельца v1.2.6 добавил явный режим без future odds. Он
@@ -37,14 +37,21 @@ exit 0: 1 834 prediction rows, `predictions_ready=187/187`, odds attempts 0.
 Календарь production v1.2.6 после serving switch вернул 500 из-за
 отсутствующего `SELECT` на `data_cycle_stage_results` у `sf_api_reader`;
 запрос также соединяет её с `data_cycle_runs`, где права тоже нет.
-v1.2.7 добавляет оба точечных grant и release smoke exact JOIN; serving
-восстановлен на v1.2.5 без запуска manual Data Cycle.
+v1.2.7 добавил оба точечных grant и release smoke exact JOIN. Его serving
+smoke прошёл, а ручной цикл выявил дефект runner команды archive-sync.
+v1.2.8 исправляет вызов CLI и расширяет предрелизную проверку на ту же
+Compose-команду, которую выполняет production runner.
 
 ## Идентификация и ответственность
 
-Production serving v1.2.5 API/bot используют exact approved digests,
+Production serving v1.2.7 API/bot используют exact approved digests,
 Alembic head `0017_data_cycle_notification_outbox`. Календарь today
 `confirmed_empty`, 7d 34 `complete`, 30d 187 `complete`.
+Официальный ручной OFF run `31644fe1-f4ef-46f3-8678-791b597c498f`
+завершён `failed/archive_sync_failed` после успешной publication: 1 834
+прогнозов, 187/187 готовых будущих событий, odds attempts 0. Два
+immutable архива staged локально; remote sync не выполнен. Run закрыт
+owner-fenced после host stop proof, active0 и одно delivered outbox.
 Ручной run `56c0ab25-b17d-496e-bb91-6b85bc6f6521` запустил Worker
 v1.2.4 из старого `nhl.env` и завершился `prediction_failed`.
 Ручной run `8d2f9806-3ffd-4441-9ba6-db653578a0e1` использовал Worker
@@ -63,7 +70,7 @@ Compose получает только immutable `IMAGE@sha256:DIGEST` из relea
 UID/GID `10001:10001`. Alias `nhl_admins` должен совпадать у API, Worker
 и bot-only destination map.
 
-Перед v1.2.7 run Operations сверяет **фактический** systemd
+Перед v1.2.8 run Operations сверяет **фактический** systemd
 `SF_COMPOSE_ENV_FILE` и `/etc/sports-forecast/refresh/nhl.env`:
 `SF_APP_VERSION`, все пять image refs, tournament/market/spec/algorithm/
 features selectors и `SF_DATA_ODDS_ENABLED=false`. Проверка должна
@@ -72,15 +79,13 @@ Compose dry-run. Ошибка или неизвестное значение swi
 Это закрывает preflight gap v1.2.5, где проверялся только
 `production.env.candidate`, но executor читал другой файл.
 
-Текущий v1.2.5 model bundle
-`sha256:108eb6db273f284cb605d2800df1ccc8d1cd73da018b306c132c17926dafd69e`
-содержит одобренные веса и 489 features. Staged v1.2.6 wrapper
-`sha256:9d193525d816e55e40b4dd95fb875e39058e0154cebbc5f4668d87846f002123`
-загрузился в exact v1.2.6 Worker; `current`/`previous` pointers не
-менялись. До v1.2.7 rollout создать content-addressed wrapper с
-`app_version=1.2.7`, проверить SHA-256, identity, 489 ordered features
-и загрузку в exact v1.2.7 Worker. Сохранить v1.2.5 pointer и serving
-digests для rollback.
+Текущий v1.2.7 model bundle
+`sha256:a408b8b6cc6f7c8ce9ac5098846cfda8737370bd57a242bc9f45255fc7a2a42f`
+содержит одобренные веса и 489 ordered features; предыдущий pointer
+сохраняет v1.2.5 bundle. До v1.2.8 rollout создать content-addressed
+wrapper с `app_version=1.2.8`, проверить SHA-256, identity, ordered
+features и загрузку в exact v1.2.8 Worker. Сохранить текущие pointers и
+serving digests для rollback.
 
 ## Healthcheck и smoke-проверка
 
@@ -94,6 +99,10 @@ status/history/schedule. Кодовый Telegram smoke проверяет пуб
 прогнозов для eligible событий, odds `missing`, archive success и одно
 итоговое уведомление с тем же run ID. Длительность и отсутствие overlap
 сверяются до включения таймера.
+До tag локальный full first-rollout обязан выполнить тот же archive-sync
+Compose command, который выдаёт production runner, для каждого staged
+архива с Object Storage fixture. Отдельный вызов image CMD не заменяет
+этот gate.
 
 Operations запускает `make acceptance-check` с утверждёнными runtime
 inputs после health/smoke. Старый NHL timer остаётся выключенным. Новый
@@ -104,18 +113,18 @@ dispatcher timer включать только после успешного р�
 
 ## Данные и совместимость
 
-Перед v1.2.7 rollout проверить актуальность свежего root-only `pg_dump -Fc`,
+Перед v1.2.8 rollout проверить актуальность свежего root-only `pg_dump -Fc`,
 checksum/catalog, isolated restore на exact PostgreSQL image, off-host
-upload/download hash и третью локальную копию. Перед v1.2.6 rollout
-дамп 57 840 045 bytes, SHA-256 с префиксом `9e8327ef`, прошёл эти
+upload/download hash и третью локальную копию. Перед v1.2.7 rollout
+дамп 57 840 045 bytes, SHA-256 с префиксом `d5d409e4`, прошёл эти
 проверки: Alembic 0017, 22 496 canonical events, шесть run records.
-После calendar 500 manual cycle не запускался; Operations повторно сверяет
-отсутствие новых writers и фиксирует полный hash в root-only change record.
+После успешной publication v1.2.7 данные изменились: Operations создаёт
+новый backup и фиксирует полный hash в root-only change record.
 Bucket retention/encryption текущему service account недоступны.
 
 Схема остаётся на `0017_data_cycle_notification_outbox`; role-bootstrap/
 migrator повторяются idempotently только из approved image. Serving rollback
-на v1.2.5 возможен по сохранённым digest/env/model pointer. Destructive
+на v1.2.7 возможен по сохранённым digest/env/model pointer. Destructive
 downgrade БД запрещён.
 
 ## Наблюдаемость
@@ -129,7 +138,7 @@ requests в OFF-режиме, notification delivery и timer last/next trigger.
 ## Артефакт и откат
 
 После независимого review и terminal PR CI Reviewer создаёт annotated
-`v1.2.7` на exact merged commit `main`. Tag pipeline должен завершить CI,
+`v1.2.8` на exact merged commit `main`. Tag pipeline должен завершить CI,
 Security, first-rollout contract, linux/amd64 images, scan и provenance.
 Release owner создаёт отдельный immutable evidence commit/tag; validator
 вызывается с `--handoff docs/operations/production-handoff.md`.
@@ -138,10 +147,11 @@ Operations сверяет manifest и только затем меняет VPS �
 
 ## Нерешённые вопросы
 
-Для GO нужны red→green и review точечных role grants, полный локальный
-first-rollout под production DB roles и HTTP-календарь до immutable tag,
-terminal PR/tag/evidence CI, актуальный backup/restore/off-host evidence,
-совместимый v1.2.7 model bundle, успешный calendar smoke под API role,
-полный ручной цикл без odds, затем первый плановый NHL run. TASK-025-9 и
+Для GO нужны red→green и review archive-sync команды, полный локальный
+first-rollout под production DB roles, HTTP-календарь и реальный runner
+archive command до immutable tag, terminal PR/tag/evidence CI, актуальный
+backup/restore/off-host evidence, совместимый v1.2.8 model bundle,
+успешный calendar smoke под API role, полный ручной цикл без odds,
+затем первый плановый NHL run. TASK-025-9 и
 EPIC-025 остаются `in_progress` до этих gates. Действующие Odds API ключи
 отсутствуют; повторное включение odds требует отдельного provider preflight.
