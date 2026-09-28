@@ -34,6 +34,7 @@ def test_failed_canonical_gate_is_idempotent_and_stores_safe_code() -> None:
                 featureset="x",
                 predictions_json="{}",
                 match_datetime=datetime(2026, 8, 14, 10, 0),
+                prediction_ts=datetime(2026, 8, 14, 9, 0),
             )
         )
         session.commit()

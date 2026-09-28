@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 from pathlib import Path
 
 import pytest
@@ -18,10 +19,17 @@ from sports_forecast.deploy.serving_data import archive_snapshot
 
 
 class _FakeStorage:
-    def __init__(self, *, fail_upload: bool = False, corrupt_download: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail_upload: bool = False,
+        corrupt_download: bool = False,
+        corruption_payload: bytes = b"corrupt",
+    ) -> None:
         self.objects: dict[str, bytes] = {}
         self.fail_upload = fail_upload
         self.corrupt_download = corrupt_download
+        self.corruption_payload = corruption_payload
 
     def upload(self, source: Path, key: str) -> None:
         if self.fail_upload:
@@ -31,7 +39,9 @@ class _FakeStorage:
     def download(self, key: str, destination: Path) -> None:
         value = self.objects[key]
         destination.write_bytes(
-            b"corrupt" if self.corrupt_download and key.endswith("data.json") else value
+            self.corruption_payload
+            if self.corrupt_download and key.endswith("data.json")
+            else value
         )
 
     def list_keys(self, prefix: str) -> list[str]:
@@ -89,7 +99,66 @@ def test_sync_remote_verifies_all_files_before_success(tmp_path: Path) -> None:
     assert f"operational-archive/{artifact.artifact_id}/manifest.json" in storage.objects
 
 
-def test_remote_corruption_keeps_staging_and_failed_state(tmp_path: Path) -> None:
+def test_sync_large_archive_does_not_read_whole_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Проверка большого объекта работает при запрете чтения файла целиком."""
+
+    class StreamingStorage:
+        def __init__(self) -> None:
+            self.objects: dict[str, Path] = {}
+
+        def upload(self, source: Path, key: str) -> None:
+            self.objects[key] = source
+
+        def download(self, key: str, destination: Path) -> None:
+            shutil.copyfile(self.objects[key], destination)
+
+        def list_keys(self, prefix: str) -> list[str]:
+            return sorted(key for key in self.objects if key.startswith(prefix))
+
+    source = tmp_path / "source"
+    source.mkdir()
+    with (source / "large.bin").open("wb") as stream:
+        for _ in range(32):
+            stream.write(b"x" * 65536)
+    artifact = archive_snapshot(source, tmp_path / "staging")
+    original_read_bytes = Path.read_bytes
+
+    def bounded_read_bytes(path: Path) -> bytes:
+        if path.stat().st_size > 1024 * 1024:
+            raise AssertionError("Большой файл прочитан целиком")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", bounded_read_bytes)
+
+    result = sync_operational_archive(artifact.path, tmp_path / "state", StreamingStorage())
+
+    assert result.status == "verified"
+
+
+def test_sync_downloads_remote_copy_under_state_root(tmp_path: Path) -> None:
+    """Remote verification не расходует маленький production tmpfs."""
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.json").write_text("{}", encoding="utf-8")
+    artifact = archive_snapshot(source, tmp_path / "staging")
+    state_root = tmp_path / "state"
+
+    class TrackingStorage(_FakeStorage):
+        def download(self, key: str, destination: Path) -> None:
+            assert destination.is_relative_to(state_root)
+            super().download(key, destination)
+
+    result = sync_operational_archive(artifact.path, state_root, TrackingStorage())
+
+    assert result.status == "verified"
+
+
+@pytest.mark.parametrize("corruption_payload", [b"corrupt", b"[]"])
+def test_remote_corruption_keeps_staging_and_failed_state(
+    tmp_path: Path, corruption_payload: bytes
+) -> None:
     source = tmp_path / "source"
     source.mkdir()
     (source / "data.json").write_text("{}", encoding="utf-8")
@@ -97,7 +166,11 @@ def test_remote_corruption_keeps_staging_and_failed_state(tmp_path: Path) -> Non
     state_root = tmp_path / "state"
 
     with pytest.raises(ArchiveSyncError, match="differs"):
-        sync_operational_archive(artifact.path, state_root, _FakeStorage(corrupt_download=True))
+        sync_operational_archive(
+            artifact.path,
+            state_root,
+            _FakeStorage(corrupt_download=True, corruption_payload=corruption_payload),
+        )
 
     assert artifact.path.exists()
     assert '"status": "failed"' in (state_root / f"{artifact.artifact_id}.json").read_text()

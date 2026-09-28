@@ -243,6 +243,7 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
         assert clean.call_count == 1
         assert features.call_count == 1
         assert features.call_args.args[3].name == "advanced"
+        assert features.call_args.kwargs["inference_only"] is True
         raw_path = clean.call_args.args[0] / "matches.parquet"
         assert raw_path.name == "matches.parquet"
         assert raw_path.parent.name == "nhl"
@@ -416,9 +417,10 @@ def test_full_refresh_blocks_slice_when_expired_prediction_has_no_result(tmp_pat
                     featureset="x",
                     predictions_json="{}",
                     match_datetime=datetime(2026, 8, 14, tzinfo=UTC),
+                    prediction_ts=datetime(2026, 8, 13, 23, tzinfo=UTC),
                 )
             )
-        bundle = MagicMock()
+        bundle = MagicMock(side_effect=AssertionError("Загрузка bundle до freshness gate"))
         with (
             patch(
                 "sports_forecast.orchestration.canonical_full_refresh.get_session",
