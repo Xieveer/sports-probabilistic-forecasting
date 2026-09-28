@@ -1,11 +1,11 @@
-# Передача сервиса в эксплуатацию: v1.2.9 draft
+# Передача сервиса в эксплуатацию: v1.2.9 candidate
 
 > Фактическое состояние на 2026-09-28: production работает на v1.2.8;
 > API, бот и PostgreSQL healthy, `/health` и `/ready` отвечают 200.
 > Оба NHL timer выключены. Последний production Data Cycle завершился
 > `failed/quality_failed`; новая версия в production ещё не развёрнута.
 
-- Статус подготовки: `draft`
+- Статус подготовки: `candidate`
 - Сервис: sports-probabilistic-forecasting.
 - Canonical repository: Xieveer/sports-probabilistic-forecasting.
 - Инициатива: [EPIC-025](../backlog/EPIC-025-bot-schedule-readiness.md),
@@ -16,7 +16,8 @@
   [TASK-025-26](../backlog/tasks/TASK-025-26-refresh-inference-memory.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
 - Целевая среда: production VPS; версия: `1.2.9`.
-- source_tag/source_commit/evidence_tag: фиксируются после merge и tag gates.
+- source_tag: `v1.2.9` (целевой; тег ещё не создан).
+- source_commit/evidence_tag: фиксируются после merge и tag gates.
 - CI, Security, Docker, image digests, scan и provenance: ожидают source tag.
 
 ## Идентификация и ответственность
@@ -105,7 +106,8 @@ OFF-режиме, notification delivery и timer last/next trigger. Секрет
 `v1.2.9` на exact merged commit `main`. Tag pipeline обязан завершить CI,
 Security, first-rollout contract, linux/amd64 images, scan и provenance.
 Release owner создаёт immutable evidence commit/tag и запускает
-`make verify-release-evidence` для exact manifest/handoff. Operations
+`make verify-release-evidence` с `--handoff docs/operations/production-handoff.md`
+для exact manifest/handoff. Operations
 сверяет digests и сохраняет root-only rollback refs v1.2.8, прежний model
 pointer и backup. Serving rollback на v1.2.8 допускается по сохранённым
 digest/env/model pointer без downgrade БД; если post-rollout ошибка повторит
@@ -113,7 +115,7 @@ digest/env/model pointer без downgrade БД; если post-rollout ошибк
 
 ## Нерешённые вопросы
 
-Для перевода в `candidate` требуются exact wrapper gate или обоснованное
-закрытие этого пробела, финальное review полного diff, PR/CI, source tag,
+Для решения GO требуются exact wrapper gate или обоснованное
+закрытие этого пробела, terminal PR/CI, source tag,
 manifest/images/evidence, свежий backup/restore/off-host evidence и wrapper
 production-модели для `1.2.9`. Production rollout пока NO GO.
