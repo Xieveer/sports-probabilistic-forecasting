@@ -29,8 +29,12 @@ uv run python -m sports_forecast.orchestration.canonical_full_refresh_cli \
 ```
 
 Run применяет source snapshot к canonical store, проверяет финальные результаты
-прогнозов с истёкшим deadline, пересобирает full-history features/EWM во
-временной директории и публикует predictions вместе с run/data/feature/model
+только предматчевых прогнозов с истёкшим deadline (`prediction_ts` раньше
+`match_datetime`). Исторические расчёты, сделанные после начала матча, не
+создают ложный долг по `finished`. Затем run пересобирает full-history features/EWM во
+временной директории. Для публикации он сохраняет только `inference_long` и
+`inference_wide` по будущим матчам; обучающие таблицы полной истории не
+строятся и не записываются в `/tmp` Worker. Run публикует predictions вместе с run/data/feature/model
 provenance одной DB-транзакцией.
 
 Только после успешного acquisition и canonical commit runner создаёт canonical
@@ -41,6 +45,10 @@ Source-state содержит `source.csv`, OddsStore и checkpoint; `current.cs
 remote-verify-ит каждый manifest/file. Failure provider/odds, canonical refresh
 или upload оставляет предыдущий valid state и не заменяет последний verified
 artifact.
+Remote verification сравнивает скачанный и локальный файл блоками по 1 MiB,
+чтобы большой source-state помещался в лимит памяти archive-sync 512 MiB.
+Временная remote копия создаётся в writable sync-state volume; production
+`/tmp` ограничен 64 MiB и не рассчитан на полный source-state.
 
 Локальный read-only import последнего verified source-state выполняется
 отдельным training-reader credential:
@@ -63,8 +71,9 @@ uv run python -m sports_forecast.deploy.archive_sync_cli pull-latest-source-stat
   eligibility: API и Telegram его не выдают, а прежние prediction rows остаются
   для audit/recovery.
 - Повтор того же `SF_WORKER_RUN_ID` или overlap не запускает второй rebuild.
-- `canonical_freshness_failed` требует исправить provider snapshot; bundle или
-  feature rebuild не запускаются.
+- `canonical_freshness_failed` означает, что для настоящего предматчевого
+  прогноза после deadline нет `finished` result; проверьте provider snapshot
+  и canonical event. Bundle и feature rebuild не запускаются.
 - Для повреждённой модели используйте проверенный rollback bundle согласно
   `docs/operations/model-bundle.md`, затем создайте новый `run_id`.
 - Для восстановления source-state выберите последний verified artifact через

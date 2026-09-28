@@ -9,6 +9,82 @@
 ## Память Product Owner
 
 - Инициатива: `EPIC-025`.
+- Текущий correction cycle: `initiative/epic-025-local-parity`,
+  [TASK-025-22](tasks/TASK-025-22-local-quality-parity.md). Ручной Data Cycle
+  v1.2.8 на production завершился `failed/canonical_freshness_failed`.
+  Решение владельца от 2026-09-28: исправлять и проверять дефекты локально
+  на контуре, сопоставимом с production, включая тестового Telegram-бота.
+  Новый production rollout допускается только после подтверждённой локальной
+  готовности; при повторении ошибок после выпуска остановить дальнейшие
+  действия и запросить инструкции владельца.
+- Конечная точка correction cycle по уточнению владельца: выпустить новую
+  версию в production после локальных gates, проверить её на production;
+  если она не работает, зафиксировать состояние и сделать промежуточную
+  остановку до следующей команды владельца.
+- Инцидент локального pytest с 14.3 GB RSS локализован в setup тестов:
+  [TASK-025-23](tasks/TASK-025-23-pytest-memory-guard.md) исправил временные
+  метки и добавил ранний отказ опасного mock; четыре адресных теста прошли под
+  лимитом 4 GiB; независимое статическое review без P0–P2. Полный pytest
+  suite намеренно не запускался после инцидента; bounded local parity ниже.
+- Для TASK-025-22 изолированно восстановлен backup перед v1.2.8 в PostgreSQL
+  16 без сети с лимитом 1 GiB. Агрегатный quality probe: 1 621 кандидат старого
+  правила, 1 621 без `finished`, 0 настоящих предматчевых кандидатов. Это
+  локально воспроизводит исходный отказ; исправленный validator в Worker
+  контейнере с лимитом 1 GiB вернул `valid=True`, `expired=0`, `missing=0`.
+- Локальный Worker на восстановленной истории под лимитом 3 GiB завершился
+  без OOM и опубликовал 1 838 прогнозов; canonical archive синхронизирован
+  с изолированным S3 fixture. Source-state archive (~181 MiB) подтвердил новый
+  [TASK-025-24](tasks/TASK-025-24-archive-sync-bounded-memory.md):
+  archive-sync завершился `OOMKilled=true` при production-лимите 512 MiB после
+  upload и до remote verification. По запросу владельца работа остановлена,
+  созданные локальные контейнеры корректно завершены; production не затронут.
+- После возобновления TASK-025-24 прошёл red→green: девять адресных тестов
+  archive-sync зелёные под лимитом 1 GiB, оба архива remote-verified на
+  локальном S3 fixture при production-лимите archive-sync 512 MiB. Независимое
+  review не нашло P0–P2 findings. Локальный API v1.2.8 под ролью
+  `sf_api_reader` ответил `/ready` 200 (`db_connected=true`), календарь NHL
+  на 30 дней — 200, 198 событий,
+  `coverage=stale` для восстановленного снимка; лимит API 1.5 GiB, RSS около
+  136 MiB. Связанный Data Cycle и тестовый Telegram-путь проверены ниже.
+- Владелец подтвердил, что `@SSPredictBot` — тестовый бот. Контрольное
+  сообщение в единственный разрешённый чат подтверждено Telegram (`ok=true`,
+  message ID); адресные тесты bot calendar/notifications — 11 passed под
+  лимитом 2 GiB. E2E команды `/upcoming` проверен ниже.
+- Локальный бот v1.2.8 запущен под лимитом 384 MiB: heartbeat Telegram/API
+  оба `true`; его API указывает на изолированный контур. Data Cycle
+  runner contract/lifecycle — 41 passed под лимитом 2 GiB. Проверка команды
+  `/upcoming` подтверждена владельцем: ответ с календарём NHL корректный,
+  локальный контейнер обработал updates без polling conflict, API 5xx и OOM.
+  Связанный локальный Data Cycle на полном фиксированном NHL snapshot завершился
+  `partial_success` (odds выключены): 1 838 прогнозов, оба новых архива
+  `verified`, Worker под 3 GiB и archive-sync под 512 MiB без OOM. Внешний
+  source fetch и exact systemd/Compose wrapper не проверены. Отдельно после
+  terminal status outbox producer поставил item, bot poller доставил его
+  через Control API в тестовый Telegram и подтвердил (`delivered`, 1 попытка).
+  Атомарный terminal+enqueue path в этом прогоне не проверен; он покрыт
+  шестью repository tests (включая PostgreSQL lease race) под лимитом 2 GiB.
+  Владелец подтвердил уведомление и корректный `/cycle_history` с локальным
+  запуском. `make lint`, `make type-check`, `git diff --check` прошли под
+  ограничениями памяти. Exact wrapper и внешний source fetch остаются gates.
+- Exact Compose archive-sync выявил ещё один локальный дефект:
+  [TASK-025-25](tasks/TASK-025-25-archive-sync-tmpfs.md). Production `/tmp`
+  64 MiB не вмещал remote copy около 181 MiB (`exit=1`, без OOM). После
+  переноса временной копии в sync-state volume 10 тестов зелёные под 1 GiB;
+  actual Compose command remote-verified оба архива при `mem_limit=512m`
+  и неизменном `/tmp=64m`. Независимое review не нашло P0–P2 findings.
+- Внешний NHL source-acquirer на копии локального каталога завершился успешно
+  под лимитом 1 GiB и обновил тестовый `current.csv` до 2026-10-29.
+  Следующий связанный локальный run с этим source и весами production-модели
+  остановлен cgroup при лимите Worker 3 GiB после валидации полных таблиц
+  признаков. [TASK-025-26](tasks/TASK-025-26-refresh-inference-memory.md)
+  устраняет построение и запись неиспользуемых train-таблиц в refresh.
+  Run безопасно завершён `failed/prediction_failed`; бот доставил уведомление.
+  Исправленный связанный run `876f0523-3f8c-44b6-95a8-0234b4258fbd`
+  завершился `partial_success` лишь при явно выключенных odds: Worker под
+  3 GiB опубликовал 1 847 прогнозов без OOM, оба archive-sync под 512 MiB
+  с `/tmp=64m` remote-verified новые архивы; terminal outbox доставлен
+  тестовому боту. Независимое review TASK-025-26 без P0–P2.
+  Release/CI/production gates ещё открыты.
 - Ветка инициативы: исходная `initiative/epic-025-bot-readiness` слита;
   correction cycle `initiative/epic-025-13-runtime-hotfix` слит;
   release candidate — `initiative/epic-025-release-1_2_2`; correction
@@ -18,7 +94,9 @@
   `initiative/epic-025-v1_2_6-odds-optional` и
   `initiative/epic-025-v1_2_7-calendar-grant` и
   `initiative/epic-025-v1_2_8-archive-runner`.
-- Workflow / этап: `release evidence / v1.2.8 tag CI/Docker и exact first-rollout прошли; production manual gate открыт`.
+- Workflow / этап: `v1.2.9 локальный source fetch, bounded Worker и archive
+  sync на свежем snapshot прошли; exact wrapper, release review, PR/CI и
+  production gate открыты`.
 - Исходная цель: календарь NHL независимо от прогноза, готовность событий,
   админ-управление Data Cycle и выпуск `1.2.1`;
   [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
@@ -182,19 +260,20 @@
   ручная команда повторяет data job без перезапуска служб; футбол проверяется
   по общему контракту без включения в `1.2.1`.
 - Артефакты: [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
-- Предыдущая роль: Developer — TASK-025-21; Reviewer — код и local
-  first-rollout evidence без P0–P2; Operations — pre-v1.2.8 backup и disk.
-- Следующая роль: Reviewer — immutable evidence bundle; Operations —
-  production serving и ручной OFF Data Cycle; Product Owner — первый
-  плановый run и приёмка.
+- Предыдущая роль: Developer — TASK-025-22/23/24 и bounded local parity;
+  Reviewer — код без P0–P2, finding по устаревшим статусам исправлен.
+- Следующая роль: Developer — exact wrapper/source fetch gate и release
+  артефакты v1.2.9; Reviewer — финальное сквозное review; Operations Agent —
+  выпуск после terminal CI и handoff. Production rollout ещё не начат.
 - Открытые вопросы / блокеры: 30-дневное coverage подтверждено (187 матчей),
   три provider keys недействительны, isolated publication подтверждена,
   production manual run v1.2.7 завершился ошибкой archive_sync. Оба NHL
   timer выключены. Свежий pre-v1.2.7 backup `d5d409e4…` прошёл
-  restore/off-host/third-copy; перед v1.2.8 rollout проверить актуальность.
+  restore/off-host/third-copy; перед новым rollout проверить актуальность.
   Bucket retention/encryption не удалось прочитать текущим service account.
-  Daily NHL scheduler NO-GO до успешного ручного OFF-цикла v1.2.8.
-- Обновлено: 2026-09-27.
+  Daily NHL scheduler NO-GO до успешного ручного OFF-цикла новой версии;
+  exact wrapper/source fetch и CI ещё не проверены.
+- Обновлено: 2026-09-28.
 
 ## Цель и границы
 

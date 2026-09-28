@@ -469,6 +469,7 @@ def run_full_refresh(
                 root / "processed",
                 runtime_cfg.features,
                 tournament_cfg,
+                inference_only=True,
             )
             _finish_cycle_stage(
                 run_id,

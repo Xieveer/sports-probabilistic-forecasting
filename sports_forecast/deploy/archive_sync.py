@@ -123,6 +123,20 @@ def _write_state(state_root: Path, artifact_id: str, status: str) -> None:
     temporary.replace(target)
 
 
+def _files_equal(first: Path, second: Path) -> bool:
+    """Сравнить файлы побайтово без загрузки целого архива в память."""
+    if first.stat().st_size != second.stat().st_size:
+        return False
+    with first.open("rb") as first_stream, second.open("rb") as second_stream:
+        while True:
+            first_chunk = first_stream.read(1024 * 1024)
+            second_chunk = second_stream.read(1024 * 1024)
+            if first_chunk != second_chunk:
+                return False
+            if not first_chunk:
+                return True
+
+
 def sync_operational_archive(
     archive_path: Path,
     state_root: Path,
@@ -142,13 +156,14 @@ def sync_operational_archive(
         base = f"{prefix.rstrip('/')}/{artifact.artifact_id}"
         for relative in relative_paths:
             storage.upload(artifact.path / relative, f"{base}/{relative}")
-        with tempfile.TemporaryDirectory(prefix="archive-sync-verify-") as raw_tmp:
+        state_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="archive-sync-verify-", dir=state_root) as raw_tmp:
             temporary = Path(raw_tmp)
             for relative in relative_paths:
                 remote_copy = temporary / relative
                 remote_copy.parent.mkdir(parents=True, exist_ok=True)
                 storage.download(f"{base}/{relative}", remote_copy)
-                if remote_copy.read_bytes() != (artifact.path / relative).read_bytes():
+                if not _files_equal(remote_copy, artifact.path / relative):
                     raise ArchiveSyncError(f"Remote object differs: {relative}")
         _write_state(state_root, artifact.artifact_id, "verified")
         logger.info("Operational archive remote-verified artifact_id=%s", artifact.artifact_id)
