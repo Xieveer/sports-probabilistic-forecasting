@@ -81,12 +81,18 @@ production-модели остановлен memory cgroup Worker 3 GiB посл
 
 ## Открытые gates
 
-- Exact systemd wrapper целиком ещё не проверен. Внешний provider fetch
-  прошёл отдельно; полный Worker на его source и terminal+outbox path
-  прошли в связанном локальном цикле.
+- Exact systemd wrapper целиком ещё не проверен. Подготовлен изолированный
+  контур с опубликованными v1.2.9 digest; тяжёлый Worker не запускался,
+  поскольку Docker scope не унаследовал лимит 6 GiB user slice:
+  `memory.max=max`, `memory.swap.max=max`. Повторять запуск можно после
+  проверки общего лимита всех контейнеров. Внешний provider fetch прошёл
+  отдельно; полный Worker на его source и terminal+outbox path прошли в
+  связанном локальном цикле.
 - Тестовый Telegram-бот подтвердил доставку, `/upcoming`, `/cycle_history`
   и terminal notification через локальный API.
-- Полный relevant suite и CI не выполнялись. Production rollout не начинался.
+- PR #50 и tag `v1.2.9` прошли CI, Security и first-rollout contract.
+  Полный pytest на ноутбуке после инцидента 14.3 GB RSS не запускался.
+  Production rollout не начинался.
 - PostgreSQL, S3 fixture и API сейчас работают в изолированном локальном
   контуре с ограничениями памяти; production не затронут. Данные, модель и
   архивы оставлены в `/tmp` для продолжения проверки.

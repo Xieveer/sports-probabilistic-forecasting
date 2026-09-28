@@ -95,8 +95,11 @@
   `initiative/epic-025-v1_2_7-calendar-grant` и
   `initiative/epic-025-v1_2_8-archive-runner`.
 - Workflow / этап: `v1.2.9 локальный source fetch, bounded Worker и archive
-  sync на свежем snapshot прошли; exact wrapper, release review, PR/CI и
-  production gate открыты`.
+  sync на свежем snapshot прошли; PR #50 merged с зелёным CI/Security,
+  annotated v1.2.9 указывает на f7156e0, tag pipeline terminal success;
+  exact wrapper остановлен до Worker из-за отсутствия общего cgroup лимита;
+  свежий backup прошёл restore и третью копию, off-host, evidence и
+  production gates открыты`.
 - Исходная цель: календарь NHL независимо от прогноза, готовность событий,
   админ-управление Data Cycle и выпуск `1.2.1`;
   [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
@@ -262,17 +265,22 @@
 - Артефакты: [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
 - Предыдущая роль: Developer — TASK-025-22/23/24 и bounded local parity;
   Reviewer — код без P0–P2, finding по устаревшим статусам исправлен.
-- Следующая роль: Developer — exact wrapper/source fetch gate и release
-  артефакты v1.2.9; Reviewer — финальное сквозное review; Operations Agent —
-  выпуск после terminal CI и handoff. Production rollout ещё не начат.
+- Следующая роль: Operations Agent — закрытие off-host backup gate после
+  получения действующего пути доступа; Developer — безопасный общий лимит
+  exact wrapper; Reviewer — финальное сквозное review release evidence.
+  Production rollout ещё не начат.
 - Открытые вопросы / блокеры: 30-дневное coverage подтверждено (187 матчей),
   три provider keys недействительны, isolated publication подтверждена,
   production manual run v1.2.7 завершился ошибкой archive_sync. Оба NHL
   timer выключены. Свежий pre-v1.2.7 backup `d5d409e4…` прошёл
   restore/off-host/third-copy; перед новым rollout проверить актуальность.
   Bucket retention/encryption не удалось прочитать текущим service account.
-  Daily NHL scheduler NO-GO до успешного ручного OFF-цикла новой версии;
-  exact wrapper/source fetch и CI ещё не проверены.
+  Daily NHL scheduler NO-GO до успешного ручного OFF-цикла новой версии.
+  Source fetch и tag CI проверены. Exact wrapper не запускал тяжёлый Worker:
+  Docker scope оказался в system slice с `memory.max=max` и
+  `memory.swap.max=max`, несмотря на лимит user slice. Свежий backup
+  `bd5dc06e…` прошёл каталог, isolated restore и третью защищённую копию;
+  доступ к выделенному off-host `production-backups/*` не найден.
 - Обновлено: 2026-09-28.
 
 ## Цель и границы

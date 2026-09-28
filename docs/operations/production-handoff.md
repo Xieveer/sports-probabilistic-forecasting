@@ -16,9 +16,24 @@
   [TASK-025-26](../backlog/tasks/TASK-025-26-refresh-inference-memory.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
 - Целевая среда: production VPS; версия: `1.2.9`.
-- source_tag: `v1.2.9` (целевой; тег ещё не создан).
-- source_commit/evidence_tag: фиксируются после merge и tag gates.
-- CI, Security, Docker, image digests, scan и provenance: ожидают source tag.
+- source_tag: `v1.2.9`.
+- source_commit: `f7156e0d4471fbe1a789b89da5d17c06facc0dbc`.
+- evidence_tag: `v1.2.9-evidence.1` (создаётся после проверки manifest).
+- PR: https://github.com/Xieveer/sports-probabilistic-forecasting/pull/50.
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36484643203.
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36484642930.
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36484917017.
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36484917017/job/109141372305.
+
+Tag pipeline terminal `success`; четыре образа опубликованы как immutable
+linux/amd64, scan и provenance завершены. Удалённые digest совпали с tested
+first-rollout digest:
+
+- postgres: `postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94` — без изменения.
+- api: `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:517813d5da90e721e7250d6b74c924adbbf495210ec0695bf3a65b4db2772a71` — published linux/amd64 scan provenance.
+- worker: `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:77044d7418f3179c0a2196a1fe1f7007d29812f3dbdaaf83a1990769e65b3f92` — published linux/amd64 scan provenance.
+- telegram_bot: `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:fcb51061c778a01dc43fdb5dc05ed7598b0bf88aabc2c426d7d8de29756b8d4a` — published linux/amd64 scan provenance.
+- archive_sync: `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:28ef3ec4cabeb747ef24deb6ef07c2958c8dff11fb69896a3f3ca6701e3d4339` — published linux/amd64 scan provenance.
 
 ## Идентификация и ответственность
 
@@ -31,10 +46,13 @@ v1.2.9 исправляет ложный отказ freshness gate на прог
 Production preflight: v1.2.8 healthy, Alembic `0017`, оба NHL timer disabled,
 последний run `failed/quality_failed`, active runs нет. Production bundle
 `sha256:5b3cb6e2ca0b588059de7416a5cbdae1e955e4b9a91b08be51da43684e3640b0`
-содержит 489 ordered features и проверенные веса. Для v1.2.9 нужен новый
+содержит 489 ordered features и проверенные веса. Для v1.2.9 создан новый
 content-addressed wrapper с теми же весами, `app_version=1.2.9` и exact
-source_commit/tag; текущий production pointer до готовности нового bundle
-не менять.
+source_commit/tag; текущий production pointer до release gate не менять.
+Локально создан и проверен bundle
+`sha256:d4713aa738330d279f1190d46a2311aad140b9500a29ca3b24400ad4d929ec10`
+на exact source commit. Его установку на production выполняет только
+Operations после подтверждения остальных gates.
 
 ## Runtime и конфигурация
 
@@ -65,7 +83,11 @@ calendar/quality/predictions/publication успешны. Оба archive-sync п�
 32 релевантных теста, lint, mypy, format и `git diff --check` прошли под
 ограничением ресурсов. Полный pytest suite после инцидента 14.3 GB RSS не
 запускался. Независимое review TASK-025-22/23/24/25/26 не выявило P0–P2.
-Точный systemd wrapper целиком и release/tag CI пока не проверены.
+Release/tag CI завершился успешно. Для точного systemd/Compose wrapper
+подготовлен изолированный контур с опубликованными digest; тяжёлый Worker
+не запускался: тестовый Docker scope попал в system slice с
+`memory.max=max`, несмотря на лимит 6 GiB у user slice. Без общего
+проверенного лимита на все контейнеры wrapper gate остаётся открытым.
 
 ## Healthcheck и smoke-проверка
 
@@ -84,11 +106,14 @@ eligible событий, odds `missing`, два verified archives и одно и
 
 ## Данные и совместимость
 
-Перед v1.2.9 нужен свежий root-only `pg_dump -Fc` после production v1.2.8
-ошибки, checksum/catalog, isolated restore на exact PostgreSQL image,
-off-host upload/download hash и третья локальная копия. Backup перед
-v1.2.8 уже проверен локально, но не является актуальным backup для нового
-rollout. Схема остаётся `0017_data_cycle_notification_outbox`;
+Свежий root-only `pg_dump -Fc` после production v1.2.8 ошибки создан:
+`pre-v1.2.9-20260928T213539314360486.dump`, 57 921 104 байт,
+SHA-256 `bd5dc06ed22d0957b96f10fdb16112f965c11dacc7c759e490124c228bcd983b`.
+Каталог проверен; isolated restore на exact PostgreSQL image завершён
+успешно: схема `0017`, 22 496 событий и 1 834 прогноза. Третья защищённая
+локальная копия имеет тот же hash. Доступ к выделенному off-host
+`production-backups/*` не найден: upload/download hash остаётся gate.
+Схема остаётся `0017_data_cycle_notification_outbox`;
 role-bootstrap/migrator выполняются idempotently из approved image.
 Объекты архивов immutable; retention/encryption service account не видит.
 
@@ -102,8 +127,8 @@ OFF-режиме, notification delivery и timer last/next trigger. Секрет
 
 ## Артефакт и откат
 
-После terminal PR CI и финального review Reviewer создаёт annotated
-`v1.2.9` на exact merged commit `main`. Tag pipeline обязан завершить CI,
+Annotated `v1.2.9` уже указывает на exact merged commit `main`;
+перед выпуском сверить этот immutable tag и terminal tag pipeline с CI,
 Security, first-rollout contract, linux/amd64 images, scan и provenance.
 Release owner создаёт immutable evidence commit/tag и запускает
 `make verify-release-evidence` с `--handoff docs/operations/production-handoff.md`
@@ -115,7 +140,6 @@ digest/env/model pointer без downgrade БД; если post-rollout ошибк
 
 ## Нерешённые вопросы
 
-Для решения GO требуются exact wrapper gate или обоснованное
-закрытие этого пробела, terminal PR/CI, source tag,
-manifest/images/evidence, свежий backup/restore/off-host evidence и wrapper
+Для решения GO требуются безопасный exact wrapper gate, terminal evidence
+CI, off-host backup evidence и установка проверенного wrapper
 production-модели для `1.2.9`. Production rollout пока NO GO.
