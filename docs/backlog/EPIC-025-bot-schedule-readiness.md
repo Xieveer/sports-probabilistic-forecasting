@@ -377,3 +377,14 @@ isolated restore и off-host hash, а также SHA трёх файлов но�
 wrapper с production bundle. `git diff --check` прошёл. Полный pytest и
 тяжёлые контейнерные проверки на ноутбуке не запускались. Evidence tag,
 `verify-release-evidence` и production runtime gate ещё ожидают.
+
+Повторное review для evidence.2 проверило заблокированный TASK-025-28,
+обходной read-only acceptance, порядок ручного run и dispatcher при
+просроченном schedule, фактический счётчик archive manifests и rollout plan
+Operations. Source tag остался на `38ac3bc4cfc9cd6d771652183e49b006b3100d63`;
+evidence.1 tag и его CI прошли. Проверенный content commit:
+`95ca7e438b9d06943f9eac68cf6863710c51bdca`; P0–P2 findings нет.
+`git diff --check` прошёл. Локальные `make production-check` и
+`verify-release-evidence` выполнены Product Owner под 1 GiB/no swap;
+Reviewer их повторно не запускал. Evidence.2 CI/tag и production
+acceptance ещё ожидают; тяжёлые тесты на ноутбуке не запускались.
