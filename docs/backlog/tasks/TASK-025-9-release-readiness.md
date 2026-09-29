@@ -1,20 +1,20 @@
 # TASK-025-9 — Production выпуск и проверка NHL
 
-> **Статус:** in_progress — v1.2.7 serving healthy; archive gate открыт, timer disabled
+> **Статус:** in_progress — v1.2.10 serving; v1.2.11 candidate, timer disabled
 > **Владелец:** Product Owner и Operations Agent
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
 > **ADR:** [ADR-026](../../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
 
-> v1.2.7 обслуживает календарь: 187 матчей за 30 дней, coverage `complete`.
-> Ручной OFF-цикл записал 1 834 прогноза, но завершился
-> `failed/archive_sync_failed` из-за команды системного `sync` вместо CLI.
-> v1.2.8 tag и Docker gates прошли; production rollout ещё не начат.
-> Оба NHL timer выключены.
+> Текущий v1.2.10 обслуживает API и бота. Ручной Data Cycle записал 1 834
+> прогноза, но host unit завершился после `archive_sync/ReadTimeoutError`;
+> run в БД остался `running`. Recovery dispatcher v1.2.10 тоже завершился
+> ошибкой из-за `SELECT FOR UPDATE` без UPDATE grant у Control API.
+> Исправления готовятся в PR #53 для v1.2.11. Оба NHL timer выключены.
 
 ## Результат
 
-Довести проверенный release candidate `v1.2.8` до production,
+Довести проверенный release candidate `v1.2.11` до production,
 запустить NHL Data Cycle по
 расписанию и подтвердить работу бота, API и ежедневного scheduler на
 production. Тег `v1.2.1` остаётся неизменным; футбольный production pipeline
@@ -24,7 +24,7 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
 
 - [ ] Все функциональные TASK инициативы прошли независимое review, full EPIC
   review, локальные проверки и terminal PR CI нового кандидата.
-  `pyproject.toml` и handoff указывают `1.2.8 candidate`;
+  `pyproject.toml` и handoff указывают `1.2.11 candidate`;
   `make production-check` должен пройти для final candidate.
 - [ ] Operations имеет привилегированное read-only evidence текущих image
   digests, Docker/DB состояния, последнего NHL run, календарного покрытия,
@@ -50,7 +50,7 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
   допустимый журнал и отсутствие дубля цикла. Проверка не публикует секреты
   или полный внешний ответ.
 - [ ] До Worker run установлен и проверен immutable model bundle с
-  `app_version=1.2.8` из неизменённых одобренных весов/features; старый
+  `app_version=1.2.11` из неизменённых одобренных весов/features; старый
   `current` и checksums сохранены для rollback.
 - [ ] После первого scheduled запуска подтверждены run_id, дата/время,
   стадии, фактическое 30-дневное coverage и сообщение администратору.

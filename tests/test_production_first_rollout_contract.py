@@ -119,7 +119,17 @@ def test_production_compose_fixture_renders_all_first_rollout_profiles(tmp_path:
         "postgresql://unsafe@db/sports_forecast"
     )
     rendered.write_text(yaml.safe_dump(config), encoding="utf-8")
-    with pytest.raises(ValueError, match="reader/control credentials"):
+    with pytest.raises(ValueError, match="reader/control/odds credentials"):
+        verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
+
+    config = yaml.safe_load(result.stdout)
+    config["services"]["api"]["secrets"] = [
+        secret
+        for secret in config["services"]["api"]["secrets"]
+        if secret["source"] != "odds_api_key_free"
+    ]
+    rendered.write_text(yaml.safe_dump(config), encoding="utf-8")
+    with pytest.raises(ValueError, match="odds secret mounts"):
         verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
 
     config = yaml.safe_load(result.stdout)

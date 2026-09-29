@@ -73,17 +73,57 @@ def test_boto_listing_follows_continuation_tokens() -> None:
     assert client.calls == [None, "next"]
 
 
+def test_boto_client_uses_bounded_timeouts_and_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    import boto3
+    from botocore.config import Config
+
+    captured: dict[str, object] = {}
+    original_config = Config
+
+    def client_factory(service: str, **kwargs: object) -> object:
+        captured.update(kwargs)
+        return object()
+
+    def config_factory(**kwargs: object) -> Config:
+        captured["retry_config"] = kwargs
+        return original_config(**kwargs)
+
+    monkeypatch.setattr(boto3, "client", client_factory)
+    monkeypatch.setattr("botocore.config.Config", config_factory)
+
+    Boto3ObjectStorage(
+        endpoint="https://storage.example",
+        bucket="bucket",
+        access_key_id="id",
+        secret_access_key="secret",
+    )
+
+    assert captured["retry_config"] == {
+        "connect_timeout": 5,
+        "read_timeout": 20,
+        "retries": {"mode": "standard", "total_max_attempts": 3},
+    }
+
+
 def test_sync_failure_keeps_staging_and_writes_retryable_state(tmp_path: Path) -> None:
     source = tmp_path / "source"
     source.mkdir()
     (source / "data.json").write_text("{}", encoding="utf-8")
     artifact = archive_snapshot(source, tmp_path / "staging")
 
+    state_root = tmp_path / "state"
     with pytest.raises(ArchiveSyncError):
-        sync_operational_archive(artifact.path, tmp_path / "state", _FakeStorage(fail_upload=True))
+        sync_operational_archive(artifact.path, state_root, _FakeStorage(fail_upload=True))
 
     assert artifact.path.exists()
-    assert '"status": "failed"' in (tmp_path / "state" / f"{artifact.artifact_id}.json").read_text()
+    state_path = state_root / f"{artifact.artifact_id}.json"
+    assert '"status": "failed"' in state_path.read_text()
+
+    retry_storage = _FakeStorage()
+    retry_result = sync_operational_archive(artifact.path, state_root, retry_storage)
+
+    assert retry_result.status == "verified"
+    assert f"operational-archive/{artifact.artifact_id}/manifest.json" in retry_storage.objects
 
 
 def test_sync_remote_verifies_all_files_before_success(tmp_path: Path) -> None:
@@ -97,6 +137,147 @@ def test_sync_remote_verifies_all_files_before_success(tmp_path: Path) -> None:
 
     assert result.status == "verified"
     assert f"operational-archive/{artifact.artifact_id}/manifest.json" in storage.objects
+
+
+def test_sync_reuses_durable_verified_state_without_remote_roundtrip(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.json").write_text("{}", encoding="utf-8")
+    artifact = archive_snapshot(source, tmp_path / "staging")
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    (state_root / f"{artifact.artifact_id}.json").write_text(
+        f'{{"artifact_id":"{artifact.artifact_id}","status":"verified",'
+        '"prefix":"operational-archive"}\n',
+        encoding="utf-8",
+    )
+
+    class UnavailableStorage:
+        def upload(self, source: Path, key: str) -> None:
+            raise AssertionError("Verified artifact must not be uploaded again")
+
+        def download(self, key: str, destination: Path) -> None:
+            raise AssertionError("Verified artifact must not be downloaded again")
+
+        def list_keys(self, prefix: str) -> list[str]:
+            raise AssertionError("Sync must not list remote objects")
+
+    result = sync_operational_archive(artifact.path, state_root, UnavailableStorage())
+
+    assert result.status == "verified"
+
+
+def test_sync_does_not_reuse_verification_from_another_prefix(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.json").write_text("{}", encoding="utf-8")
+    artifact = archive_snapshot(source, tmp_path / "staging")
+    state_root = tmp_path / "state"
+    storage = _FakeStorage()
+
+    sync_operational_archive(artifact.path, state_root, storage, prefix="first-prefix")
+    result = sync_operational_archive(artifact.path, state_root, storage, prefix="second-prefix")
+
+    assert result.status == "verified"
+    assert f"second-prefix/{artifact.artifact_id}/manifest.json" in storage.objects
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    ["operational-archive", "operational-archive/nhl-source-state/v1"],
+)
+def test_sync_migrates_legacy_verified_state_after_remote_key_confirmation(
+    tmp_path: Path, prefix: str
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.json").write_text("{}", encoding="utf-8")
+    artifact = archive_snapshot(source, tmp_path / "staging")
+    state_root = tmp_path / "state"
+    underlying = _FakeStorage()
+    sync_operational_archive(
+        artifact.path,
+        state_root,
+        underlying,
+        prefix=prefix,
+    )
+    state_path = state_root / f"{artifact.artifact_id}.json"
+    state_path.write_text(
+        f'{{"artifact_id":"{artifact.artifact_id}","status":"verified"}}\n',
+        encoding="utf-8",
+    )
+
+    class TrackingStorage:
+        def __init__(self) -> None:
+            self.list_calls = 0
+            self.upload_calls = 0
+            self.download_calls = 0
+
+        def upload(self, source: Path, key: str) -> None:
+            self.upload_calls += 1
+            underlying.upload(source, key)
+
+        def download(self, key: str, destination: Path) -> None:
+            self.download_calls += 1
+            underlying.download(key, destination)
+
+        def list_keys(self, prefix: str) -> list[str]:
+            self.list_calls += 1
+            return underlying.list_keys(prefix)
+
+    storage = TrackingStorage()
+    result = sync_operational_archive(
+        artifact.path,
+        state_root,
+        storage,
+        prefix=prefix,
+    )
+
+    assert result.status == "verified"
+    assert (storage.list_calls, storage.upload_calls, storage.download_calls) == (1, 0, 1)
+    assert f'"prefix": "{prefix}"' in state_path.read_text()
+
+
+def test_sync_does_not_trust_legacy_state_without_remote_confirmation(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.json").write_text("{}", encoding="utf-8")
+    artifact = archive_snapshot(source, tmp_path / "staging")
+    state_root = tmp_path / "state"
+    prefix = "unrelated-prefix"
+    underlying = _FakeStorage()
+    sync_operational_archive(artifact.path, state_root, underlying, prefix=prefix)
+    state_path = state_root / f"{artifact.artifact_id}.json"
+    state_path.write_text(
+        f'{{"artifact_id":"{artifact.artifact_id}","status":"verified"}}\n',
+        encoding="utf-8",
+    )
+
+    class TrackingStorage:
+        def __init__(self) -> None:
+            self.list_calls = 0
+            self.upload_calls = 0
+            self.download_calls = 0
+
+        def upload(self, source: Path, key: str) -> None:
+            self.upload_calls += 1
+            underlying.upload(source, key)
+
+        def download(self, key: str, destination: Path) -> None:
+            self.download_calls += 1
+            underlying.download(key, destination)
+
+        def list_keys(self, listing_prefix: str) -> list[str]:
+            self.list_calls += 1
+            return underlying.list_keys(listing_prefix)
+
+    storage = TrackingStorage()
+
+    result = sync_operational_archive(artifact.path, state_root, storage, prefix=prefix)
+
+    assert result.status == "verified"
+    assert (storage.list_calls, storage.upload_calls, storage.download_calls) == (0, 2, 2)
+    assert f'"prefix": "{prefix}"' in state_path.read_text()
 
 
 def test_sync_large_archive_does_not_read_whole_file(

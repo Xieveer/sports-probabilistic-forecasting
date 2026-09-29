@@ -95,9 +95,11 @@ fi
 export SF_DATA_CYCLE_GENERATION="${generation}"
 control start-stage --run-id "${SF_WORKER_RUN_ID}" --stage "${active_stage}"
 
+# Исторический OddsStore backfill не входит в ежедневный цикл; будущие odds
+# собирает отдельная стадия data_odds внутри Worker по data_odds_enabled.
 run_with_heartbeat /usr/bin/docker compose -f docker-compose.prod.yml --profile source-acquisition run --rm --no-deps source-acquirer \
   /app/.venv/bin/python -m sports_forecast.orchestration.source_snapshot_cli \
-  --tournament "${SF_TOURNAMENT}" --odds-enabled "${data_odds_enabled}"
+  --tournament "${SF_TOURNAMENT}" --odds-enabled false
 
 # WorkerExecution remains the lower-level materialization outcome.
 run_with_heartbeat /usr/bin/docker compose -f docker-compose.prod.yml --profile worker run --rm --no-deps worker \

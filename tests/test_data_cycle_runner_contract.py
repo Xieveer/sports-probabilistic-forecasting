@@ -27,7 +27,8 @@ def test_runner_executes_reserved_cycle_and_uses_measured_terminal_summary() -> 
     assert runner.index("control claim") < runner.index("control start-stage")
     assert runner.index("control start-stage") < runner.index("source_snapshot_cli")
     source_command = runner.split("source_snapshot_cli \\", 1)[1].split("# WorkerExecution", 1)[0]
-    assert '--odds-enabled "${data_odds_enabled}"' in source_command
+    assert "--odds-enabled false" in source_command
+    assert '--odds-enabled "${data_odds_enabled}"' not in source_command
     assert "--calendar-attempt" in runner
     assert 'finish-run --run-id "${SF_WORKER_RUN_ID}" --status auto' in runner
 
@@ -179,7 +180,7 @@ def test_runner_rejects_invalid_data_odds_setting_before_dispatch(setting: str) 
 
 @pytest.mark.parametrize("setting", [None, "true", "false"])
 def test_runner_accepts_strict_data_odds_values_and_passes_config(setting: str | None) -> None:
-    """Только буквальные значения true/false попадают в Hydra config."""
+    """Будущие odds идут в Worker; исторический backfill не блокирует календарь."""
     runner_path = PROJECT_ROOT / "deploy/systemd/run-canonical-refresh.sh"
     runner = runner_path.read_text(encoding="utf-8")
     root_config = (PROJECT_ROOT / "conf/config.yaml").read_text(encoding="utf-8")
@@ -200,6 +201,7 @@ def test_runner_accepts_strict_data_odds_values_and_passes_config(setting: str |
     assert 'case "$data_odds_enabled" in' in runner
     assert "true|false)" in runner
     assert "data_odds_enabled=${data_odds_enabled}" in runner
+    assert "--odds-enabled false" in runner
     assert "data_odds_enabled: true" in root_config
     assert result.returncode == 1
     assert "SF_TOURNAMENT" in result.stderr

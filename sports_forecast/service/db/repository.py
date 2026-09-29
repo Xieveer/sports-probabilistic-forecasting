@@ -906,9 +906,8 @@ class DataCycleRunRepository:
         at: datetime | None = None,
     ) -> bool:
         """Пометить устаревший heartbeat как stalled; не освобождать active slot."""
-        run = self.session.scalar(
-            select(DataCycleRun).where(DataCycleRun.run_id == run_id).with_for_update()
-        )
+        is_postgresql = self.session.get_bind().dialect.name == "postgresql"
+        run = self.session.scalar(select(DataCycleRun).where(DataCycleRun.run_id == run_id))
         if (
             run is None
             or run.status != "running"
@@ -919,7 +918,7 @@ class DataCycleRunRepository:
         ):
             return False
         now = _utc_naive_for_query(at or datetime.now(UTC))
-        if self.session.get_bind().dialect.name == "postgresql":
+        if is_postgresql:
             marked = self.session.scalar(
                 select(func.public.mark_data_cycle_executor_stalled(run_id))
             )

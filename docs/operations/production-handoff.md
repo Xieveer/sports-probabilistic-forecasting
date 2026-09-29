@@ -1,152 +1,116 @@
-# Передача сервиса в эксплуатацию: v1.2.10 candidate
-
-> Фактическое состояние на последней проверке 2026-09-28: production работает на v1.2.8;
-> API, бот и PostgreSQL healthy, `/health` и `/ready` отвечают 200.
-> Оба NHL timer выключены. Последний production Data Cycle завершился
-> `failed/quality_failed`; новая версия в production ещё не развёрнута.
+# Передача сервиса в эксплуатацию: v1.2.11 candidate
 
 - Статус подготовки: `candidate`
 - Сервис: sports-probabilistic-forecasting.
-- Canonical repository: Xieveer/sports-probabilistic-forecasting.
-- Инициатива: [EPIC-025](../backlog/EPIC-025-bot-schedule-readiness.md),
-  [TASK-025-22](../backlog/tasks/TASK-025-22-local-quality-parity.md),
-  [TASK-025-23](../backlog/tasks/TASK-025-23-pytest-memory-guard.md),
-  [TASK-025-24](../backlog/tasks/TASK-025-24-archive-sync-bounded-memory.md),
-  [TASK-025-25](../backlog/tasks/TASK-025-25-archive-sync-tmpfs.md),
-  [TASK-025-26](../backlog/tasks/TASK-025-26-refresh-inference-memory.md),
-  [TASK-025-27](../backlog/tasks/TASK-025-27-archive-manifest-loop.md).
+- Инициатива: [EPIC-025](../backlog/EPIC-025-bot-schedule-readiness.md);
+  исправления [TASK-025-28](../backlog/tasks/TASK-025-28-acceptance-docs-response.md),
+  [TASK-025-29](../backlog/tasks/TASK-025-29-idempotent-archive-sync.md) и
+  [TASK-025-30](../backlog/tasks/TASK-025-30-future-odds-production.md) и
+  [TASK-025-31](../backlog/tasks/TASK-025-31-control-stall-mark.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
-- Целевая среда: production VPS; версия: `1.2.10`.
-- source_tag: `v1.2.10` (целевой; тег ещё не создан).
-- source_commit/evidence_tag: фиксируются после merge и tag gates.
-- CI, Security, Docker, image digests, scan и provenance: ожидают source tag.
+- Целевая среда: production VPS `ops-prod-01`; версия: `1.2.11`.
+- source_tag: `v1.2.11` (целевой, до release gates не создан).
+- Ветка: `initiative/epic-025-v1211-recovery`.
+- Source commit, image digests, evidence tag и CI URLs фиксируются в
+  отдельном release evidence commit после merge/tag pipelines.
 
 ## Идентификация и ответственность
 
-v1.2.9 исправила ложный отказ freshness gate на прогнозах, созданных после
-начала матча; ограничила память archive-sync при сравнении больших файлов;
-разместила remote verification вне `/tmp=64m`; исключила ненужные train-таблицы
-из refresh Worker. Локальный exact wrapper выявил дефект цикла перечисления
-manifest: Compose наследует stdin и может синхронизировать только первый
-архив при успешном статусе. v1.2.10 исправляет этот дефект. Версия и lock
-согласованы (`pyproject.toml`, `uv.lock`).
-Изменений схемы БД, модели, коэффициентов и публичного API нет.
+v1.2.10 подняла API, Telegram bot и PostgreSQL, но ручной Data Cycle
+`c729bdd0-7ea5-405d-ba71-ae2c2f68b5e2` завершил systemd unit с кодом 1:
+после публикации 1 834 прогнозов archive-sync получил `ReadTimeoutError`.
+В БД run остался `running/archive_sync`, outbox пуст. Оба NHL timer выключены.
+Причина и остановка записаны в Operations Agent change record
+`docs/changes/2026-09-29-v1.2.10-interrupted-rollout.md` его репозитория.
+Однократный dispatcher tick 2026-09-29 18:29 UTC тоже завершился кодом 1:
+Control API использовал `SELECT FOR UPDATE` для `data_cycle_runs` без
+необходимого `UPDATE` grant. Run остался `running`, heartbeat 16:54:55 UTC;
+recovery не началось. TASK-025-31 устраняет row lock, сохраняя узкую
+атомарную `SECURITY DEFINER` функцию и прежние grants.
 
-Production preflight: v1.2.8 healthy, Alembic `0017`, оба NHL timer disabled,
-последний run `failed/quality_failed`, active runs нет. Production bundle
-`sha256:5b3cb6e2ca0b588059de7416a5cbdae1e955e4b9a91b08be51da43684e3640b0`
-содержит 489 ordered features и проверенные веса. Для v1.2.10 нужен новый
-content-addressed wrapper с теми же весами, `app_version=1.2.10` и exact
-source_commit/tag; текущий production pointer до готовности нового bundle
-не менять.
+v1.2.11 ограничивает повторную передачу уже проверенных архивов и сетевые
+таймауты, даёт API file-backed ключи The Odds API, отделяет ежедневный сбор
+будущих коэффициентов от исторического OddsStore backfill и исправляет
+acceptance для HTML `/docs` и исправляет вызов recovery у Control API.
+Схема БД, права ролей и веса модели не меняются.
 
 ## Runtime и конфигурация
 
-Compose получает только immutable `IMAGE@sha256:DIGEST` из release manifest
-и защищённые `*_FILE` paths. API, Worker и бот работают без host ports под
-UID/GID `10001:10001`. `nhl_admins` одинаков у API, Worker и bot map.
-Перед rollout Operations сверяет фактический systemd `SF_COMPOSE_ENV_FILE`
-и `/etc/sports-forecast/refresh/nhl.env`: пять image refs,
-`SF_APP_VERSION=1.2.10`, tournament/market/spec/algorithm/features selectors,
-`SF_DATA_ODDS_ENABLED=false`, source/model/archive roots и Compose dry-run.
-Старые и новые NHL timer остаются выключенными до успешного ручного цикла.
+Используются только immutable `IMAGE@sha256:DIGEST`, UID/GID `10001:10001`,
+Compose secret mounts и прежние лимиты памяти. API получает четыре
+`ODDS_API_KEY_*_FILE`/`ODDS_API_KEY_FILE`, как Worker; Telegram bot получает
+коэффициенты через API без доступа к этим ключам. Production profile содержит
+только `*_FILE` paths для credential, без plain-text значений; в нём заданы
+`SF_APP_VERSION=1.2.11` и `SF_DATA_ODDS_ENABLED=true`. Исторический
+backfill не входит в ежедневный runner; Worker выполняет один batch будущих
+коэффициентов на run. Значения ключей и полный rendered Compose не сохранять
+в логи/evidence.
 
-## Локальные доказательства
-
-Изолированный PostgreSQL 16 восстановлен из backup перед v1.2.8. На его
-истории прежний freshness gate нашёл 1 621 ложный долг по `finished`, новый
-вернул `valid=True`, `expired=0`, `missing=0`. Внешний NHL source-acquirer
-обновил копию локального source под лимитом 1 GiB до 2026-10-29.
-Связанный локальный Data Cycle
-`876f0523-3f8c-44b6-95a8-0234b4258fbd` на свежем source и весах
-production-модели завершился `partial_success` лишь из-за явно выключенных
-odds. Worker при `mem_limit=3g`, swap=0 опубликовал 1 847 прогнозов без OOM;
-calendar/quality/predictions/publication успешны. Оба archive-sync при
-`mem_limit=512m`, `/tmp=64m`, swap=0 remote-verified новые архивы; outbox
-доставлен тестовому Telegram-боту за одну попытку. Пользователь ранее
-подтвердил реальные `/upcoming`, `/cycle_history` и terminal notification
-через @SSPredictBot, подключённого только к изолированным API/БД.
-32 релевантных теста, lint, mypy, format и `git diff --check` прошли под
-ограничением ресурсов. Полный pytest suite после инцидента 14.3 GB RSS не
-запускался. Независимое review TASK-025-22/23/24/25/26 не выявило P0–P2.
-Точный v1.2.9 shell wrapper в изолированном Compose прошёл source, quality,
-predictions и publication под общим cgroup 6 GiB/no swap: peak 3.65 GiB,
-Worker без OOM. Archive gate не прошёл: локальные права сначала дали
-`artifacts=0`; после их исправления отдельный archive loop подтвердил чтение
-stdin первым `docker compose run` и только один sync из трёх manifest. Это кодовый дефект
-[TASK-025-27](../backlog/tasks/TASK-025-27-archive-manifest-loop.md);
-v1.2.9 остаётся NO GO. Ограниченный локальный wrapper с исправленным shell
-`f2fdfa8` завершился `Result=success/exit0`, Data Cycle
-`64cc3e85-944e-4c0b-afcb-b46e3d9dfc11` — ожидаемым `partial_success` при
-выключенных odds. Новый пустой archive root содержал два ожидаемых manifest:
-canonical и NHL source-state. Оба синхронизированы и remote-verified,
-`archive_sync success/artifacts=2`; для обоих сохранено локальное состояние
-`verified`. Общий cgroup 6 GiB/no swap имел исторический пик около 3.65 GiB
-с учётом предыдущих попыток; прирост OOM и OOM kill в этом прогоне равен
-нулю. Прогон использовал опубликованные образы/модель v1.2.9 и локальный
-UID1000 override для host shell; production исполняет systemd shell под root,
-контейнеры — под UID10001. Это доказательство исправленного shell на полном
-локальном пути, а exact v1.2.10 image/identity gate остаётся за tag pipeline
-и первым ограниченным production rollout. Первый подготовительный запуск
-fixture был остановлен до Worker из-за неверного bind source root, затем
-исправленный mount и incremental date проверены перед успешным прогоном.
-Draft PR #52 прошёл lint-test, dependencies и filesystem/secrets checks;
-независимый review TASK-025-27 без P0–P2. Source tag и release/tag CI ещё
-ожидаются.
+До нового запуска штатный host recovery должен завершить старый run после
+проверки `MainPID=0`, отсутствия его работающих контейнеров и совпадения
+owner/generation. Затем сверяются terminal `failed/archive_sync_failed`,
+outbox и отсутствие active run. Прямое изменение БД запрещено. Пока ручной
+цикл не принят, оба NHL timer остаются выключенными.
 
 ## Healthcheck и smoke-проверка
 
-После ограниченного rollout до ручного Data Cycle сверить running digests,
-healthy/restart counts, `/health`, `/ready`, NHL calendar API 0/7/30 под
-реальной reader role, readiness и admin status/history/schedule.
-Один ручной цикл с `SF_DATA_ODDS_ENABLED=false` должен дать terminal
-`partial_success`, ноль Odds API запросов, 30-дневное coverage, прогнозы для
-eligible событий, odds `missing`, два verified archives и одно итоговое
-уведомление с тем же run ID. Проверить пользовательские команды бота,
-`make acceptance-check` с утверждёнными runtime inputs, отсутствие overlap.
-Новый dispatcher timer включать только после успешного ручного цикла;
-проверить next trigger, первый плановый run и уведомление. При ошибке
-оставить timer выключенным, зафиксировать состояние и запросить инструкции
-владельца без повторного rollout.
+После установки exact source tag/images/model wrapper проверить `healthy`,
+restart counts, `/health`, `/ready`, HTML `/docs`, JSON `/openapi.json`,
+календарь NHL и bot heartbeat. Выполнить один ручной Data Cycle и подтвердить:
+`calendar`, `quality`, `predictions`, `publication`, `archive_sync` успешны;
+`data_odds` выполнила запрос и записала попытку/наблюдения; Worker записал
+прогнозы; архивы remote-verified; terminal outbox доставлен один раз.
+`partial_success` допустим только для отдельных отсутствующих линий при
+успешной основной задаче, с явным покрытием и без скрытой ошибки provider.
+
+Проверить `/predict/upcoming/nhl?...&live_pinnacle=true`: API возвращает
+`live_odds_status=ok` и численные Pinnacle поля хотя бы для доступных матчей;
+`live_pinnacle=false` не обращается к провайдеру. Пользовательский Telegram
+путь должен показывать коэффициенты в карточке прогноза, а terminal summary —
+покрытие odds. Отсутствующие линии отображаются явно, без фиктивных цен.
+Исполнить `make acceptance-check` с защищёнными runtime inputs; script не
+печатает payload/секреты. До включения ежедневного расписания проверить
+настройку времени/интервала в БД, затем включить только dispatcher timer и
+подтвердить next trigger, один плановый run и его уведомление. Legacy timer
+остаётся выключенным. При любой новой production ошибке остановиться и
+передать пользователю факты до retry/rollback.
 
 ## Данные и совместимость
 
-Свежий root-only `pg_dump -Fc` после production v1.2.8 ошибки создан:
-`pre-v1.2.9-20260928T213539314360486.dump`, 57 921 104 байт,
-SHA-256 `bd5dc06ed22d0957b96f10fdb16112f965c11dacc7c759e490124c228bcd983b`.
-Каталог, isolated restore на exact PostgreSQL image, третья локальная копия
-и полное off-host скачивание из Yandex Object Storage подтвердили тот же
-hash и размер. Перед v1.2.10 rollout сверить актуальность этого backup и
-создать новый при изменении production данных. Схема остаётся
-`0017_data_cycle_notification_outbox`;
-role-bootstrap/migrator выполняются idempotently из approved image.
-Объекты архивов immutable; retention/encryption service account не видит.
+Перед v1.2.11 rollout создать свежий root-only PostgreSQL backup и подтвердить
+изолированный restore и off-host копию по SHA-256. Предыдущий проверенный
+backup перед v1.2.10 сохранён; он не заменяет свежий gate после записи
+1 834 прогнозов. Alembic остаётся `0017_data_cycle_notification_outbox`.
+Для модели нужен новый content-addressed wrapper с `app_version=1.2.11`
+и exact source commit; содержимое весов, `features.txt` и `deploy.yaml`
+сверяется с активным production bundle. Включение historical backfill не
+производится. Локальный ключ Odds API ответил HTTP 200 на один NHL запрос;
+доступность именно серверного secret проверяется отдельно без вывода значения.
 
 ## Наблюдаемость
 
-В production change record сохранить UTC, source commit, manifest hash,
-running image IDs, restart counts, DB revision, backup hash, bundle ID,
-run/stage statuses, coverage, число прогнозов, 0 provider requests в
-OFF-режиме, notification delivery и timer last/next trigger. Секреты,
-полные Docker/DB логи и ответы провайдера не публиковать.
+В production change record фиксировать UTC, commit/tag/manifest digest,
+running image digests, backup hash, bundle ID, container restarts/OOM, RAM,
+disk, run/stage/failure code, provider attempts/quota headers, число прогнозов,
+odds coverage, архивные verification states, notification delivery и
+timer last/next trigger. Не сохранять полные внешние ответы и credentials.
 
 ## Артефакт и откат
 
-После terminal PR CI и финального review Reviewer создаёт annotated
-`v1.2.10` на exact merged commit `main`. Tag pipeline обязан завершить CI,
-Security, first-rollout contract, linux/amd64 images, scan и provenance.
-Release owner создаёт immutable evidence commit/tag и запускает
-`make verify-release-evidence` с `--handoff docs/operations/production-handoff.md`
-для exact manifest/handoff. Operations
-сверяет digests и сохраняет root-only rollback refs v1.2.8, прежний model
-pointer и backup. Serving rollback на v1.2.8 допускается по сохранённым
-digest/env/model pointer без downgrade БД; если post-rollout ошибка повторит
-баг, дальнейшие действия останавливаются до инструкции пользователя.
+После независимого review и terminal PR CI Reviewer ставит annotated
+`v1.2.11` на exact merged commit `main`. Tag pipeline должен завершить CI,
+Security, first-rollout, публикацию linux/amd64 images, scan и provenance.
+Release evidence фиксирует source/evidence tags, полный manifest, model
+wrapper и ссылки CI; `make verify-release-evidence` проверяет их вместе с
+этим handoff через `--handoff docs/operations/production-handoff.md`.
+Operations Agent сохраняет root-only прежние env/images/model
+pointer и свежий backup. Предыдущие serving refs v1.2.10 допускают откат
+без DB downgrade, но при новой ошибке решение об откате принимает пользователь.
 
 ## Нерешённые вопросы
 
-Для решения GO требуются terminal PR/CI, source tag,
-manifest/images/evidence, свежий backup/restore/off-host evidence и wrapper
-production-модели для `1.2.10`. Локальный UID и образный разрыв следует
-проверить на первых ограниченных production шагах до включения timer.
-Production rollout пока NO GO.
+До production GO остаются: чистое review TASK/EPIC, terminal PR/tag CI,
+immutable release evidence и model wrapper, свежий backup/restore/off-host,
+штатное завершение старого run, проверка серверного Odds API secret и
+ограниченный ручной цикл. Статус candidate означает готовый контракт
+проверки, а не подтверждённый production успех.

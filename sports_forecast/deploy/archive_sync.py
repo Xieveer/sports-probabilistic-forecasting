@@ -20,6 +20,9 @@ from sports_forecast.utils.log_config import get_logger
 
 logger = get_logger(__name__)
 _ARTIFACT_ID_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_LEGACY_VERIFICATION_PREFIXES = frozenset(
+    {"operational-archive", "operational-archive/nhl-source-state/v1"}
+)
 
 
 class ArchiveSyncError(RuntimeError):
@@ -52,6 +55,7 @@ class Boto3ObjectStorage:
     ) -> None:
         try:
             import boto3
+            from botocore.config import Config
         except ImportError as exc:  # pragma: no cover - зависит от отдельного sync image
             raise ArchiveSyncError("Для archive sync нужен отдельный образ с boto3") from exc
         self._bucket = bucket
@@ -60,6 +64,11 @@ class Boto3ObjectStorage:
             endpoint_url=endpoint,
             aws_access_key_id=access_key_id,
             aws_secret_access_key=secret_access_key,
+            config=Config(
+                connect_timeout=5,
+                read_timeout=20,
+                retries={"mode": "standard", "total_max_attempts": 3},
+            ),
         )
 
     @classmethod
@@ -113,14 +122,44 @@ def _state_path(state_root: Path, artifact_id: str) -> Path:
     return state_root / f"{artifact_id}.json"
 
 
-def _write_state(state_root: Path, artifact_id: str, status: str) -> None:
+def _write_state(state_root: Path, artifact_id: str, status: str, prefix: str) -> None:
     state_root.mkdir(parents=True, exist_ok=True)
     target = _state_path(state_root, artifact_id)
     temporary = target.with_name(f".{target.name}.tmp")
     temporary.write_text(
-        json.dumps({"artifact_id": artifact_id, "status": status}) + "\n", encoding="utf-8"
+        json.dumps({"artifact_id": artifact_id, "status": status, "prefix": prefix.rstrip("/")})
+        + "\n",
+        encoding="utf-8",
     )
     temporary.replace(target)
+
+
+def _is_durably_verified(state_root: Path, artifact_id: str, prefix: str) -> bool:
+    """Доверять только точной durable записи проверки архива в том же prefix."""
+    try:
+        state = json.loads(_state_path(state_root, artifact_id).read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+    return (
+        isinstance(state, dict)
+        and state.get("artifact_id") == artifact_id
+        and state.get("status") == "verified"
+        and state.get("prefix") == prefix.rstrip("/")
+    )
+
+
+def _has_legacy_verified_state(state_root: Path, artifact_id: str) -> bool:
+    """Найти старую verified-запись без идентификатора Object Storage prefix."""
+    try:
+        state = json.loads(_state_path(state_root, artifact_id).read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+    return (
+        isinstance(state, dict)
+        and state.get("artifact_id") == artifact_id
+        and state.get("status") == "verified"
+        and "prefix" not in state
+    )
 
 
 def _files_equal(first: Path, second: Path) -> bool:
@@ -150,10 +189,58 @@ def sync_operational_archive(
     При любой ошибке archive остаётся на staging, а durable state получает ``failed``.
     """
     artifact: ArchiveArtifact = verify_archive(archive_path)
+    normalized_prefix = prefix.rstrip("/")
+    if _is_durably_verified(state_root, artifact.artifact_id, normalized_prefix):
+        logger.info(
+            "Operational archive already remote-verified artifact_id=%s", artifact.artifact_id
+        )
+        return ArchiveSyncResult(artifact.artifact_id, "verified")
+    legacy_verified = (
+        normalized_prefix in _LEGACY_VERIFICATION_PREFIXES
+        and _has_legacy_verified_state(state_root, artifact.artifact_id)
+    )
     try:
         manifest = json.loads((artifact.path / "manifest.json").read_text(encoding="utf-8"))
         relative_paths = ["manifest.json", *[str(item["path"]) for item in manifest["files"]]]
-        base = f"{prefix.rstrip('/')}/{artifact.artifact_id}"
+        base = f"{normalized_prefix}/{artifact.artifact_id}"
+        if legacy_verified:
+            try:
+                remote_keys = storage.list_keys(f"{base}/")
+            except Exception as exc:
+                logger.warning(
+                    "Не удалось подтвердить legacy verified archive listing; "
+                    "выполняется полная проверка: %s",
+                    type(exc).__name__,
+                )
+            else:
+                expected_keys = {f"{base}/{relative}" for relative in relative_paths}
+                if set(remote_keys) == expected_keys:
+                    try:
+                        state_root.mkdir(parents=True, exist_ok=True)
+                        with tempfile.TemporaryDirectory(
+                            prefix="archive-sync-legacy-", dir=state_root
+                        ) as raw_tmp:
+                            remote_manifest = Path(raw_tmp) / "manifest.json"
+                            storage.download(f"{base}/manifest.json", remote_manifest)
+                            remote_matches = _files_equal(
+                                remote_manifest, artifact.path / "manifest.json"
+                            )
+                    except Exception as exc:
+                        logger.warning(
+                            "Не удалось подтвердить legacy verified manifest; "
+                            "выполняется полная проверка: %s",
+                            type(exc).__name__,
+                        )
+                    else:
+                        if remote_matches:
+                            _write_state(
+                                state_root, artifact.artifact_id, "verified", normalized_prefix
+                            )
+                            logger.info(
+                                "Operational archive legacy verification migrated artifact_id=%s",
+                                artifact.artifact_id,
+                            )
+                            return ArchiveSyncResult(artifact.artifact_id, "verified")
         for relative in relative_paths:
             storage.upload(artifact.path / relative, f"{base}/{relative}")
         state_root.mkdir(parents=True, exist_ok=True)
@@ -165,11 +252,11 @@ def sync_operational_archive(
                 storage.download(f"{base}/{relative}", remote_copy)
                 if not _files_equal(remote_copy, artifact.path / relative):
                     raise ArchiveSyncError(f"Remote object differs: {relative}")
-        _write_state(state_root, artifact.artifact_id, "verified")
+        _write_state(state_root, artifact.artifact_id, "verified", normalized_prefix)
         logger.info("Operational archive remote-verified artifact_id=%s", artifact.artifact_id)
         return ArchiveSyncResult(artifact.artifact_id, "verified")
     except Exception as exc:
-        _write_state(state_root, artifact.artifact_id, "failed")
+        _write_state(state_root, artifact.artifact_id, "failed", normalized_prefix)
         if isinstance(exc, ArchiveSyncError):
             raise
         raise ArchiveSyncError(f"Operational archive sync failed: {type(exc).__name__}") from exc
