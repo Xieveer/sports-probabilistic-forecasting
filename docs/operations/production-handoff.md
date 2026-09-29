@@ -130,7 +130,14 @@ pointer и свежий backup. Предыдущие serving refs v1.2.10 доп
 
 ## Нерешённые вопросы
 
-До production GO остаются: review и terminal CI immutable release evidence,
+Независимый Reviewer проверил manifest, exact source tag/commit, terminal
+CI/Security/Docker и first-rollout, опубликованные четыре image digests,
+backup/restore/off-host и серверный Odds API credential gate по Operations
+evidence. Блокирующих findings нет. Проверенный content commit:
+`8cde74015cf51a1655a8e291f9854fbbbcca9e6f`. Это release evidence review;
+фактические recovery, Data Cycle, Telegram и scheduler gates ещё открыты.
+
+До production GO остаются: terminal CI immutable release evidence,
 проверка wrapper в exact Worker image, установка проверенных refs на VPS,
 штатное завершение старого run и ограниченный ручной цикл с odds/Telegram.
 Ежедневный timer включается только после его acceptance. Статус candidate означает готовый контракт
