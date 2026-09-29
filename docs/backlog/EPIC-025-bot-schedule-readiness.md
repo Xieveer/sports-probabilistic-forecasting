@@ -38,6 +38,14 @@
   row lock убран, grants не расширены. Старый run остаётся `running`, оба
   NHL timer выключены. Следующая роль: Reviewer для финального TASK/EPIC
   gate, затем CI/release evidence и Operations Agent для gated rollout.
+- Review evidence v1.2.11: независимый Reviewer проверил полный diff
+  TASK-025-28/29/30/31, release handoff и связанные канонические документы;
+  блокирующих findings после исправления legacy archive state нет. Проверенный
+  content commit: `436c96202f02cef76fa0efc1a99124a3cbdc5535`. Локально подтверждены 153 адресных теста
+  (1 optional integration skipped), `make lint`, `make type-check` (382 files),
+  `make production-check`, pre-commit hooks и `git diff --check` под
+  ограничениями ресурсов. Полный pytest не запускался. Это review ветки;
+  отдельное EPIC release review и terminal CI остаются открыты.
 - Предыдущий correction cycle: `initiative/epic-025-local-parity`,
   [TASK-025-22](tasks/TASK-025-22-local-quality-parity.md). Ручной Data Cycle
   v1.2.8 на production завершился `failed/canonical_freshness_failed`.
