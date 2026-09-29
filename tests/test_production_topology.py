@@ -209,7 +209,17 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
         "SF_DATA_CYCLE_NOTIFICATION_ALIASES": (
             "${SF_DATA_CYCLE_NOTIFICATION_ALIASES:?set safe notification aliases}"
         ),
+        "ODDS_API_KEY_FREE_FILE": "/run/secrets/odds_api_key_free",
+        "ODDS_API_KEY_20K_FILE": "/run/secrets/odds_api_key_20k",
+        "ODDS_API_KEY_100K_FILE": "/run/secrets/odds_api_key_100k",
+        "ODDS_API_KEY_FILE": "/run/secrets/odds_api_key",
     }
+    assert {
+        "odds_api_key_free",
+        "odds_api_key_20k",
+        "odds_api_key_100k",
+        "odds_api_key",
+    }.issubset(set(cast(list[str], api["secrets"])))
     assert "volumes" not in api
     assert "volumes" not in bot
     assert "DATABASE_URL" not in cast(dict[str, str], bot["environment"])

@@ -9,7 +9,36 @@
 ## Память Product Owner
 
 - Инициатива: `EPIC-025`.
-- Текущий correction cycle: `initiative/epic-025-local-parity`,
+- Текущий correction cycle: `initiative/epic-025-v1211-recovery`,
+  [TASK-025-28](tasks/TASK-025-28-acceptance-docs-response.md),
+  [TASK-025-29](tasks/TASK-025-29-idempotent-archive-sync.md),
+  [TASK-025-30](tasks/TASK-025-30-future-odds-production.md) и
+  [TASK-025-31](tasks/TASK-025-31-control-stall-mark.md).
+  v1.2.10 API/bot/DB подняты, но ручной run после публикации 1 834 прогнозов
+  получил `archive_sync/ReadTimeoutError`; systemd unit завершился с кодом 1,
+  run остался `running/archive_sync`, outbox пуст, оба NHL timer выключены.
+  Владелец 2026-09-29 подтвердил конечную цель: исправить сбой, включить
+  сбор будущих NHL odds и вывод коэффициентов в API/Telegram, довести новый
+  релиз до production и включить ежедневный Data Cycle. Перед новым запуском
+  требуется штатный host recovery старого run, свежий backup, локальные gates,
+  независимое review, terminal CI и release evidence. Если новый production
+  цикл неуспешен, остановиться и вернуться к владельцу.
+- Gate v1.2.11: TASK-025-28/29/30 прошли red→green, совокупно 144 адресных
+  теста под лимитом 1.5 GiB/no swap, `make lint`, `make type-check` и
+  `make production-check` успешны. Reviewer выявил одну P1-находку о legacy
+  archive state; Developer исправил её, повторное review чистое
+  и не нашло блокирующих проблем
+  в коде и документации. Подготовлен
+  [handoff](../operations/production-handoff.md); CI и production gates
+  открыты. Однократный production dispatcher tick 2026-09-29 18:29 UTC
+  завершился кодом 1. Причина: `sf_control_api` не имеет `UPDATE` на
+  `data_cycle_runs`, а код делал `SELECT FOR UPDATE` до вызова разрешённой
+  атомарной функции. TASK-025-31 прошёл red→green (9 passed, 1 optional
+  skipped под 768 MiB/no swap) и независимое review без блокирующих findings;
+  row lock убран, grants не расширены. Старый run остаётся `running`, оба
+  NHL timer выключены. Следующая роль: Reviewer для финального TASK/EPIC
+  gate, затем CI/release evidence и Operations Agent для gated rollout.
+- Предыдущий correction cycle: `initiative/epic-025-local-parity`,
   [TASK-025-22](tasks/TASK-025-22-local-quality-parity.md). Ручной Data Cycle
   v1.2.8 на production завершился `failed/canonical_freshness_failed`.
   Решение владельца от 2026-09-28: исправлять и проверять дефекты локально
