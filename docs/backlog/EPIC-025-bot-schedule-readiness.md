@@ -95,16 +95,16 @@
   `initiative/epic-025-v1_2_7-calendar-grant` и
   `initiative/epic-025-v1_2_8-archive-runner`; текущая correction branch
   `initiative/epic-025-v1_2_10-archive-stdin`.
-- Workflow / этап: `v1.2.9 source PR #50 merged, source tag и CI/Security/
-  Docker pipeline успешны; exact local wrapper завершил archive_sync с
-  artifacts=0 из-за прав fixture, отдельный archive loop после исправления
-  прав выявил stdin bug: 1 sync из 3 manifest. v1.2.9 NO GO;
-  TASK-025-27 исправлен в draft PR #52 для v1.2.10, его CI зелёный и
-  независимый review без P0–P2. Ограниченный local wrapper с новым shell,
-  образами v1.2.9 и локальным UID override завершился partial_success:
-  archive_sync artifacts=2, оба manifest remote-verified, прирост OOM=0;
-  exact release images/UID, tag/evidence и production gates ещё открыты.
-  Backup/restore/off-host проверены`.
+- Workflow / этап: `v1.2.9 NO GO после exact wrapper с artifacts=0 и
+  отдельного archive loop с 1 sync из 3 manifest. TASK-025-27 исправлен
+  в PR #52, review без P0–P2; ограниченный local wrapper с новым shell,
+  образами v1.2.9 и UID override завершился partial_success:
+  archive_sync artifacts=2, оба manifest remote-verified, прирост OOM=0.
+  PR #52 merged; v1.2.10 tag на commit 38ac3bc, CI/Security/Docker,
+  first-rollout, публикация образов, scan и provenance успешны. Свежий
+  backup/restore/off-host проверен; новый wrapper модели собран и file SHA
+  совпадают с production. Immutable evidence и production rollout ещё
+  открыты, таймеры выключены`.
 - Исходная цель: календарь NHL независимо от прогноза, готовность событий,
   админ-управление Data Cycle и выпуск `1.2.1`;
   [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
@@ -270,9 +270,9 @@
 - Артефакты: [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
 - Предыдущая роль: Developer — TASK-025-22/23/24 и bounded local parity;
   Reviewer — код без P0–P2, finding по устаревшим статусам исправлен.
-- Следующая роль: Product Owner — terminal PR/CI и source tag v1.2.10;
-  Operations Agent — release evidence, свежий backup и ограниченный
-  production rollout после release gates. Production rollout ещё не начат.
+- Следующая роль: Product Owner — immutable release evidence; Operations
+  Agent — ограниченный production rollout после evidence gate. Production
+  rollout ещё не начат.
 - Открытые вопросы / блокеры: 30-дневное coverage подтверждено (187 матчей),
   три provider keys недействительны, isolated publication подтверждена,
   production manual run v1.2.7 завершился ошибкой archive_sync. Оба NHL
@@ -285,8 +285,9 @@
   ошибочно завершил archive_sync с 0 artifacts из-за прав fixture; отдельный
   archive loop после исправления прав выявил поглощение stdin и 1 sync из 3.
   TASK-025-27 исправлен: bounded hybrid wrapper завершился с двумя
-  remote-verified архивами без OOM. Source tag, evidence, fresh backup и
-  production gates v1.2.10 ещё открыты. Полный pytest на ноутбуке не запускать.
+  remote-verified архивами без OOM. Source tag/CI и fresh backup проверены;
+  immutable evidence и production gates v1.2.10 ещё открыты. Полный pytest
+  на ноутбуке не запускать.
 - Обновлено: 2026-09-29.
 
 ## Цель и границы

@@ -42,7 +42,8 @@ production-like wrapper v1.2.9 завершил archive_sync с `artifacts=0` и
 `partial_success` из-за явно выключенных odds; оба архива проверены в
 изолированном S3, `archive_sync artifacts=2`, новых OOM нет. Прогон использовал
 образы приложения v1.2.9 и локальную замену UID для запуска host shell без
-root; tag/image gate v1.2.10 остаётся открытым. Production не затронут.
+root. Tag/image gate v1.2.10 прошёл; immutable release evidence и проверка
+на production ещё открыты. Production не затронут.
 
 ## Граница
 

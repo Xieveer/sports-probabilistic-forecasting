@@ -1,6 +1,6 @@
 # Передача сервиса в эксплуатацию: v1.2.10 candidate
 
-> Фактическое состояние на последней проверке 2026-09-28: production работает на v1.2.8;
+> Фактическое состояние на последней проверке 2026-09-29: production работает на v1.2.8;
 > API, бот и PostgreSQL healthy, `/health` и `/ready` отвечают 200.
 > Оба NHL timer выключены. Последний production Data Cycle завершился
 > `failed/quality_failed`; новая версия в production ещё не развёрнута.
@@ -17,9 +17,24 @@
   [TASK-025-27](../backlog/tasks/TASK-025-27-archive-manifest-loop.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
 - Целевая среда: production VPS; версия: `1.2.10`.
-- source_tag: `v1.2.10` (целевой; тег ещё не создан).
-- source_commit/evidence_tag: фиксируются после merge и tag gates.
-- CI, Security, Docker, image digests, scan и provenance: ожидают source tag.
+- source_tag: `v1.2.10`.
+- source_commit: `38ac3bc4cfc9cd6d771652183e49b006b3100d63`.
+- evidence_tag: `v1.2.10-evidence.1` (создаётся после проверки manifest).
+- PR: https://github.com/Xieveer/sports-probabilistic-forecasting/pull/52.
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36593929894.
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36593930087.
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36594026233.
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36594026233/job/109496586224.
+
+Tag pipeline завершился `success`: четыре образа опубликованы как immutable
+linux/amd64, scan и provenance прошли. Published digest совпали с digest
+образов, проверенных first-rollout:
+
+- postgres: `postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94` — без изменения.
+- api: `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:eb97bef597f77df29f8dd223579bcc5692087b34de81383000e96398c56adf57` — published linux/amd64 scan provenance.
+- worker: `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:a0668d7b2e386dd1dfad92b2d99cd9cbd5235d0dbe2287f163bfb179a9107fb9` — published linux/amd64 scan provenance.
+- telegram_bot: `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:d690af1bc5440a604a8b92c2f614fbea47a5ada8f0d01ca3b0fba9e8e286dcd5` — published linux/amd64 scan provenance.
+- archive_sync: `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:0adacbba4c069b733dd59d3c55a305da9c8f3b9a9ede6612099d970d5ffb99aa` — published linux/amd64 scan provenance.
 
 ## Идентификация и ответственность
 
@@ -37,8 +52,10 @@ Production preflight: v1.2.8 healthy, Alembic `0017`, оба NHL timer disabled,
 `sha256:5b3cb6e2ca0b588059de7416a5cbdae1e955e4b9a91b08be51da43684e3640b0`
 содержит 489 ordered features и проверенные веса. Для v1.2.10 нужен новый
 content-addressed wrapper с теми же весами, `app_version=1.2.10` и exact
-source_commit/tag; текущий production pointer до готовности нового bundle
-не менять.
+source_commit/tag. Локально собран и проверен bundle
+`sha256:f7deb1534537726c9f462b2de5c440f57344a59c8a6e97acc0e20ce25528d5b6`;
+SHA всех трёх model files совпали с production current bundle. Текущий
+production pointer до установки новой версии не менять.
 
 ## Runtime и конфигурация
 
@@ -90,9 +107,8 @@ UID1000 override для host shell; production исполняет systemd shell 
 и первым ограниченным production rollout. Первый подготовительный запуск
 fixture был остановлен до Worker из-за неверного bind source root, затем
 исправленный mount и incremental date проверены перед успешным прогоном.
-Draft PR #52 прошёл lint-test, dependencies и filesystem/secrets checks;
-независимый review TASK-025-27 без P0–P2. Source tag и release/tag CI ещё
-ожидаются.
+PR #52 и main CI/Security прошли; независимый review TASK-025-27 без P0–P2.
+Source tag `v1.2.10` и release/tag CI/first-rollout завершились успешно.
 
 ## Healthcheck и smoke-проверка
 
@@ -111,13 +127,13 @@ eligible событий, odds `missing`, два verified archives и одно и
 
 ## Данные и совместимость
 
-Свежий root-only `pg_dump -Fc` после production v1.2.8 ошибки создан:
-`pre-v1.2.9-20260928T213539314360486.dump`, 57 921 104 байт,
-SHA-256 `bd5dc06ed22d0957b96f10fdb16112f965c11dacc7c759e490124c228bcd983b`.
-Каталог, isolated restore на exact PostgreSQL image, третья локальная копия
-и полное off-host скачивание из Yandex Object Storage подтвердили тот же
-hash и размер. Перед v1.2.10 rollout сверить актуальность этого backup и
-создать новый при изменении production данных. Схема остаётся
+Свежий root-only `pg_dump -Fc` перед v1.2.10 создан:
+`pre-v1.2.10-20260929T160157108514371.dump`, 57 921 104 байт,
+SHA-256 `bd09610575141f7ce23b4f6fc4ebfa3f8b3b91cb4b74ab2f7073eebc7c216b5d`.
+Изолированное восстановление на exact PostgreSQL image и полное off-host
+скачивание из Yandex Object Storage подтвердили тот же hash и размер;
+подробности в `operations-agent/docs/changes/2026-09-29-v1.2.10-backup-gate.md`.
+Предыдущий backup перед v1.2.9 сохранён. Схема остаётся
 `0017_data_cycle_notification_outbox`;
 role-bootstrap/migrator выполняются idempotently из approved image.
 Объекты архивов immutable; retention/encryption service account не видит.
@@ -145,8 +161,7 @@ digest/env/model pointer без downgrade БД; если post-rollout ошибк
 
 ## Нерешённые вопросы
 
-Для решения GO требуются terminal PR/CI, source tag,
-manifest/images/evidence, свежий backup/restore/off-host evidence и wrapper
-production-модели для `1.2.10`. Локальный UID и образный разрыв следует
+Для решения GO остаются immutable evidence commit/tag и проверка точных
+runtime refs на production. Локальный UID и образный разрыв следует
 проверить на первых ограниченных production шагах до включения timer.
-Production rollout пока NO GO.
+Production rollout пока NO GO до завершения evidence gate.

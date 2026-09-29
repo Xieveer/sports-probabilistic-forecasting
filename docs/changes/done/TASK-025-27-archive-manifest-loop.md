@@ -1,7 +1,7 @@
 # TASK-025-27 — Исправление цикла синхронизации archive manifest
 
 > **Состояние:** исправление, независимый review и ограниченный локальный
-> wrapper завершены; source tag, release evidence и production rollout ожидают.
+> wrapper завершены; tag pipeline прошёл, release evidence и production rollout ожидают.
 
 ## Причина
 
