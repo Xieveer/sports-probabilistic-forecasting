@@ -386,8 +386,9 @@ runtime evidence, rollback target и terminal CI для exact commit.
 исправленные code/test gates, обновлённую декомпозицию EPIC, TASK-025-9 и
 production handoff. Первое рассмотрение выявило P2: карта задач и rollout
 описывали устаревшие версии и пропускали новые TASK. После исправления
-повторное review не выявило блокирующих findings. Проверенный commit ветки:
-`295e09dd8787d92feb228ac88285e9708d8c7a94`.
+повторное review не выявило блокирующих findings. После него проверены и
+согласованы с handoff оба примера `SF_APP_VERSION=1.2.11`. Проверенный commit
+ветки: `193683ba4b012538db76dcc8a0a1525ce9bc7d6a`.
 
 Это pre-release review: TASK-025-22 и production runtime gates остаются
 открытыми, как и terminal PR/tag CI, immutable evidence, свежий backup,
