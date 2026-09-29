@@ -3,7 +3,7 @@
   "version": "1.2.10",
   "source_tag": "v1.2.10",
   "source_commit": "38ac3bc4cfc9cd6d771652183e49b006b3100d63",
-  "evidence_tag": "v1.2.10-evidence.1",
+  "evidence_tag": "v1.2.10-evidence.2",
   "images": {
     "postgres": "postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94",
     "api": "ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:eb97bef597f77df29f8dd223579bcc5692087b34de81383000e96398c56adf57",

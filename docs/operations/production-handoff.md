@@ -14,17 +14,21 @@
   [TASK-025-24](../backlog/tasks/TASK-025-24-archive-sync-bounded-memory.md),
   [TASK-025-25](../backlog/tasks/TASK-025-25-archive-sync-tmpfs.md),
   [TASK-025-26](../backlog/tasks/TASK-025-26-refresh-inference-memory.md),
-  [TASK-025-27](../backlog/tasks/TASK-025-27-archive-manifest-loop.md).
+  [TASK-025-27](../backlog/tasks/TASK-025-27-archive-manifest-loop.md),
+  [TASK-025-28](../backlog/tasks/TASK-025-28-acceptance-docs-response.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
 - Целевая среда: production VPS; версия: `1.2.10`.
 - source_tag: `v1.2.10`.
 - source_commit: `38ac3bc4cfc9cd6d771652183e49b006b3100d63`.
-- evidence_tag: `v1.2.10-evidence.1` (создаётся после проверки manifest).
+- evidence_tag: `v1.2.10-evidence.2` (создаётся после повторной проверки manifest).
 - PR: https://github.com/Xieveer/sports-probabilistic-forecasting/pull/52.
 - CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36593929894.
 - Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36593930087.
 - Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36594026233.
 - first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36594026233/job/109496586224.
+
+Evidence.1 сохранился как проверенный снимок до выявления ошибки скрипта
+acceptance. Evidence.2 фиксирует безопасный эквивалент без изменения source tag.
 
 Tag pipeline завершился `success`: четыре образа опубликованы как immutable
 linux/amd64, scan и provenance прошли. Published digest совпали с digest
@@ -115,11 +119,35 @@ Source tag `v1.2.10` и release/tag CI/first-rollout завершились ус
 После ограниченного rollout до ручного Data Cycle сверить running digests,
 healthy/restart counts, `/health`, `/ready`, NHL calendar API 0/7/30 под
 реальной reader role, readiness и admin status/history/schedule.
+Production schedule row остаётся `enabled=true` при выключенном systemd timer,
+а `next_run_at` просрочен. Сначала создать ручной run через авторизованный
+admin API, затем однократно запустить dispatcher service; до этого dispatcher
+не стартовать. После claim проверить перенос overdue schedule slot в будущее
+и отсутствие второго активного run.
+
 Один ручной цикл с `SF_DATA_ODDS_ENABLED=false` должен дать terminal
 `partial_success`, ноль Odds API запросов, 30-дневное coverage, прогнозы для
-eligible событий, odds `missing`, два verified archives и одно итоговое
-уведомление с тем же run ID. Проверить пользовательские команды бота,
-`make acceptance-check` с утверждёнными runtime inputs, отсутствие overlap.
+eligible событий, odds `missing`, новые canonical и source-state archives
+со статусом `verified` и одно итоговое уведомление с тем же run ID. Проверить
+пользовательские команды бота,
+отсутствие overlap. Для v1.2.10 вместо `make acceptance-check` выполнить
+эквивалентные read-only проверки с утверждёнными runtime inputs: `GET /health`
+и `/ready` с проверкой `status`, `db_connected` и версии; `GET /docs` как
+`200 text/html`, `GET /openapi.json` как валидный JSON; prediction endpoint
+с проверкой версии модели; `SELECT` последнего успешного Worker execution и
+terminal Data Cycle stages; безопасный bot heartbeat. Скрипт
+`scripts/acceptance_check.py` из immutable source tag ошибочно парсит HTML
+`/docs` как JSON и даёт ложный отказ даже на здоровом API; дефект отслеживает
+[TASK-025-28](../backlog/tasks/TASK-025-28-acceptance-docs-response.md).
+Зафиксировать по каждой альтернативной проверке статус, UTC и run ID в
+Operations change record без содержимого ответов и секретов.
+
+Production archive staging уже содержит два старых manifest. После нового
+цикла `archive_sync.artifacts` должен равняться фактическому числу manifest,
+перечисленных в root, и быть не меньше двух; точное число зависит от
+content-addressed совпадений. Оба новых типа archive должны пройти
+remote verification, включая случаи повторного использования immutable ID.
+
 Новый dispatcher timer включать только после успешного ручного цикла;
 проверить next trigger, первый плановый run и уведомление. При ошибке
 оставить timer выключенным, зафиксировать состояние и запросить инструкции
@@ -161,7 +189,7 @@ digest/env/model pointer без downgrade БД; если post-rollout ошибк
 
 ## Нерешённые вопросы
 
-Для решения GO остаются immutable evidence commit/tag и проверка точных
+Для решения GO остаются повторная immutable evidence.2 CI/tag и проверка точных
 runtime refs на production. Локальный UID и образный разрыв следует
 проверить на первых ограниченных production шагах до включения timer.
 Production rollout пока NO GO до завершения evidence gate.

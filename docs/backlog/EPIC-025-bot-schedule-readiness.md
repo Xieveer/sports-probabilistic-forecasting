@@ -103,8 +103,14 @@
   PR #52 merged; v1.2.10 tag на commit 38ac3bc, CI/Security/Docker,
   first-rollout, публикация образов, scan и provenance успешны. Свежий
   backup/restore/off-host проверен; новый wrapper модели собран и file SHA
-  совпадают с production. Immutable evidence и production rollout ещё
-  открыты, таймеры выключены`.
+  совпадают с production. Evidence.1 CI успешен, но предрелизная проверка
+  нашла ложный отказ `acceptance_check.py` на HTML `/docs`:
+  [TASK-025-28](tasks/TASK-025-28-acceptance-docs-response.md) отложен до
+  следующего кода, для v1.2.10 нужен документированный read-only эквивалент
+  и evidence.2. Production schedule имеет просроченный `next_run_at` при
+  выключенном timer: ручной запрос должен предшествовать однократному запуску
+  dispatcher, затем нужно проверить перенос слота. Production rollout ещё
+  открыт, таймеры выключены`.
 - Исходная цель: календарь NHL независимо от прогноза, готовность событий,
   админ-управление Data Cycle и выпуск `1.2.1`;
   [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
@@ -286,8 +292,10 @@
   archive loop после исправления прав выявил поглощение stdin и 1 sync из 3.
   TASK-025-27 исправлен: bounded hybrid wrapper завершился с двумя
   remote-verified архивами без OOM. Source tag/CI и fresh backup проверены;
-  immutable evidence и production gates v1.2.10 ещё открыты. Полный pytest
-  на ноутбуке не запускать.
+  immutable evidence.2 и production gates v1.2.10 ещё открыты.
+  `make acceptance-check` в source tag ложно отказывает на HTML `/docs`;
+  до TASK-025-28 использовать эквивалентный read-only набор из handoff.
+  Полный pytest на ноутбуке не запускать.
 - Обновлено: 2026-09-29.
 
 ## Цель и границы
@@ -318,6 +326,7 @@
 | [TASK-025-20](tasks/TASK-025-20-calendar-stage-read-grant.md) | Точечное право чтения odds-стадии для календаря | role grant, first-rollout и production calendar smoke | in_progress; v1.2.7 calendar smoke 0/34/187, archive gate открыт |
 | [TASK-025-21](tasks/TASK-025-21-archive-sync-runner-command.md) | Исправить вызов archive-sync в production runner | exact Compose CLI, local S3 fixture, manual OFF run | in_progress; v1.2.8 candidate |
 | [TASK-025-27](tasks/TASK-025-27-archive-manifest-loop.md) | Обработать все archive manifest без потери stdin | red/green, 3-manifest regression, bounded wrapper | done; v1.2.10 release gate открыт |
+| [TASK-025-28](tasks/TASK-025-28-acceptance-docs-response.md) | Корректно проверить HTML `/docs` и JSON `/openapi.json` | red/green, read-only acceptance, review | blocked; исправление после immutable v1.2.10 tag |
 | [TASK-025-12](tasks/TASK-025-12-release-compose-gate.md) | Исправить Compose release gate | новый API/dispatcher contract и память | done; PR CI в TASK-025-9 |
 | [TASK-025-10](tasks/TASK-025-10-run-summary-producers.md) | Full run summary producers and coverage | same-run counters, n/a denominator, football fixture | done |
 | [TASK-025-11](tasks/TASK-025-11-telegram-calendar.md) | Public NHL calendar in Telegram | 08:00, all horizons, no prediction, bot→API test | done |
