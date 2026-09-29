@@ -1,6 +1,6 @@
 # Передача сервиса в эксплуатацию: v1.2.10 candidate
 
-> Фактическое состояние на 2026-09-28: production работает на v1.2.8;
+> Фактическое состояние на последней проверке 2026-09-28: production работает на v1.2.8;
 > API, бот и PostgreSQL healthy, `/health` и `/ready` отвечают 200.
 > Оба NHL timer выключены. Последний production Data Cycle завершился
 > `failed/quality_failed`; новая версия в production ещё не развёрнута.
@@ -75,8 +75,24 @@ Worker без OOM. Archive gate не прошёл: локальные права
 `artifacts=0`; после их исправления отдельный archive loop подтвердил чтение
 stdin первым `docker compose run` и только один sync из трёх manifest. Это кодовый дефект
 [TASK-025-27](../backlog/tasks/TASK-025-27-archive-manifest-loop.md);
-v1.2.9 остаётся NO GO. Production-like wrapper с исправлением и новые
-release/tag CI для v1.2.10 пока не проверены.
+v1.2.9 остаётся NO GO. Ограниченный локальный wrapper с исправленным shell
+`f2fdfa8` завершился `Result=success/exit0`, Data Cycle
+`64cc3e85-944e-4c0b-afcb-b46e3d9dfc11` — ожидаемым `partial_success` при
+выключенных odds. Новый пустой archive root содержал два ожидаемых manifest:
+canonical и NHL source-state. Оба синхронизированы и remote-verified,
+`archive_sync success/artifacts=2`; для обоих сохранено локальное состояние
+`verified`. Общий cgroup 6 GiB/no swap имел исторический пик около 3.65 GiB
+с учётом предыдущих попыток; прирост OOM и OOM kill в этом прогоне равен
+нулю. Прогон использовал опубликованные образы/модель v1.2.9 и локальный
+UID1000 override для host shell; production исполняет systemd shell под root,
+контейнеры — под UID10001. Это доказательство исправленного shell на полном
+локальном пути, а exact v1.2.10 image/identity gate остаётся за tag pipeline
+и первым ограниченным production rollout. Первый подготовительный запуск
+fixture был остановлен до Worker из-за неверного bind source root, затем
+исправленный mount и incremental date проверены перед успешным прогоном.
+Draft PR #52 прошёл lint-test, dependencies и filesystem/secrets checks;
+независимый review TASK-025-27 без P0–P2. Source tag и release/tag CI ещё
+ожидаются.
 
 ## Healthcheck и smoke-проверка
 
@@ -129,7 +145,8 @@ digest/env/model pointer без downgrade БД; если post-rollout ошибк
 
 ## Нерешённые вопросы
 
-Для решения GO требуются exact wrapper gate или обоснованное
-закрытие этого пробела, terminal PR/CI, source tag,
+Для решения GO требуются terminal PR/CI, source tag,
 manifest/images/evidence, свежий backup/restore/off-host evidence и wrapper
-production-модели для `1.2.10`. Production rollout пока NO GO.
+production-модели для `1.2.10`. Локальный UID и образный разрыв следует
+проверить на первых ограниченных production шагах до включения timer.
+Production rollout пока NO GO.

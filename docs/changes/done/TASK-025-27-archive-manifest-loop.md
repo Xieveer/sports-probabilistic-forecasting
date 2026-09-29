@@ -1,7 +1,7 @@
 # TASK-025-27 — Исправление цикла синхронизации archive manifest
 
-> **Состояние:** реализация готова; независимый review и новый production-like
-> wrapper остаются release gates.
+> **Состояние:** исправление, независимый review и ограниченный локальный
+> wrapper завершены; source tag, release evidence и production rollout ожидают.
 
 ## Причина
 
@@ -45,8 +45,28 @@ systemd-run --user --scope --quiet -p MemoryMax=768M -p MemorySwapMax=0 timeout 
 ```
 
 Набор был ограничен cgroup 768 MiB, swap 0 и timeout 30 секунд. Полный pytest
-не запускался. Новая версия production-like wrapper после исправления ещё не
-запускалась; независимый review ожидается.
+не запускался. Независимый Reviewer подтвердил отсутствие P0–P2 замечаний,
+включая исправление неточной формулировки в документации.
+
+Ограниченный локальный wrapper с исправленным shell `f2fdfa8` завершился
+`Result=success/exit0` для run
+`64cc3e85-944e-4c0b-afcb-b46e3d9dfc11`. Data Cycle получил ожидаемый
+`partial_success` при выключенных odds; `archive_sync` завершился
+`success/artifacts=2`. В новом пустом archive root созданы canonical и NHL
+source-state manifest; оба получили `remote-verified` и локальные записи
+`status=verified`. Общий cgroup имел лимит 6 GiB, swap 0; его исторический
+пик, включающий предыдущие попытки, равен около 3.65 GiB. В этом прогоне
+прирост `oom=0`, `oom_kill=0`, контейнеров с OOMKilled нет. Прогон использовал
+опубликованные образы/модель v1.2.9 и локальную замену UID на 1000 для доступа
+host shell к архивам. Это production-like проверка нового shell, но не exact
+runtime identity и не проверка ещё не выпущенных образов v1.2.10.
+
+Первый подготовительный запуск этого fixture остановлен до Worker: ошибочный
+`SF_CANONICAL_SOURCE_ROOT` указывал на родительский каталог, поэтому
+source-acquirer увидел пустой `source.csv` и начал исторический scan. После
+исправления bind read-only probe подтвердил полный файл 181 472 859 байт и
+`last_finished=2026-06-15`; второй запуск перешёл в incremental с
+`date_from=2026-06-12`. В обоих запусках превышения памяти не было.
 
 ## Границы и риски
 

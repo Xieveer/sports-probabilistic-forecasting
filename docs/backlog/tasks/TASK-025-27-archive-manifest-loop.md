@@ -1,6 +1,6 @@
 # TASK-025-27 — Синхронизировать все manifest в Data Cycle
 
-> **Статус:** in_progress
+> **Статус:** done
 > **Владелец:** Developer
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Блокирует:** production rollout v1.2.10
@@ -26,20 +26,23 @@
 - [x] Исправление локально ограничено shell runner и manifest helper; при
   ошибке sync или перечисления runner возвращает nonzero, после чего host
   recovery подтверждает остановку executor и выполняет terminal transition.
-- [ ] Адресные тесты проходят под жёстким лимитом памяти без полного pytest
-  на ноутбуке; независимый Reviewer не находит P0–P2. Адресные тесты прошли;
-  независимый review ожидается.
-- [ ] Production-like локальный wrapper под общим cgroup 6 GiB/no swap
-  перечисляет и remote-verify все ожидаемые архивы на отдельном S3 fixture
+- [x] Адресные тесты проходят под жёстким лимитом памяти без полного pytest
+  на ноутбуке; независимый Reviewer не нашёл P0–P2.
+- [x] Production-like локальный wrapper под общим cgroup 6 GiB/no swap
+  перечислил и remote-verified оба ожидаемых архива на отдельном S3 fixture
   после применения исправления.
 
 ## Текущее состояние
 
-Реализация и адресные тесты готовы к независимому review. Предыдущий
+Реализация и адресные тесты прошли независимое review. Предыдущий
 production-like wrapper v1.2.9 завершил archive_sync с `artifacts=0` из-за
 прав fixture; отдельная проверка archive loop после исправления прав
-синхронизировала 1 из 3 manifest. Повтор полного wrapper для новой версии и
-remote verification ожидают release gate; production не затронут.
+синхронизировала 1 из 3 manifest. Новый ограниченный локальный прогон
+`64cc3e85-944e-4c0b-afcb-b46e3d9dfc11` с исправленным shell завершился
+`partial_success` из-за явно выключенных odds; оба архива проверены в
+изолированном S3, `archive_sync artifacts=2`, новых OOM нет. Прогон использовал
+образы приложения v1.2.9 и локальную замену UID для запуска host shell без
+root; tag/image gate v1.2.10 остаётся открытым. Production не затронут.
 
 ## Граница
 
