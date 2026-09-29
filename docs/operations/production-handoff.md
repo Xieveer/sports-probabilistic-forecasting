@@ -9,10 +9,25 @@
   [TASK-025-31](../backlog/tasks/TASK-025-31-control-stall-mark.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
 - Целевая среда: production VPS `ops-prod-01`; версия: `1.2.11`.
-- source_tag: `v1.2.11` (целевой, до release gates не создан).
-- Ветка: `initiative/epic-025-v1211-recovery`.
-- Source commit, image digests, evidence tag и CI URLs фиксируются в
-  отдельном release evidence commit после merge/tag pipelines.
+- source_tag: `v1.2.11` (annotated, exact merged commit).
+- source_commit: `c4d1487034f4d9a44bbac406b719b325e198a9d9`.
+- evidence_tag: `v1.2.11-evidence.1` (создаётся после проверки evidence).
+- PR: https://github.com/Xieveer/sports-probabilistic-forecasting/pull/53.
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36617763368.
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36617763468.
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36617840641.
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36617840641/job/109577475412.
+
+Tag pipeline завершился успешно: first-rollout прогнал чистую установку,
+схему `0017`, Worker, два archive-sync artifacts, API и bot health без
+рестартов. Опубликованные digest совпали с проверенными OCI artifacts;
+каждый application image имеет linux/amd64 manifest, scan и provenance:
+
+- postgres: `postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94` — без изменения.
+- api: `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:b952e17414c0bd1b82eb3fe6e1ad2094da3698fd917f2ce509f831abc058b5f8` — published linux/amd64 scan provenance.
+- worker: `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:2a1bdeb08f3936fa521e0a29d6498c46bb4f462433a68e1c860f6264f0e127d6` — published linux/amd64 scan provenance.
+- telegram_bot: `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:cf62257699b362be759d56324560c279f8e4ead72e39d893e1fe1153ecaa6f15` — published linux/amd64 scan provenance.
+- archive_sync: `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:ade257d38420aed37ce678e506f9599f2c6ccc124a8d0704915c08b5cd867508` — published linux/amd64 scan provenance.
 
 ## Идентификация и ответственность
 
@@ -40,7 +55,7 @@ acceptance для HTML `/docs` и исправляет вызов recovery у Co
 Compose secret mounts и прежние лимиты памяти. API получает четыре
 `ODDS_API_KEY_*_FILE`/`ODDS_API_KEY_FILE`, как Worker; Telegram bot получает
 коэффициенты через API без доступа к этим ключам. Production profile содержит
-только `*_FILE` paths для credential, без plain-text значений; в нём заданы
+только `*_FILE` paths для credential, без plain-text значений; при rollout задаются
 `SF_APP_VERSION=1.2.11` и `SF_DATA_ODDS_ENABLED=true`. Исторический
 backfill не входит в ежедневный runner; Worker выполняет один batch будущих
 коэффициентов на run. Значения ключей и полный rendered Compose не сохранять
@@ -77,15 +92,21 @@ restart counts, `/health`, `/ready`, HTML `/docs`, JSON `/openapi.json`,
 
 ## Данные и совместимость
 
-Перед v1.2.11 rollout создать свежий root-only PostgreSQL backup и подтвердить
-изолированный restore и off-host копию по SHA-256. Предыдущий проверенный
-backup перед v1.2.10 сохранён; он не заменяет свежий gate после записи
-1 834 прогнозов. Alembic остаётся `0017_data_cycle_notification_outbox`.
-Для модели нужен новый content-addressed wrapper с `app_version=1.2.11`
-и exact source commit; содержимое весов, `features.txt` и `deploy.yaml`
-сверяется с активным production bundle. Включение historical backfill не
-производится. Локальный ключ Odds API ответил HTTP 200 на один NHL запрос;
-доступность именно серверного secret проверяется отдельно без вывода значения.
+Свежий root-only PostgreSQL dump после записи 1 834 прогнозов создан
+2026-09-29 19:06 UTC: 57 929 242 bytes,
+SHA-256 `86cb645facdf4217069954597350c4aae2750f99af530abc24ed9c044977f27b`.
+Изолированный restore под 1 GiB/no swap и off-host download/byte comparison
+прошли; подробности — в Operations Agent backup gate. Alembic остаётся
+`0017_data_cycle_notification_outbox`.
+Локально собран content-addressed model wrapper
+`sha256:a10450b0e2735032fe4d291e65521e189d14d387889131350c7fc45195424751`
+с `app_version=1.2.11` и exact source commit; SHA-256 весов, `features.txt`
+и `deploy.yaml` совпадают с предыдущим verified bundle. Exact Worker image
+проверит wrapper перед promotion. Historical backfill не включается.
+Все четыре серверных Odds API secret файла побайтово синхронизированы с
+локальными 2026-09-29 19:19 UTC; один ограниченный NHL запрос с бесплатным
+ключом вернул HTTP 200 и 496 оставшихся запросов. Платные ключи отключены;
+их provider запросы не выполнялись. Значения ключей в evidence не входят.
 
 ## Наблюдаемость
 
@@ -97,8 +118,8 @@ timer last/next trigger. Не сохранять полные внешние о�
 
 ## Артефакт и откат
 
-После независимого review и terminal PR CI Reviewer ставит annotated
-`v1.2.11` на exact merged commit `main`. Tag pipeline должен завершить CI,
+После независимого review и terminal PR CI Reviewer поставил annotated
+`v1.2.11` на exact merged commit `main`. Tag pipeline завершил CI,
 Security, first-rollout, публикацию linux/amd64 images, scan и provenance.
 Release evidence фиксирует source/evidence tags, полный manifest, model
 wrapper и ссылки CI; `make verify-release-evidence` проверяет их вместе с
@@ -109,8 +130,8 @@ pointer и свежий backup. Предыдущие serving refs v1.2.10 доп
 
 ## Нерешённые вопросы
 
-До production GO остаются: чистое review TASK/EPIC, terminal PR/tag CI,
-immutable release evidence и model wrapper, свежий backup/restore/off-host,
-штатное завершение старого run, проверка серверного Odds API secret и
-ограниченный ручной цикл. Статус candidate означает готовый контракт
+До production GO остаются: review и terminal CI immutable release evidence,
+проверка wrapper в exact Worker image, установка проверенных refs на VPS,
+штатное завершение старого run и ограниченный ручной цикл с odds/Telegram.
+Ежедневный timer включается только после его acceptance. Статус candidate означает готовый контракт
 проверки, а не подтверждённый production успех.
