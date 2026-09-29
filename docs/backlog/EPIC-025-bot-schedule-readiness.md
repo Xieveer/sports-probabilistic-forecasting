@@ -355,3 +355,16 @@ Production Data Cycle остаётся NO-GO до свежего verified backup
 совместимого rollback, runtime smoke, публикации прогнозов, измерения
 future odds/quota и первого планового запуска нового dispatcher; эти
 результаты принимает TASK-025-9. Календарное покрытие уже подтверждено.
+
+## Review release evidence v1.2.10
+
+Независимый Reviewer проверил release manifest, candidate handoff, память
+EPIC, TASK-025-27 и отчёт `done` против source tag `v1.2.10` на commit
+`38ac3bc4cfc9cd6d771652183e49b006b3100d63`. Проверенный content commit:
+`6c7ca01ea7380b18916e0f6a2e2454dc3ad669ae`; P0–P2 findings нет.
+CI, Security и Docker для source commit завершились успешно; четыре published
+image digests совпали с first-rollout. Сверены отчёт о свежем backup,
+isolated restore и off-host hash, а также SHA трёх файлов нового model
+wrapper с production bundle. `git diff --check` прошёл. Полный pytest и
+тяжёлые контейнерные проверки на ноутбуке не запускались. Evidence tag,
+`verify-release-evidence` и production runtime gate ещё ожидают.
