@@ -27,8 +27,9 @@
 - Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36594026233.
 - first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36594026233/job/109496586224.
 
-Evidence.1 сохранился как проверенный снимок до выявления ошибки скрипта
-acceptance. Evidence.2 фиксирует безопасный эквивалент без изменения source tag.
+Тег `v1.2.10-evidence.1` сохранился как проверенный снимок до выявления ошибки
+скрипта acceptance. Evidence.2 фиксирует безопасный эквивалент без изменения
+source tag.
 
 Tag pipeline завершился `success`: четыре образа опубликованы как immutable
 linux/amd64, scan и provenance прошли. Published digest совпали с digest
