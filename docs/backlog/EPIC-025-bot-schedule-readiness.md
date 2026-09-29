@@ -93,10 +93,18 @@
   `initiative/epic-025-v1_2_5-runtime-odds-publication` и
   `initiative/epic-025-v1_2_6-odds-optional` и
   `initiative/epic-025-v1_2_7-calendar-grant` и
-  `initiative/epic-025-v1_2_8-archive-runner`.
-- Workflow / этап: `v1.2.9 локальный source fetch, bounded Worker и archive
-  sync на свежем snapshot прошли; exact wrapper, release review, PR/CI и
-  production gate открыты`.
+  `initiative/epic-025-v1_2_8-archive-runner`; текущая correction branch
+  `initiative/epic-025-v1_2_10-archive-stdin`.
+- Workflow / этап: `v1.2.9 source PR #50 merged, source tag и CI/Security/
+  Docker pipeline успешны; exact local wrapper завершил archive_sync с
+  artifacts=0 из-за прав fixture, отдельный archive loop после исправления
+  прав выявил stdin bug: 1 sync из 3 manifest. v1.2.9 NO GO;
+  TASK-025-27 исправлен в draft PR #52 для v1.2.10, его CI зелёный и
+  независимый review без P0–P2. Ограниченный local wrapper с новым shell,
+  образами v1.2.9 и локальным UID override завершился partial_success:
+  archive_sync artifacts=2, оба manifest remote-verified, прирост OOM=0;
+  exact release images/UID, tag/evidence и production gates ещё открыты.
+  Backup/restore/off-host проверены`.
 - Исходная цель: календарь NHL независимо от прогноза, готовность событий,
   админ-управление Data Cycle и выпуск `1.2.1`;
   [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
@@ -262,18 +270,24 @@
 - Артефакты: [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md).
 - Предыдущая роль: Developer — TASK-025-22/23/24 и bounded local parity;
   Reviewer — код без P0–P2, finding по устаревшим статусам исправлен.
-- Следующая роль: Developer — exact wrapper/source fetch gate и release
-  артефакты v1.2.9; Reviewer — финальное сквозное review; Operations Agent —
-  выпуск после terminal CI и handoff. Production rollout ещё не начат.
+- Следующая роль: Product Owner — terminal PR/CI и source tag v1.2.10;
+  Operations Agent — release evidence, свежий backup и ограниченный
+  production rollout после release gates. Production rollout ещё не начат.
 - Открытые вопросы / блокеры: 30-дневное coverage подтверждено (187 матчей),
   три provider keys недействительны, isolated publication подтверждена,
   production manual run v1.2.7 завершился ошибкой archive_sync. Оба NHL
-  timer выключены. Свежий pre-v1.2.7 backup `d5d409e4…` прошёл
-  restore/off-host/third-copy; перед новым rollout проверить актуальность.
+  timer выключены. Свежий pre-v1.2.9 backup `bd5dc06e…` прошёл
+  restore/off-host read-back/third-copy; перед новым rollout проверить
+  актуальность.
   Bucket retention/encryption не удалось прочитать текущим service account.
-  Daily NHL scheduler NO-GO до успешного ручного OFF-цикла новой версии;
-  exact wrapper/source fetch и CI ещё не проверены.
-- Обновлено: 2026-09-28.
+  Daily NHL scheduler NO-GO до успешного ручного OFF-цикла новой версии.
+  Source fetch, bounded Worker и tag CI v1.2.9 проверены. Exact wrapper
+  ошибочно завершил archive_sync с 0 artifacts из-за прав fixture; отдельный
+  archive loop после исправления прав выявил поглощение stdin и 1 sync из 3.
+  TASK-025-27 исправлен: bounded hybrid wrapper завершился с двумя
+  remote-verified архивами без OOM. Source tag, evidence, fresh backup и
+  production gates v1.2.10 ещё открыты. Полный pytest на ноутбуке не запускать.
+- Обновлено: 2026-09-29.
 
 ## Цель и границы
 
@@ -302,6 +316,7 @@
 | [TASK-025-19](tasks/TASK-025-19-publication-count-flush.md) | Корректные counters publication | no-autoflush, 187 eligible, atomicity | in_progress; isolated counters 187/187, production gate открыт |
 | [TASK-025-20](tasks/TASK-025-20-calendar-stage-read-grant.md) | Точечное право чтения odds-стадии для календаря | role grant, first-rollout и production calendar smoke | in_progress; v1.2.7 calendar smoke 0/34/187, archive gate открыт |
 | [TASK-025-21](tasks/TASK-025-21-archive-sync-runner-command.md) | Исправить вызов archive-sync в production runner | exact Compose CLI, local S3 fixture, manual OFF run | in_progress; v1.2.8 candidate |
+| [TASK-025-27](tasks/TASK-025-27-archive-manifest-loop.md) | Обработать все archive manifest без потери stdin | red/green, 3-manifest regression, bounded wrapper | done; v1.2.10 release gate открыт |
 | [TASK-025-12](tasks/TASK-025-12-release-compose-gate.md) | Исправить Compose release gate | новый API/dispatcher contract и память | done; PR CI в TASK-025-9 |
 | [TASK-025-10](tasks/TASK-025-10-run-summary-producers.md) | Full run summary producers and coverage | same-run counters, n/a denominator, football fixture | done |
 | [TASK-025-11](tasks/TASK-025-11-telegram-calendar.md) | Public NHL calendar in Telegram | 08:00, all horizons, no prediction, bot→API test | done |

@@ -1,6 +1,6 @@
-# Передача сервиса в эксплуатацию: v1.2.9 candidate
+# Передача сервиса в эксплуатацию: v1.2.10 candidate
 
-> Фактическое состояние на 2026-09-28: production работает на v1.2.8;
+> Фактическое состояние на последней проверке 2026-09-28: production работает на v1.2.8;
 > API, бот и PostgreSQL healthy, `/health` и `/ready` отвечают 200.
 > Оба NHL timer выключены. Последний production Data Cycle завершился
 > `failed/quality_failed`; новая версия в production ещё не развёрнута.
@@ -13,26 +13,30 @@
   [TASK-025-23](../backlog/tasks/TASK-025-23-pytest-memory-guard.md),
   [TASK-025-24](../backlog/tasks/TASK-025-24-archive-sync-bounded-memory.md),
   [TASK-025-25](../backlog/tasks/TASK-025-25-archive-sync-tmpfs.md),
-  [TASK-025-26](../backlog/tasks/TASK-025-26-refresh-inference-memory.md).
+  [TASK-025-26](../backlog/tasks/TASK-025-26-refresh-inference-memory.md),
+  [TASK-025-27](../backlog/tasks/TASK-025-27-archive-manifest-loop.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
-- Целевая среда: production VPS; версия: `1.2.9`.
-- source_tag: `v1.2.9` (целевой; тег ещё не создан).
+- Целевая среда: production VPS; версия: `1.2.10`.
+- source_tag: `v1.2.10` (целевой; тег ещё не создан).
 - source_commit/evidence_tag: фиксируются после merge и tag gates.
 - CI, Security, Docker, image digests, scan и provenance: ожидают source tag.
 
 ## Идентификация и ответственность
 
-v1.2.9 исправляет ложный отказ freshness gate на прогнозах, созданных после
-начала матча; ограничивает память archive-sync при сравнении больших файлов;
-размещает remote verification вне `/tmp=64m`; исключает ненужные train-таблицы
-из refresh Worker. Версия и lock согласованы (`pyproject.toml`, `uv.lock`).
+v1.2.9 исправила ложный отказ freshness gate на прогнозах, созданных после
+начала матча; ограничила память archive-sync при сравнении больших файлов;
+разместила remote verification вне `/tmp=64m`; исключила ненужные train-таблицы
+из refresh Worker. Локальный exact wrapper выявил дефект цикла перечисления
+manifest: Compose наследует stdin и может синхронизировать только первый
+архив при успешном статусе. v1.2.10 исправляет этот дефект. Версия и lock
+согласованы (`pyproject.toml`, `uv.lock`).
 Изменений схемы БД, модели, коэффициентов и публичного API нет.
 
 Production preflight: v1.2.8 healthy, Alembic `0017`, оба NHL timer disabled,
 последний run `failed/quality_failed`, active runs нет. Production bundle
 `sha256:5b3cb6e2ca0b588059de7416a5cbdae1e955e4b9a91b08be51da43684e3640b0`
-содержит 489 ordered features и проверенные веса. Для v1.2.9 нужен новый
-content-addressed wrapper с теми же весами, `app_version=1.2.9` и exact
+содержит 489 ordered features и проверенные веса. Для v1.2.10 нужен новый
+content-addressed wrapper с теми же весами, `app_version=1.2.10` и exact
 source_commit/tag; текущий production pointer до готовности нового bundle
 не менять.
 
@@ -43,7 +47,7 @@ Compose получает только immutable `IMAGE@sha256:DIGEST` из relea
 UID/GID `10001:10001`. `nhl_admins` одинаков у API, Worker и bot map.
 Перед rollout Operations сверяет фактический systemd `SF_COMPOSE_ENV_FILE`
 и `/etc/sports-forecast/refresh/nhl.env`: пять image refs,
-`SF_APP_VERSION=1.2.9`, tournament/market/spec/algorithm/features selectors,
+`SF_APP_VERSION=1.2.10`, tournament/market/spec/algorithm/features selectors,
 `SF_DATA_ODDS_ENABLED=false`, source/model/archive roots и Compose dry-run.
 Старые и новые NHL timer остаются выключенными до успешного ручного цикла.
 
@@ -65,7 +69,30 @@ calendar/quality/predictions/publication успешны. Оба archive-sync п�
 32 релевантных теста, lint, mypy, format и `git diff --check` прошли под
 ограничением ресурсов. Полный pytest suite после инцидента 14.3 GB RSS не
 запускался. Независимое review TASK-025-22/23/24/25/26 не выявило P0–P2.
-Точный systemd wrapper целиком и release/tag CI пока не проверены.
+Точный v1.2.9 shell wrapper в изолированном Compose прошёл source, quality,
+predictions и publication под общим cgroup 6 GiB/no swap: peak 3.65 GiB,
+Worker без OOM. Archive gate не прошёл: локальные права сначала дали
+`artifacts=0`; после их исправления отдельный archive loop подтвердил чтение
+stdin первым `docker compose run` и только один sync из трёх manifest. Это кодовый дефект
+[TASK-025-27](../backlog/tasks/TASK-025-27-archive-manifest-loop.md);
+v1.2.9 остаётся NO GO. Ограниченный локальный wrapper с исправленным shell
+`f2fdfa8` завершился `Result=success/exit0`, Data Cycle
+`64cc3e85-944e-4c0b-afcb-b46e3d9dfc11` — ожидаемым `partial_success` при
+выключенных odds. Новый пустой archive root содержал два ожидаемых manifest:
+canonical и NHL source-state. Оба синхронизированы и remote-verified,
+`archive_sync success/artifacts=2`; для обоих сохранено локальное состояние
+`verified`. Общий cgroup 6 GiB/no swap имел исторический пик около 3.65 GiB
+с учётом предыдущих попыток; прирост OOM и OOM kill в этом прогоне равен
+нулю. Прогон использовал опубликованные образы/модель v1.2.9 и локальный
+UID1000 override для host shell; production исполняет systemd shell под root,
+контейнеры — под UID10001. Это доказательство исправленного shell на полном
+локальном пути, а exact v1.2.10 image/identity gate остаётся за tag pipeline
+и первым ограниченным production rollout. Первый подготовительный запуск
+fixture был остановлен до Worker из-за неверного bind source root, затем
+исправленный mount и incremental date проверены перед успешным прогоном.
+Draft PR #52 прошёл lint-test, dependencies и filesystem/secrets checks;
+независимый review TASK-025-27 без P0–P2. Source tag и release/tag CI ещё
+ожидаются.
 
 ## Healthcheck и smoke-проверка
 
@@ -84,11 +111,14 @@ eligible событий, odds `missing`, два verified archives и одно и
 
 ## Данные и совместимость
 
-Перед v1.2.9 нужен свежий root-only `pg_dump -Fc` после production v1.2.8
-ошибки, checksum/catalog, isolated restore на exact PostgreSQL image,
-off-host upload/download hash и третья локальная копия. Backup перед
-v1.2.8 уже проверен локально, но не является актуальным backup для нового
-rollout. Схема остаётся `0017_data_cycle_notification_outbox`;
+Свежий root-only `pg_dump -Fc` после production v1.2.8 ошибки создан:
+`pre-v1.2.9-20260928T213539314360486.dump`, 57 921 104 байт,
+SHA-256 `bd5dc06ed22d0957b96f10fdb16112f965c11dacc7c759e490124c228bcd983b`.
+Каталог, isolated restore на exact PostgreSQL image, третья локальная копия
+и полное off-host скачивание из Yandex Object Storage подтвердили тот же
+hash и размер. Перед v1.2.10 rollout сверить актуальность этого backup и
+создать новый при изменении production данных. Схема остаётся
+`0017_data_cycle_notification_outbox`;
 role-bootstrap/migrator выполняются idempotently из approved image.
 Объекты архивов immutable; retention/encryption service account не видит.
 
@@ -103,7 +133,7 @@ OFF-режиме, notification delivery и timer last/next trigger. Секрет
 ## Артефакт и откат
 
 После terminal PR CI и финального review Reviewer создаёт annotated
-`v1.2.9` на exact merged commit `main`. Tag pipeline обязан завершить CI,
+`v1.2.10` на exact merged commit `main`. Tag pipeline обязан завершить CI,
 Security, first-rollout contract, linux/amd64 images, scan и provenance.
 Release owner создаёт immutable evidence commit/tag и запускает
 `make verify-release-evidence` с `--handoff docs/operations/production-handoff.md`
@@ -115,7 +145,8 @@ digest/env/model pointer без downgrade БД; если post-rollout ошибк
 
 ## Нерешённые вопросы
 
-Для решения GO требуются exact wrapper gate или обоснованное
-закрытие этого пробела, terminal PR/CI, source tag,
+Для решения GO требуются terminal PR/CI, source tag,
 manifest/images/evidence, свежий backup/restore/off-host evidence и wrapper
-production-модели для `1.2.9`. Production rollout пока NO GO.
+production-модели для `1.2.10`. Локальный UID и образный разрыв следует
+проверить на первых ограниченных production шагах до включения timer.
+Production rollout пока NO GO.

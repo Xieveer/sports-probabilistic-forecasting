@@ -16,7 +16,7 @@ from sports_forecast.service.schemas import HealthResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.2.9"
+RELEASE_VERSION = "1.2.10"
 
 
 def test_package_and_fastapi_publish_same_release_version() -> None:
@@ -90,7 +90,7 @@ def test_evidence_workflow_is_manual_and_keeps_dynamic_facts_outside_application
     )
     assert "- Статус подготовки: `candidate`" in handoff
     assert "v1.1.12" not in handoff
-    assert "- source_tag: `v1.2.9`" in handoff
+    assert "- source_tag: `v1.2.10`" in handoff
     assert "--handoff docs/operations/production-handoff.md" in handoff
 
 

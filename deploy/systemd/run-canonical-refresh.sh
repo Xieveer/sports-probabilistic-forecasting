@@ -129,11 +129,15 @@ while IFS= read -r -d '' manifest; do
   container_artifact="/app/archive/${relative}"
   run_with_heartbeat /usr/bin/docker compose -f docker-compose.prod.yml --profile operational-sync run --rm --no-deps archive-sync \
     /app/.venv/bin/python -m sports_forecast.deploy.archive_sync_cli \
-    sync --archive "${container_artifact}" --state-root /app/sync-state --prefix "${prefix}"
+    sync --archive "${container_artifact}" --state-root /app/sync-state --prefix "${prefix}" </dev/null
   artifact_count=$((artifact_count + 1))
 done <"${manifest_list}"
 rm -f -- "${manifest_list}"
 manifest_list=""
+if (( artifact_count == 0 )); then
+  echo "Archive manifests отсутствуют после успешного Worker; archive_sync не может завершиться успешно" >&2
+  exit 1
+fi
 control finish-stage --run-id "${SF_WORKER_RUN_ID}" --stage "${active_stage}" \
   --status success --counts "{\"artifacts\":${artifact_count}}"
 control finish-run --run-id "${SF_WORKER_RUN_ID}" --status auto
