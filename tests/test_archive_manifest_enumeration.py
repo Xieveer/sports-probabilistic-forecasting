@@ -45,3 +45,23 @@ def test_missing_archive_directory_is_an_empty_archive(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert result.stdout == b""
+
+
+def test_inaccessible_archive_root_is_not_treated_as_an_empty_archive(tmp_path: Path) -> None:
+    """An unreadable parent must fail closed instead of reporting zero manifests."""
+    archive_root = tmp_path / "archive-root"
+    archive_root.mkdir()
+    archive = archive_root / "operational-archive"
+    archive.mkdir()
+    (archive / "manifest.json").write_text("{}", encoding="utf-8")
+    archive_root.chmod(0)
+    try:
+        result = subprocess.run(
+            ["bash", str(HELPER), str(archive_root)],
+            capture_output=True,
+            check=False,
+        )
+    finally:
+        archive_root.chmod(0o700)
+
+    assert result.returncode != 0

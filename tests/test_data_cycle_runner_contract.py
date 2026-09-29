@@ -1,6 +1,7 @@
 """Contract for the durable cycle wrapper around the production NHL runner."""
 
 import os
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -79,6 +80,81 @@ def test_archive_sync_runner_executes_the_installed_application_cli() -> None:
     assert 'sync --archive "${container_artifact}"' in archive_command
     assert '--state-root /app/sync-state --prefix "${prefix}"' in archive_command
     assert "archive-sync \\\n    sync --archive" not in archive_command
+
+
+def test_archive_manifest_loop_keeps_compose_from_consuming_the_manifest_stream(
+    tmp_path: Path,
+) -> None:
+    """The actual loop syncs each manifest when Compose consumes all stdin."""
+    runner = (PROJECT_ROOT / "deploy/systemd/run-canonical-refresh.sh").read_text(encoding="utf-8")
+    archive_loop = runner.split("while IFS= read -r -d '' manifest; do", 1)[1].split(
+        'done <"${manifest_list}"', 1
+    )[0]
+    archive_loop = (
+        "while IFS= read -r -d '' manifest; do" + archive_loop + 'done <"${manifest_list}"'
+    )
+    command_start = archive_loop.index("  run_with_heartbeat /usr/bin/docker compose")
+    command_end = archive_loop.index(
+        "\n", archive_loop.index('--prefix "${prefix}"', command_start)
+    )
+    compose_command = archive_loop[command_start:command_end]
+    stdin_redirect = " </dev/null" if "</dev/null" in compose_command else ""
+    archive_loop = (
+        archive_loop[:command_start]
+        + '  run_with_heartbeat fake_compose "${container_artifact}"'
+        + stdin_redirect
+        + archive_loop[command_end:]
+    )
+
+    archive_root = tmp_path / "archive-root"
+    manifest_list = tmp_path / "manifests.list"
+    sync_log = tmp_path / "archive-sync.log"
+    manifests = [
+        archive_root / "operational-archive" / name / "manifest.json"
+        for name in ("canonical", "source-state", "additional")
+    ]
+    for manifest in manifests:
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text("{}", encoding="utf-8")
+    manifest_list.write_bytes(b"".join(os.fsencode(path) + b"\0" for path in manifests))
+    script = "\n".join(
+        [
+            f"SF_OPERATIONAL_ARCHIVE_ROOT={shlex.quote(str(archive_root))}",
+            'SF_OPERATIONAL_ARCHIVE_PREFIX="operational-archive"',
+            f"manifest_list={shlex.quote(str(manifest_list))}",
+            "artifact_count=0",
+            'run_with_heartbeat() { "$@"; }',
+            f"SYNC_LOG={shlex.quote(str(sync_log))}",
+            'fake_compose() { printf "%s\\n" "$1" >>"$SYNC_LOG"; cat >/dev/null; }',
+            archive_loop,
+            'printf "count=%s\\n" "$artifact_count"',
+        ]
+    )
+    completed = subprocess.run(
+        ["bash", "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+        env=os.environ.copy(),
+    )
+
+    assert 'done <"${manifest_list}"' in runner
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "count=3"
+    assert sync_log.read_text(encoding="utf-8").splitlines() == [
+        f"/app/archive/operational-archive/{name}"
+        for name in ("canonical", "source-state", "additional")
+    ]
+
+
+def test_runner_rejects_zero_archive_manifests_after_worker_success() -> None:
+    """A completed Worker cannot produce a successful empty archive_sync stage."""
+    runner = (PROJECT_ROOT / "deploy/systemd/run-canonical-refresh.sh").read_text(encoding="utf-8")
+
+    assert runner.index("if (( artifact_count == 0 )); then") < runner.index(
+        "--status success --counts"
+    )
 
 
 @pytest.mark.parametrize("setting", ["", "off", "TRUE", "1"])

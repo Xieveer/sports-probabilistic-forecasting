@@ -4,6 +4,10 @@ set -euo pipefail
 
 archive_root="${1:?нужен archive root}"
 archive_dir="${archive_root%/}/operational-archive"
+if [[ ! -d "${archive_root}" || ! -r "${archive_root}" || ! -x "${archive_root}" ]]; then
+  echo "Archive root недоступен: ${archive_root}" >&2
+  exit 1
+fi
 if [[ ! -e "${archive_dir}" ]]; then
   exit 0
 fi
