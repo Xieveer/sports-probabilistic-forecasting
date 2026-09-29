@@ -388,3 +388,12 @@ evidence.1 tag и его CI прошли. Проверенный content commit:
 `verify-release-evidence` выполнены Product Owner под 1 GiB/no swap;
 Reviewer их повторно не запускал. Evidence.2 CI/tag и production
 acceptance ещё ожидают; тяжёлые тесты на ноутбуке не запускались.
+
+Evidence.2 CI `36597968519` выявил, что неизменяемый release workflow
+подставляет `v1.2.10-evidence.1` в локальный validator manifest. В handoff
+уточнён существующий исторический tag `.1` при сохранении текущего `.2` в
+release manifest; проверенный content commit:
+`9fca7d89a0c35db64f9dc2e867ae3dcea065e875`. Повторное независимое
+review этого diff не нашло P0–P2. `git diff --check` прошёл; повторная
+локальная проверка workflow validator под 1 GiB/no swap выполнена Product
+Owner, Reviewer её не запускал. Новый evidence.2 CI ещё ожидает.
