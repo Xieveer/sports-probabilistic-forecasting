@@ -115,6 +115,18 @@ def test_production_compose_fixture_renders_all_first_rollout_profiles(tmp_path:
     verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
 
     config = yaml.safe_load(result.stdout)
+    config["services"]["archive-sync"]["network_mode"] = "bridge"
+    rendered.write_text(yaml.safe_dump(config), encoding="utf-8")
+    with pytest.raises(ValueError, match="archive-sync: host network обязателен"):
+        verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
+
+    config = yaml.safe_load(result.stdout)
+    config["services"]["api"]["network_mode"] = "host"
+    rendered.write_text(yaml.safe_dump(config), encoding="utf-8")
+    with pytest.raises(ValueError, match="api: host network запрещён"):
+        verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
+
+    config = yaml.safe_load(result.stdout)
     config["services"]["api"]["environment"]["SF_CONTROL_DATABASE_URL_FILE"] = (
         "postgresql://unsafe@db/sports_forecast"
     )
@@ -321,7 +333,7 @@ def test_first_rollout_runner_and_tag_gate_are_checked_in() -> None:
         in runner_source
     )
     assert "JOIN data_cycle_runs" in runner_source
-    assert "_sync_operational_archives(compose, values=values)" in runner_source
+    assert "compose, endpoint=s3_host_endpoint, values=values" in runner_source
     assert "sports_forecast.deploy.archive_sync_cli" in runner_source
     assert 'if role_contract != "t|t|t|t|f|f":' in runner_source
     assert runner_source.index('evidence["health"]["api_ready"] = "ok"') < runner_source.index(
@@ -423,6 +435,7 @@ def test_first_rollout_syncs_each_artifact_with_runner_cli_and_matching_prefix(
 
     count = _sync_operational_archives(
         ["docker", "compose", "--project-name", "fixture"],
+        endpoint="http://127.0.0.1:49123",
         values={
             "SF_OPERATIONAL_ARCHIVE_ROOT": str(archive_root),
             "SF_OPERATIONAL_ARCHIVE_PREFIX": "fixture-operational",
@@ -448,6 +461,7 @@ def test_first_rollout_syncs_each_artifact_with_runner_cli_and_matching_prefix(
     assert any(volume.endswith(":/app/archive:ro") for volume in archive_sync_service["volumes"])
     assert len(captured) == 2
     for command in captured:
+        assert "SF_OBJECT_STORAGE_ENDPOINT=http://127.0.0.1:49123" in command
         assert command[command.index("archive-sync") + 1 : command.index("archive-sync") + 5] == [
             "/app/.venv/bin/python",
             "-m",
@@ -497,6 +511,7 @@ def test_first_rollout_requires_both_canonical_and_source_state_archives(
     with pytest.raises(RuntimeError, match=f"{missing_type}"):
         _sync_operational_archives(
             ["docker", "compose", "--project-name", "fixture"],
+            endpoint="http://127.0.0.1:49123",
             values={"SF_OPERATIONAL_ARCHIVE_ROOT": str(archive_root)},
         )
 
@@ -683,7 +698,7 @@ def test_log_redaction_gate_rejects_fixture_secret(tmp_path: Path) -> None:
         )
 
 
-def test_s3_fixture_uses_project_image_on_compose_network(
+def test_s3_fixture_exposes_loopback_only_for_host_network_sync(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """S3 fixture запускается из переданного immutable project artifact."""
@@ -693,8 +708,14 @@ def test_s3_fixture_uses_project_image_on_compose_network(
         commands.append(command)
 
     monkeypatch.setattr("scripts.run_production_first_rollout._run_one_shot_checked", record)
+    monkeypatch.setattr(
+        "scripts.run_production_first_rollout._run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(
+            command, 0, stdout="127.0.0.1:49123\n", stderr=""
+        ),
+    )
 
-    _start_s3_fixture(
+    endpoint = _start_s3_fixture(
         fixture_name="sf-rollout-test-s3-fixture",
         network="sf-rollout-test_default",
         image="localhost:5000/sf-rollout-s3-fixture@sha256:" + "0" * 64,
@@ -714,6 +735,8 @@ def test_s3_fixture_uses_project_image_on_compose_network(
     ]
     assert "--read-only" in commands[0]
     assert "--tmpfs" in commands[0]
+    assert "127.0.0.1::9000" in commands[0]
+    assert endpoint == "http://127.0.0.1:49123"
     assert commands[0][-1] == "localhost:5000/sf-rollout-s3-fixture@sha256:" + "0" * 64
 
 

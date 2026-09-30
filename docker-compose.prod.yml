@@ -196,6 +196,7 @@ services:
   archive-sync:
     image: ${SF_ARCHIVE_SYNC_IMAGE:?set SF_ARCHIVE_SYNC_IMAGE to an immutable sync image digest}
     pull_policy: always
+    network_mode: host
     environment:
       SF_DATA_CYCLE_RUN_ID: ${SF_DATA_CYCLE_RUN_ID:-untracked}
       SF_DATA_CYCLE_GENERATION: ${SF_DATA_CYCLE_GENERATION:-0}
@@ -217,6 +218,8 @@ services:
     cpus: "0.5"
     mem_limit: 512m
     user: "10001:10001"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
     read_only: true
     tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
     logging: *prod_logging

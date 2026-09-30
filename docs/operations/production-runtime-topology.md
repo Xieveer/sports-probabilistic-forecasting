@@ -15,6 +15,15 @@ Operations Agent.
 | `worker` | `SF_WORKER_DATABASE_URL_FILE`, canonical refresh/write | `${SF_MODEL_RUNTIME_ROOT}:/app/models:ro`, source snapshot read-only, archive staging read-write | нет |
 | `archive-sync` | нет | archive staging read-only, отдельный sync state read-write | write/read verify только `operational-archive/*`, включая `nhl-source-state/v1/` |
 
+Начиная с корректирующего выпуска `1.2.12`, только одноразовый `archive-sync`
+использует `network_mode: host`: на `ops-prod-01` TLS handshake к Object Storage
+через Docker bridge повторяемо завершается таймаутом, тогда как тот же образ в
+сети хоста устанавливает TLS. Другие сервисы сохраняют прежнюю сеть. У
+`archive-sync` нет listener, опубликованных портов, Docker socket и DB secrets;
+он работает без capabilities и без повышения привилегий. Сеть хоста даёт ему
+доступ к loopback-службам VPS; перед rollout Operations сверяет эти службы и
+ограничивает изменение согласно [ADR-027](../architecture/adr/ADR-027-archive-sync-host-network.md).
+
 Роли `sf_api_reader`, `sf_control_api` и `sf_refresh_writer` создаёт Operations
 Agent после migrations и ограничивает соответствующими таблицами/операциями.
 Control API и dispatcher могут создать только `waiting` run/stage; terminal

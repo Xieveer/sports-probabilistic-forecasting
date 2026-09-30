@@ -298,6 +298,30 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     assert set(cast(dict[str, object], compose["volumes"])) == {"pg_data"}
 
 
+def test_archive_sync_host_network_remains_scoped_to_sync_process() -> None:
+    """Доступ к сети хоста получает только ограниченный S3 sync process."""
+    compose = _load_yaml("docker-compose.prod.yml")
+    services = cast(dict[str, dict[str, object]], compose["services"])
+    archive_sync = services["archive-sync"]
+
+    assert archive_sync["network_mode"] == "host"
+    assert all(
+        service_name == "archive-sync" or service.get("network_mode") != "host"
+        for service_name, service in services.items()
+    )
+    assert "ports" not in archive_sync
+    assert "networks" not in archive_sync
+    assert archive_sync.get("privileged") is not True
+    assert "cap_add" not in archive_sync
+    assert archive_sync["cap_drop"] == ["ALL"]
+    assert archive_sync["security_opt"] == ["no-new-privileges:true"]
+    assert set(cast(list[str], archive_sync["secrets"])) == {
+        "object_storage_access_key",
+        "object_storage_secret_key",
+    }
+    assert all("docker.sock" not in volume for volume in cast(list[str], archive_sync["volumes"]))
+
+
 def test_systemd_scheduler_has_durable_cycle_before_calendar_acquisition() -> None:
     """Business dispatcher и fixed run template подготавливают durable cycle."""
     service = (SYSTEMD_DIR / "sports-forecast-canonical-refresh@.service").read_text(
