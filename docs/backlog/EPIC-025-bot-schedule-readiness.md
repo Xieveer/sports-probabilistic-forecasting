@@ -25,7 +25,10 @@
   `accepted`; предыдущие роли Architect, Developer и независимый Reviewer
   (без блокирующих findings); следующая роль Product Owner для PR/CI/release,
   затем Operations. Release/CI и production gates
-  остаются открытыми; при новом сбое остановиться. Обновлено 2026-09-30.
+  остаются открытыми. PR #54: Python dependency audit обнаружил три CVE в
+  зафиксированном `urllib3` 2.7.0; локальный runtime audit после обновления
+  lock до 2.8.0 чистый, повторные review/CI ожидаются. При новом production
+  сбое остановиться. Обновлено 2026-09-30.
 - Предыдущий correction cycle: `initiative/epic-025-v1211-recovery`,
   [TASK-025-28](tasks/TASK-025-28-acceptance-docs-response.md),
   [TASK-025-29](tasks/TASK-025-29-idempotent-archive-sync.md),
