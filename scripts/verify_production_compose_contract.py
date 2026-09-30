@@ -67,6 +67,8 @@ def verify_contract(rendered_path: Path, *, model_runtime_root: Path) -> None:
     for name, service in services.items():
         _require(isinstance(service, dict), f"{name}: service должен быть mapping")
         _require("ports" not in service, f"{name}: host ports запрещены")
+        if name != "archive-sync":
+            _require(service.get("network_mode") != "host", f"{name}: host network запрещён")
         _require(bool(service.get("cpus")), f"{name}: cpus обязателен")
         _require(bool(service.get("mem_limit")), f"{name}: mem_limit обязателен")
         image = service.get("image")
@@ -74,6 +76,19 @@ def verify_contract(rendered_path: Path, *, model_runtime_root: Path) -> None:
             isinstance(image, str) and "@sha256:" in image,
             f"{name}: image должен быть immutable digest",
         )
+
+    archive_sync = services["archive-sync"]
+    _require(archive_sync.get("network_mode") == "host", "archive-sync: host network обязателен")
+    _require("networks" not in archive_sync, "archive-sync: networks несовместимы с host mode")
+    _require("privileged" not in archive_sync, "archive-sync: privileged запрещён")
+    _require("cap_add" not in archive_sync, "archive-sync: дополнительные capabilities запрещены")
+    _require(
+        archive_sync.get("cap_drop") == ["ALL"], "archive-sync: capabilities должны быть сброшены"
+    )
+    _require(
+        archive_sync.get("security_opt") == ["no-new-privileges:true"],
+        "archive-sync: повышение привилегий запрещено",
+    )
 
     api_env = services["api"].get("environment")
     _require(isinstance(api_env, dict), "api: environment должен быть mapping")

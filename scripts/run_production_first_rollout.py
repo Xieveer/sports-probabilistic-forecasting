@@ -390,7 +390,7 @@ def _run_one_shot_checked(
 
 
 def _sync_operational_archives(
-    compose: list[str], *, values: dict[str, str], timeout: int = 180
+    compose: list[str], *, endpoint: str, values: dict[str, str], timeout: int = 180
 ) -> int:
     """Синхронизировать все manifest artifacts через тот же Compose CLI контракт."""
     archive_root = Path(values["SF_OPERATIONAL_ARCHIVE_ROOT"])
@@ -463,7 +463,7 @@ def _sync_operational_archives(
                 "--rm",
                 "--no-deps",
                 "--env",
-                "SF_OBJECT_STORAGE_ENDPOINT=http://minio:9000",
+                f"SF_OBJECT_STORAGE_ENDPOINT={endpoint}",
                 "--env",
                 "SF_OBJECT_STORAGE_BUCKET=fixture-bucket",
                 "archive-sync",
@@ -487,8 +487,8 @@ def _sync_operational_archives(
 
 def _start_s3_fixture(
     *, fixture_name: str, network: str, image: str, values: dict[str, str]
-) -> None:
-    """Запустить project-owned S3 fixture в изолированной Compose-сети."""
+) -> str:
+    """Запустить S3 fixture в Compose-сети с loopback endpoint для host sync."""
     _run_one_shot_checked(
         [
             "docker",
@@ -500,6 +500,8 @@ def _start_s3_fixture(
             network,
             "--network-alias",
             "minio",
+            "-p",
+            "127.0.0.1::9000",
             "--read-only",
             "--tmpfs",
             "/tmp:rw,noexec,nosuid,size=64m",
@@ -507,6 +509,10 @@ def _start_s3_fixture(
         ],
         values=values,
     )
+    binding = _run(["docker", "port", fixture_name, "9000/tcp"]).stdout.strip()
+    if not re.fullmatch(r"127\.0\.0\.1:[1-9][0-9]{0,4}", binding):
+        raise RuntimeError("S3 fixture не получил единственный loopback port")
+    return f"http://{binding}"
 
 
 def _probe_runtime_identities(
@@ -927,7 +933,7 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
             evidence["health"]["worker_refresh"] = "ok"
             evidence["health"]["worker_run_id_idempotency"] = "ok"
             s3_fixture_name = f"{project_name}-s3-fixture"
-            _start_s3_fixture(
+            s3_host_endpoint = _start_s3_fixture(
                 fixture_name=s3_fixture_name,
                 network=f"{project_name}_default",
                 image=refs["SF_S3_FIXTURE_IMAGE"],
@@ -995,7 +1001,9 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
                 ],
                 values=values,
             )
-            artifact_count = _sync_operational_archives(compose, values=values)
+            artifact_count = _sync_operational_archives(
+                compose, endpoint=s3_host_endpoint, values=values
+            )
             evidence["health"]["archive_sync"] = "ok"
             evidence["health"]["archive_sync_artifacts"] = str(artifact_count)
             current = _run(

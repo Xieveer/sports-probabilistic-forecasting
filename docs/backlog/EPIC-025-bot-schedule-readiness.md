@@ -4,12 +4,29 @@
 > **Приоритет:** high
 > **Владелец:** Product Owner
 > **Требование:** [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md)
-> **ADR:** [ADR-026](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
+> **ADR:** [ADR-026](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md), [ADR-027](../architecture/adr/ADR-027-archive-sync-host-network.md)
 
 ## Память Product Owner
 
 - Инициатива: `EPIC-025`.
-- Текущий correction cycle: `initiative/epic-025-v1211-recovery`,
+- Текущий correction cycle: `initiative/epic-025-archive-network`,
+  [TASK-025-32](tasks/TASK-025-32-archive-sync-host-network.md), кандидат
+  `v1.2.12`. Production `v1.2.11` API/bot/DB healthy; новый ручной run
+  `47ebfeb2-5113-465d-9a8e-92f709370639` остаётся `running/archive_sync`
+  при остановленном systemd unit, оба NHL timer выключены. Диагностика
+  2026-09-30 локализовала повторяемый TLS timeout в Docker bridge:
+  тот же archive-sync image в host network устанавливает TLS; host S3 client
+  записал и обратно проверил первый immutable artifact, но durable sync state
+  остаётся `failed`, второй artifact не передан. Владелец разрешил точечное
+  исправление, release gates и production recovery. Критерии — оба artifact
+  remote-verified штатным process, terminal recovery старого run, успешный
+  новый ручной цикл с odds/outbox и затем ежедневный NHL timer. Решение —
+  [ADR-027](../architecture/adr/ADR-027-archive-sync-host-network.md)
+  `accepted`; предыдущие роли Architect, Developer и независимый Reviewer
+  (без блокирующих findings); следующая роль Product Owner для PR/CI/release,
+  затем Operations. Release/CI и production gates
+  остаются открытыми; при новом сбое остановиться. Обновлено 2026-09-30.
+- Предыдущий correction cycle: `initiative/epic-025-v1211-recovery`,
   [TASK-025-28](tasks/TASK-025-28-acceptance-docs-response.md),
   [TASK-025-29](tasks/TASK-025-29-idempotent-archive-sync.md),
   [TASK-025-30](tasks/TASK-025-30-future-odds-production.md) и
@@ -23,7 +40,8 @@
   требуется штатный host recovery старого run, свежий backup, локальные gates,
   независимое review, terminal CI и release evidence. Если новый production
   цикл неуспешен, остановиться и вернуться к владельцу.
-- Gate v1.2.11: TASK-025-28/29/30 прошли red→green, совокупно 144 адресных
+- Историческая память предыдущих correction cycles приведена ниже; актуальный
+  gate v1.2.12 указан первым. Gate v1.2.11: TASK-025-28/29/30 прошли red→green, совокупно 144 адресных
   теста под лимитом 1.5 GiB/no swap, `make lint`, `make type-check` и
   `make production-check` успешны. Reviewer выявил одну P1-находку о legacy
   archive state; Developer исправил её, повторное review чистое
@@ -326,7 +344,7 @@
 Реализовать [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md):
 календарь и готовность событий, Data Cycle с управлением из Telegram,
 операционную готовность NHL. Первым выпуском был `1.2.1`; текущий
-корректирующий кандидат — `1.2.11`. Футбол проверяется контрольным сценарием
+корректирующий кандидат — `1.2.12`. Футбол проверяется контрольным сценарием
 без включения в пользовательское меню.
 
 ## Декомпозиция
@@ -339,7 +357,7 @@
 | [TASK-025-6](tasks/TASK-025-6-future-odds.md) | Calendar-first future NHL odds | semantic evidence, quota, identity, freshness | done |
 | [TASK-025-7](tasks/TASK-025-7-data-cycle-recovery-summary.md) | Terminal stages, summary и run history query contract | stage faults, coverage, safe DTO | done; production runtime в TASK-025-9 |
 | [TASK-025-8](tasks/TASK-025-8-executor-fencing.md) | Executor recovery/fencing after crash | PostgreSQL race, no duplicate executor | done; production activation в TASK-025-9 |
-| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.10 serving, timer disabled; v1.2.11 candidate |
+| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.11 serving, timer disabled; v1.2.12 candidate |
 | [TASK-025-13](tasks/TASK-025-13-production-runtime-hotfixes.md) | Исправить четыре runtime-дефекта первого цикла | grants, source DB, runner, heartbeat | done; PR #42 merged |
 | [TASK-025-14](tasks/TASK-025-14-future-close-odds-snapshot.md) | Публиковать source snapshot без closing line будущего матча | red/green, source/canonical tests, production snapshot | done; опубликован v1.2.3 snapshot |
 | [TASK-025-15](tasks/TASK-025-15-readonly-worker-hydra-logging.md) | Безопасный Hydra CLI в read-only Worker | red/green, stdout, no filesystem write | done; runtime gate в TASK-025-9 |
@@ -359,6 +377,7 @@
 | [TASK-025-29](tasks/TASK-025-29-idempotent-archive-sync.md) | Не передавать повторно verified архивы | legacy state, timeout, bounded tests | reviewed_pending_release |
 | [TASK-025-30](tasks/TASK-025-30-future-odds-production.md) | Включить будущие NHL odds и ключи API | Compose contract, Worker/API/бот | reviewed_pending_release |
 | [TASK-025-31](tasks/TASK-025-31-control-stall-mark.md) | Исправить отметку stalled Control API | restricted role, atomic function | reviewed_pending_release |
+| [TASK-025-32](tasks/TASK-025-32-archive-sync-host-network.md) | Восстановить TLS путь archive-sync | scoped host network, Compose contract, remote verification | in_progress |
 | [TASK-025-12](tasks/TASK-025-12-release-compose-gate.md) | Исправить Compose release gate | новый API/dispatcher contract и память | done; PR CI в TASK-025-9 |
 | [TASK-025-10](tasks/TASK-025-10-run-summary-producers.md) | Full run summary producers and coverage | same-run counters, n/a denominator, football fixture | done |
 | [TASK-025-11](tasks/TASK-025-11-telegram-calendar.md) | Public NHL calendar in Telegram | 08:00, all horizons, no prediction, bot→API test | done |
@@ -366,9 +385,9 @@
 | [TASK-025-5](tasks/TASK-025-5-telegram-experience.md) | Telegram calendar, admin controls, notifications, code-based E2E | 08:00, auth, idempotency, bot→API | done; delivery activation в TASK-025-9 |
 
 Operations release gate зафиксирован в TASK-025-9 и
-[production handoff](../operations/production-handoff.md). v1.2.10 сейчас
+[production handoff](../operations/production-handoff.md). v1.2.11 сейчас
 обслуживает API/бота; его ручной run записал 1 834 прогноза, но завис в БД
-после ошибки archive sync. PR #53 готовит v1.2.11. Оба NHL timer выключены;
+после ошибки archive sync. TASK-025-32 готовит v1.2.12. Оба NHL timer выключены;
 перед ежедневным режимом требуются восстановление старого run, новый
 проверенный ручной цикл с odds и подтверждение Telegram/API.
 
