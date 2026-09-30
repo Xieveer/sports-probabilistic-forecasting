@@ -41,7 +41,11 @@ Run `47ebfeb2-5113-465d-9a8e-92f709370639` остаётся `running/archive_syn
 - PR #54 выявил в dependency audit три CVE для зафиксированного `urllib3`
   2.7.0. `uv lock --upgrade-package urllib3` обновил только его до 2.8.0;
   повторный локальный `pip-audit` полного runtime export не нашёл известных
-  уязвимостей. Повторное review и CI этого исправления ожидаются.
+  уязвимостей. Повторное независимое review не нашло блокирующих findings:
+  `uv lock --check --offline`, `uv tree --locked --package urllib3`, импорт
+  версии в проектной venv и commit hooks прошли; terminal CI ожидается.
+- Проверенный security correction commit:
+  `fa2ac931cde0135f48c14d4aad87e54f7fe05bb3`.
 - Проверенный content commit: `b509c1f169c135f3e5a8604894593f516e5046bb`;
   commit gate прошёл Ruff, форматирование, mypy и остальные применимые hooks.
 
