@@ -1,7 +1,7 @@
 # TASK-025-32 — Сетевой путь archive-sync
 
 > **Статус:** реализация, локальные проверки и независимый review завершены;
-> CI и production runtime gate открыты.
+> source-tag CI завершён; release evidence CI и production runtime gate открыты.
 
 ## Причина
 
@@ -34,8 +34,8 @@ Run `47ebfeb2-5113-465d-9a8e-92f709370639` остаётся `running/archive_syn
 - Green: 73 адресных теста прошли в собственной venv рабочей ветки.
 - `make lint`, `make type-check`, `make production-check`,
   `uv lock --check --offline` и `git diff --check` прошли.
-- Полный first-rollout с release images, terminal CI, штатный sync обоих
-  сохранённых artifacts, recovery run и новый цикл на VPS ещё не выполнялись.
+- Штатный sync обоих сохранённых production artifacts, recovery run и новый
+  цикл на VPS ещё не выполнялись.
 - Независимый Reviewer не нашёл блокирующих P0/P1/P2; дополнительно
   подтвердил Docker loopback fixture → host-network client и 65 адресных тестов.
 - PR #54 выявил в dependency audit три CVE для зафиксированного `urllib3`
@@ -43,7 +43,12 @@ Run `47ebfeb2-5113-465d-9a8e-92f709370639` остаётся `running/archive_syn
   повторный локальный `pip-audit` полного runtime export не нашёл известных
   уязвимостей. Повторное независимое review не нашло блокирующих findings:
   `uv lock --check --offline`, `uv tree --locked --package urllib3`, импорт
-  версии в проектной venv и commit hooks прошли; terminal CI ожидается.
+  версии в проектной venv и commit hooks прошли; PR/merge CI зелёные.
+- Source tag `v1.2.12` на merge commit `2d247f2c42a65145881662e544f87023b85002a0`:
+  [Docker pipeline](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36767386816)
+  завершился успешно. First-rollout проверил оба archive artifacts через
+  штатный host-network sync к loopback S3 fixture; опубликованы exact digests,
+  scan/provenance. Это локальный release gate, не production sync.
 - Проверенный security correction commit:
   `fa2ac931cde0135f48c14d4aad87e54f7fe05bb3`.
 - Проверенный content commit: `b509c1f169c135f3e5a8604894593f516e5046bb`;
@@ -51,7 +56,7 @@ Run `47ebfeb2-5113-465d-9a8e-92f709370639` остаётся `running/archive_syn
 
 ## Передача
 
-Следующая роль — Product Owner для PR/CI/release gates и Operations Agent
+Следующая роль — Product Owner для release evidence gate и Operations Agent
 для ограниченного production rollout. До успешного
 ручного цикла оба NHL timer остаются выключенными. При новой production
 ошибке остановиться и сообщить факты владельцу.

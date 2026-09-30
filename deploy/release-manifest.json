@@ -1,14 +1,14 @@
 {
   "service": "sports-probabilistic-forecasting",
-  "version": "1.2.8",
-  "source_tag": "v1.2.8",
-  "source_commit": "ab1626e4736c615f1be5f36c08fce2528ee3bd55",
-  "evidence_tag": "v1.2.8-evidence.1",
+  "version": "1.2.12",
+  "source_tag": "v1.2.12",
+  "source_commit": "2d247f2c42a65145881662e544f87023b85002a0",
+  "evidence_tag": "v1.2.12-evidence.1",
   "images": {
     "postgres": "postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94",
-    "api": "ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:64849be03763238d74c84838272b8eeb39f10592811c0a55076517f53943997f",
-    "worker": "ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:055dc235111c620879303445f421d1eb7c7a35f9df95bfcb9f8d0e2b15920c4e",
-    "telegram_bot": "ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:7a8c5d7bc3429db079e40c638c2d6c3a96a1b1cee52c67f21a61a3a41b1a8906",
-    "archive_sync": "ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:7be825c3ac001a1a81386a79fcfa2cdb065fd1430ed910243af041aabf6304bd"
+    "api": "ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:b71d7bffe8ad2d05727efc081913cb171ef758d206cb42e139d6aba707d606dd",
+    "worker": "ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:e63ca13bfbdcf3a837e70147e388485f7e2446db7fd68035d6139a226f857d0a",
+    "telegram_bot": "ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:bbfe2afb5e128aade532da7a65e4c65bb644214f7d5744b3b1fcf4241c23f181",
+    "archive_sync": "ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:c82bf1940a29c187025d8d4ecab9c9ce673ce1e024253a50ec86b3cd2fdad12e"
   }
 }

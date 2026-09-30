@@ -10,10 +10,26 @@
   [TASK-025-32](../backlog/tasks/TASK-025-32-archive-sync-host-network.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
 - Целевая среда: production VPS `ops-prod-01`; версия: `1.2.12`.
-- source_tag: `v1.2.12` (целевой, до release gates не создан).
-- Ветка: `initiative/epic-025-archive-network`.
-- Source commit, image digests, evidence tag и CI URLs фиксируются в
-  отдельном release evidence commit после merge/tag pipelines.
+- source_tag: `v1.2.12` (annotated, exact merged commit).
+- source_commit: `2d247f2c42a65145881662e544f87023b85002a0`.
+- evidence_tag: `v1.2.12-evidence.1` (создаётся после проверки evidence).
+- PR: https://github.com/Xieveer/sports-probabilistic-forecasting/pull/54.
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36767320166.
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36767320135.
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36767386816.
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36767386816/job/110067197904.
+
+Tag pipeline завершился успешно: first-rollout прогнал чистую установку,
+штатный `archive-sync` с host network и два remote-verified artifacts на
+локальном S3 fixture, API/bot health и проверки ролей. Опубликованные digest
+совпали с проверенными OCI artifacts; каждый application image имеет
+linux/amd64 manifest, scan и provenance:
+
+- postgres: `postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94` — без изменения.
+- api: `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:b71d7bffe8ad2d05727efc081913cb171ef758d206cb42e139d6aba707d606dd` — published linux/amd64 scan provenance.
+- worker: `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:e63ca13bfbdcf3a837e70147e388485f7e2446db7fd68035d6139a226f857d0a` — published linux/amd64 scan provenance.
+- telegram_bot: `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:bbfe2afb5e128aade532da7a65e4c65bb644214f7d5744b3b1fcf4241c23f181` — published linux/amd64 scan provenance.
+- archive_sync: `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:c82bf1940a29c187025d8d4ecab9c9ce673ce1e024253a50ec86b3cd2fdad12e` — published linux/amd64 scan provenance.
 
 ## Идентификация и ответственность
 
@@ -108,6 +124,15 @@ backup перед v1.2.10 сохранён; он не заменяет свеж�
 производится. Локальный ключ Odds API ответил HTTP 200 на один NHL запрос;
 доступность именно серверного secret проверяется отдельно без вывода значения.
 
+Локальный wrapper `sha256:a94173608d42bc69363be243527c1bdd893e2eee81c98f6615c01232aed1f64a`
+имеет manifest SHA-256
+`0a10706dbf6eb75b9377ac2e8d55c05cc2dd095bca46bcf605bb4c6f60b4aa49`.
+Веса, `features.txt` и `deploy.yaml` побайтово совпали с действующим bundle.
+`verify_model_bundle` в опубликованном exact Worker image выше прошёл под
+UID/GID 10001, `--network none`, read-only rootfs и bundle mount, 1 GiB RAM.
+Локальный путь staging и проверка записаны в Operations Agent change record;
+на VPS bundle ещё не установлен.
+
 ## Наблюдаемость
 
 В production change record фиксировать UTC, commit/tag/manifest digest,
@@ -130,8 +155,8 @@ pointer и свежий backup. Предыдущие serving refs v1.2.10 доп
 
 ## Нерешённые вопросы
 
-До production GO остаются: чистое review TASK/EPIC, terminal PR/tag CI,
-immutable release evidence и model wrapper, свежий backup/restore/off-host,
+До production GO остаются: review и terminal CI immutable release evidence,
+свежий backup/restore/off-host, штатный sync двух сохранённых artifacts,
 штатное завершение старого run, проверка серверного Odds API secret и
 ограниченный ручной цикл. Статус candidate означает готовый контракт
 проверки, а не подтверждённый production успех.

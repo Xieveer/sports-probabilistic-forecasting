@@ -23,12 +23,14 @@
   новый ручной цикл с odds/outbox и затем ежедневный NHL timer. Решение —
   [ADR-027](../architecture/adr/ADR-027-archive-sync-host-network.md)
   `accepted`; предыдущие роли Architect, Developer и независимый Reviewer
-  (без блокирующих findings); следующая роль Product Owner для PR/CI/release,
-  затем Operations. Release/CI и production gates
-  остаются открытыми. PR #54: Python dependency audit обнаружил три CVE в
+  (без блокирующих findings); следующая роль Product Owner для immutable
+  evidence, затем Operations. Production gates остаются открытыми. PR #54:
+  Python dependency audit обнаружил три CVE в
   зафиксированном `urllib3` 2.7.0; локальный runtime audit после обновления
-  lock до 2.8.0 чистый, повторные review/CI ожидаются. При новом production
-  сбое остановиться. Обновлено 2026-09-30.
+  lock до 2.8.0 чистый, повторные review/CI и source tag Docker pipeline
+  зелёные. First-rollout проверил оба archive artifacts через host network
+  к локальному S3 fixture. Evidence tag, backup и production gates ещё
+  открыты. При новом production сбое остановиться. Обновлено 2026-09-30.
 - Предыдущий correction cycle: `initiative/epic-025-v1211-recovery`,
   [TASK-025-28](tasks/TASK-025-28-acceptance-docs-response.md),
   [TASK-025-29](tasks/TASK-025-29-idempotent-archive-sync.md),

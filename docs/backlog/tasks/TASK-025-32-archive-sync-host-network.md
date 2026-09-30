@@ -28,7 +28,7 @@ TLS за 0,12 секунды; с хоста `PutObject` и обратная SHA-
 - [x] Production Compose render проходит локальную проверку; контрактный тест
   обнаруживает возвращение `archive-sync` в bridge или расширение host network
   на другие сервисы.
-- [ ] Независимый review и CI подтверждают config/security gates до production.
+- [x] Независимый review и CI подтверждают config/security gates до production.
 - [ ] На VPS из exact release image штатный sync remote-verify-ит оба сохранённых
   artifact. После штатного recovery старого run новый ручной цикл завершается
   terminal, доставляет одно уведомление и сохраняет odds evidence; только затем
