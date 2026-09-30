@@ -49,6 +49,11 @@ Run `47ebfeb2-5113-465d-9a8e-92f709370639` остаётся `running/archive_syn
   завершился успешно. First-rollout проверил оба archive artifacts через
   штатный host-network sync к loopback S3 fixture; опубликованы exact digests,
   scan/provenance. Это локальный release gate, не production sync.
+- Независимое release evidence review не нашло блокирующих findings:
+  source tag, CI/Docker jobs, четыре опубликованных digest, handoff и model
+  wrapper сверены. Проверенный evidence content commit:
+  `24ceef5e677b190fe61093a19aeaebfe7556d3c9`. Evidence CI и
+  production runtime gate остаются открытыми.
 - Проверенный security correction commit:
   `fa2ac931cde0135f48c14d4aad87e54f7fe05bb3`.
 - Проверенный content commit: `b509c1f169c135f3e5a8604894593f516e5046bb`;
