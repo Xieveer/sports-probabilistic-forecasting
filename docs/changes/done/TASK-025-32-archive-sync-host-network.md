@@ -38,6 +38,8 @@ Run `47ebfeb2-5113-465d-9a8e-92f709370639` остаётся `running/archive_syn
   сохранённых artifacts, recovery run и новый цикл на VPS ещё не выполнялись.
 - Независимый Reviewer не нашёл блокирующих P0/P1/P2; дополнительно
   подтвердил Docker loopback fixture → host-network client и 65 адресных тестов.
+- Проверенный content commit: `b509c1f169c135f3e5a8604894593f516e5046bb`;
+  commit gate прошёл Ruff, форматирование, mypy и остальные применимые hooks.
 
 ## Передача
 
