@@ -20,18 +20,6 @@ if [[ ! "$run_id" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:
   exit 2
 fi
 
-data_odds_enabled=true
-if [[ ${SF_DATA_ODDS_ENABLED+x} ]]; then
-  data_odds_enabled="${SF_DATA_ODDS_ENABLED}"
-fi
-case "$data_odds_enabled" in
-  true|false) ;;
-  *)
-    echo "SF_DATA_ODDS_ENABLED должен быть true или false" >&2
-    exit 2
-    ;;
-esac
-
 : "${SF_TOURNAMENT:?нужен SF_TOURNAMENT}"
 : "${SF_MARKET:?нужен SF_MARKET}"
 : "${SF_MARKET_SPEC:?нужен SF_MARKET_SPEC}"
@@ -95,29 +83,24 @@ fi
 export SF_DATA_CYCLE_GENERATION="${generation}"
 control start-stage --run-id "${SF_WORKER_RUN_ID}" --stage "${active_stage}"
 
-# Исторический OddsStore backfill не входит в ежедневный цикл; будущие odds
-# собирает отдельная стадия data_odds внутри Worker по data_odds_enabled.
+# Ежедневный цикл получает только source; текущие odds запрашивает /predict.
 run_with_heartbeat /usr/bin/docker compose -f docker-compose.prod.yml --profile source-acquisition run --rm --no-deps source-acquirer \
   /app/.venv/bin/python -m sports_forecast.orchestration.source_snapshot_cli \
   --tournament "${SF_TOURNAMENT}" --odds-enabled false
 
-# WorkerExecution remains the lower-level materialization outcome.
+# Canonical import, quality и immutable архив готовятся до feature generation.
 run_with_heartbeat /usr/bin/docker compose -f docker-compose.prod.yml --profile worker run --rm --no-deps worker \
-  /app/.venv/bin/python -m sports_forecast.orchestration.canonical_full_refresh_cli \
+  /app/.venv/bin/python -m sports_forecast.orchestration.canonical_run_input_cli \
   "tournament=${SF_TOURNAMENT}" "market=${SF_MARKET}" \
   "market_spec=${SF_MARKET_SPEC}" "algorithm=${SF_ALGORITHM}" "features=${SF_FEATURES}" \
-  "data_odds_enabled=${data_odds_enabled}" \
   "hydra/job_logging=stdout" "hydra.output_subdir=null"
-active_stage="pipeline"
 
-# Sync only already-verified immutable artifacts. A failed upload leaves staging
-# and makes this scheduler run non-zero; it never replaces the last remote state.
+# Подтвердить Object Storage до запуска признаков и materialization.
 : "${SF_OPERATIONAL_ARCHIVE_ROOT:?нужен SF_OPERATIONAL_ARCHIVE_ROOT}"
 active_stage="archive_sync"
-control start-stage --run-id "${SF_WORKER_RUN_ID}" --stage "${active_stage}"
 manifest_list="$(mktemp)"
-if ! bash deploy/systemd/list-canonical-archive-manifests.sh \
-  "${SF_OPERATIONAL_ARCHIVE_ROOT}" >"${manifest_list}"; then
+if ! python3 deploy/systemd/list-run-archive-manifests.py \
+  "${SF_OPERATIONAL_ARCHIVE_ROOT}" "${SF_WORKER_RUN_ID}" >"${manifest_list}"; then
   exit 1
 fi
 artifact_count=0
@@ -136,11 +119,19 @@ while IFS= read -r -d '' manifest; do
 done <"${manifest_list}"
 rm -f -- "${manifest_list}"
 manifest_list=""
-if (( artifact_count == 0 )); then
-  echo "Archive manifests отсутствуют после успешного Worker; archive_sync не может завершиться успешно" >&2
+if (( artifact_count != 2 )); then
+  echo "Ожидались два archive artifact текущего run; archive_sync не завершён" >&2
   exit 1
 fi
 control finish-stage --run-id "${SF_WORKER_RUN_ID}" --stage "${active_stage}" \
   --status success --counts "{\"artifacts\":${artifact_count}}"
+
+# WorkerExecution остаётся нижним уровнем результата model materialization.
+active_stage="predictions"
+run_with_heartbeat /usr/bin/docker compose -f docker-compose.prod.yml --profile worker run --rm --no-deps worker \
+  /app/.venv/bin/python -m sports_forecast.orchestration.canonical_full_refresh_cli \
+  "tournament=${SF_TOURNAMENT}" "market=${SF_MARKET}" \
+  "market_spec=${SF_MARKET_SPEC}" "algorithm=${SF_ALGORITHM}" "features=${SF_FEATURES}" \
+  "hydra/job_logging=stdout" "hydra.output_subdir=null"
 control finish-run --run-id "${SF_WORKER_RUN_ID}" --status auto
 trap - EXIT

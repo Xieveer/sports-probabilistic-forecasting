@@ -12,6 +12,7 @@ import pytest
 from omegaconf import OmegaConf
 from sqlalchemy import create_engine
 
+from sports_forecast.features.features_build import process_tournament_new
 from sports_forecast.materialize import (
     _aggregate_long_predictions,
     _resolve_model_provenance,
@@ -235,6 +236,125 @@ def test_external_materialization_failure_rolls_back_stale_transition(
         with get_session(engine=engine) as session:
             rows = session.query(Prediction).all()
             assert [(row.match_id, row.status) for row in rows] == [("old", "ok")]
+    finally:
+        reset_engine()
+        engine.dispose()
+
+
+def test_empty_inference_replaces_showcase_with_empty_slice(tmp_path: Path, monkeypatch) -> None:
+    """Подтверждённо пустой прогнозный вход убирает старую активную витрину."""
+    engine = create_engine("sqlite:///:memory:")
+    init_db(engine)
+    try:
+        with get_session(engine=engine) as session:
+            PredictionRepository(session).upsert_prediction(
+                match_id="old",
+                tournament="uel_kz_1",
+                market="winner",
+                market_spec="winner",
+                predictions={"home_win": 0.6, "away_win": 0.4},
+                model_version="old-prod",
+                algorithm="catboost",
+                featureset="basic",
+            )
+        interim = tmp_path / "data" / "interim" / "uel_kz_1"
+        interim.mkdir(parents=True)
+        pd.DataFrame({"id": ["old"]}).to_parquet(interim / "matches_interim.parquet")
+        with (
+            patch(
+                "sports_forecast.features.features_build.materialize_features_config",
+                return_value={},
+            ),
+            patch("sports_forecast.features.features_build.FeaturePipeline") as pipeline,
+        ):
+            pipeline.return_value.get_generator_summary.return_value = {}
+            pipeline.return_value.generate_features.return_value = (
+                pd.DataFrame(
+                    {"id": ["old", "old"], "side": ["h", "a"], "status": ["finished", "finished"]}
+                ),
+                [],
+            )
+            process_tournament_new(
+                "uel_kz_1",
+                tmp_path / "data" / "interim",
+                tmp_path / "data" / "processed",
+                OmegaConf.create({"generators": []}),
+                inference_only=True,
+            )
+        monkeypatch.setattr("sports_forecast.materialize.PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(
+            "sports_forecast.materialize.find_model_file", lambda *_a, **_k: tmp_path / "model"
+        )
+        monkeypatch.setattr(
+            "sports_forecast.materialize.load_model_from_path", lambda *_a: object()
+        )
+        monkeypatch.setattr("sports_forecast.materialize.load_feature_names", lambda *_a: [])
+        with get_session(engine=engine) as session:
+            assert materialize_predictions(
+                OmegaConf.create(_build_cfg()), version="candidate", session=session
+            )
+        with get_session(engine=engine) as session:
+            assert (
+                PredictionRepository(session).count_showcase(
+                    tournament="uel_kz_1", market="winner", market_spec="winner"
+                )
+                == 0
+            )
+    finally:
+        reset_engine()
+        engine.dispose()
+
+
+def test_nonempty_inference_without_both_sides_does_not_clear_showcase(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Неудачная агрегация непустого входа сохраняет прежние прогнозы."""
+    engine = create_engine("sqlite:///:memory:")
+    init_db(engine)
+    try:
+        with get_session(engine=engine) as session:
+            PredictionRepository(session).upsert_prediction(
+                match_id="old",
+                tournament="uel_kz_1",
+                market="winner",
+                market_spec="winner",
+                predictions={"home_win": 0.6, "away_win": 0.4},
+                model_version="old-prod",
+                algorithm="catboost",
+                featureset="basic",
+            )
+        processed = tmp_path / "data" / "processed" / "uel_kz_1"
+        processed.mkdir(parents=True)
+        pd.DataFrame(
+            {
+                "id": ["new"],
+                "side": ["h"],
+                "datetime": ["2026-10-02T12:00:00"],
+                "f1": [1.0],
+            }
+        ).to_parquet(processed / "inference_long.parquet")
+        monkeypatch.setattr("sports_forecast.materialize.PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(
+            "sports_forecast.materialize.find_model_file", lambda *_a, **_k: tmp_path / "model"
+        )
+        monkeypatch.setattr("sports_forecast.materialize.load_feature_names", lambda *_a: ["f1"])
+        model = MagicMock()
+        model.predict_proba.return_value = np.array([[0.2, 0.8]])
+        monkeypatch.setattr("sports_forecast.materialize.load_model_from_path", lambda *_a: model)
+        with (
+            pytest.raises(ValueError, match="агрегированных"),
+            get_session(engine=engine) as session,
+        ):
+            materialize_predictions(
+                OmegaConf.create(_build_cfg()), version="candidate", session=session
+            )
+        with get_session(engine=engine) as session:
+            assert (
+                PredictionRepository(session).count_showcase(
+                    tournament="uel_kz_1", market="winner", market_spec="winner"
+                )
+                == 1
+            )
     finally:
         reset_engine()
         engine.dispose()

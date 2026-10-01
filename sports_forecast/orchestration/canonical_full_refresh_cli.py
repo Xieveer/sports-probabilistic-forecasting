@@ -20,15 +20,14 @@ logger = get_logger(__name__)
 def main(cfg: DictConfig) -> None:
     """Запустить один refresh из scheduler-safe environment inputs."""
     configure_logging(level=cfg.logging.level)
-    source_csv = Path(os.environ["SF_CANONICAL_SOURCE_CSV"])
+    prepared_archive_root = Path(os.environ["SF_OPERATIONAL_ARCHIVE_ROOT"])
     result = run_full_refresh(
         cfg,
         run_id=os.environ["SF_WORKER_RUN_ID"],
         runtime_root=Path(os.environ["SF_MODEL_RUNTIME_ROOT"]),
         app_version=os.environ["SF_APP_VERSION"],
         refreshed_at=datetime.now(UTC),
-        source_csv=source_csv,
-        archive_root=Path(os.environ["SF_OPERATIONAL_ARCHIVE_ROOT"]),
+        prepared_archive_root=prepared_archive_root,
     )
     if result.already_finished:
         logger.info(

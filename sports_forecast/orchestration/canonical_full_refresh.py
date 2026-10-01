@@ -35,6 +35,7 @@ from sports_forecast.deploy.model_bundle import BundleVerificationError, load_cu
 from sports_forecast.deploy.source_state import export_nhl_source_state
 from sports_forecast.features.features_build import process_tournament_new
 from sports_forecast.materialize import materialize_predictions
+from sports_forecast.orchestration.canonical_run_input import load_prepared_input
 from sports_forecast.orchestration.future_odds import run_nhl_future_odds_batch
 from sports_forecast.service.db.engine import get_session
 from sports_forecast.service.db.models import CanonicalEvent, CanonicalEventRevision, Prediction
@@ -319,6 +320,7 @@ def run_full_refresh(
     refreshed_at: datetime,
     source_csv: Path | None = None,
     archive_root: Path | None = None,
+    prepared_archive_root: Path | None = None,
 ) -> FullRefreshResult:
     """Пересобрать NHL features и витрину только из current canonical snapshot.
 
@@ -326,7 +328,7 @@ def run_full_refresh(
     использованы execution/freshness lifecycle следующего среза. Здесь rebuild
     намеренно не читает persistent ``processed/inference_*.parquet``.
     """
-    odds_enabled = _data_odds_enabled(cfg)
+    odds_enabled = False if prepared_archive_root is not None else _data_odds_enabled(cfg)
     tournament = str(cfg.tournament.name)
     with get_session() as session:
         cycle = DataCycleRunRepository(session)
@@ -341,8 +343,8 @@ def run_full_refresh(
             locks.release(tournament=tournament, run_id=run_id)
             return FullRefreshResult(published=False, already_finished=True)
     try:
-        cycle_present = False
-        if source_csv is not None:
+        cycle_present = prepared_archive_root is not None
+        if source_csv is not None and prepared_archive_root is None:
             with get_session() as session:
                 import_summary = refresh_nhl_canonical_with_summary_from_csv(source_csv, session)
             with get_session() as session:
@@ -360,11 +362,24 @@ def run_full_refresh(
                             "changed_events": import_summary.changed_events,
                         },
                     )
-        if not cycle_present:
-            cycle_present = _start_cycle_stage(run_id, "data_odds")
+        if prepared_archive_root is not None:
+            with get_session() as session:
+                cycle = DataCycleRunRepository(session)
+                run = cycle.get(run_id)
+                if run is None:
+                    raise ValueError("Подготовленный snapshot требует Data Cycle run")
+                cycle.finish_stage(
+                    run_id,
+                    "data_odds",
+                    status="skipped",
+                    counts={"disabled": 1},
+                )
         else:
-            _start_cycle_stage(run_id, "data_odds")
-        if cycle_present:
+            if not cycle_present:
+                cycle_present = _start_cycle_stage(run_id, "data_odds")
+            else:
+                _start_cycle_stage(run_id, "data_odds")
+        if cycle_present and prepared_archive_root is None:
             if odds_enabled:
                 with get_session() as session:
                     attempt = run_nhl_future_odds_batch(
@@ -404,49 +419,61 @@ def run_full_refresh(
                     counts=stage_counts,
                     failure_code=failure_code,
                 )
-        _start_cycle_stage(run_id, "quality")
-        quality_config = load_tournament_quality_gate_config(tournament)
-        with get_session() as session:
-            freshness = validate_prediction_result_freshness(
-                session=session,
-                tournament=tournament,
-                refreshed_at=refreshed_at,
-                match_duration_minutes=quality_config.match_duration_minutes,
-                provider_grace_minutes=quality_config.provider_grace_minutes,
-            )
-        if not freshness.is_valid:
-            _finish_cycle_stage(
-                run_id,
-                "quality",
-                status="failed",
-                failure_code="quality_failed",
-            )
-            result = _record_publication_state(
-                cfg,
-                run_id=run_id,
-                result=FullRefreshResult(
-                    published=False, failure_code="canonical_freshness_failed"
-                ),
-            )
+        if prepared_archive_root is None:
+            _start_cycle_stage(run_id, "quality")
+            quality_config = load_tournament_quality_gate_config(tournament)
             with get_session() as session:
-                WorkerExecutionRepository(session).fail(
-                    run_id, failure_code="canonical_freshness_failed"
+                freshness = validate_prediction_result_freshness(
+                    session=session,
+                    tournament=tournament,
+                    refreshed_at=refreshed_at,
+                    match_duration_minutes=quality_config.match_duration_minutes,
+                    provider_grace_minutes=quality_config.provider_grace_minutes,
                 )
-            return result
-        _finish_cycle_stage(run_id, "quality", status="success")
+            if not freshness.is_valid:
+                _finish_cycle_stage(
+                    run_id,
+                    "quality",
+                    status="failed",
+                    failure_code="quality_failed",
+                )
+                result = _record_publication_state(
+                    cfg,
+                    run_id=run_id,
+                    result=FullRefreshResult(
+                        published=False, failure_code="canonical_freshness_failed"
+                    ),
+                )
+                with get_session() as session:
+                    WorkerExecutionRepository(session).fail(
+                        run_id, failure_code="canonical_freshness_failed"
+                    )
+                return result
+            _finish_cycle_stage(run_id, "quality", status="success")
         _start_cycle_stage(run_id, "predictions")
         bundle = load_current_model_bundle(runtime_root, app_version=app_version)
         features_config = _load_bundle_features_config(
             bundle.path, algorithm=str(cfg.algorithm.name)
         )
-        snapshot = _canonical_rows(tournament)
+        prepared_input = (
+            load_prepared_input(run_id=run_id, archive_root=prepared_archive_root)
+            if prepared_archive_root is not None
+            else None
+        )
+        snapshot = (
+            prepared_input.rows if prepared_input is not None else _canonical_rows(tournament)
+        )
         with tempfile.TemporaryDirectory(prefix=f"canonical-refresh-{tournament}-") as directory:
             root = Path(directory)
             runtime_cfg = _runtime_cfg(cfg, root, bundle.path)
             with open_dict(runtime_cfg):
                 runtime_cfg.features = features_config
                 runtime_cfg.refresh_run_id = run_id
-                runtime_cfg.canonical_snapshot_id = _provenance_id(snapshot)
+                runtime_cfg.canonical_snapshot_id = (
+                    prepared_input.canonical_artifact_id
+                    if prepared_input is not None
+                    else _provenance_id(snapshot)
+                )
                 runtime_cfg.feature_contract_id = _provenance_id(runtime_cfg.features)
             raw_dir = root / "raw" / tournament
             raw_dir.mkdir(parents=True)
@@ -549,7 +576,7 @@ def run_full_refresh(
                             counts=publication_counts,
                             failure_code="publication_failed",
                         )
-        if published and archive_root is not None:
+        if published and archive_root is not None and prepared_archive_root is None:
             with get_session() as session:
                 export_canonical_snapshot(
                     session,

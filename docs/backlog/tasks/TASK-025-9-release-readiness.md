@@ -1,20 +1,21 @@
 # TASK-025-9 — Production выпуск и проверка NHL
 
-> **Статус:** in_progress — v1.2.10 serving; v1.2.11 candidate, timer disabled
+> **Статус:** in_progress — v1.2.12 serving; v1.2.13 candidate, timers disabled
 > **Владелец:** Product Owner и Operations Agent
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
-> **ADR:** [ADR-026](../../architecture/adr/ADR-026-calendar-and-data-cycle-control.md)
+> **ADR:** [ADR-026](../../architecture/adr/ADR-026-calendar-and-data-cycle-control.md), [ADR-028](../../architecture/adr/ADR-028-data-cycle-source-before-features.md)
 
-> Текущий v1.2.10 обслуживает API и бота. Ручной Data Cycle записал 1 834
-> прогноза, но host unit завершился после `archive_sync/ReadTimeoutError`;
-> run в БД остался `running`. Recovery dispatcher v1.2.10 тоже завершился
-> ошибкой из-за `SELECT FOR UPDATE` без UPDATE grant у Control API.
-> Исправления готовятся в PR #53 для v1.2.11. Оба NHL timer выключены.
+> Сейчас v1.2.12 обслуживает API и бота. Последний ручной run
+> `7ae3909e-73f7-473b-ab54-22909fda2cad` завершён `partial_success`:
+> обязательные стадии успешны, future odds отсутствуют. Активных run нет.
+> Кандидат v1.2.13 в PR #55 меняет порядок на verified source/canonical
+> archive до features и обновления БД, отключает daily odds и допускает
+> в NHL-модель только regular/playoffs. Оба NHL timer выключены.
 
 ## Результат
 
-Довести проверенный release candidate `v1.2.11` до production,
+Довести проверенный release candidate `v1.2.13` до production,
 запустить NHL Data Cycle по
 расписанию и подтвердить работу бота, API и ежедневного scheduler на
 production. Тег `v1.2.1` остаётся неизменным; футбольный production pipeline
@@ -24,7 +25,7 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
 
 - [ ] Все функциональные TASK инициативы прошли независимое review, full EPIC
   review, локальные проверки и terminal PR CI нового кандидата.
-  `pyproject.toml` и handoff указывают `1.2.11 candidate`;
+  `pyproject.toml` и handoff указывают `1.2.13 candidate`;
   `make production-check` должен пройти для final candidate.
 - [ ] Operations имеет привилегированное read-only evidence текущих image
   digests, Docker/DB состояния, последнего NHL run, календарного покрытия,
@@ -35,8 +36,10 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
   `BOT_NOTIFICATION_DESTINATIONS_FILE` доступен только боту, каждый alias
   соответствует ровно одному chat ID и оба списка совпадают. Отсутствие
   или расхождение блокирует включение Data Cycle.
-- [ ] Измерены длительность полного NHL цикла и подтверждено отсутствие
-  provider HTTP в odds OFF-режиме; выбранные cadence/allowlist не создают
+- [ ] Ручной NHL цикл подтверждает проверенный Object Storage snapshot до
+  features и записи прогнозов в БД, итог `success`, отсутствие future-odds
+  provider HTTP и `data_odds=skipped/disabled=1`; `/predict` отдельно
+  получает live odds/edge. Измерена длительность цикла; cadence не создаёт
   overlap. Старый timer и новый dispatcher
   переключаются взаимоисключающе, с проверкой disabled/enabled и следующего
   trigger. На preflight 2026-09-26 старый NHL timer был disabled/inactive.
@@ -50,7 +53,7 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
   допустимый журнал и отсутствие дубля цикла. Проверка не публикует секреты
   или полный внешний ответ.
 - [ ] До Worker run установлен и проверен immutable model bundle с
-  `app_version=1.2.11` из неизменённых одобренных весов/features; старый
+  `app_version=1.2.13` из неизменённых одобренных весов/features; старый
   `current` и checksums сохранены для rollback.
 - [ ] После первого scheduled запуска подтверждены run_id, дата/время,
   стадии, фактическое 30-дневное coverage и сообщение администратору.

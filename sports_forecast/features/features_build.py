@@ -104,6 +104,8 @@ def process_tournament_new(
         if "status" not in df_long.columns:
             raise ValueError("Для inference_only необходима колонка status")
         inference_long = df_long.loc[df_long["status"] == "upcoming"].copy()
+        output_dir = processed_root / tournament_name
+        output_dir.mkdir(parents=True, exist_ok=True)
         if not inference_long.empty:
             from sports_forecast.validation.gates import validate_processed
 
@@ -114,27 +116,26 @@ def process_tournament_new(
                 raise_on_error=False,
             )
             inference_wide = long_to_wide(inference_long, aggregate_features=True)
-            output_dir = processed_root / tournament_name
-            output_dir.mkdir(parents=True, exist_ok=True)
-            inference_long.to_parquet(
-                output_dir / "inference_long.parquet",
-                index=False,
-                engine="pyarrow",
-                compression="snappy",
-            )
-            inference_wide.to_parquet(
-                output_dir / "inference_wide.parquet",
-                index=False,
-                engine="pyarrow",
-                compression="snappy",
-            )
-            logger.info(
-                "✓ Inference сохранен: %d строк, %d матчей",
-                len(inference_long),
-                len(inference_wide),
-            )
         else:
-            logger.info("Нет предстоящих матчей для сохранения inference")
+            inference_wide = pd.DataFrame({"id": pd.Series(dtype="string")})
+            logger.info("Предстоящих матчей нет: сохраняю пустой inference")
+        inference_long.to_parquet(
+            output_dir / "inference_long.parquet",
+            index=False,
+            engine="pyarrow",
+            compression="snappy",
+        )
+        inference_wide.to_parquet(
+            output_dir / "inference_wide.parquet",
+            index=False,
+            engine="pyarrow",
+            compression="snappy",
+        )
+        logger.info(
+            "✓ Inference сохранен: %d строк, %d матчей",
+            len(inference_long),
+            len(inference_wide),
+        )
         return
 
     # 4. Создание wide format

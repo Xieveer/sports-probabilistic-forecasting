@@ -4,12 +4,39 @@
 > **Приоритет:** high
 > **Владелец:** Product Owner
 > **Требование:** [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md)
-> **ADR:** [ADR-026](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md), [ADR-027](../architecture/adr/ADR-027-archive-sync-host-network.md)
+> **ADR:** [ADR-026](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md), [ADR-027](../architecture/adr/ADR-027-archive-sync-host-network.md), [ADR-028](../architecture/adr/ADR-028-data-cycle-source-before-features.md)
 
 ## Память Product Owner
 
-- Инициатива: `EPIC-025`.
-- Текущий correction cycle: `initiative/epic-025-archive-network`,
+- Инициатива: `EPIC-025`. Текущая ветка
+  `initiative/025-bot-schedule-readiness`, этап — review и CI
+  [TASK-025-34](tasks/TASK-025-34-data-cycle-source-first.md) и
+  [TASK-025-33](tasks/TASK-025-33-nhl-preseason-model-boundary.md) после
+  production postcheck v1.2.12. Владелец подтвердил границу: хранить
+  preseason в raw/canonical отдельно, исключать из обучения, истории
+  признаков, прогнозов и betting-валидации. Также подтверждён единый
+  принцип Data Cycle: source/canonical → Object Storage → features → БД,
+  без future odds; `/predict` запрашивает текущие odds и edge при обращении.
+  Read-only аудит локальных
+  сезонов 2010–11—2025–26 нашёл 1 500 preseason в raw и 0 в текущей
+  train-таблице; точный training snapshot выпущенной модели не сохранён.
+  Production v1.2.12 обслуживает API/бота, но ручной Data Cycle завершился
+  `partial_success` с `0/208` сохранённых будущих odds; оба NHL timer
+  выключены, Gate F/G остаются открытыми. Решение: отдельная Engineering
+  TASK для модельной границы без удаления данных или переобучения. Локальная
+  реализация TASK-025-34 прошла unit suite и независимое review; production
+  не менялась. Новое audit evidence TASK-025-33: ещё 124 NHL-события имеют
+  иные типы, 7 из них есть в локальной train-таблице. Владелец подтвердил
+  допуск только `regular` и `playoffs`; остальные типы сохраняются вне
+  модельного входа. До реализации этой границы, повторного review, CI и
+  ручного run оба таймера остаются выключены. Подготовлен кандидат v1.2.13,
+  draft PR #55; release ещё не выполнен. Read-only VPS preflight подтвердил terminal
+  `partial_success` последнего run и 0 активных запусков; доступ Operations
+  Agent записан в опубликованном
+  [runbook](https://github.com/Xieveer/operations-agent/blob/docs/epic025-access-20261001/docs/runbooks/sports-forecast-epic025-access.md).
+  Нового production release эта постановка сама не разрешает.
+  Обновлено 2026-10-01.
+- Предыдущий correction cycle: `initiative/epic-025-archive-network`,
   [TASK-025-32](tasks/TASK-025-32-archive-sync-host-network.md), кандидат
   `v1.2.12`. Production `v1.2.11` API/bot/DB healthy; новый ручной run
   `47ebfeb2-5113-465d-9a8e-92f709370639` остаётся `running/archive_sync`
@@ -347,7 +374,7 @@
 Реализовать [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md):
 календарь и готовность событий, Data Cycle с управлением из Telegram,
 операционную готовность NHL. Первым выпуском был `1.2.1`; текущий
-корректирующий кандидат — `1.2.12`. Футбол проверяется контрольным сценарием
+корректирующий кандидат — `1.2.13`. Футбол проверяется контрольным сценарием
 без включения в пользовательское меню.
 
 ## Декомпозиция
@@ -360,7 +387,7 @@
 | [TASK-025-6](tasks/TASK-025-6-future-odds.md) | Calendar-first future NHL odds | semantic evidence, quota, identity, freshness | done |
 | [TASK-025-7](tasks/TASK-025-7-data-cycle-recovery-summary.md) | Terminal stages, summary и run history query contract | stage faults, coverage, safe DTO | done; production runtime в TASK-025-9 |
 | [TASK-025-8](tasks/TASK-025-8-executor-fencing.md) | Executor recovery/fencing after crash | PostgreSQL race, no duplicate executor | done; production activation в TASK-025-9 |
-| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.11 serving, timer disabled; v1.2.12 candidate |
+| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.12 serving, timers disabled; v1.2.13 candidate |
 | [TASK-025-13](tasks/TASK-025-13-production-runtime-hotfixes.md) | Исправить четыре runtime-дефекта первого цикла | grants, source DB, runner, heartbeat | done; PR #42 merged |
 | [TASK-025-14](tasks/TASK-025-14-future-close-odds-snapshot.md) | Публиковать source snapshot без closing line будущего матча | red/green, source/canonical tests, production snapshot | done; опубликован v1.2.3 snapshot |
 | [TASK-025-15](tasks/TASK-025-15-readonly-worker-hydra-logging.md) | Безопасный Hydra CLI в read-only Worker | red/green, stdout, no filesystem write | done; runtime gate в TASK-025-9 |
@@ -381,6 +408,8 @@
 | [TASK-025-30](tasks/TASK-025-30-future-odds-production.md) | Включить будущие NHL odds и ключи API | Compose contract, Worker/API/бот | reviewed_pending_release |
 | [TASK-025-31](tasks/TASK-025-31-control-stall-mark.md) | Исправить отметку stalled Control API | restricted role, atomic function | reviewed_pending_release |
 | [TASK-025-32](tasks/TASK-025-32-archive-sync-host-network.md) | Восстановить TLS путь archive-sync | scoped host network, Compose contract, remote verification | in_progress |
+| [TASK-025-33](tasks/TASK-025-33-nhl-preseason-model-boundary.md) | Сохранить все типы NHL отдельно и допускать в модель только regular/playoffs | аудит сезонов, тест границы до features, регрессия regular/playoffs | in_progress; review/CI |
+| [TASK-025-34](tasks/TASK-025-34-data-cycle-source-first.md) | Сделать Data Cycle независимым от future odds и синхронизировать source до features | pinned snapshot, Object Storage, DB materialization, /predict | in_progress; review/CI/release |
 | [TASK-025-12](tasks/TASK-025-12-release-compose-gate.md) | Исправить Compose release gate | новый API/dispatcher contract и память | done; PR CI в TASK-025-9 |
 | [TASK-025-10](tasks/TASK-025-10-run-summary-producers.md) | Full run summary producers and coverage | same-run counters, n/a denominator, football fixture | done |
 | [TASK-025-11](tasks/TASK-025-11-telegram-calendar.md) | Public NHL calendar in Telegram | 08:00, all horizons, no prediction, bot→API test | done |
@@ -388,11 +417,12 @@
 | [TASK-025-5](tasks/TASK-025-5-telegram-experience.md) | Telegram calendar, admin controls, notifications, code-based E2E | 08:00, auth, idempotency, bot→API | done; delivery activation в TASK-025-9 |
 
 Operations release gate зафиксирован в TASK-025-9 и
-[production handoff](../operations/production-handoff.md). v1.2.11 сейчас
-обслуживает API/бота; его ручной run записал 1 834 прогноза, но завис в БД
-после ошибки archive sync. TASK-025-32 готовит v1.2.12. Оба NHL timer выключены;
-перед ежедневным режимом требуются восстановление старого run, новый
-проверенный ручной цикл с odds и подтверждение Telegram/API.
+[production handoff](../operations/production-handoff.md). v1.2.12 сейчас
+обслуживает API/бота; последний ручной run terminal `partial_success`,
+активных запусков нет. Кандидат v1.2.13 в PR #55 проходит CI и release gates.
+Оба NHL timer выключены; перед ежедневным режимом требуется проверенный
+ручной цикл с двумя remote-verified архивами до features, без future-odds
+запроса, а также подтверждение Telegram/API и результата `/predict`.
 
 ## Риски и rollout
 
@@ -401,6 +431,26 @@ Operations release gate зафиксирован в TASK-025-9 и
 runtime evidence, rollback target и terminal CI для exact commit.
 
 ## Полное EPIC review
+
+### Кандидат v1.2.13 — 2026-10-01
+
+Независимый Reviewer проверил границу `regular`/`playoffs` и сохранение
+остальных NHL-событий в source/canonical, порядок source → verified Object
+Storage → features → БД, отсутствие future odds в ежедневном цикле, контракт
+`/predict`, REQ-025, ADR-028, TASK-025-33/34, release TASK-025-9 и
+production handoff. Проверенный content commit: `e418581d3ce2da9842a5d76f7a7268fa87e4e32b`.
+Первое EPIC review нашло два P2: устаревшие serving/candidate и требование
+future odds в карте EPIC, а также неверные версию, PR и model wrapper в
+release TASK. После исправления повторное review не выявило P0–P2 findings.
+
+Для проверенного кандидата подтверждены `make lint`, `make test-unit`
+(1 259 passed, 13 deselected), `make production-check` и `git diff --check`;
+проверки PR #55 `Filesystem and secrets`, `Python dependencies` и
+`lint-test (3.12)` завершились успешно на `88f8ff8`. Это review кандидата:
+после evidence-коммита нужен terminal CI exact branch, затем release tag CI,
+immutable images/model wrapper, свежий backup с restore/off-host копией и
+ручной production run. До его успеха оба NHL timer остаются выключены,
+EPIC-025 и TASK-025-9 сохраняют `in_progress`.
 
 ### Повторное review кандидата v1.2.11
 
