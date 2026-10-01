@@ -52,7 +52,7 @@ def _source_rows() -> list[dict[str, object]]:
                 "home_team": f"H{index % 3}",
                 "away_team": f"A{index % 3}",
                 "season": "20232024",
-                "game_type": "R",
+                "game_type": "regular",
             }
         )
         rows.append(row)

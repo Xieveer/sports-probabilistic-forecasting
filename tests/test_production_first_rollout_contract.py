@@ -8,9 +8,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pandas as pd
 import pytest
 import yaml
 
+from scripts.build_first_rollout_fixtures import _source_rows
 from scripts.build_production_compose_env_fixture import build_fixture
 from scripts.run_production_first_rollout import (
     _assert_logs_are_redacted,
@@ -27,9 +29,20 @@ from scripts.run_production_first_rollout import (
     _sync_operational_archives,
 )
 from scripts.verify_production_compose_contract import verify_contract
+from sports_forecast.data.clean import _select_nhl_model_rows
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_first_rollout_fixture_reaches_nhl_model_input() -> None:
+    """Тестовый источник использует реальные значения типа матча и не исчезает в clean."""
+    source = pd.DataFrame(_source_rows())
+
+    result = _select_nhl_model_rows(source, "nhl")
+
+    assert len(result) == len(source) == 12
+    assert set(result["game_type"]) == {"regular"}
 
 
 def test_production_compose_fixture_supplies_control_and_notification_requirements(

@@ -29,8 +29,9 @@
   иные типы, 7 из них есть в локальной train-таблице. Владелец подтвердил
   допуск только `regular` и `playoffs`; остальные типы сохраняются вне
   модельного входа. До реализации этой границы, повторного review, CI и
-  ручного run оба таймера остаются выключены. Подготовлен кандидат v1.2.13,
-  draft PR #55; release ещё не выполнен. Read-only VPS preflight подтвердил terminal
+  ручного run оба таймера остаются выключены. PR #55 слит, но tag pipeline
+  v1.2.13 остановился на first-rollout Worker до публикации образов;
+  корректирующий кандидат — v1.2.14. Read-only VPS preflight подтвердил terminal
   `partial_success` последнего run и 0 активных запусков; доступ Operations
   Agent записан в опубликованном
   [runbook](https://github.com/Xieveer/operations-agent/blob/docs/epic025-access-20261001/docs/runbooks/sports-forecast-epic025-access.md).
@@ -374,7 +375,7 @@
 Реализовать [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md):
 календарь и готовность событий, Data Cycle с управлением из Telegram,
 операционную готовность NHL. Первым выпуском был `1.2.1`; текущий
-корректирующий кандидат — `1.2.13`. Футбол проверяется контрольным сценарием
+корректирующий кандидат — `1.2.14`. Футбол проверяется контрольным сценарием
 без включения в пользовательское меню.
 
 ## Декомпозиция
@@ -387,7 +388,7 @@
 | [TASK-025-6](tasks/TASK-025-6-future-odds.md) | Calendar-first future NHL odds | semantic evidence, quota, identity, freshness | done |
 | [TASK-025-7](tasks/TASK-025-7-data-cycle-recovery-summary.md) | Terminal stages, summary и run history query contract | stage faults, coverage, safe DTO | done; production runtime в TASK-025-9 |
 | [TASK-025-8](tasks/TASK-025-8-executor-fencing.md) | Executor recovery/fencing after crash | PostgreSQL race, no duplicate executor | done; production activation в TASK-025-9 |
-| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.12 serving, timers disabled; v1.2.13 candidate |
+| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.12 serving, timers disabled; v1.2.14 candidate |
 | [TASK-025-13](tasks/TASK-025-13-production-runtime-hotfixes.md) | Исправить четыре runtime-дефекта первого цикла | grants, source DB, runner, heartbeat | done; PR #42 merged |
 | [TASK-025-14](tasks/TASK-025-14-future-close-odds-snapshot.md) | Публиковать source snapshot без closing line будущего матча | red/green, source/canonical tests, production snapshot | done; опубликован v1.2.3 snapshot |
 | [TASK-025-15](tasks/TASK-025-15-readonly-worker-hydra-logging.md) | Безопасный Hydra CLI в read-only Worker | red/green, stdout, no filesystem write | done; runtime gate в TASK-025-9 |
@@ -410,6 +411,7 @@
 | [TASK-025-32](tasks/TASK-025-32-archive-sync-host-network.md) | Восстановить TLS путь archive-sync | scoped host network, Compose contract, remote verification | in_progress |
 | [TASK-025-33](tasks/TASK-025-33-nhl-preseason-model-boundary.md) | Сохранить все типы NHL отдельно и допускать в модель только regular/playoffs | аудит сезонов, тест границы до features, регрессия regular/playoffs | in_progress; review/CI |
 | [TASK-025-34](tasks/TASK-025-34-data-cycle-source-first.md) | Сделать Data Cycle независимым от future odds и синхронизировать source до features | pinned snapshot, Object Storage, DB materialization, /predict | in_progress; review/CI/release |
+| [TASK-025-35](tasks/TASK-025-35-first-rollout-nhl-game-type-fixture.md) | Исправить тестовый тип матча в release gate | 12 NHL fixture rows проходят clean; новый terminal first-rollout | in_progress |
 | [TASK-025-12](tasks/TASK-025-12-release-compose-gate.md) | Исправить Compose release gate | новый API/dispatcher contract и память | done; PR CI в TASK-025-9 |
 | [TASK-025-10](tasks/TASK-025-10-run-summary-producers.md) | Full run summary producers and coverage | same-run counters, n/a denominator, football fixture | done |
 | [TASK-025-11](tasks/TASK-025-11-telegram-calendar.md) | Public NHL calendar in Telegram | 08:00, all horizons, no prediction, bot→API test | done |
@@ -419,7 +421,9 @@
 Operations release gate зафиксирован в TASK-025-9 и
 [production handoff](../operations/production-handoff.md). v1.2.12 сейчас
 обслуживает API/бота; последний ручной run terminal `partial_success`,
-активных запусков нет. Кандидат v1.2.13 в PR #55 проходит CI и release gates.
+активных запусков нет. PR #55 прошёл review/CI и слит; tag v1.2.13
+остановился на first-rollout до публикации образов. Исправление fixture
+готовится как v1.2.14.
 Оба NHL timer выключены; перед ежедневным режимом требуется проверенный
 ручной цикл с двумя remote-verified архивами до features, без future-odds
 запроса, а также подтверждение Telegram/API и результата `/predict`.
