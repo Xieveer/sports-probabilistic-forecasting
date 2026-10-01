@@ -23,7 +23,7 @@
 | `make test-unit` | 1 260 passed, 13 deselected, 40 warnings |
 | `make production-check`, `git diff --check` | passed |
 | Ruff check/format затронутых fixture и теста | passed |
-| Независимый Reviewer | P0–P2 не найдены; commit gate ожидается |
+| Независимый Reviewer | P0–P2 не найдены; проверенный commit `a14a05470d513059099e355f27ba3f8c7ef595bc` |
 
 Tag v1.2.13 остаётся неизменным и не может стать основанием deployment.
 Следующий выпуск имеет версию v1.2.14 и требует нового exact model wrapper.
