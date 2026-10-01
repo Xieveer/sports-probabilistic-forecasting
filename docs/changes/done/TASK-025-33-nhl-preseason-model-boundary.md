@@ -60,3 +60,15 @@ clean до выдачи модельного входа.
 - Точный состав обучения ранее выпущенной модели остаётся непроверяемым из-за
   отсутствия lineage/hash исходного training snapshot; см. аудит в TASK.
 - Production release и перезапуск ежедневного цикла не выполнялись.
+
+## Evidence независимого review
+
+- Проверенный commit: `e418581` (`fix: restrict NHL model input and complete cycle candidate`).
+- Блокирующих findings P0/P1/P2 нет. Проверены модельная граница NHL,
+  сохранение source/canonical, порядок Data Cycle, календарь после пропуска odds,
+  требования, архитектурное решение и release handoff.
+- Reviewer выполнил `make lint`, `make test-unit` (1 259 passed,
+  13 deselected, 40 warnings), `make production-check`, `git diff --check`;
+  commit hooks, включая mypy и AI roles, прошли.
+- Terminal CI для этих коммитов и production run ожидаются; доступность
+  выпущенной модели с новыми признаками пока не подтверждена.

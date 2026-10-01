@@ -62,3 +62,14 @@ state сохранена. Daily `data_odds` не запрашивается, sta
   завершает TASK-025-33 до ручного production запуска. Выпущенная модель не
   переобучалась. CI после этого уточнения, release evidence, ручной
   production cycle и timer gate остаются открытыми.
+
+## Evidence независимого review
+
+- Проверенный commit: `e418581` (`fix: restrict NHL model input and complete cycle candidate`).
+- Блокирующих findings P0/P1/P2 нет. Проверены immutable snapshot и его
+  provenance, точные два Object Storage artifact, порядок runner, отсутствие
+  daily odds запроса, materialization, календарная готовность, release docs.
+- Reviewer выполнил `make lint`, `make test-unit` (1 259 passed,
+  13 deselected, 40 warnings), `make production-check`, `git diff --check`;
+  commit hooks, включая mypy и AI roles, прошли.
+- Terminal CI и ручной production run для v1.2.13 остаются открытыми.
