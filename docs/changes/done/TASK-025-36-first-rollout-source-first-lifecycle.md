@@ -1,6 +1,6 @@
 # TASK-025-36 — Отчёт Developer: жизненный цикл first-rollout
 
-> **Статус:** локальное исправление и независимое review пройдены; release gates ожидаются.
+> **Статус:** исправление, review, PR CI и tag pipeline пройдены; production gate ожидается.
 > **Дата:** 2026-10-02
 > **Задача:** [TASK-025-36](../../backlog/tasks/TASK-025-36-first-rollout-source-first-lifecycle.md)
 
@@ -36,7 +36,13 @@ executor generation. Повторный запуск Worker проверяет �
 - Независимый Reviewer: P0–P2 findings нет; отдельно проверены source-first
   порядок, executor fencing, Docker mounts, redaction, идемпотентность,
   release docs и full EPIC границы. Адресные 46 тестов Reviewer прошли.
-- PR CI и tag pipeline v1.2.15: ожидаются.
+- PR [#57](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/57)
+  прошёл три проверки CI и слит на
+  `774602cb3d2db8ce65b4411637ff86e057fc76ec`.
+- Tag [v1.2.15 Docker pipeline](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36931948706)
+  завершился успешно: clean first-rollout подтвердил два архива до Worker,
+  API/бота и idempotency; опубликованные digests совпали с tested, scan и
+  provenance прошли. Production gate остаётся открытым.
 
 Проверенный код и документация: commit
 `f6c4af0f27851c554fb148ba219a27191f207bcc`. Этот отдельный evidence

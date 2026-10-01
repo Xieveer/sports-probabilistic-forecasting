@@ -1,12 +1,12 @@
 # TASK-025-9 — Production выпуск и проверка NHL
 
-> **Статус:** in_progress — v1.2.12 serving; v1.2.15 candidate, timers disabled
+> **Статус:** in_progress — v1.2.15 serving; ручной цикл успешен, первый запуск по расписанию ожидается
 > **Владелец:** Product Owner и Operations Agent
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
 > **ADR:** [ADR-026](../../architecture/adr/ADR-026-calendar-and-data-cycle-control.md), [ADR-028](../../architecture/adr/ADR-028-data-cycle-source-before-features.md)
 
-> Сейчас v1.2.12 обслуживает API и бота. Последний ручной run
+> Историческое состояние перед v1.2.15: v1.2.12 обслуживала API и бота. Ручной run
 > `7ae3909e-73f7-473b-ab54-22909fda2cad` завершён `partial_success`:
 > обязательные стадии успешны, future odds отсутствуют. Активных run нет.
 > Код из PR #55 меняет порядок на verified source/canonical
@@ -14,7 +14,16 @@
 > в NHL-модель только regular/playoffs. Тег v1.2.13 не прошёл first-rollout
 > из-за устаревшего fixture; v1.2.14 также не прошёл first-rollout из-за
 > отсутствия подготовленного Data Cycle run в тестовом сценарии.
-> Correction candidate v1.2.15. Оба timer выключены.
+> Correction candidate v1.2.15. На тот момент оба timer были выключены.
+
+PR [#57](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/57)
+прошёл CI и слит в `main` на `774602cb3d2db8ce65b4411637ff86e057fc76ec`.
+Annotated tag `v1.2.15` и [Docker pipeline](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36931948706)
+завершились успешно: clean first-rollout подтвердил два Object Storage
+archive до Worker, а published image digests совпали с tested. Следующий
+gate пройден: immutable release evidence, ограниченный production rollout,
+успешный ручной цикл и включение dispatcher timer. Первый запуск по
+расписанию ожидается 2026-10-02 07:00 UTC.
 
 ## Результат
 
@@ -26,36 +35,36 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
 
 ## Критерии приёмки
 
-- [ ] Все функциональные TASK инициативы прошли независимое review, full EPIC
+- [x] Все функциональные TASK инициативы прошли независимое review, full EPIC
   review, локальные проверки и terminal PR CI нового кандидата.
   `pyproject.toml` и handoff указывают `1.2.15 candidate`;
   `make production-check` должен пройти для final candidate.
-- [ ] Operations имеет привилегированное read-only evidence текущих image
+- [x] Operations имеет привилегированное read-only evidence текущих image
   digests, Docker/DB состояния, последнего NHL run, календарного покрытия,
   прав/секретов по metadata и проверенного PostgreSQL backup. До этого
   rollback target не считается установленным.
-- [ ] Production alias map уведомлений настроен и проверен: непустой
+- [x] Production alias map уведомлений настроен и проверен: непустой
   `SF_DATA_CYCLE_NOTIFICATION_ALIASES` одинаков у API и Worker, защищённый
   `BOT_NOTIFICATION_DESTINATIONS_FILE` доступен только боту, каждый alias
   соответствует ровно одному chat ID и оба списка совпадают. Отсутствие
   или расхождение блокирует включение Data Cycle.
-- [ ] Ручной NHL цикл подтверждает проверенный Object Storage snapshot до
+- [x] Ручной NHL цикл подтверждает проверенный Object Storage snapshot до
   features и записи прогнозов в БД, итог `success`, отсутствие future-odds
   provider HTTP и `data_odds=skipped/disabled=1`; `/predict` отдельно
   получает live odds/edge. Измерена длительность цикла; cadence не создаёт
   overlap. Старый timer и новый dispatcher
   переключаются взаимоисключающе, с проверкой disabled/enabled и следующего
   trigger. На preflight 2026-09-26 старый NHL timer был disabled/inactive.
-- [ ] Reviewer создаёт tag только на проверенном commit в `main`. Tag pipeline
+- [x] Reviewer создаёт tag только на проверенном commit в `main`. Tag pipeline
   завершён успешно, immutable image digests/provenance/security evidence
   проверены перед изменением VPS.
-- [ ] Operations подтверждает действующий Alembic head 0017, проверяет
+- [x] Operations подтверждает действующий Alembic head 0017, проверяет
   свежий backup, повторяет idempotent role grants и выполняет ограниченный
   rollout и smoke: `/health`, `/ready`, календарь 0/7/30, event readiness, admin
   status/history/schedule/manual run, terminal stages, timer next trigger,
   допустимый журнал и отсутствие дубля цикла. Проверка не публикует секреты
   или полный внешний ответ.
-- [ ] До Worker run установлен и проверен immutable model bundle с
+- [x] До Worker run установлен и проверен immutable model bundle с
   `app_version=1.2.15` из неизменённых одобренных весов/features; старый
   `current` и checksums сохранены для rollback.
 - [ ] После первого scheduled запуска подтверждены run_id, дата/время,
@@ -63,6 +72,43 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
   Неуспех запускает документированный rollback/forward fix, не ложный DoD.
 
 ## Текущее evidence и блокеры
+
+Production v1.2.15 переключена 2026-10-01 около 22:29 UTC по точным
+опубликованным digest API, Worker, бота и archive-sync. API, бот и PostgreSQL
+healthy, restarts=0; `/health`, `/ready`, `/docs`, `/openapi.json` и
+календарь на 0/7/30 дней ответили HTTP 200. До переключения создан свежий
+root-only dump PostgreSQL (57 956 170 байт, SHA256
+`f518b9bc94f184d49ea70b0a6edc64c8fdd28a9ad224e33c8eb17d39f2a13e67`);
+catalog, изолированное восстановление и off-host Object Storage
+upload/download/hash прошли. Старые image refs, модель и параметры сохранены
+для rollback. Alembic head `0017_data_cycle_notification_outbox`,
+ограниченные grants и alias `nhl_admins` проверены. Штатный one-shot
+`migrator` exact v1.2.15 повторно выполнил `alembic upgrade head` и
+`database_roles` 2026-10-01 22:52:28 UTC (exit 0); read-only postcheck
+подтвердил head 0017 и необходимые ACL без расширения API reader до записи.
+
+Единственный ручной run
+`72caf5de-0e1d-4f2a-8473-799025bcc7bb` завершился `success`
+2026-10-01 22:40:18 UTC за 365,05 с: 22 544 source rows; два artifact
+`remote-verified` до features; `data_odds=skipped/disabled=1`, 0 попыток
+future-odds provider; 214/214 eligible predictions ready, 257 прогнозов
+обновлены через upsert при прежнем общем числе 1 882. Все 257 относятся
+к `regular` (253) или `playoffs` (4); source/canonical сохранили 1 565
+preseason и 124 строки других типов. Уведомление доставлено один раз.
+После цикла `/predict` OFF/LIVE вернул 47 прогнозов; LIVE нашёл 8
+Pinnacle lines, остальные 39 отображены без линии.
+
+Persisted NHL schedule: 10:00 Europe/Moscow, интервал 24 ч, следующий
+business run 2026-10-02 07:00 UTC. `sports-forecast-data-cycle-dispatcher.timer`
+enabled/active; legacy `sports-forecast-canonical-refresh@nhl.timer`
+disabled/inactive. Первые два dispatcher poll завершились успешно, без
+дублирующего run; активных run нет. **Открыт только gate первого запуска
+по расписанию**: его результат, 30-дневное покрытие и доставку
+уведомления проверять после 07:00 UTC. Канонический
+[операционный change record](https://github.com/Xieveer/operations-agent/blob/docs/epic025-access-20261001/docs/changes/2026-10-01-v1.2.15-candidate-staging.md)
+содержит серверное evidence и план мониторинга.
+
+### История предыдущих выпусков
 
 Ограниченный rollout 2026-09-27 выполнен после verified pre-migration dump,
 isolated restore и off-host download/hash проверки. БД обновлена до Alembic

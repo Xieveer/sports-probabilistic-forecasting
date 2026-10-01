@@ -1,6 +1,6 @@
 # TASK-025-36 — Первый выпуск: подготовка Data Cycle до Worker
 
-> **Статус:** in_progress — code/review done; terminal CI и production gate открыты
+> **Статус:** done — исправление и terminal tag CI завершены; production в TASK-025-9
 > **Владелец:** Product Owner / Developer
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -41,4 +41,7 @@ Tag pipelines [v1.2.13](https://github.com/Xieveer/sports-probabilistic-forecast
 Независимый Reviewer не выявил P0–P2 findings после проверки порядка стадий,
 executor fencing, Docker mounts, redaction, идемпотентности и release
 контракта. Локальный Docker gate прошёл на v1.2.14 OCI с обновлённым host
-runner; exact v1.2.15 tag CI остаётся обязательным перед production.
+runner. Exact [v1.2.15 tag CI](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36931948706)
+завершился успешно: clean first-rollout, две проверки архивов до Worker,
+публикация tested digests, scan и provenance. Production acceptance ведётся
+в [TASK-025-9](TASK-025-9-release-readiness.md).

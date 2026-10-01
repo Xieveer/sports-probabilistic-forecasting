@@ -13,10 +13,22 @@
   [TASK-025-36](../backlog/tasks/TASK-025-36-first-rollout-source-first-lifecycle.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
 - Целевая среда: production VPS `ops-prod-01`; версия: `1.2.15`.
-- source_tag: `v1.2.15` (целевой, до release gates не создан).
-- Ветка: `initiative/025-bot-schedule-readiness`; correction PR после #55.
-- Source commit, image digests, evidence tag и CI URLs фиксируются в
-  отдельном release evidence commit после merge/tag pipelines.
+- source_tag: `v1.2.15` (annotated, exact merged commit).
+- source_commit: `774602cb3d2db8ce65b4411637ff86e057fc76ec`.
+- evidence_tag: `v1.2.15-evidence.1` (создаётся после проверки evidence).
+- PR: https://github.com/Xieveer/sports-probabilistic-forecasting/pull/57.
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36931498144.
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36931498140.
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36931948706.
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36931948706/job/110605048556.
+- Tag pipeline завершился успешно: first-rollout, публикация tested OCI,
+  linux/amd64 manifest, scan и provenance для каждого application image.
+
+- postgres: `postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94` — без изменения.
+- api: `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:f06373e8dd1bc30542d81c6596619362640e40530976ef25d3a62d05072b8514` — published linux/amd64 scan provenance.
+- worker: `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:7e023a4b89e38ffb32e18bf6c91c6b67f0bbd16ad4f69460a63e0df006faf311` — published linux/amd64 scan provenance.
+- telegram_bot: `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:f18ea827634be047f2a0c30e508f446efcf48d9133521584d7551945c59b6ac8` — published linux/amd64 scan provenance.
+- archive_sync: `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:0dad0feb0d2375e0879c5dec24442d9b5d38619e691713af589a0790729a7543` — published linux/amd64 scan provenance.
 
 ## Идентификация и ответственность
 
@@ -134,9 +146,14 @@ Preflight 2026-10-01 20:31 UTC создал root-only dump
 22 544 canonical events и 1 882 predictions; off-host копия после обратного
 скачивания совпала по размеру и SHA-256. Перед v1.2.15 switch проверить, что
 этот backup остаётся актуальным; при новых DB writes создать новый.
-Для модели нужен новый content-addressed wrapper с `app_version=1.2.15`
-и exact source commit; содержимое весов, `features.txt` и `deploy.yaml`
-сверяется с активным production bundle. Включение historical backfill не
+Для модели собран новый content-addressed wrapper
+`sha256:453520a3521925d1bf08b6be04d8436dd53394d6973f8ce2a217d14732454413`
+с `app_version=1.2.15` и exact source commit; manifest SHA-256
+`a5e5ab767d8ecb95508c4efbca5fb0e4ef5ebe850da46b0df2b93a64c557635c`.
+`verify_model_bundle` локально и на VPS внутри exact опубликованного Worker
+image прошёл; CatBoost загрузил 489 признаков, совпадающих с `features.txt`.
+Bundle и candidate profile размещены в root-only staging, active model
+pointer и работающие сервисы не менялись. Включение historical backfill не
 производится. Локальный ключ Odds API ответил HTTP 200 на один NHL запрос;
 доступность именно серверного secret проверяется отдельно без вывода значения.
 
@@ -150,20 +167,19 @@ timer last/next trigger. Не сохранять полные внешние о�
 
 ## Артефакт и откат
 
-После независимого review и terminal PR CI Reviewer ставит annotated
-`v1.2.15` на exact merged commit `main`. Tag pipeline должен завершить CI,
+После независимого review и terminal PR CI Reviewer поставил annotated
+`v1.2.15` на exact merged commit `main`. Tag pipeline завершил CI,
 Security, first-rollout, публикацию linux/amd64 images, scan и provenance.
 Release evidence фиксирует source/evidence tags, полный manifest, model
 wrapper и ссылки CI; `make verify-release-evidence` проверяет их вместе с
 этим handoff через `--handoff docs/operations/production-handoff.md`.
 Operations Agent сохраняет root-only прежние env/images/model
-pointer и свежий backup. Предыдущие serving refs v1.2.10 допускают откат
+pointer и свежий backup. Предыдущие serving refs v1.2.12 допускают откат
 без DB downgrade, но при новой ошибке решение об откате принимает пользователь.
 
 ## Нерешённые вопросы
 
-До production GO остаются: чистое review TASK/EPIC, terminal PR/tag CI,
-immutable release evidence и model wrapper, свежий backup/restore/off-host,
-проверка серверного Odds API secret для `/predict` и ограниченный ручной
-цикл. Статус candidate означает готовый контракт
+До production GO остаются: независимая проверка и immutable release evidence,
+свежий backup/restore/off-host, проверка серверного Odds API secret для
+`/predict` и ограниченный ручной цикл. Статус candidate означает готовый контракт
 проверки, а не подтверждённый production успех.
