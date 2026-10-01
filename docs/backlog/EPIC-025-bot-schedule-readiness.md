@@ -387,7 +387,7 @@
 | [TASK-025-6](tasks/TASK-025-6-future-odds.md) | Calendar-first future NHL odds | semantic evidence, quota, identity, freshness | done |
 | [TASK-025-7](tasks/TASK-025-7-data-cycle-recovery-summary.md) | Terminal stages, summary и run history query contract | stage faults, coverage, safe DTO | done; production runtime в TASK-025-9 |
 | [TASK-025-8](tasks/TASK-025-8-executor-fencing.md) | Executor recovery/fencing after crash | PostgreSQL race, no duplicate executor | done; production activation в TASK-025-9 |
-| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.11 serving, timer disabled; v1.2.12 candidate |
+| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.12 serving, timers disabled; v1.2.13 candidate |
 | [TASK-025-13](tasks/TASK-025-13-production-runtime-hotfixes.md) | Исправить четыре runtime-дефекта первого цикла | grants, source DB, runner, heartbeat | done; PR #42 merged |
 | [TASK-025-14](tasks/TASK-025-14-future-close-odds-snapshot.md) | Публиковать source snapshot без closing line будущего матча | red/green, source/canonical tests, production snapshot | done; опубликован v1.2.3 snapshot |
 | [TASK-025-15](tasks/TASK-025-15-readonly-worker-hydra-logging.md) | Безопасный Hydra CLI в read-only Worker | red/green, stdout, no filesystem write | done; runtime gate в TASK-025-9 |
@@ -417,11 +417,12 @@
 | [TASK-025-5](tasks/TASK-025-5-telegram-experience.md) | Telegram calendar, admin controls, notifications, code-based E2E | 08:00, auth, idempotency, bot→API | done; delivery activation в TASK-025-9 |
 
 Operations release gate зафиксирован в TASK-025-9 и
-[production handoff](../operations/production-handoff.md). v1.2.11 сейчас
-обслуживает API/бота; его ручной run записал 1 834 прогноза, но завис в БД
-после ошибки archive sync. TASK-025-32 готовит v1.2.12. Оба NHL timer выключены;
-перед ежедневным режимом требуются восстановление старого run, новый
-проверенный ручной цикл с odds и подтверждение Telegram/API.
+[production handoff](../operations/production-handoff.md). v1.2.12 сейчас
+обслуживает API/бота; последний ручной run terminal `partial_success`,
+активных запусков нет. Кандидат v1.2.13 в PR #55 проходит CI и release gates.
+Оба NHL timer выключены; перед ежедневным режимом требуется проверенный
+ручной цикл с двумя remote-verified архивами до features, без future-odds
+запроса, а также подтверждение Telegram/API и результата `/predict`.
 
 ## Риски и rollout
 
@@ -430,6 +431,26 @@ Operations release gate зафиксирован в TASK-025-9 и
 runtime evidence, rollback target и terminal CI для exact commit.
 
 ## Полное EPIC review
+
+### Кандидат v1.2.13 — 2026-10-01
+
+Независимый Reviewer проверил границу `regular`/`playoffs` и сохранение
+остальных NHL-событий в source/canonical, порядок source → verified Object
+Storage → features → БД, отсутствие future odds в ежедневном цикле, контракт
+`/predict`, REQ-025, ADR-028, TASK-025-33/34, release TASK-025-9 и
+production handoff. Проверенный content commit: `e418581d3ce2da9842a5d76f7a7268fa87e4e32b`.
+Первое EPIC review нашло два P2: устаревшие serving/candidate и требование
+future odds в карте EPIC, а также неверные версию, PR и model wrapper в
+release TASK. После исправления повторное review не выявило P0–P2 findings.
+
+Для проверенного кандидата подтверждены `make lint`, `make test-unit`
+(1 259 passed, 13 deselected), `make production-check` и `git diff --check`;
+проверки PR #55 `Filesystem and secrets`, `Python dependencies` и
+`lint-test (3.12)` завершились успешно на `88f8ff8`. Это review кандидата:
+после evidence-коммита нужен terminal CI exact branch, затем release tag CI,
+immutable images/model wrapper, свежий backup с restore/off-host копией и
+ручной production run. До его успеха оба NHL timer остаются выключены,
+EPIC-025 и TASK-025-9 сохраняют `in_progress`.
 
 ### Повторное review кандидата v1.2.11
 
