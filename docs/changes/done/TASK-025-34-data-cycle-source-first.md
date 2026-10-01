@@ -19,6 +19,8 @@ state сохранена. Daily `data_odds` не запрашивается, sta
 Пустой подтверждённый inference теперь записывается как пустой parquet и
 очищает активный showcase; некорректный непустой inference не очищает его и
 завершается ошибкой. Архивный sync при ошибке блокирует Worker.
+Пропущенная `data_odds` содержит `disabled=1`, чтобы календарь после нового
+цикла не наследовал настройку сбора коэффициентов от старого запуска.
 
 ## Red → green → refactor
 
@@ -33,13 +35,16 @@ state сохранена. Daily `data_odds` не запрашивается, sta
 - Новый тест run descriptor проверяет точные два пути и отклонение отсутствующего
   artifact; тест prepared Worker проверяет отсутствие вызова future odds и
   provenance ID. Ruff format применён к затронутым Python-файлам.
+- Повторное review нашло P2 в календарной готовности: skipped stage не имела
+  `disabled=1`. Добавлены counts и регрессия перехода старый enabled run →
+  новый skipped run; адресные 13 тестов прошли, повторное review чистое.
 
 ## Фактические проверки
 
 | Проверка | Результат |
 |---|---|
 | `make lint` | passed |
-| `make test-unit` | 1 259 passed, 13 deselected, 40 warnings после последних изменений |
+| `make test-unit` | 1 259 passed, 13 deselected, 40 warnings после обновления версии и исправления calendar P2 |
 | `uv run pytest -q tests/test_materialize.py tests/test_features_inference_only.py` | 10 passed |
 | `uv run pytest -q tests/test_canonical_run_input.py tests/test_canonical_full_refresh.py` | 20 passed |
 | `bash -n deploy/systemd/run-canonical-refresh.sh`, `git diff --check` | passed |
@@ -52,7 +57,8 @@ state сохранена. Daily `data_odds` не запрашивается, sta
 - Production v1.2.12 не менялась. Read-only проверка VPS подтвердила, что
   последний run `7ae3909e-73f7-473b-ab54-22909fda2cad` завершён
   `partial_success`, обе timers выключены и active run нет.
-- TASK-025-33 должна закрыть модельную политику 124 исторических матчей иных
-  NHL `game_type` до ручного production запуска. Выпущенная модель не
-  переобучалась. CI, release evidence, ручной production cycle и timer
-  gate остаются открытыми; заявлять их успешными нельзя.
+- Владелец подтвердил модельную политику для 124 исторических матчей иных
+  NHL `game_type`: хранить, но исключать из модели. Реализацию и review
+  завершает TASK-025-33 до ручного production запуска. Выпущенная модель не
+  переобучалась. CI после этого уточнения, release evidence, ручной
+  production cycle и timer gate остаются открытыми.

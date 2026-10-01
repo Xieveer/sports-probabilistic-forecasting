@@ -368,7 +368,12 @@ def run_full_refresh(
                 run = cycle.get(run_id)
                 if run is None:
                     raise ValueError("Подготовленный snapshot требует Data Cycle run")
-                cycle.finish_stage(run_id, "data_odds", status="skipped")
+                cycle.finish_stage(
+                    run_id,
+                    "data_odds",
+                    status="skipped",
+                    counts={"disabled": 1},
+                )
         else:
             if not cycle_present:
                 cycle_present = _start_cycle_stage(run_id, "data_odds")

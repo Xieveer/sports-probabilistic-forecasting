@@ -4,12 +4,12 @@
 > **Приоритет:** high
 > **Владелец:** Product Owner
 > **Требование:** [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md)
-> **ADR:** [ADR-026](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md), [ADR-027](../architecture/adr/ADR-027-archive-sync-host-network.md)
+> **ADR:** [ADR-026](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md), [ADR-027](../architecture/adr/ADR-027-archive-sync-host-network.md), [ADR-028](../architecture/adr/ADR-028-data-cycle-source-before-features.md)
 
 ## Память Product Owner
 
 - Инициатива: `EPIC-025`. Текущая ветка
-  `initiative/025-bot-schedule-readiness`, этап — постановка
+  `initiative/025-bot-schedule-readiness`, этап — review и CI
   [TASK-025-34](tasks/TASK-025-34-data-cycle-source-first.md) и
   [TASK-025-33](tasks/TASK-025-33-nhl-preseason-model-boundary.md) после
   production postcheck v1.2.12. Владелец подтвердил границу: хранить
@@ -26,9 +26,11 @@
   TASK для модельной границы без удаления данных или переобучения. Локальная
   реализация TASK-025-34 прошла unit suite и независимое review; production
   не менялась. Новое audit evidence TASK-025-33: ещё 124 NHL-события имеют
-  иные типы, 7 из них есть в локальной train-таблице. До решения владельца
-  об их модельном допуске, повторного review, CI и ручного run оба таймера
-  остаются выключены. Read-only VPS preflight подтвердил terminal
+  иные типы, 7 из них есть в локальной train-таблице. Владелец подтвердил
+  допуск только `regular` и `playoffs`; остальные типы сохраняются вне
+  модельного входа. До реализации этой границы, повторного review, CI и
+  ручного run оба таймера остаются выключены. Подготовлен кандидат v1.2.13,
+  draft PR #55; release ещё не выполнен. Read-only VPS preflight подтвердил terminal
   `partial_success` последнего run и 0 активных запусков; доступ Operations
   Agent записан в опубликованном
   [runbook](https://github.com/Xieveer/operations-agent/blob/docs/epic025-access-20261001/docs/runbooks/sports-forecast-epic025-access.md).
@@ -372,7 +374,7 @@
 Реализовать [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md):
 календарь и готовность событий, Data Cycle с управлением из Telegram,
 операционную готовность NHL. Первым выпуском был `1.2.1`; текущий
-корректирующий кандидат — `1.2.12`. Футбол проверяется контрольным сценарием
+корректирующий кандидат — `1.2.13`. Футбол проверяется контрольным сценарием
 без включения в пользовательское меню.
 
 ## Декомпозиция
@@ -406,8 +408,8 @@
 | [TASK-025-30](tasks/TASK-025-30-future-odds-production.md) | Включить будущие NHL odds и ключи API | Compose contract, Worker/API/бот | reviewed_pending_release |
 | [TASK-025-31](tasks/TASK-025-31-control-stall-mark.md) | Исправить отметку stalled Control API | restricted role, atomic function | reviewed_pending_release |
 | [TASK-025-32](tasks/TASK-025-32-archive-sync-host-network.md) | Восстановить TLS путь archive-sync | scoped host network, Compose contract, remote verification | in_progress |
-| [TASK-025-33](tasks/TASK-025-33-nhl-preseason-model-boundary.md) | Сохранить preseason отдельно и исключить из модельного контура | аудит сезонов, тест границы до features, регрессия regular/playoffs | backlog |
-| [TASK-025-34](tasks/TASK-025-34-data-cycle-source-first.md) | Сделать Data Cycle независимым от future odds и синхронизировать source до features | pinned snapshot, Object Storage, DB materialization, /predict | backlog |
+| [TASK-025-33](tasks/TASK-025-33-nhl-preseason-model-boundary.md) | Сохранить все типы NHL отдельно и допускать в модель только regular/playoffs | аудит сезонов, тест границы до features, регрессия regular/playoffs | in_progress; review/CI |
+| [TASK-025-34](tasks/TASK-025-34-data-cycle-source-first.md) | Сделать Data Cycle независимым от future odds и синхронизировать source до features | pinned snapshot, Object Storage, DB materialization, /predict | in_progress; review/CI/release |
 | [TASK-025-12](tasks/TASK-025-12-release-compose-gate.md) | Исправить Compose release gate | новый API/dispatcher contract и память | done; PR CI в TASK-025-9 |
 | [TASK-025-10](tasks/TASK-025-10-run-summary-producers.md) | Full run summary producers and coverage | same-run counters, n/a denominator, football fixture | done |
 | [TASK-025-11](tasks/TASK-025-11-telegram-calendar.md) | Public NHL calendar in Telegram | 08:00, all horizons, no prediction, bot→API test | done |

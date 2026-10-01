@@ -267,10 +267,17 @@ def test_disabled_latest_data_cycle_hides_historical_odds_readiness(monkeypatch)
                     source="fixture",
                 ),
                 DataCycleStageResult(
+                    run_id=failed_run.run_id,
+                    stage="data_odds",
+                    status="success",
+                    counts_json=json.dumps({"disabled": 0, "canonical_events": 1}),
+                    completed_at=datetime(2026, 9, 25, 23, 30),
+                ),
+                DataCycleStageResult(
                     run_id=disabled_run.run_id,
                     stage="data_odds",
-                    status="partial_success",
-                    counts_json=json.dumps({"disabled": 1, "canonical_events": 1}),
+                    status="skipped",
+                    counts_json=json.dumps({"disabled": 1}),
                     completed_at=datetime(2026, 9, 26, 0, 30),
                 ),
             ]

@@ -9,7 +9,7 @@ from omegaconf import OmegaConf
 from sports_forecast.data.clean import (
     _apply_dtype_conversion,
     _derive_status,
-    _exclude_preseason_model_rows,
+    _select_nhl_model_rows,
 )
 
 
@@ -52,7 +52,7 @@ def test_nhl_preseason_is_removed_before_model_preparation_independent_of_score_
         }
     )
 
-    result = _exclude_preseason_model_rows(frame, "nhl")
+    result = _select_nhl_model_rows(frame, "nhl")
 
     assert result["id"].tolist() == ["regular", "playoffs"]
     assert frame["id"].tolist() == ["final-preseason", "off-preseason", "regular", "playoffs"]
@@ -62,21 +62,35 @@ def test_preseason_filter_does_not_change_other_tournaments() -> None:
     """Фильтр NHL не меняет модельные входы других турниров."""
     frame = pd.DataFrame({"id": ["one"], "game_type": ["preseason"]})
 
-    result = _exclude_preseason_model_rows(frame, "other_tournament")
+    result = _select_nhl_model_rows(frame, "other_tournament")
 
     assert result["id"].tolist() == ["one"]
+
+
+def test_nhl_model_boundary_keeps_only_regular_and_playoffs() -> None:
+    """Все непустые иные типы исключаются независимо от их кода."""
+    frame = pd.DataFrame(
+        {
+            "id": ["regular", "playoffs", "preseason", "numeric-type", "other"],
+            "game_type": ["regular", "playoffs", "preseason", "2", "other"],
+        }
+    )
+
+    result = _select_nhl_model_rows(frame, "nhl")
+
+    assert result["id"].tolist() == ["regular", "playoffs"]
 
 
 def test_nhl_preseason_filter_requires_explicit_game_type() -> None:
     """Отсутствие сезонной метки не должно молча открывать модельный путь."""
     with pytest.raises(ValueError, match="game_type"):
-        _exclude_preseason_model_rows(pd.DataFrame({"id": ["one"]}), "nhl")
+        _select_nhl_model_rows(pd.DataFrame({"id": ["one"]}), "nhl")
 
 
-@pytest.mark.parametrize("game_type", [None, "", "unknown", "1"])
-def test_nhl_preseason_filter_rejects_missing_or_unknown_game_type(game_type: str | None) -> None:
-    """Пустая или незнакомая метка не должна незаметно попасть в модельный вход."""
+@pytest.mark.parametrize("game_type", [None, "", "   "])
+def test_nhl_preseason_filter_rejects_missing_or_empty_game_type(game_type: str | None) -> None:
+    """Без метки clean останавливается, чтобы не пропустить неизвестный сезон."""
     frame = pd.DataFrame({"id": ["one"], "game_type": [game_type]})
 
     with pytest.raises(ValueError, match="game_type"):
-        _exclude_preseason_model_rows(frame, "nhl")
+        _select_nhl_model_rows(frame, "nhl")

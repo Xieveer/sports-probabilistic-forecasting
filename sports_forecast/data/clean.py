@@ -339,8 +339,8 @@ def _validate_required_columns(
     return True
 
 
-def _exclude_preseason_model_rows(df: pd.DataFrame, tournament_name: str) -> pd.DataFrame:
-    """Исключить предсезонные NHL-матчи до подготовки модельного входа.
+def _select_nhl_model_rows(df: pd.DataFrame, tournament_name: str) -> pd.DataFrame:
+    """Оставить только регулярные матчи NHL и плей-офф до построения признаков.
 
     Raw и canonical источники не изменяются: фильтр применяется только к копии,
     которую clean передаёт в interim и последующее построение признаков.
@@ -352,24 +352,23 @@ def _exclude_preseason_model_rows(df: pd.DataFrame, tournament_name: str) -> pd.
         raise ValueError("Для модельной подготовки NHL обязательна колонка game_type")
 
     normalized_type = df["game_type"].astype("string").str.strip().str.casefold()
-    allowed_types = {"preseason", "regular", "playoffs"}
-    invalid_type = normalized_type.isna() | ~normalized_type.isin(allowed_types)
-    invalid_count = int(invalid_type.sum())
-    if invalid_count:
+    missing_type = normalized_type.isna() | normalized_type.eq("")
+    missing_count = int(missing_type.sum())
+    if missing_count:
         raise ValueError(
-            "Для модельной подготовки NHL найдены пустые или неизвестные значения "
-            f"game_type (строк: {invalid_count})"
+            "Для модельной подготовки NHL найдены пустые значения "
+            f"game_type (строк: {missing_count})"
         )
 
-    is_preseason = normalized_type.eq("preseason")
-    removed_count = int(is_preseason.sum())
+    is_model_type = normalized_type.isin({"regular", "playoffs"})
+    removed_count = int((~is_model_type).sum())
     if removed_count:
         logger.info(
-            "Турнир %s: исключено %d preseason-матчей из модельного входа",
+            "Турнир %s: исключено %d матчей вне regular/playoffs из модельного входа",
             tournament_name,
             removed_count,
         )
-        return df.loc[~is_preseason].copy()
+        return df.loc[is_model_type].copy()
 
     return df
 
@@ -530,7 +529,7 @@ def process_tournament(
 
     # Модельная граница должна быть раньше генерации производных колонок и
     # FeaturePipeline. Raw и canonical остаются полными.
-    df = _exclude_preseason_model_rows(df, tournament_name)
+    df = _select_nhl_model_rows(df, tournament_name)
 
     # 2. Проверяем обязательные колонки (после маппинга!)
     required = clean_cfg.required_columns or []

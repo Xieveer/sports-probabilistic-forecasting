@@ -176,6 +176,8 @@ def test_prepared_worker_does_not_fetch_daily_odds(tmp_path: Path) -> None:
             assert run is not None
             stages = {stage.stage: stage.status for stage in run.stages}
             assert stages["data_odds"] == "skipped"
+            odds_stage = next(stage for stage in run.stages if stage.stage == "data_odds")
+            assert json.loads(odds_stage.counts_json or "{}")["disabled"] == 1
             assert stages["predictions"] == "success"
             assert stages["publication"] == "success"
             cycle.finish_run(
