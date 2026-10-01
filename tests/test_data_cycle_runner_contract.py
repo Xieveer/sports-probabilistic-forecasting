@@ -1,11 +1,10 @@
 """Contract for the durable cycle wrapper around the production NHL runner."""
 
+import json
 import os
 import shlex
 import subprocess
 from pathlib import Path
-
-import pytest
 
 from sports_forecast.orchestration import data_cycle_cli
 
@@ -149,60 +148,63 @@ def test_archive_manifest_loop_keeps_compose_from_consuming_the_manifest_stream(
     ]
 
 
-def test_runner_rejects_zero_archive_manifests_after_worker_success() -> None:
-    """A completed Worker cannot produce a successful empty archive_sync stage."""
+def test_runner_requires_both_current_run_archives_before_model_work() -> None:
+    """Только два archive ID из descriptor текущего run допускают Worker."""
     runner = (PROJECT_ROOT / "deploy/systemd/run-canonical-refresh.sh").read_text(encoding="utf-8")
 
-    assert runner.index("if (( artifact_count == 0 )); then") < runner.index(
+    assert "list-run-archive-manifests.py \\" in runner
+    assert '"${SF_OPERATIONAL_ARCHIVE_ROOT}" "${SF_WORKER_RUN_ID}"' in runner
+    assert runner.index("if (( artifact_count != 2 )); then") < runner.index(
         "--status success --counts"
     )
-
-
-@pytest.mark.parametrize("setting", ["", "off", "TRUE", "1"])
-def test_runner_rejects_invalid_data_odds_setting_before_dispatch(setting: str) -> None:
-    """Некорректный odds switch закрывает cycle до claim и любых acquisition stages."""
-    runner = PROJECT_ROOT / "deploy/systemd/run-canonical-refresh.sh"
-    environment = os.environ.copy()
-    environment["SF_DATA_ODDS_ENABLED"] = setting
-
-    result = subprocess.run(
-        ["bash", str(runner), "nhl", "00000000-0000-0000-0000-000000000000"],
-        capture_output=True,
-        text=True,
-        env=environment,
-        check=False,
+    assert runner.index("if (( artifact_count != 2 )); then") < runner.index(
+        "canonical_full_refresh_cli"
     )
 
-    assert result.returncode == 2
-    assert "SF_DATA_ODDS_ENABLED" in result.stderr
-    assert "claim" not in result.stderr
 
-
-@pytest.mark.parametrize("setting", [None, "true", "false"])
-def test_runner_accepts_strict_data_odds_values_and_passes_config(setting: str | None) -> None:
-    """Будущие odds идут в Worker; исторический backfill не блокирует календарь."""
-    runner_path = PROJECT_ROOT / "deploy/systemd/run-canonical-refresh.sh"
-    runner = runner_path.read_text(encoding="utf-8")
-    root_config = (PROJECT_ROOT / "conf/config.yaml").read_text(encoding="utf-8")
-    environment = os.environ.copy()
-    if setting is None:
-        environment.pop("SF_DATA_ODDS_ENABLED", None)
-    else:
-        environment["SF_DATA_ODDS_ENABLED"] = setting
-
-    result = subprocess.run(
-        ["bash", str(runner_path), "nhl", "00000000-0000-0000-0000-000000000000"],
-        capture_output=True,
-        text=True,
-        env=environment,
-        check=False,
+def test_run_archive_list_is_bound_to_descriptor_and_rejects_missing_artifact(
+    tmp_path: Path,
+) -> None:
+    """Старые manifest не подменяют текущий canonical/source snapshot."""
+    helper = PROJECT_ROOT / "deploy/systemd/list-run-archive-manifests.py"
+    run_id = "00000000-0000-4000-8000-000000000034"
+    canonical_id = "sha256:" + "a" * 64
+    source_id = "sha256:" + "b" * 64
+    descriptor = tmp_path / "run-inputs" / f"{run_id}.json"
+    descriptor.parent.mkdir()
+    descriptor.write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "canonical_artifact_id": canonical_id,
+                "source_artifact_id": source_id,
+            }
+        ),
+        encoding="utf-8",
     )
+    canonical = tmp_path / "operational-archive" / canonical_id / "manifest.json"
+    source = tmp_path / "operational-archive/nhl-source-state/v1" / source_id / "manifest.json"
+    for manifest in (canonical, source):
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text("{}", encoding="utf-8")
+    command = ["python3", str(helper), str(tmp_path), run_id]
+    listed = subprocess.run(command, capture_output=True, check=False)
+    assert listed.returncode == 0
+    assert listed.stdout == (str(canonical) + "\0" + str(source) + "\0").encode()
 
-    assert 'case "$data_odds_enabled" in' in runner
-    assert "true|false)" in runner
-    assert "data_odds_enabled=${data_odds_enabled}" in runner
+    source.unlink()
+    missing = subprocess.run(command, capture_output=True, check=False)
+    assert missing.returncode != 0
+    assert missing.stdout == b""
+
+
+def test_runner_syncs_pinned_input_before_features_without_daily_odds() -> None:
+    """Стадия Object Storage предшествует Worker inference без future odds."""
+    runner = (PROJECT_ROOT / "deploy/systemd/run-canonical-refresh.sh").read_text(encoding="utf-8")
+
+    assert runner.index("source_snapshot_cli") < runner.index("canonical_run_input_cli")
+    assert runner.index("canonical_run_input_cli") < runner.index("archive_sync_cli")
+    assert runner.index("archive_sync_cli") < runner.index("canonical_full_refresh_cli")
     assert "--odds-enabled false" in runner
-    assert "data_odds_enabled: true" in root_config
-    assert result.returncode == 1
-    assert "SF_TOURNAMENT" in result.stderr
-    assert "SF_DATA_ODDS_ENABLED" not in result.stderr
+    assert "SF_DATA_ODDS_ENABLED" not in runner
+    assert '"data_odds_enabled=' not in runner

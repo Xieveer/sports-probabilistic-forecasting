@@ -53,3 +53,30 @@ def test_inference_only_keeps_predictions_and_skips_training_files(tmp_path: Pat
     )
     assert not (refresh / "train_long.parquet").exists()
     assert not (refresh / "train_wide.parquet").exists()
+
+
+def test_inference_only_writes_empty_tables_when_no_upcoming_match(tmp_path: Path) -> None:
+    """Подтверждённо пустой календарь имеет явный вход для materialization."""
+    interim_root = tmp_path / "interim"
+    input_dir = interim_root / "nhl"
+    input_dir.mkdir(parents=True)
+    pd.DataFrame({"id": [1]}).to_parquet(input_dir / "matches_interim.parquet")
+    generated = pd.DataFrame({"id": [1, 1], "side": ["h", "a"], "status": ["finished", "finished"]})
+    with (
+        patch(
+            "sports_forecast.features.features_build.materialize_features_config", return_value={}
+        ),
+        patch("sports_forecast.features.features_build.FeaturePipeline") as pipeline,
+    ):
+        pipeline.return_value.get_generator_summary.return_value = {}
+        pipeline.return_value.generate_features.return_value = (generated, [])
+        process_tournament_new(
+            "nhl",
+            interim_root,
+            tmp_path / "refresh",
+            OmegaConf.create({"generators": []}),
+            inference_only=True,
+        )
+    output_dir = tmp_path / "refresh" / "nhl"
+    assert pd.read_parquet(output_dir / "inference_long.parquet").empty
+    assert pd.read_parquet(output_dir / "inference_wide.parquet").empty

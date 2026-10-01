@@ -264,6 +264,17 @@ def _aggregate_long_predictions(
     return pd.DataFrame(records)
 
 
+def _publish_empty_showcase(
+    session: Session | None, *, tournament: str, market: str, market_spec: str
+) -> None:
+    """Атомарно закрыть прежнюю активную витрину при пустом model input."""
+    session_context = get_session() if session is None else nullcontext(session)
+    with session_context as db_session:
+        PredictionRepository(db_session).publish_showcase(
+            [], tournament=tournament, market=market, market_spec=market_spec
+        )
+
+
 def materialize_predictions(
     cfg: DictConfig, version: str = "prod", *, session: Session | None = None
 ) -> bool:
@@ -333,7 +344,13 @@ def materialize_predictions(
 
         if df.empty:
             logger.warning("Inference data пуст — нет предстоящих матчей")
-            return True  # Не ошибка
+            _publish_empty_showcase(
+                session,
+                tournament=tournament_name,
+                market=market_name,
+                market_spec=market_spec_name,
+            )
+            return True
 
         # 4. Извлекаем фичи
         if feature_names:
@@ -357,8 +374,7 @@ def materialize_predictions(
         logger.info("Агрегировано %d предсказаний (матчей)", len(preds_df))
 
         if preds_df.empty:
-            logger.warning("Нет агрегированных предсказаний")
-            return True
+            raise ValueError("Непустой inference не дал агрегированных предсказаний")
 
         # 7. Файловый результат готовится до смены DB-витрины. Если этот шаг
         # не удался, прежние API predictions остаются нетронутыми.

@@ -363,10 +363,12 @@ def test_systemd_scheduler_has_durable_cycle_before_calendar_acquisition() -> No
     assert "TimeoutStartSec=90m" in cycle_service
     assert "flock -n" in cycle_service
     assert "canonical_full_refresh_cli" in runner
+    assert "canonical_run_input_cli" in runner
     assert "source_snapshot_cli" in runner
-    assert runner.index("source_snapshot_cli") < runner.index("canonical_full_refresh_cli")
+    assert runner.index("source_snapshot_cli") < runner.index("canonical_run_input_cli")
+    assert runner.index("canonical_run_input_cli") < runner.index("archive_sync_cli")
+    assert runner.index("archive_sync_cli") < runner.index("canonical_full_refresh_cli")
     assert "archive-sync" in runner
-    assert runner.index("canonical_full_refresh_cli") < runner.index("archive-sync")
     assert "SF_NHL_SOURCE_STATE_PREFIX" in runner
     assert "SF_WORKER_RUN_ID" in runner
     assert "claim --run-id" in runner

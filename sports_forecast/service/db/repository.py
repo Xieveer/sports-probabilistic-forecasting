@@ -1096,7 +1096,10 @@ class DataCycleRunRepository:
             else:
                 status = (
                     "partial_success"
-                    if any(result != "success" for result in states.values())
+                    if any(
+                        result != "success" and (stage in required or result != "skipped")
+                        for stage, result in states.items()
+                    )
                     else "success"
                 )
         if failed_required and status != "failed":
@@ -1110,7 +1113,11 @@ class DataCycleRunRepository:
         if status != "failed" and incomplete_required:
             raise ValueError("Обязательные стадии не выполнены: " + ",".join(incomplete_required))
         if status == "success":
-            incomplete = sorted(stage for stage, result in states.items() if result != "success")
+            incomplete = sorted(
+                stage
+                for stage, result in states.items()
+                if result != "success" and (stage in required or result != "skipped")
+            )
             if incomplete:
                 raise ValueError("Не все стадии завершились success: " + ",".join(incomplete))
         if status == "partial_success" and all(result == "success" for result in states.values()):
