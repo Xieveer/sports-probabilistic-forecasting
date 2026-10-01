@@ -59,7 +59,10 @@ def build_fixture(
             raise ValueError("image_refs должны содержать digest для каждого runtime image")
         default_images.update(image_refs)
     values = {
-        "SF_WORKER_RUN_ID": "fixture-run-id",
+        "SF_WORKER_RUN_ID": "00000000-0000-4000-8000-000000000025",
+        "SF_DATA_CYCLE_RUN_ID": "00000000-0000-4000-8000-000000000025",
+        "SF_DATA_CYCLE_OWNER_ID": "abcdef0123456789abcdef0123456789",
+        "SF_DATA_CYCLE_GENERATION": "1",
         "SF_APP_VERSION": app_version,
         "SF_MODEL_RUNTIME_ROOT": str(root / "runtime_models"),
         "SF_CANONICAL_SOURCE_ROOT": str(root / "source" / "nhl"),
