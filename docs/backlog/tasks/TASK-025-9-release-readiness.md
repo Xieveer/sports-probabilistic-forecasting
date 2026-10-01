@@ -16,6 +16,14 @@
 > отсутствия подготовленного Data Cycle run в тестовом сценарии.
 > Correction candidate v1.2.15. Оба timer выключены.
 
+PR [#57](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/57)
+прошёл CI и слит в `main` на `774602cb3d2db8ce65b4411637ff86e057fc76ec`.
+Annotated tag `v1.2.15` и [Docker pipeline](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/36931948706)
+завершились успешно: clean first-rollout подтвердил два Object Storage
+archive до Worker, а published image digests совпали с tested. Следующий
+gate — immutable release evidence и ограниченный production rollout; оба
+timer остаются выключенными.
+
 ## Результат
 
 Довести проверенный release candidate `v1.2.15` до production,
@@ -26,7 +34,7 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
 
 ## Критерии приёмки
 
-- [ ] Все функциональные TASK инициативы прошли независимое review, full EPIC
+- [x] Все функциональные TASK инициативы прошли независимое review, full EPIC
   review, локальные проверки и terminal PR CI нового кандидата.
   `pyproject.toml` и handoff указывают `1.2.15 candidate`;
   `make production-check` должен пройти для final candidate.
@@ -46,7 +54,7 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
   overlap. Старый timer и новый dispatcher
   переключаются взаимоисключающе, с проверкой disabled/enabled и следующего
   trigger. На preflight 2026-09-26 старый NHL timer был disabled/inactive.
-- [ ] Reviewer создаёт tag только на проверенном commit в `main`. Tag pipeline
+- [x] Reviewer создаёт tag только на проверенном commit в `main`. Tag pipeline
   завершён успешно, immutable image digests/provenance/security evidence
   проверены перед изменением VPS.
 - [ ] Operations подтверждает действующий Alembic head 0017, проверяет
