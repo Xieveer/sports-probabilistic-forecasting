@@ -429,6 +429,20 @@ Runtime source, materialization и первые dispatcher polls провере�
 
 ## Полное EPIC review
 
+### Post-rollout documentation review — 2026-10-02
+
+Независимый Reviewer сверил статус production v1.2.15 и открытый
+scheduled gate с [TASK-025-9](tasks/TASK-025-9-release-readiness.md),
+TASK-025-33/34/35 и опубликованной эксплуатационной записью. Первоначальные
+замечания к повтору role grants и порядку запуска Worker устранены:
+штатный migrator повторил idempotent grants 2026-10-01 22:52 UTC,
+а archive sync подтверждён до расчёта признаков. Новых P0–P2 findings нет;
+первый запуск по расписанию остаётся непроверенным. Проверены полный
+documentation diff и `git diff --check`; pre-commit hooks для первого
+коммита прошли. Проверенный diff зафиксирован коммитом
+`7e3fec14e766167d7a32e6e3f6be12dfda3ba855`; этот evidence-коммит
+содержит только документальное подтверждение его hash.
+
 ### Pre-release review кандидата v1.2.15 — 2026-10-02
 
 Независимый Reviewer сверил [TASK-025-36](tasks/TASK-025-36-first-rollout-source-first-lifecycle.md),
