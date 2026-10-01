@@ -8,8 +8,22 @@
 
 ## Память Product Owner
 
-- Инициатива: `EPIC-025`.
-- Текущий correction cycle: `initiative/epic-025-archive-network`,
+- Инициатива: `EPIC-025`. Текущая ветка
+  `initiative/025-bot-schedule-readiness`, этап — постановка
+  [TASK-025-33](tasks/TASK-025-33-nhl-preseason-model-boundary.md) после
+  production postcheck v1.2.12. Владелец подтвердил границу: хранить
+  preseason в raw/canonical отдельно, исключать из обучения, истории
+  признаков, прогнозов и betting-валидации. Read-only аудит локальных
+  сезонов 2010–11—2025–26 нашёл 1 500 preseason в raw и 0 в текущей
+  train-таблице; точный training snapshot выпущенной модели не сохранён.
+  Production v1.2.12 обслуживает API/бота, но ручной Data Cycle завершился
+  `partial_success` с `0/208` сохранённых будущих odds; оба NHL timer
+  выключены, Gate F/G остаются открытыми. Решение: отдельная Engineering
+  TASK для модельной границы без удаления данных или переобучения;
+  следующий шаг — Developer red→green по TASK-025-33 после проверки
+  постановки. Нового production release эта TASK сама не разрешает.
+  Обновлено 2026-10-01.
+- Предыдущий correction cycle: `initiative/epic-025-archive-network`,
   [TASK-025-32](tasks/TASK-025-32-archive-sync-host-network.md), кандидат
   `v1.2.12`. Production `v1.2.11` API/bot/DB healthy; новый ручной run
   `47ebfeb2-5113-465d-9a8e-92f709370639` остаётся `running/archive_sync`
@@ -381,6 +395,7 @@
 | [TASK-025-30](tasks/TASK-025-30-future-odds-production.md) | Включить будущие NHL odds и ключи API | Compose contract, Worker/API/бот | reviewed_pending_release |
 | [TASK-025-31](tasks/TASK-025-31-control-stall-mark.md) | Исправить отметку stalled Control API | restricted role, atomic function | reviewed_pending_release |
 | [TASK-025-32](tasks/TASK-025-32-archive-sync-host-network.md) | Восстановить TLS путь archive-sync | scoped host network, Compose contract, remote verification | in_progress |
+| [TASK-025-33](tasks/TASK-025-33-nhl-preseason-model-boundary.md) | Сохранить preseason отдельно и исключить из модельного контура | аудит сезонов, тест границы до features, регрессия regular/playoffs | backlog |
 | [TASK-025-12](tasks/TASK-025-12-release-compose-gate.md) | Исправить Compose release gate | новый API/dispatcher contract и память | done; PR CI в TASK-025-9 |
 | [TASK-025-10](tasks/TASK-025-10-run-summary-producers.md) | Full run summary producers and coverage | same-run counters, n/a denominator, football fixture | done |
 | [TASK-025-11](tasks/TASK-025-11-telegram-calendar.md) | Public NHL calendar in Telegram | 08:00, all horizons, no prediction, bot→API test | done |
