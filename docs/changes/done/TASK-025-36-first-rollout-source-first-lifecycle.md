@@ -38,5 +38,9 @@ executor generation. Повторный запуск Worker проверяет �
   release docs и full EPIC границы. Адресные 46 тестов Reviewer прошли.
 - PR CI и tag pipeline v1.2.15: ожидаются.
 
+Проверенный код и документация: commit
+`f6c4af0f27851c554fb148ba219a27191f207bcc`. Этот отдельный evidence
+commit содержит только ссылки на проверенный hash.
+
 Production остаётся v1.2.12; оба NHL timer выключены. Теги v1.2.13 и
 v1.2.14 не меняются и не используются для deployment.

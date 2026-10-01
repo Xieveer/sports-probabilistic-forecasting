@@ -459,6 +459,9 @@ executor fencing, повторный run ID, Docker mounts, secret redaction и 
 model wrapper, production manual run и включение расписания ещё открыты.
 Production остаётся v1.2.12; оба NHL timer выключены.
 
+Проверенный полный diff: commit `f6c4af0f27851c554fb148ba219a27191f207bcc`;
+hash зафиксирован отдельным documentation-only evidence-коммитом.
+
 ### Корректирующий кандидат v1.2.14 — 2026-10-01
 
 Независимый Reviewer сверил [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md),
