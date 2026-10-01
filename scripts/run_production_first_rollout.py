@@ -222,6 +222,209 @@ def _service_resources(service_ids: dict[str, str]) -> dict[str, str]:
     return resources
 
 
+def _run_data_cycle_action(
+    *,
+    project_name: str,
+    worker_image: str,
+    values: dict[str, str],
+    args: list[str],
+    generation: int,
+) -> str:
+    """Выполнить одно lifecycle действие с DB ролью Worker и проверить его вывод."""
+    result = _run_one_shot_checked(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--read-only",
+            "--user",
+            RUNTIME_UID_GID,
+            "--tmpfs",
+            "/tmp:rw,noexec,nosuid,size=64m",
+            "--network",
+            f"{project_name}_default",
+            "--mount",
+            f"type=bind,src={values['SF_WORKER_DATABASE_URL_FILE']},dst=/run/secrets/worker_database_url,readonly",
+            "--env",
+            "DATABASE_URL_FILE=/run/secrets/worker_database_url",
+            "--env",
+            f"SF_DATA_CYCLE_OWNER_ID={values['SF_DATA_CYCLE_OWNER_ID']}",
+            "--env",
+            f"SF_DATA_CYCLE_GENERATION={generation}",
+            worker_image,
+            "/app/.venv/bin/python",
+            "-m",
+            "sports_forecast.orchestration.data_cycle_cli",
+            *args,
+        ],
+        values=values,
+        timeout=180,
+    )
+    return result.stdout.strip()
+
+
+def _prepare_worker_data_cycle(
+    *, project_name: str, worker_image: str, values: dict[str, str]
+) -> int:
+    """Создать durable run, захватить его и открыть стадию загрузки source."""
+    run_id = values["SF_WORKER_RUN_ID"]
+    if run_id != values["SF_DATA_CYCLE_RUN_ID"]:
+        raise ValueError("Worker и Data Cycle должны использовать один run_id")
+    owner_id = values["SF_DATA_CYCLE_OWNER_ID"]
+    if re.fullmatch(r"[0-9a-f]{32}", owner_id) is None:
+        raise ValueError("First-rollout owner ID должен быть systemd invocation UUID без дефисов")
+    _run_data_cycle_action(
+        project_name=project_name,
+        worker_image=worker_image,
+        values=values,
+        args=["create", "--run-id", run_id, "--tournament", "nhl", "--reason", "scheduled"],
+        generation=0,
+    )
+    generation_output = _run_data_cycle_action(
+        project_name=project_name,
+        worker_image=worker_image,
+        values=values,
+        args=["claim", "--run-id", run_id, "--owner-id", owner_id],
+        generation=0,
+    )
+    try:
+        generation = int(generation_output)
+    except ValueError as exc:
+        raise RuntimeError("Data Cycle claim не вернул executor generation") from exc
+    if generation < 1:
+        raise RuntimeError("Data Cycle claim вернул некорректную executor generation")
+    _run_data_cycle_action(
+        project_name=project_name,
+        worker_image=worker_image,
+        values=values,
+        args=["start-stage", "--run-id", run_id, "--stage", "calendar"],
+        generation=generation,
+    )
+    return generation
+
+
+def _prepare_source_first_input(
+    *, project_name: str, worker_image: str, values: dict[str, str], generation: int
+) -> None:
+    """Импортировать source, пройти quality gate и подготовить архивы до Worker."""
+    _run_one_shot_checked(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--read-only",
+            "--user",
+            RUNTIME_UID_GID,
+            "--tmpfs",
+            "/tmp:rw,noexec,nosuid,size=128m",
+            "--network",
+            f"{project_name}_default",
+            "--mount",
+            f"type=bind,src={values['SF_WORKER_DATABASE_URL_FILE']},dst=/run/secrets/worker_database_url,readonly",
+            "--mount",
+            f"type=bind,src={values['SF_CANONICAL_SOURCE_ROOT']},dst=/app/data/source/nhl,readonly",
+            "--mount",
+            f"type=bind,src={values['SF_OPERATIONAL_ARCHIVE_ROOT']},dst=/app/archive",
+            "--env",
+            "DATABASE_URL_FILE=/run/secrets/worker_database_url",
+            "--env",
+            f"SF_WORKER_RUN_ID={values['SF_WORKER_RUN_ID']}",
+            "--env",
+            f"SF_DATA_CYCLE_OWNER_ID={values['SF_DATA_CYCLE_OWNER_ID']}",
+            "--env",
+            f"SF_DATA_CYCLE_GENERATION={generation}",
+            "--env",
+            "SF_CANONICAL_SOURCE_CSV=/app/data/source/nhl/current.csv",
+            "--env",
+            "SF_OPERATIONAL_ARCHIVE_ROOT=/app/archive",
+            worker_image,
+            "/app/.venv/bin/python",
+            "-m",
+            "sports_forecast.orchestration.canonical_run_input_cli",
+            "tournament=nhl",
+            "market=winner_withOT",
+            "market_spec=winner_withOT",
+            "algorithm=catboost_reg",
+            "features=advanced",
+            "hydra/job_logging=stdout",
+            "hydra.output_subdir=null",
+        ],
+        values=values,
+        timeout=300,
+    )
+
+
+def _mark_archive_sync_success(
+    *, project_name: str, worker_image: str, values: dict[str, str], generation: int
+) -> None:
+    """Разрешить Worker только после успешной remote verification fixture sync."""
+    _run_data_cycle_action(
+        project_name=project_name,
+        worker_image=worker_image,
+        values=values,
+        args=[
+            "finish-stage",
+            "--run-id",
+            values["SF_WORKER_RUN_ID"],
+            "--stage",
+            "archive_sync",
+            "--status",
+            "success",
+        ],
+        generation=generation,
+    )
+
+
+def _start_test_object_storage(
+    *, project_name: str, fixture_image: str, client_image: str, values: dict[str, str]
+) -> str:
+    """Поднять изолированный S3 endpoint и создать test bucket до archive sync."""
+    endpoint = _start_s3_fixture(
+        fixture_name=f"{project_name}-s3-fixture",
+        network=f"{project_name}_default",
+        image=fixture_image,
+        values=values,
+    )
+    auth_options = [
+        "--mount",
+        f"type=bind,src={values['SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE']},dst=/run/secrets/object_storage_access_key,readonly",
+        "--mount",
+        f"type=bind,src={values['SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE']},dst=/run/secrets/object_storage_secret_key,readonly",
+        "--env",
+        "SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE=/run/secrets/object_storage_access_key",
+        "--env",
+        "SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE=/run/secrets/object_storage_secret_key",
+    ]
+    common = [
+        "docker",
+        "run",
+        "--rm",
+        "--read-only",
+        "--user",
+        RUNTIME_UID_GID,
+        "--tmpfs",
+        "/tmp:rw,noexec,nosuid,size=64m",
+        "--network",
+        f"{project_name}_default",
+        *auth_options,
+        client_image,
+        "/app/.venv/bin/python",
+        "-c",
+    ]
+    credentials = (
+        "from pathlib import Path; import boto3; client=boto3.client("
+        "'s3', endpoint_url='http://minio:9000', "
+        "aws_access_key_id=Path('/run/secrets/object_storage_access_key').read_text().strip(), "
+        "aws_secret_access_key=Path('/run/secrets/object_storage_secret_key').read_text().strip(), "
+        "region_name='us-east-1')"
+    )
+    _wait_for([*common, credentials + ".list_buckets()"], timeout=90)
+    _run_one_shot_checked(
+        [*common, credentials + ".create_bucket(Bucket='fixture-bucket')"], values=values
+    )
+    return endpoint
+
+
 def _parse_memory_usage_bytes(docker_stats_value: str) -> int:
     """Разобрать current-memory часть ``docker stats`` в bytes."""
     current, separator, limit = docker_stats_value.partition("/")
@@ -318,12 +521,27 @@ def _database_disk_path(container_id: str) -> Path:
 
 
 def _run_worker_with_peak_rss(
-    compose: list[str], *, project_name: str, values: dict[str, str], timeout: int = 300
+    compose: list[str],
+    *,
+    project_name: str,
+    values: dict[str, str],
+    generation: int,
+    timeout: int = 300,
 ) -> dict[str, int]:
     """Выполнить Worker один раз, сохранив максимум RSS до удаления container."""
     container_name = f"{project_name}-worker-resource-evidence"
     container_id = _run(
-        [*compose, "run", "--detach", "--name", container_name, "worker"], timeout=60
+        [
+            *compose,
+            "run",
+            "--detach",
+            "--name",
+            container_name,
+            "--env",
+            f"SF_DATA_CYCLE_GENERATION={generation}",
+            "worker",
+        ],
+        timeout=60,
     ).stdout.strip()
     if not container_id:
         raise RuntimeError("Worker container не вернул ID для RSS evidence")
@@ -355,7 +573,11 @@ def _run_worker_with_peak_rss(
             )
             if state and state[0] == "false":
                 if len(state) != 2 or state[1] != "0":
-                    raise RuntimeError("Worker one-shot завершился с ошибкой")
+                    logs = _run(["docker", "logs", container_id])
+                    detail = _worker_failure_detail(logs.stdout + logs.stderr, values)
+                    raise RuntimeError(
+                        f"Worker one-shot завершился с ошибкой; безопасный хвост логов: {detail}"
+                    )
                 if not samples or max(samples) <= 0:
                     raise RuntimeError("Worker peak RSS не удалось измерить")
                 logs = _run(["docker", "logs", container_id])
@@ -378,6 +600,13 @@ def _assert_logs_are_redacted(logs: str, values: dict[str, str]) -> None:
     ]
     if any(secret and secret in logs for secret in secrets):
         raise RuntimeError("service logs содержат secret value")
+
+
+def _worker_failure_detail(logs: str, values: dict[str, str]) -> str:
+    """Вернуть ограниченный хвост логов после проверки на тестовые секреты."""
+    _assert_logs_are_redacted(logs, values)
+    detail = "\n".join(logs.splitlines()[-12:])[-2048:]
+    return detail or "Worker не оставил stdout/stderr"
 
 
 def _run_one_shot_checked(
@@ -894,12 +1123,53 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
                 timeout=180,
             )
             evidence["health"]["source_state_install"] = "ok"
+            cycle_generation = _prepare_worker_data_cycle(
+                project_name=project_name,
+                worker_image=refs["SF_WORKER_IMAGE"],
+                values=values,
+            )
+            s3_host_endpoint = _start_test_object_storage(
+                project_name=project_name,
+                fixture_image=refs["SF_S3_FIXTURE_IMAGE"],
+                client_image=refs["SF_ARCHIVE_SYNC_IMAGE"],
+                values=values,
+            )
+            _prepare_source_first_input(
+                project_name=project_name,
+                worker_image=refs["SF_WORKER_IMAGE"],
+                values=values,
+                generation=cycle_generation,
+            )
+            artifact_count = _sync_operational_archives(
+                compose, endpoint=s3_host_endpoint, values=values
+            )
+            _mark_archive_sync_success(
+                project_name=project_name,
+                worker_image=refs["SF_WORKER_IMAGE"],
+                values=values,
+                generation=cycle_generation,
+            )
+            evidence["health"]["archive_sync"] = "ok"
+            evidence["health"]["archive_sync_artifacts"] = str(artifact_count)
             worker_compose = [*compose, "--profile", "worker"]
             evidence["resources"]["worker_one_shot"] = _run_worker_with_peak_rss(
-                worker_compose, project_name=project_name, values=values, timeout=300
+                worker_compose,
+                project_name=project_name,
+                values=values,
+                generation=cycle_generation,
+                timeout=300,
             )
             _run_one_shot_checked(
-                [*worker_compose, "run", "--rm", "worker"], values=values, timeout=180
+                [
+                    *worker_compose,
+                    "run",
+                    "--rm",
+                    "--env",
+                    f"SF_DATA_CYCLE_GENERATION={cycle_generation}",
+                    "worker",
+                ],
+                values=values,
+                timeout=180,
             )
             execution_count = _run(
                 [
@@ -932,80 +1202,6 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
                 raise RuntimeError("повтор Worker run_id создал duplicate execution")
             evidence["health"]["worker_refresh"] = "ok"
             evidence["health"]["worker_run_id_idempotency"] = "ok"
-            s3_fixture_name = f"{project_name}-s3-fixture"
-            s3_host_endpoint = _start_s3_fixture(
-                fixture_name=s3_fixture_name,
-                network=f"{project_name}_default",
-                image=refs["SF_S3_FIXTURE_IMAGE"],
-                values=values,
-            )
-            _wait_for(
-                [
-                    "docker",
-                    "run",
-                    "--rm",
-                    "--read-only",
-                    "--user",
-                    RUNTIME_UID_GID,
-                    "--tmpfs",
-                    "/tmp:rw,noexec,nosuid,size=64m",
-                    "--network",
-                    f"{project_name}_default",
-                    "--mount",
-                    f"type=bind,src={values['SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE']},dst=/run/secrets/object_storage_access_key,readonly",
-                    "--mount",
-                    f"type=bind,src={values['SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE']},dst=/run/secrets/object_storage_secret_key,readonly",
-                    "--env",
-                    "SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE=/run/secrets/object_storage_access_key",
-                    "--env",
-                    "SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE=/run/secrets/object_storage_secret_key",
-                    refs["SF_ARCHIVE_SYNC_IMAGE"],
-                    "/app/.venv/bin/python",
-                    "-c",
-                    "from pathlib import Path; import boto3; boto3.client("
-                    "'s3', endpoint_url='http://minio:9000', "
-                    "aws_access_key_id=Path('/run/secrets/object_storage_access_key').read_text().strip(), "
-                    "aws_secret_access_key=Path('/run/secrets/object_storage_secret_key').read_text().strip(), "
-                    "region_name='us-east-1').list_buckets()",
-                ],
-                timeout=90,
-            )
-            _run_one_shot_checked(
-                [
-                    "docker",
-                    "run",
-                    "--rm",
-                    "--read-only",
-                    "--user",
-                    RUNTIME_UID_GID,
-                    "--tmpfs",
-                    "/tmp:rw,noexec,nosuid,size=64m",
-                    "--network",
-                    f"{project_name}_default",
-                    "--mount",
-                    f"type=bind,src={values['SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE']},dst=/run/secrets/object_storage_access_key,readonly",
-                    "--mount",
-                    f"type=bind,src={values['SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE']},dst=/run/secrets/object_storage_secret_key,readonly",
-                    "--env",
-                    "SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE=/run/secrets/object_storage_access_key",
-                    "--env",
-                    "SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE=/run/secrets/object_storage_secret_key",
-                    refs["SF_ARCHIVE_SYNC_IMAGE"],
-                    "/app/.venv/bin/python",
-                    "-c",
-                    "from pathlib import Path; import boto3; client=boto3.client("
-                    "'s3', endpoint_url='http://minio:9000', "
-                    "aws_access_key_id=Path('/run/secrets/object_storage_access_key').read_text().strip(), "
-                    "aws_secret_access_key=Path('/run/secrets/object_storage_secret_key').read_text().strip(), "
-                    "region_name='us-east-1'); client.create_bucket(Bucket='fixture-bucket')",
-                ],
-                values=values,
-            )
-            artifact_count = _sync_operational_archives(
-                compose, endpoint=s3_host_endpoint, values=values
-            )
-            evidence["health"]["archive_sync"] = "ok"
-            evidence["health"]["archive_sync_artifacts"] = str(artifact_count)
             current = _run(
                 [
                     *compose,

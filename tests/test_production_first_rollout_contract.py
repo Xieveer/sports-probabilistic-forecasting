@@ -21,12 +21,15 @@ from scripts.run_production_first_rollout import (
     _disk_usage_delta,
     _parse_df_disk_usage,
     _parse_memory_usage_bytes,
+    _prepare_source_first_input,
+    _prepare_worker_data_cycle,
     _probe_runtime_identities,
     _restore_fixture_mount_ownership,
     _restore_runtime_root_ownership,
     _smoke_calendar_endpoints,
     _start_s3_fixture,
     _sync_operational_archives,
+    _worker_failure_detail,
 )
 from scripts.verify_production_compose_contract import verify_contract
 from sports_forecast.data.clean import _select_nhl_model_rows
@@ -85,6 +88,112 @@ def test_production_compose_fixture_supplies_control_and_notification_requiremen
     assert Path(values["BOT_NOTIFICATION_DESTINATIONS_FILE"]).read_text(encoding="utf-8") == (
         '{"nhl_admins":-1001234567890}'
     )
+
+
+def test_first_rollout_claims_a_data_cycle_run_before_worker(monkeypatch, tmp_path: Path) -> None:
+    """Worker с подготовленным архивом получает принадлежащий executor-у run."""
+    env_file = tmp_path / "production.env"
+    build_fixture(env_file, root=tmp_path, app_version="1.2.0")
+    values = dict(
+        line.split("=", 1)
+        for line in env_file.read_text(encoding="utf-8").splitlines()
+        if "=" in line
+    )
+    commands: list[list[str]] = []
+
+    def record(command: list[str], *, values: dict[str, str], timeout: int = 120):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="1\n", stderr="")
+
+    monkeypatch.setattr("scripts.run_production_first_rollout._run_one_shot_checked", record)
+
+    generation = _prepare_worker_data_cycle(
+        project_name="rollout-test",
+        worker_image="worker@sha256:" + "a" * 64,
+        values=values,
+    )
+
+    assert generation == 1
+    assert len(commands) == 3
+    assert commands[0][-7:] == [
+        "create",
+        "--run-id",
+        values["SF_WORKER_RUN_ID"],
+        "--tournament",
+        "nhl",
+        "--reason",
+        "scheduled",
+    ]
+    assert commands[1][-5:] == [
+        "claim",
+        "--run-id",
+        values["SF_WORKER_RUN_ID"],
+        "--owner-id",
+        values["SF_DATA_CYCLE_OWNER_ID"],
+    ]
+    assert commands[2][-5:] == [
+        "start-stage",
+        "--run-id",
+        values["SF_WORKER_RUN_ID"],
+        "--stage",
+        "calendar",
+    ]
+
+
+def test_worker_failure_detail_is_bounded_and_secret_checked(tmp_path: Path) -> None:
+    """Ошибка Worker сохраняет полезный хвост без утечки секретов fixture."""
+    secret_file = tmp_path / "token"
+    secret_file.write_text("fixture-private-token", encoding="utf-8")
+    logs = "\n".join(f"line-{index}" for index in range(100))
+
+    detail = _worker_failure_detail(logs, {"BOT_TOKEN_FILE": str(secret_file)})
+
+    assert "line-99" in detail
+    assert "line-0" not in detail
+    assert len(detail) <= 2048
+    with pytest.raises(RuntimeError, match="secret value"):
+        _worker_failure_detail(
+            "failure fixture-private-token", {"BOT_TOKEN_FILE": str(secret_file)}
+        )
+
+
+def test_source_first_input_has_the_production_nhl_hydra_profile(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Подготовка canonical archive использует обязательную NHL Hydra-конфигурацию."""
+    env_file = tmp_path / "production.env"
+    build_fixture(env_file, root=tmp_path, app_version="1.2.0")
+    values = dict(
+        line.split("=", 1)
+        for line in env_file.read_text(encoding="utf-8").splitlines()
+        if "=" in line
+    )
+    commands: list[list[str]] = []
+
+    def record(command: list[str], *, values: dict[str, str], timeout: int = 120):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("scripts.run_production_first_rollout._run_one_shot_checked", record)
+
+    _prepare_source_first_input(
+        project_name="rollout-test",
+        worker_image="worker@sha256:" + "a" * 64,
+        values=values,
+        generation=1,
+    )
+
+    command = commands[0]
+    assert command[command.index("-m") + 1] == (
+        "sports_forecast.orchestration.canonical_run_input_cli"
+    )
+    assert {
+        "tournament=nhl",
+        "market=winner_withOT",
+        "market_spec=winner_withOT",
+        "algorithm=catboost_reg",
+        "features=advanced",
+    } <= set(command)
 
 
 def test_production_compose_fixture_renders_all_first_rollout_profiles(tmp_path: Path) -> None:

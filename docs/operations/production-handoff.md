@@ -1,4 +1,4 @@
-# Передача сервиса в эксплуатацию: v1.2.14 candidate
+# Передача сервиса в эксплуатацию: v1.2.15 candidate
 
 - Статус подготовки: `candidate`
 - Сервис: sports-probabilistic-forecasting.
@@ -9,10 +9,11 @@
   [TASK-025-31](../backlog/tasks/TASK-025-31-control-stall-mark.md) и
   [TASK-025-32](../backlog/tasks/TASK-025-32-archive-sync-host-network.md),
   [TASK-025-33](../backlog/tasks/TASK-025-33-nhl-preseason-model-boundary.md) и
-  [TASK-025-34](../backlog/tasks/TASK-025-34-data-cycle-source-first.md).
+  [TASK-025-34](../backlog/tasks/TASK-025-34-data-cycle-source-first.md) и
+  [TASK-025-36](../backlog/tasks/TASK-025-36-first-rollout-source-first-lifecycle.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
-- Целевая среда: production VPS `ops-prod-01`; версия: `1.2.14`.
-- source_tag: `v1.2.14` (целевой, до release gates не создан).
+- Целевая среда: production VPS `ops-prod-01`; версия: `1.2.15`.
+- source_tag: `v1.2.15` (целевой, до release gates не создан).
 - Ветка: `initiative/025-bot-schedule-readiness`; correction PR после #55.
 - Source commit, image digests, evidence tag и CI URLs фиксируются в
   отдельном release evidence commit после merge/tag pipelines.
@@ -22,7 +23,7 @@
 В production установлена v1.2.12. Последний ручной NHL run
 `7ae3909e-73f7-473b-ab54-22909fda2cad` завершён `partial_success`:
 обязательные стадии и archive sync успешны, future odds не найдены.
-Активных запусков нет, оба NHL timer выключены. Кандидат v1.2.14 меняет
+Активных запусков нет, оба NHL timer выключены. Кандидат v1.2.15 меняет
 порядок на source/canonical → verified Object Storage → features → DB,
 убирает запрос future odds из ежедневного run и допускает в NHL-модель
 только `regular`/`playoffs`. Source/canonical хранят остальные типы.
@@ -32,7 +33,16 @@
 first-rollout Worker, поэтому образы не были опубликованы и VPS не менялся.
 Причина correction cycle — устаревшее `game_type=R` в тестовом source fixture,
 которое новый NHL-фильтр исключил целиком. Исправление fixture и проверка
-его прохождения через clean входят в v1.2.14.
+его прохождения через clean вошли в v1.2.14. Tag pipeline v1.2.14 также
+остановился на first-rollout Worker до публикации образов: сценарий не создал
+Data Cycle run и подготовленный immutable snapshot, требуемые новым Worker.
+Исправление тестового жизненного цикла входит в v1.2.15; оба прежних тега
+остаются неизменными и не являются основанием deployment.
+Изолированный full first-rollout на пяти OCI artifacts v1.2.14 с обновлённым
+host runner прошёл: два архива remote-verified до Worker, повторный Worker
+идемпотентен, API, календарь и бот готовы. Для локального незакоммиченного
+diff временно обойдена только проверка clean worktree; exact v1.2.15 tag
+pipeline должен повторить gate без обхода.
 
 v1.2.10 подняла API, Telegram bot и PostgreSQL, но ручной Data Cycle
 `c729bdd0-7ea5-405d-ba71-ae2c2f68b5e2` завершил systemd unit с кодом 1:
@@ -68,7 +78,7 @@ Compose secret mounts и прежние лимиты памяти. API полу�
 `ODDS_API_KEY_*_FILE`/`ODDS_API_KEY_FILE`, как Worker; Telegram bot получает
 коэффициенты через API без доступа к этим ключам. Production profile содержит
 только `*_FILE` paths для credential, без plain-text значений; в нём заданы
-`SF_APP_VERSION=1.2.14` и `SF_DATA_ODDS_ENABLED=false`. Исторический
+`SF_APP_VERSION=1.2.15` и `SF_DATA_ODDS_ENABLED=false`. Исторический
 backfill и запрос будущих коэффициентов не входят в ежедневный runner.
 Значения ключей и полный rendered Compose не сохранять
 в логи/evidence.
@@ -110,7 +120,7 @@ restart counts, `/health`, `/ready`, HTML `/docs`, JSON `/openapi.json`,
 
 ## Данные и совместимость
 
-Перед v1.2.14 rollout подтвердить свежий root-only PostgreSQL backup,
+Перед v1.2.15 rollout подтвердить свежий root-only PostgreSQL backup,
 изолированный restore и off-host копию по SHA-256. Перед v1.2.13 rollout
 этот gate уже был выполнен, но непосредственно перед switch нужно повторно
 проверить checksum и отсутствие новых DB writes. Предыдущий проверенный
@@ -122,9 +132,9 @@ Preflight 2026-10-01 20:31 UTC создал root-only dump
 `3c182d88a49a739105c6afd7b66fe92f9f5796fb34cf40c699503ee9005e9184`).
 Изолированный restore без сети на exact PostgreSQL image подтвердил таблицы,
 22 544 canonical events и 1 882 predictions; off-host копия после обратного
-скачивания совпала по размеру и SHA-256. Перед v1.2.14 switch проверить, что
+скачивания совпала по размеру и SHA-256. Перед v1.2.15 switch проверить, что
 этот backup остаётся актуальным; при новых DB writes создать новый.
-Для модели нужен новый content-addressed wrapper с `app_version=1.2.14`
+Для модели нужен новый content-addressed wrapper с `app_version=1.2.15`
 и exact source commit; содержимое весов, `features.txt` и `deploy.yaml`
 сверяется с активным production bundle. Включение historical backfill не
 производится. Локальный ключ Odds API ответил HTTP 200 на один NHL запрос;
@@ -141,7 +151,7 @@ timer last/next trigger. Не сохранять полные внешние о�
 ## Артефакт и откат
 
 После независимого review и terminal PR CI Reviewer ставит annotated
-`v1.2.14` на exact merged commit `main`. Tag pipeline должен завершить CI,
+`v1.2.15` на exact merged commit `main`. Tag pipeline должен завершить CI,
 Security, first-rollout, публикацию linux/amd64 images, scan и provenance.
 Release evidence фиксирует source/evidence tags, полный manifest, model
 wrapper и ссылки CI; `make verify-release-evidence` проверяет их вместе с

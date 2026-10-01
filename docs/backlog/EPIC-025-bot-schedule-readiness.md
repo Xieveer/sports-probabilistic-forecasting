@@ -32,13 +32,16 @@
   слит через PR #55; production gate и ручной run ещё открыты. Оба таймера
   выключены. Tag pipeline
   v1.2.13 остановился на first-rollout Worker до публикации образов;
-  корректирующий кандидат — v1.2.14. Read-only VPS preflight подтвердил terminal
+  v1.2.14 также остановился до публикации: fixture не подготовил Data Cycle
+  run и immutable snapshot. Корректирующий кандидат — v1.2.15,
+  [TASK-025-36](tasks/TASK-025-36-first-rollout-source-first-lifecycle.md).
+  Read-only VPS preflight подтвердил terminal
   `partial_success` последнего run и 0 активных запусков; доступ Operations
   Agent записан в опубликованном
   [runbook](https://github.com/Xieveer/operations-agent/blob/docs/epic025-access-20261001/docs/runbooks/sports-forecast-epic025-access.md).
   Владелец явно разрешил production rollout 2026-10-01; выпуск остаётся
   условным до terminal tag pipeline, evidence и успешного ручного run.
-  Обновлено 2026-10-01.
+  Обновлено 2026-10-02.
 - Предыдущий correction cycle: `initiative/epic-025-archive-network`,
   [TASK-025-32](tasks/TASK-025-32-archive-sync-host-network.md), кандидат
   `v1.2.12`. Production `v1.2.11` API/bot/DB healthy; новый ручной run
@@ -377,7 +380,7 @@
 Реализовать [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md):
 календарь и готовность событий, Data Cycle с управлением из Telegram,
 операционную готовность NHL. Первым выпуском был `1.2.1`; текущий
-корректирующий кандидат — `1.2.14`. Футбол проверяется контрольным сценарием
+корректирующий кандидат — `1.2.15`. Футбол проверяется контрольным сценарием
 без включения в пользовательское меню.
 
 ## Декомпозиция
@@ -390,7 +393,7 @@
 | [TASK-025-6](tasks/TASK-025-6-future-odds.md) | Calendar-first future NHL odds | semantic evidence, quota, identity, freshness | done |
 | [TASK-025-7](tasks/TASK-025-7-data-cycle-recovery-summary.md) | Terminal stages, summary и run history query contract | stage faults, coverage, safe DTO | done; production runtime в TASK-025-9 |
 | [TASK-025-8](tasks/TASK-025-8-executor-fencing.md) | Executor recovery/fencing after crash | PostgreSQL race, no duplicate executor | done; production activation в TASK-025-9 |
-| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.12 serving, timers disabled; v1.2.14 candidate |
+| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.12 serving, timers disabled; v1.2.15 candidate |
 | [TASK-025-13](tasks/TASK-025-13-production-runtime-hotfixes.md) | Исправить четыре runtime-дефекта первого цикла | grants, source DB, runner, heartbeat | done; PR #42 merged |
 | [TASK-025-14](tasks/TASK-025-14-future-close-odds-snapshot.md) | Публиковать source snapshot без closing line будущего матча | red/green, source/canonical tests, production snapshot | done; опубликован v1.2.3 snapshot |
 | [TASK-025-15](tasks/TASK-025-15-readonly-worker-hydra-logging.md) | Безопасный Hydra CLI в read-only Worker | red/green, stdout, no filesystem write | done; runtime gate в TASK-025-9 |
@@ -414,6 +417,7 @@
 | [TASK-025-33](tasks/TASK-025-33-nhl-preseason-model-boundary.md) | Сохранить все типы NHL отдельно и допускать в модель только regular/playoffs | аудит сезонов, тест границы до features, регрессия regular/playoffs | in_progress; code/review/PR CI done, production gate open |
 | [TASK-025-34](tasks/TASK-025-34-data-cycle-source-first.md) | Сделать Data Cycle независимым от future odds и синхронизировать source до features | pinned snapshot, Object Storage, DB materialization, /predict | in_progress; code/review/PR CI done, production gate open |
 | [TASK-025-35](tasks/TASK-025-35-first-rollout-nhl-game-type-fixture.md) | Исправить тестовый тип матча в release gate | 12 NHL fixture rows проходят clean; новый terminal first-rollout | in_progress |
+| [TASK-025-36](tasks/TASK-025-36-first-rollout-source-first-lifecycle.md) | Подготовить run и snapshot до Worker в first-rollout | red/green, полный isolated gate, безопасная диагностика | in_progress; code/review done, v1.2.15 release gate open |
 | [TASK-025-12](tasks/TASK-025-12-release-compose-gate.md) | Исправить Compose release gate | новый API/dispatcher contract и память | done; PR CI в TASK-025-9 |
 | [TASK-025-10](tasks/TASK-025-10-run-summary-producers.md) | Full run summary producers and coverage | same-run counters, n/a denominator, football fixture | done |
 | [TASK-025-11](tasks/TASK-025-11-telegram-calendar.md) | Public NHL calendar in Telegram | 08:00, all horizons, no prediction, bot→API test | done |
@@ -424,8 +428,10 @@ Operations release gate зафиксирован в TASK-025-9 и
 [production handoff](../operations/production-handoff.md). v1.2.12 сейчас
 обслуживает API/бота; последний ручной run terminal `partial_success`,
 активных запусков нет. PR #55 прошёл review/CI и слит; tag v1.2.13
-остановился на first-rollout до публикации образов. Исправление fixture
-готовится как v1.2.14.
+остановился на first-rollout до публикации образов. Исправление `game_type`
+вошло в v1.2.14, но этот тег также остановился до публикации из-за
+неподготовленного Data Cycle run в first-rollout. Исправление сценария
+готовится как v1.2.15.
 Оба NHL timer выключены; перед ежедневным режимом требуется проверенный
 ручной цикл с двумя remote-verified архивами до features, без future-odds
 запроса, а также подтверждение Telegram/API и результата `/predict`.
@@ -437,6 +443,21 @@ Operations release gate зафиксирован в TASK-025-9 и
 runtime evidence, rollback target и terminal CI для exact commit.
 
 ## Полное EPIC review
+
+### Корректирующий кандидат v1.2.15 — 2026-10-02
+
+Независимый Reviewer сверил [TASK-025-36](tasks/TASK-025-36-first-rollout-source-first-lifecycle.md),
+его [отчёт](../changes/done/TASK-025-36-first-rollout-source-first-lifecycle.md),
+REQ-025, ADR-028, выпускной контракт и весь EPIC. Проверены порядок durable
+run → source/canonical snapshot → два verified Object Storage archives → Worker,
+executor fencing, повторный run ID, Docker mounts, secret redaction и диагностика
+ошибки. P0–P2 findings нет. Локальный full Docker first-rollout прошёл на
+пяти OCI artifacts tag v1.2.14 с новым host runner; в debug процессе
+обойдена только проверка clean worktree. Повторный `make test-unit`:
+1 263 passed, 13 deselected; `make lint`, `make production-check` и
+адресные тесты Reviewer прошли. Exact v1.2.15 PR/tag CI, immutable evidence,
+model wrapper, production manual run и включение расписания ещё открыты.
+Production остаётся v1.2.12; оба NHL timer выключены.
 
 ### Корректирующий кандидат v1.2.14 — 2026-10-01
 
