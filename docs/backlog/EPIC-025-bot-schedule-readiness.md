@@ -470,6 +470,16 @@ Production остаётся v1.2.12; оба NHL timer выключены.
 Проверенный полный diff: commit `f6c4af0f27851c554fb148ba219a27191f207bcc`;
 hash зафиксирован отдельным documentation-only evidence-коммитом.
 
+Release evidence review после terminal tag pipeline: manifest, handoff,
+TASK-025-9/36 и EPIC сверены с exact source commit
+`774602cb3d2db8ce65b4411637ff86e057fc76ec`, опубликованными digest,
+first-rollout и VPS staging. `make verify-release-evidence` с rendered
+production Compose, `make production-check` и `git diff --check` прошли;
+P0–P2 findings нет. Проверенный release evidence diff: commit
+`4c4e068e89a989a58eaf83393cb543fdf0b35b4c`. Следующие gates:
+свежий backup и off-host проверка, серверный Odds API, ручной Data Cycle,
+health/acceptance и решение о timer. Serving остаётся v1.2.12.
+
 ### Корректирующий кандидат v1.2.14 — 2026-10-01
 
 Независимый Reviewer сверил [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md),
