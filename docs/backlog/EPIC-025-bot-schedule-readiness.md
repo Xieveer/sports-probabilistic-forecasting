@@ -9,7 +9,7 @@
 ## Память Product Owner
 
 - Инициатива: `EPIC-025`. Текущая ветка
-  `initiative/025-bot-schedule-readiness`, этап — review и CI
+  `initiative/025-bot-schedule-readiness`, этап — correction release gates
   [TASK-025-34](tasks/TASK-025-34-data-cycle-source-first.md) и
   [TASK-025-33](tasks/TASK-025-33-nhl-preseason-model-boundary.md) после
   production postcheck v1.2.12. Владелец подтвердил границу: хранить
@@ -28,14 +28,16 @@
   не менялась. Новое audit evidence TASK-025-33: ещё 124 NHL-события имеют
   иные типы, 7 из них есть в локальной train-таблице. Владелец подтвердил
   допуск только `regular` и `playoffs`; остальные типы сохраняются вне
-  модельного входа. До реализации этой границы, повторного review, CI и
-  ручного run оба таймера остаются выключены. PR #55 слит, но tag pipeline
+  модельного входа. Код TASK-025-33/34 прошёл независимое review, CI и
+  слит через PR #55; production gate и ручной run ещё открыты. Оба таймера
+  выключены. Tag pipeline
   v1.2.13 остановился на first-rollout Worker до публикации образов;
   корректирующий кандидат — v1.2.14. Read-only VPS preflight подтвердил terminal
   `partial_success` последнего run и 0 активных запусков; доступ Operations
   Agent записан в опубликованном
   [runbook](https://github.com/Xieveer/operations-agent/blob/docs/epic025-access-20261001/docs/runbooks/sports-forecast-epic025-access.md).
-  Нового production release эта постановка сама не разрешает.
+  Владелец явно разрешил production rollout 2026-10-01; выпуск остаётся
+  условным до terminal tag pipeline, evidence и успешного ручного run.
   Обновлено 2026-10-01.
 - Предыдущий correction cycle: `initiative/epic-025-archive-network`,
   [TASK-025-32](tasks/TASK-025-32-archive-sync-host-network.md), кандидат
@@ -409,8 +411,8 @@
 | [TASK-025-30](tasks/TASK-025-30-future-odds-production.md) | Включить будущие NHL odds и ключи API | Compose contract, Worker/API/бот | reviewed_pending_release |
 | [TASK-025-31](tasks/TASK-025-31-control-stall-mark.md) | Исправить отметку stalled Control API | restricted role, atomic function | reviewed_pending_release |
 | [TASK-025-32](tasks/TASK-025-32-archive-sync-host-network.md) | Восстановить TLS путь archive-sync | scoped host network, Compose contract, remote verification | in_progress |
-| [TASK-025-33](tasks/TASK-025-33-nhl-preseason-model-boundary.md) | Сохранить все типы NHL отдельно и допускать в модель только regular/playoffs | аудит сезонов, тест границы до features, регрессия regular/playoffs | in_progress; review/CI |
-| [TASK-025-34](tasks/TASK-025-34-data-cycle-source-first.md) | Сделать Data Cycle независимым от future odds и синхронизировать source до features | pinned snapshot, Object Storage, DB materialization, /predict | in_progress; review/CI/release |
+| [TASK-025-33](tasks/TASK-025-33-nhl-preseason-model-boundary.md) | Сохранить все типы NHL отдельно и допускать в модель только regular/playoffs | аудит сезонов, тест границы до features, регрессия regular/playoffs | in_progress; code/review/PR CI done, production gate open |
+| [TASK-025-34](tasks/TASK-025-34-data-cycle-source-first.md) | Сделать Data Cycle независимым от future odds и синхронизировать source до features | pinned snapshot, Object Storage, DB materialization, /predict | in_progress; code/review/PR CI done, production gate open |
 | [TASK-025-35](tasks/TASK-025-35-first-rollout-nhl-game-type-fixture.md) | Исправить тестовый тип матча в release gate | 12 NHL fixture rows проходят clean; новый terminal first-rollout | in_progress |
 | [TASK-025-12](tasks/TASK-025-12-release-compose-gate.md) | Исправить Compose release gate | новый API/dispatcher contract и память | done; PR CI в TASK-025-9 |
 | [TASK-025-10](tasks/TASK-025-10-run-summary-producers.md) | Full run summary producers and coverage | same-run counters, n/a denominator, football fixture | done |
@@ -435,6 +437,27 @@ Operations release gate зафиксирован в TASK-025-9 и
 runtime evidence, rollback target и terminal CI для exact commit.
 
 ## Полное EPIC review
+
+### Корректирующий кандидат v1.2.14 — 2026-10-01
+
+Независимый Reviewer сверил [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md),
+[ADR-028](../architecture/adr/ADR-028-data-cycle-source-before-features.md),
+TASK-025-35 и его red/green evidence, TASK-025-9, handoff, текущую память
+и исходный PR #55. Проверенный content commit:
+`a14a05470d513059099e355f27ba3f8c7ef595bc`; TASK review evidence:
+`831b343bd38f9a989a2d2c7a5949f0c2aab421e7`. Tag v1.2.13
+неизменен: его first-rollout остановился до публикации образов из-за
+`game_type=R` в fixture. Новый fixture использует `regular`, а адресный
+тест подтверждает сохранение всех 12 строк в NHL model input.
+
+Первое рассмотрение выявило P2: текущая память и статусы TASK-025-33/34
+описывали review/CI как незавершённые после merge PR #55 и не отражали
+разрешение владельца на rollout. После исправления повторное review не
+выявило P0–P2 findings. Локально подтверждены `make lint`, `make test-unit`
+(1 260 passed, 13 deselected), `make production-check`, `git diff --check`
+и commit hooks. Новый PR CI, terminal tag pipeline, immutable evidence,
+model wrapper, backup freshness и production manual run остаются открытыми;
+оба NHL timer выключены.
 
 ### Кандидат v1.2.13 — 2026-10-01
 
