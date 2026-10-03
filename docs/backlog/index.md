@@ -3,6 +3,28 @@
 Здесь ведётся актуальный backlog новых Codex-изменений. Исторические задачи Cursor остаются в
 `docs/cursor/refactor/`.
 
+## Долгосрочные инициативы платформы
+
+После архитектурного review 2026-10-03 владелец продукта 2026-10-04 попросил
+сохранить шесть отдельных инициатив для постепенной реализации. Их статус —
+`backlog`: цели и измеримые результаты зафиксированы, но это не запуск TASK,
+promotion или production deployment. Перед каждой реализацией Product Owner
+уточняет REQ, критерии и отдельную ветку; будущий порядок может меняться.
+
+| Порядок | Инициатива | Проверяемый итог | Основная зависимость |
+|---|---|---|---|
+| 1 | [EPIC-026 — идентификаторы и mappings](EPIC-026-entity-registry.md) | Алиасы NHL API и odds API разрешаются в стабильные ID, конфликт требует подтверждения | текущий canonical event |
+| 2 | [EPIC-027 — история коэффициентов](EPIC-027-historical-odds.md) | Восстанавливается котировка и смысл outcome на момент решения | EPIC-026 |
+| 3 | [EPIC-028 — production-модель](EPIC-028-production-model-contract.md) | Worker загружает активный bundle без изменения кода под тип модели; прогноз сохраняет точную версию | существующие bundles/promotion |
+| 4 | [EPIC-029 — новый турнир конфигурацией](EPIC-029-configured-tournament-onboarding.md) | Совместимый турнир проходит путь до отчёта кандидата без правки Python-кода | EPIC-026, EPIC-028 |
+| 5 | [EPIC-030 — финансовый research](EPIC-030-financial-research-validation.md) | Кандидат и baseline получают воспроизводимое walk-forward сравнение по исторически доступным odds | EPIC-027 |
+| 6 | [EPIC-031 — реальные ставки](EPIC-031-real-bets-ledger.md) | Месячные PnL/ROI/turnover/hit rate сверяются с неизменяемыми ставками и прогнозами | EPIC-026–028 |
+
+EPIC-028 можно готовить независимо от EPIC-027; указанный порядок не является
+расписанием релизов. Завершённый [EPIC-003](EPIC-003-scalable-multisport-platform.md)
+остаётся историей прежнего среза. Текущие [EPIC-021](EPIC-021-football-1x2-research.md)
+и [EPIC-025](EPIC-025-bot-schedule-readiness.md) продолжаются в собственных границах.
+
 | ID | Статус | Приоритет | Артефакт |
 |---|---|---|---|
 | TASK-001 | done | high | [Переход на Python 3.12](tasks/TASK-001-python-312-migration.md) |
@@ -11,13 +33,13 @@
 | TASK-002-2 | done | high | [Состояние NHL-уведомлений](tasks/TASK-002-2-nhl-notification-state.md) |
 | TASK-002-3 | done | high | [Утренний NHL digest](tasks/TASK-002-3-nhl-morning-digest.md) |
 | TASK-002-4 | done | high | [15-минутный poll NHL](tasks/TASK-002-4-nhl-odds-poll.md) |
-| EPIC-003 | backlog | high | [Масштабируемая мультиспортивная платформа](EPIC-003-scalable-multisport-platform.md) |
-| TASK-003-1 | backlog | high | [Конфигурационный каталог портфеля](tasks/TASK-003-1-portfolio-catalog.md) |
-| TASK-003-2 | backlog | high | [Обучение модельного пула](tasks/TASK-003-2-model-pool-training.md) |
-| TASK-003-3 | backlog | high | [Provenance и ручное promotion](tasks/TASK-003-3-model-provenance-promotion.md) |
-| TASK-003-4 | backlog | high | [Оркестрация портфеля](tasks/TASK-003-4-portfolio-orchestration.md) |
-| TASK-003-5 | backlog | high | [Быстрый контур составов](tasks/TASK-003-5-lineup-fast-path.md) |
-| TASK-003-6 | backlog | high | [Статистические и player-рынки](tasks/TASK-003-6-special-and-player-markets.md) |
+| EPIC-003 | done | high | [Масштабируемая мультиспортивная платформа](EPIC-003-scalable-multisport-platform.md) |
+| TASK-003-1 | done | high | [Конфигурационный каталог портфеля](tasks/TASK-003-1-portfolio-catalog.md) |
+| TASK-003-2 | done | high | [Обучение модельного пула](tasks/TASK-003-2-model-pool-training.md) |
+| TASK-003-3 | done | high | [Provenance и ручное promotion](tasks/TASK-003-3-model-provenance-promotion.md) |
+| TASK-003-4 | done | high | [Оркестрация портфеля](tasks/TASK-003-4-portfolio-orchestration.md) |
+| TASK-003-5 | done | high | [Быстрый контур составов](tasks/TASK-003-5-lineup-fast-path.md) |
+| TASK-003-6 | cancelled | high | [Статистические и player-рынки](tasks/TASK-003-6-special-and-player-markets.md) |
 | EPIC-004 | in_progress | high | [Готовность NHL и релиза 1.0.0](EPIC-004-nhl-release-readiness.md) |
 | TASK-004-1 | done | high | [Контракт версии релиза 1.0.0](tasks/TASK-004-1-release-version-contract.md) |
 | TASK-004-2 | done | high | [Приоритетный key-ring The Odds API](tasks/TASK-004-2-odds-api-key-ring.md) |
