@@ -440,6 +440,17 @@ Runtime source, materialization и первые dispatcher polls провере�
 
 ## Полное EPIC review
 
+### Закрытие по решению владельца — 2026-10-03
+
+Независимый Reviewer сверил решение владельца, итоговые статусы задач,
+production evidence v1.2.15, известное ограничение `/predict` и явно
+непроверенный первый scheduled run. Первоначальные замечания к активным
+статусам задач и устаревшему описанию gate устранены. В финальном diff
+нет P0–P2 findings; `git diff --check` и commit hooks прошли. Остаточный
+риск: результат первого запуска по расписанию, 30-дневное покрытие и
+доставка его уведомления в рамках EPIC-025 не подтверждены. Проверенный
+content commit: `d9cea77a77a254a8d9f01b4ae22ba799e68ce127`.
+
 ### Post-rollout documentation review — 2026-10-02
 
 Независимый Reviewer сверил статус production v1.2.15 и открытый
