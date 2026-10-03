@@ -1,6 +1,6 @@
 # TASK-025-31 — Отмечать stalled executor без UPDATE grant у Control API
 
-> **Статус:** reviewed_pending_release
+> **Статус:** done — решение о закрытии EPIC-025 от 2026-10-03
 > **Владелец:** Developer
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 
@@ -34,3 +34,7 @@ recovery. Control API не получает широкое UPDATE право. Po
 SQL-функция остаются атомарными границами fencing.
 
 Результат — в [отчёте](../../changes/done/TASK-025-31-control-stall-mark.md).
+
+## Итог закрытия EPIC-025
+
+Исправление вошло в v1.2.15; ограниченные DB grants и dispatcher poll проверены.

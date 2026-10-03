@@ -1,6 +1,6 @@
 # TASK-025-9 — Production выпуск и проверка NHL
 
-> **Статус:** in_progress — v1.2.15 serving; ручной цикл успешен, первый запуск по расписанию ожидается
+> **Статус:** done — владелец принял production результат 2026-10-03
 > **Владелец:** Product Owner и Operations Agent
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -22,8 +22,9 @@ Annotated tag `v1.2.15` и [Docker pipeline](https://github.com/Xieveer/sports-p
 завершились успешно: clean first-rollout подтвердил два Object Storage
 archive до Worker, а published image digests совпали с tested. Следующий
 gate пройден: immutable release evidence, ограниченный production rollout,
-успешный ручной цикл и включение dispatcher timer. Первый запуск по
-расписанию ожидается 2026-10-02 07:00 UTC.
+успешный ручной цикл и включение dispatcher timer. На момент выпуска
+первый запуск по расписанию ожидался 2026-10-02 07:00 UTC; отдельное
+evidence его результата в этой задаче не собрано.
 
 ## Результат
 
@@ -71,6 +72,11 @@ production. Тег `v1.2.1` остаётся неизменным; футбол�
   стадии, фактическое 30-дневное coverage и сообщение администратору.
   Неуспех запускает документированный rollback/forward fix, не ложный DoD.
 
+Владелец 2026-10-03 принял результат инициативы без отдельного evidence
+первого scheduled run и закрыл этот критерий как waived. Галочка выше
+остаётся пустой: фактический run_id, покрытие и уведомление не проверены
+в рамках этой задачи. Это не утверждение об успехе планового запуска.
+
 ## Текущее evidence и блокеры
 
 Production v1.2.15 переключена 2026-10-01 около 22:29 UTC по точным
@@ -102,9 +108,11 @@ Persisted NHL schedule: 10:00 Europe/Moscow, интервал 24 ч, следу�
 business run 2026-10-02 07:00 UTC. `sports-forecast-data-cycle-dispatcher.timer`
 enabled/active; legacy `sports-forecast-canonical-refresh@nhl.timer`
 disabled/inactive. Первые два dispatcher poll завершились успешно, без
-дублирующего run; активных run нет. **Открыт только gate первого запуска
-по расписанию**: его результат, 30-дневное покрытие и доставку
-уведомления проверять после 07:00 UTC. Канонический
+дублирующего run; активных run нет. На момент выпуска оставался gate
+первого запуска по расписанию: его результат, 30-дневное покрытие и
+доставку уведомления предполагалось проверить после 07:00 UTC.
+Владелец закрыл этот остаточный gate 2026-10-03 без отдельной проверки.
+Канонический
 [операционный change record](https://github.com/Xieveer/operations-agent/blob/docs/epic025-access-20261001/docs/changes/2026-10-01-v1.2.15-candidate-staging.md)
 содержит серверное evidence и план мониторинга.
 

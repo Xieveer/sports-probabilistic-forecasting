@@ -1,6 +1,6 @@
 # EPIC-025 — Расписание бота и готовность NHL к сезону
 
-> **Статус:** in_progress
+> **Статус:** done — принят владельцем 2026-10-03
 > **Приоритет:** high
 > **Владелец:** Product Owner
 > **Требование:** [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -8,6 +8,16 @@
 
 ## Память Product Owner
 
+- Владелец 2026-10-03 признал EPIC-025 завершённым и основную задачу
+  ежедневной доступности прогнозов выполненной. Выпуск v1.2.15, ручной
+  цикл, работа API/бота и включённый dispatcher подтверждены ниже.
+  Отдельного evidence первого scheduled run в этом эпике нет:
+  соответствующий критерий [TASK-025-9](tasks/TASK-025-9-release-readiness.md)
+  закрыт решением владельца как waived, без отметки о фактическом успехе.
+  Следующего шага в EPIC-025 нет; конкретные правки владелец задаст новым
+  ТЗ. Известное ограничение Telegram `/predict`: ответ показывает
+  максимум 10 карточек и затем режет текст до 4000 символов; исправление
+  не входит в завершённый эпик. Обновлено 2026-10-03.
 - Инициатива: `EPIC-025`; ветка
   `initiative/025-bot-schedule-readiness`. Владелец разрешил production
   rollout. PR #57, terminal CI, immutable tag `v1.2.15`, Docker pipeline
@@ -28,10 +38,8 @@
   [TASK-025-34](tasks/TASK-025-34-data-cycle-source-first.md),
   [TASK-025-35](tasks/TASK-025-35-first-rollout-nhl-game-type-fixture.md)
   и [TASK-025-36](tasks/TASK-025-36-first-rollout-source-first-lifecycle.md)
-  выполнены. Открыт [TASK-025-9](tasks/TASK-025-9-release-readiness.md):
-  проверить первый scheduled run, 30-дневное coverage и доставку
-  уведомления. Следующая роль — Operations Agent для наблюдения в 07:00
-  UTC, затем Product Owner закрывает release gate. Обновлено 2026-10-02.
+  выполнены. На момент выпуска [TASK-025-9](tasks/TASK-025-9-release-readiness.md)
+  ожидал первого scheduled run; итоговое решение владельца приведено выше.
 - Предыдущий correction cycle: `initiative/epic-025-archive-network`,
   [TASK-025-32](tasks/TASK-025-32-archive-sync-host-network.md), кандидат
   `v1.2.12`. Production `v1.2.11` API/bot/DB healthy; новый ручной run
@@ -369,8 +377,8 @@
 
 Реализовать [REQ-025](../product/requirements/REQ-025-bot-schedule-readiness.md):
 календарь и готовность событий, Data Cycle с управлением из Telegram,
-операционную готовность NHL. Первым выпуском был `1.2.1`; текущий
-корректирующий кандидат — `1.2.15`. Футбол проверяется контрольным сценарием
+операционную готовность NHL. Первым выпуском был `1.2.1`; принятый
+production выпуск — `1.2.15`. Футбол проверяется контрольным сценарием
 без включения в пользовательское меню.
 
 ## Декомпозиция
@@ -383,27 +391,27 @@
 | [TASK-025-6](tasks/TASK-025-6-future-odds.md) | Calendar-first future NHL odds | semantic evidence, quota, identity, freshness | done |
 | [TASK-025-7](tasks/TASK-025-7-data-cycle-recovery-summary.md) | Terminal stages, summary и run history query contract | stage faults, coverage, safe DTO | done; production runtime в TASK-025-9 |
 | [TASK-025-8](tasks/TASK-025-8-executor-fencing.md) | Executor recovery/fencing after crash | PostgreSQL race, no duplicate executor | done; production activation в TASK-025-9 |
-| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | in_progress; v1.2.15 serving, ручной run успешен, первый scheduled run ожидается |
+| [TASK-025-9](tasks/TASK-025-9-release-readiness.md) | Production release and NHL daily scheduler | terminal CI, migration, health/smoke, timer run | done; первый scheduled run принят владельцем без отдельного evidence |
 | [TASK-025-13](tasks/TASK-025-13-production-runtime-hotfixes.md) | Исправить четыре runtime-дефекта первого цикла | grants, source DB, runner, heartbeat | done; PR #42 merged |
 | [TASK-025-14](tasks/TASK-025-14-future-close-odds-snapshot.md) | Публиковать source snapshot без closing line будущего матча | red/green, source/canonical tests, production snapshot | done; опубликован v1.2.3 snapshot |
 | [TASK-025-15](tasks/TASK-025-15-readonly-worker-hydra-logging.md) | Безопасный Hydra CLI в read-only Worker | red/green, stdout, no filesystem write | done; runtime gate в TASK-025-9 |
-| [TASK-025-16](tasks/TASK-025-16-odds-secret-files-and-stdout-logging.md) | File-backed Odds API keys и stdout-логи | red/green, secret mounts, review | in_progress; код и review готовы, runtime gate открыт |
-| [TASK-025-17](tasks/TASK-025-17-promoted-feature-contract.md) | Feature config из promoted bundle | basic→advanced, invalid contract, review | in_progress; код и review готовы, runtime gate открыт |
-| [TASK-025-18](tasks/TASK-025-18-optional-future-odds.md) | Явный режим без будущих odds | zero HTTP, partial_success, публикация прогнозов | in_progress; isolated OFF replay v1.2.6 прошёл, production gate открыт |
-| [TASK-025-19](tasks/TASK-025-19-publication-count-flush.md) | Корректные counters publication | no-autoflush, 187 eligible, atomicity | in_progress; isolated counters 187/187, production gate открыт |
-| [TASK-025-20](tasks/TASK-025-20-calendar-stage-read-grant.md) | Точечное право чтения odds-стадии для календаря | role grant, first-rollout и production calendar smoke | in_progress; v1.2.7 calendar smoke 0/34/187, archive gate открыт |
-| [TASK-025-21](tasks/TASK-025-21-archive-sync-runner-command.md) | Исправить вызов archive-sync в production runner | exact Compose CLI, local S3 fixture, manual OFF run | in_progress; код выпущен, общий runtime gate открыт |
-| [TASK-025-22](tasks/TASK-025-22-local-quality-parity.md) | Воспроизвести quality gate на production-подобной истории | backup restore, bounded cycle, бот | in_progress; локальный срез проверен, финальный review открыт |
+| [TASK-025-16](tasks/TASK-025-16-odds-secret-files-and-stdout-logging.md) | File-backed Odds API keys и stdout-логи | red/green, secret mounts, review | cancelled; реализация выпущена, старый odds gate снят |
+| [TASK-025-17](tasks/TASK-025-17-promoted-feature-contract.md) | Feature config из promoted bundle | basic→advanced, invalid contract, review | cancelled; реализация выпущена, отдельные gates сняты |
+| [TASK-025-18](tasks/TASK-025-18-optional-future-odds.md) | Явный режим без будущих odds | zero HTTP, partial_success, публикация прогнозов | cancelled; реализация выпущена, отдельные gates сняты |
+| [TASK-025-19](tasks/TASK-025-19-publication-count-flush.md) | Корректные counters publication | no-autoflush, 187 eligible, atomicity | cancelled; реализация выпущена, отдельные gates сняты |
+| [TASK-025-20](tasks/TASK-025-20-calendar-stage-read-grant.md) | Точечное право чтения odds-стадии для календаря | role grant, first-rollout и production calendar smoke | cancelled; реализация выпущена, отдельные gates сняты |
+| [TASK-025-21](tasks/TASK-025-21-archive-sync-runner-command.md) | Исправить вызов archive-sync в production runner | exact Compose CLI, local S3 fixture, manual OFF run | cancelled; реализация выпущена, отдельные gates сняты |
+| [TASK-025-22](tasks/TASK-025-22-local-quality-parity.md) | Воспроизвести quality gate на production-подобной истории | backup restore, bounded cycle, бот | cancelled; локальное evidence сохранено, финальное review не выполнено |
 | [TASK-025-23](tasks/TASK-025-23-pytest-memory-guard.md) | Ограничить опасный тестовый setup | regression под лимитом памяти | done |
 | [TASK-025-24](tasks/TASK-025-24-archive-sync-bounded-memory.md) | Ограничить память archive sync | remote verify при 512 MiB | done |
 | [TASK-025-25](tasks/TASK-025-25-archive-sync-tmpfs.md) | Убрать превышение archive tmpfs | exact Compose archive sync | done |
 | [TASK-025-26](tasks/TASK-025-26-refresh-inference-memory.md) | Снизить память refresh inference | bounded связанный run | done |
 | [TASK-025-27](tasks/TASK-025-27-archive-manifest-loop.md) | Обработать все archive manifest без потери stdin | red/green, bounded wrapper | done; v1.2.10 выпущен |
-| [TASK-025-28](tasks/TASK-025-28-acceptance-docs-response.md) | Исправить проверку HTML `/docs` | red/green, JSON `/openapi.json` | reviewed_pending_release |
-| [TASK-025-29](tasks/TASK-025-29-idempotent-archive-sync.md) | Не передавать повторно verified архивы | legacy state, timeout, bounded tests | reviewed_pending_release |
-| [TASK-025-30](tasks/TASK-025-30-future-odds-production.md) | Включить будущие NHL odds и ключи API | Compose contract, Worker/API/бот | reviewed_pending_release |
-| [TASK-025-31](tasks/TASK-025-31-control-stall-mark.md) | Исправить отметку stalled Control API | restricted role, atomic function | reviewed_pending_release |
-| [TASK-025-32](tasks/TASK-025-32-archive-sync-host-network.md) | Восстановить TLS путь archive-sync | scoped host network, Compose contract, remote verification | in_progress |
+| [TASK-025-28](tasks/TASK-025-28-acceptance-docs-response.md) | Исправить проверку HTML `/docs` | red/green, JSON `/openapi.json` | cancelled; реализация выпущена, отдельный gate снят |
+| [TASK-025-29](tasks/TASK-025-29-idempotent-archive-sync.md) | Не передавать повторно verified архивы | legacy state, timeout, bounded tests | done; код выпущен, ручной run успешен |
+| [TASK-025-30](tasks/TASK-025-30-future-odds-production.md) | Включить будущие NHL odds и ключи API | Compose contract, Worker/API/бот | cancelled; future odds в цикле заменены TASK-025-34 |
+| [TASK-025-31](tasks/TASK-025-31-control-stall-mark.md) | Исправить отметку stalled Control API | restricted role, atomic function | done; dispatcher poll успешен |
+| [TASK-025-32](tasks/TASK-025-32-archive-sync-host-network.md) | Восстановить TLS путь archive-sync | scoped host network, Compose contract, remote verification | cancelled; реализация выпущена, отдельные gates сняты |
 | [TASK-025-33](tasks/TASK-025-33-nhl-preseason-model-boundary.md) | Сохранить все типы NHL отдельно и допускать в модель только regular/playoffs | аудит сезонов, тест границы до features, регрессия regular/playoffs | done; production run проверен |
 | [TASK-025-34](tasks/TASK-025-34-data-cycle-source-first.md) | Сделать Data Cycle независимым от future odds и синхронизировать source до features | pinned snapshot, Object Storage, DB materialization, /predict | done; production run проверен |
 | [TASK-025-35](tasks/TASK-025-35-first-rollout-nhl-game-type-fixture.md) | Исправить тестовый тип матча в release gate | 12 NHL fixture rows проходят clean; новый terminal first-rollout | done; v1.2.15 tag pipeline и production run прошли |
@@ -418,14 +426,17 @@ Operations release gate зафиксирован в TASK-025-9 и
 [production handoff](../operations/production-handoff.md). v1.2.15
 обслуживает API/бота; ручной NHL run успешен, два архива remote-verified
 до features, без future-odds запросов. Dispatcher timer включён,
-старый NHL timer выключен. Первый scheduled run 2026-10-02 07:00 UTC
-остаётся последним runtime gate TASK-025-9.
+старый NHL timer выключен. На момент выпуска первый scheduled run
+ожидался 2026-10-02 07:00 UTC; владелец закрыл этот runtime gate
+2026-10-03 без отдельного evidence.
 
 ## Риски и rollout
 
 Runtime source, materialization и первые dispatcher polls проверены.
-Остаётся наблюдение первого scheduled run и 30-дневного покрытия;
-при неуспехе Operations применяет задокументированный rollback/forward fix.
+Первый scheduled run и 30-дневное покрытие не получили отдельного
+подтверждения в этом эпике; владелец принял выпуск с этим остаточным
+риском 2026-10-03. При обнаружении сбоя Operations применяет
+задокументированный rollback/forward fix.
 
 ## Полное EPIC review
 

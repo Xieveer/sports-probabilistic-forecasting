@@ -1,6 +1,6 @@
 # TASK-025-32 — Восстановить сетевой путь archive-sync
 
-> **Статус:** in_progress
+> **Статус:** cancelled — оставшиеся критерии сняты решением владельца 2026-10-03
 > **Владелец:** Developer
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -53,3 +53,9 @@ TLS за 0,12 секунды; с хоста `PutObject` и обратная SHA-
 
 - Отчёт выполнения: [TASK-025-32](../../changes/done/TASK-025-32-archive-sync-host-network.md) после завершения Developer.
 - Production результат фиксирует Operations Agent отдельно.
+
+## Итог закрытия EPIC-025
+
+Реализация включена в выпущенную v1.2.15. Неотмеченные выше критерии отдельного релиза/проверки не подтверждены в этой TASK и сняты при принятии итогового результата EPIC-025 владельцем. Это не отметка об их успешном выполнении.
+
+Production v1.2.15 синхронизировала два artifact в Object Storage с remote verification.
