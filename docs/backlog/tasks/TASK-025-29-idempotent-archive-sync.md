@@ -1,6 +1,6 @@
 # TASK-025-29 — Сделать повтор archive-sync идемпотентным
 
-> **Статус:** reviewed_pending_release
+> **Статус:** done — решение о закрытии EPIC-025 от 2026-10-03
 > **Владелец:** Developer
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 
@@ -42,3 +42,8 @@ Object Storage вернул `ReadTimeoutError`. Runner вызывает отде
 после успешной побайтовой проверки.
 
 Результат — в [отчёте](../../changes/done/TASK-025-29-idempotent-archive-sync.md).
+
+## Итог закрытия EPIC-025
+
+Исправление вошло в v1.2.15; ручной production run завершился успешно.
+Отдельный повторный production run для проверки идемпотентности не выполнялся.

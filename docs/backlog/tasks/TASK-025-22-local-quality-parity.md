@@ -1,6 +1,6 @@
 # TASK-025-22 — Локальное воспроизведение quality gate на истории production
 
-> **Статус:** in_progress
+> **Статус:** cancelled — решение о закрытии EPIC-025 от 2026-10-03
 > **Владелец:** Developer
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -90,3 +90,7 @@ source и весах production-модели остановлен лимитом
 
 Доказательства и результат — в
 [отчёте](../../changes/done/TASK-025-22-local-quality-parity.md).
+
+## Итог закрытия EPIC-025
+
+Локальный результат сохранён, но отдельное финальное review TASK не выполнено; владелец закрыл EPIC-025 без этого gate.

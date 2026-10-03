@@ -1,6 +1,6 @@
 # TASK-025-30 — Включить будущие коэффициенты в production cycle и API
 
-> **Статус:** reviewed_pending_release
+> **Статус:** cancelled — решение о закрытии EPIC-025 от 2026-10-03
 > **Владелец:** Developer
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 
@@ -36,3 +36,7 @@ OddsStore backfill в source-acquirer, который не нужен для б�
 старого run.
 
 Результат — в [отчёте](../../changes/done/TASK-025-30-future-odds-production.md).
+
+## Итог закрытия EPIC-025
+
+Включение future odds в ежедневный цикл заменено решением TASK-025-34; live odds в /predict проверены отдельно.

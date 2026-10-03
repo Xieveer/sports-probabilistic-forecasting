@@ -1,6 +1,6 @@
 # TASK-025-21 — Единая команда archive-sync для production runner
 
-> **Статус:** in_progress — код и независимое review готовы, release/runtime gate открыт
+> **Статус:** cancelled — оставшиеся критерии сняты решением владельца 2026-10-03
 > **Владелец:** Developer
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -32,3 +32,9 @@ Compose заменил CMD образа на системный `sync`, кото
 ## Handoff
 
 Результат фиксируется в [отчёте](../../changes/done/TASK-025-21-archive-sync-runner-command.md).
+
+## Итог закрытия EPIC-025
+
+Реализация включена в выпущенную v1.2.15. Неотмеченные выше критерии отдельного релиза/проверки не подтверждены в этой TASK и сняты при принятии итогового результата EPIC-025 владельцем. Это не отметка об их успешном выполнении.
+
+Production run v1.2.15 подтвердил два remote-verified archive artifact.

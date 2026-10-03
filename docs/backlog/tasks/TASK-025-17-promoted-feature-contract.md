@@ -1,6 +1,6 @@
 # TASK-025-17 — Признаки цикла должны соответствовать promoted-модели
 
-> **Статус:** in_progress — код и review прошли; release/runtime gate открыт
+> **Статус:** cancelled — оставшиеся критерии сняты решением владельца 2026-10-03
 > **Владелец:** Developer
 > **Эпик:** [EPIC-025](../EPIC-025-bot-schedule-readiness.md)
 > **Требование:** [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
@@ -34,3 +34,9 @@ production выключены.
 
 Результат red→green, review и runtime gate фиксируется в
 [отчёте выполнения](../../changes/done/TASK-025-17-promoted-feature-contract.md).
+
+## Итог закрытия EPIC-025
+
+Реализация включена в выпущенную v1.2.15. Неотмеченные выше критерии отдельного релиза/проверки не подтверждены в этой TASK и сняты при принятии итогового результата EPIC-025 владельцем. Это не отметка об их успешном выполнении.
+
+Promoted feature contract подтверждён успешным production run v1.2.15.
