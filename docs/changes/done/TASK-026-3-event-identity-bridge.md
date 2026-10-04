@@ -104,3 +104,4 @@ matcher остаются в TASK-026-4/5/6. Никакие production routes н�
 Независимый Reviewer проверил полный diff и повторил целевой pytest
 (**68 passed, 3 warnings**), Ruff, mypy и `git diff --check`.
 Блокирующих P0–P2 замечаний нет.
+Проверенный commit: `3bab3f955d9867882cfaad2320df099fad08fa29`.
