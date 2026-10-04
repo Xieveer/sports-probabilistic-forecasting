@@ -5,6 +5,8 @@
 > **Решение:** [ADR-027](../../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md)
 > **Задача:** [TASK-026-1](../../backlog/tasks/TASK-026-1-source-neutral-entity-registry.md)
 
+**Проверенный коммит:** `2c316f8`.
+
 ## Результат
 
 Добавлен локальный `sports_forecast.identity` поверх отдельного SQLite-файла.
