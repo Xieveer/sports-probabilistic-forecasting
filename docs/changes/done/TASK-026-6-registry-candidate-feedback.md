@@ -25,6 +25,8 @@
   спортивного источника остаются доступными при неизвестной линии.
 - Старый merge odds в `source.csv` пропускается при строгом режиме, чтобы
   неподтверждённые коэффициенты не попадали в обучающие данные.
+- После слияния с актуальным `main` режим `inference_only` переносит identity
+  provenance для обычного и пустого inference результата.
 - Добавлены CLI, миграции 0020–0021, пример переменных окружения и
   [runbook](../../operations/entity-registry-publication.md).
 
@@ -34,8 +36,9 @@
   local owner decision → publication → server installation → confirmed odds.
 - Тесты покрывают потерянный ack, повтор batch, cursor, атомарность создания
   event и отсутствие привязки odds до подтверждения.
-- `make test`: 1409 passed, 5 skipped (требуются disposable PostgreSQL или
-  отдельные runtime DB URLs), 37 warnings. `make test-unit`: 1386 passed,
+- `make test` после слияния с `main`: 1472 passed, 5 skipped (требуются
+  disposable PostgreSQL или отдельные runtime DB URLs), 40 warnings.
+  `make test-unit` до слияния: 1386 passed,
   13 deselected, 37 warnings. `make lint`, pre-commit mypy и
   `make ai-validate` прошли. `make docs` собрал HTML с 155 warnings.
 - Независимый Reviewer перепроверил найденные P1/P2 после исправления:
@@ -49,4 +52,8 @@
   проверены: credentials отсутствуют в рабочем окружении.
 - Для включения строгого режима локального обучения на исторических odds
   нужен отдельный проверенный materialization по подтверждённым связям.
+- Локально включённый `identity_registry.yaml` и серверный canonical full
+  refresh пока нельзя совмещать: временный raw parquet этого отдельного
+  entrypoint не получает локальный identity sidecar. Обычный локальный
+  DVC/ingest/training путь использует свой provenance-контракт.
 - Production deployment не запрошен и не выполнялся.

@@ -67,6 +67,8 @@ def verify_contract(rendered_path: Path, *, model_runtime_root: Path) -> None:
     for name, service in services.items():
         _require(isinstance(service, dict), f"{name}: service должен быть mapping")
         _require("ports" not in service, f"{name}: host ports запрещены")
+        if name != "archive-sync":
+            _require(service.get("network_mode") != "host", f"{name}: host network запрещён")
         _require(bool(service.get("cpus")), f"{name}: cpus обязателен")
         _require(bool(service.get("mem_limit")), f"{name}: mem_limit обязателен")
         image = service.get("image")
@@ -74,6 +76,19 @@ def verify_contract(rendered_path: Path, *, model_runtime_root: Path) -> None:
             isinstance(image, str) and "@sha256:" in image,
             f"{name}: image должен быть immutable digest",
         )
+
+    archive_sync = services["archive-sync"]
+    _require(archive_sync.get("network_mode") == "host", "archive-sync: host network обязателен")
+    _require("networks" not in archive_sync, "archive-sync: networks несовместимы с host mode")
+    _require("privileged" not in archive_sync, "archive-sync: privileged запрещён")
+    _require("cap_add" not in archive_sync, "archive-sync: дополнительные capabilities запрещены")
+    _require(
+        archive_sync.get("cap_drop") == ["ALL"], "archive-sync: capabilities должны быть сброшены"
+    )
+    _require(
+        archive_sync.get("security_opt") == ["no-new-privileges:true"],
+        "archive-sync: повышение привилегий запрещено",
+    )
 
     api_env = services["api"].get("environment")
     _require(isinstance(api_env, dict), "api: environment должен быть mapping")
@@ -85,13 +100,43 @@ def verify_contract(rendered_path: Path, *, model_runtime_root: Path) -> None:
             "SF_CONTROL_API_KEY_FILE",
             "SF_CONTROL_ADMIN_IDS",
             "SF_DATA_CYCLE_NOTIFICATION_ALIASES",
+            "ODDS_API_KEY_FREE_FILE",
+            "ODDS_API_KEY_20K_FILE",
+            "ODDS_API_KEY_100K_FILE",
+            "ODDS_API_KEY_FILE",
         }
         and api_env["DATABASE_URL_FILE"] == "/run/secrets/api_database_url"
         and api_env["SF_CONTROL_DATABASE_URL_FILE"] == "/run/secrets/control_database_url"
         and api_env["SF_CONTROL_API_KEY_FILE"] == "/run/secrets/control_api_key"
+        and api_env["ODDS_API_KEY_FREE_FILE"] == "/run/secrets/odds_api_key_free"
+        and api_env["ODDS_API_KEY_20K_FILE"] == "/run/secrets/odds_api_key_20k"
+        and api_env["ODDS_API_KEY_100K_FILE"] == "/run/secrets/odds_api_key_100k"
+        and api_env["ODDS_API_KEY_FILE"] == "/run/secrets/odds_api_key"
         and bool(api_env["SF_CONTROL_ADMIN_IDS"])
         and bool(api_env["SF_DATA_CYCLE_NOTIFICATION_ALIASES"]),
-        "api: reader/control credentials должны передаваться только secret files; admin и aliases обязательны",
+        "api: reader/control/odds credentials должны передаваться только secret files; admin и aliases обязательны",
+    )
+    api_secrets = services["api"].get("secrets")
+    _require(
+        isinstance(api_secrets, list)
+        and {
+            (item.get("source"), item.get("target"))
+            for item in api_secrets
+            if isinstance(item, dict)
+        }
+        == {
+            (name, f"/run/secrets/{name}")
+            for name in (
+                "api_database_url",
+                "control_database_url",
+                "control_api_key",
+                "odds_api_key_free",
+                "odds_api_key_20k",
+                "odds_api_key_100k",
+                "odds_api_key",
+            )
+        },
+        "api: reader/control/odds secret mounts должны точно соответствовать FILE-переменным",
     )
     dispatcher_env = services["data-cycle-dispatcher"].get("environment")
     _require(

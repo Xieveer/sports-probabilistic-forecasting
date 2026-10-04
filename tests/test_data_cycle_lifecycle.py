@@ -107,6 +107,22 @@ def test_run_has_durable_waiting_stages_and_terminal_summary(session: Session) -
     assert calendar.counts_json == '{"events":24}'
 
 
+def test_auto_success_accepts_intentionally_skipped_optional_odds(session: Session) -> None:
+    """Отсутствие daily odds не ухудшает успешный обязательный Data Cycle."""
+    repo = DataCycleRunRepository(session)
+    repo.create(run_id="run-without-daily-odds", tournament="nhl", reason="scheduled")
+    repo.finish_stage("run-without-daily-odds", "data_odds", status="skipped")
+    for stage in ("calendar", "quality", "archive_sync", "predictions", "publication"):
+        repo.start_stage("run-without-daily-odds", stage)
+        repo.finish_stage("run-without-daily-odds", stage, status="success")
+
+    repo.finish_run("run-without-daily-odds", status="auto", required_stages=NHL_REQUIRED_STAGES)
+
+    run = repo.get("run-without-daily-odds")
+    assert run is not None
+    assert run.status == "success"
+
+
 def test_failed_calendar_attempt_invalidates_old_successful_coverage(monkeypatch) -> None:
     checked = datetime(2026, 9, 26, 10, tzinfo=UTC).replace(tzinfo=None)
     engine = create_engine(

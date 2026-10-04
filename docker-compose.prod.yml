@@ -46,10 +46,18 @@ services:
       SF_CONTROL_API_KEY_FILE: /run/secrets/control_api_key
       SF_CONTROL_ADMIN_IDS: ${BOT_ADMIN_USER_IDS:-}
       SF_DATA_CYCLE_NOTIFICATION_ALIASES: ${SF_DATA_CYCLE_NOTIFICATION_ALIASES:?set safe notification aliases}
+      ODDS_API_KEY_FREE_FILE: /run/secrets/odds_api_key_free
+      ODDS_API_KEY_20K_FILE: /run/secrets/odds_api_key_20k
+      ODDS_API_KEY_100K_FILE: /run/secrets/odds_api_key_100k
+      ODDS_API_KEY_FILE: /run/secrets/odds_api_key
     secrets:
       - api_database_url
       - control_database_url
       - control_api_key
+      - odds_api_key_free
+      - odds_api_key_20k
+      - odds_api_key_100k
+      - odds_api_key
     depends_on:
       db:
         condition: service_healthy
@@ -159,6 +167,10 @@ services:
       SF_APP_VERSION: ${SF_APP_VERSION:?set SF_APP_VERSION}
       SF_CANONICAL_SOURCE_CSV: /app/data/source/nhl/current.csv
       SF_OPERATIONAL_ARCHIVE_ROOT: /app/archive
+      ODDS_API_KEY_FREE_FILE: /run/secrets/odds_api_key_free
+      ODDS_API_KEY_20K_FILE: /run/secrets/odds_api_key_20k
+      ODDS_API_KEY_100K_FILE: /run/secrets/odds_api_key_100k
+      ODDS_API_KEY_FILE: /run/secrets/odds_api_key
     depends_on:
       db:
         condition: service_healthy
@@ -168,6 +180,10 @@ services:
       - ${SF_OPERATIONAL_ARCHIVE_ROOT:?set SF_OPERATIONAL_ARCHIVE_ROOT}:/app/archive
     secrets:
       - worker_database_url
+      - odds_api_key_free
+      - odds_api_key_20k
+      - odds_api_key_100k
+      - odds_api_key
     profiles: ["worker"]
     labels: *data_cycle_labels
     cpus: "2.0"
@@ -180,6 +196,7 @@ services:
   archive-sync:
     image: ${SF_ARCHIVE_SYNC_IMAGE:?set SF_ARCHIVE_SYNC_IMAGE to an immutable sync image digest}
     pull_policy: always
+    network_mode: host
     environment:
       SF_DATA_CYCLE_RUN_ID: ${SF_DATA_CYCLE_RUN_ID:-untracked}
       SF_DATA_CYCLE_GENERATION: ${SF_DATA_CYCLE_GENERATION:-0}
@@ -201,6 +218,8 @@ services:
     cpus: "0.5"
     mem_limit: 512m
     user: "10001:10001"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
     read_only: true
     tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
     logging: *prod_logging

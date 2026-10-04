@@ -184,7 +184,12 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
             "calendar_coverages",
             "odds_observations",
             "odds_acquisition_attempts",
+            "data_cycle_stage_results",
         )
+    )
+    assert (
+        "GRANT SELECT (run_id, tournament) ON TABLE data_cycle_runs TO sf_api_reader"
+        in RUNTIME_GRANTS
     )
     assert any(
         "INSERT, UPDATE, DELETE ON TABLE" in statement

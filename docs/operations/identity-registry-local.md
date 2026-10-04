@@ -34,10 +34,11 @@ uv run python -m sports_forecast.identity.review_server --registry data/registry
 ```
 
 Откройте `http://127.0.0.1:8765`. Остановите процесс через `Ctrl+C`.
-Первые NHL импорты могут создать pending tournament candidate: базовый NHL seed
-не подтверждает source designation турнира автоматически. Подтвердите
-обозначения в локальном UI, экспортируйте новый snapshot и замените pin до
-следующего enabled DVC прогона. Pending значения не получают project ID.
+Версионированный NHL seed подтверждает известные designation турнира и команд
+для `nhl_web_api` и `the_odds_api`. Новые либо противоречивые обозначения
+останутся в очереди: проверьте их в локальном UI, экспортируйте новый snapshot
+и замените pin до следующего enabled DVC прогона. Pending значения не получают
+project ID.
 
 ## Pipeline и training
 
@@ -50,6 +51,14 @@ reader остаётся неизменным до выбора следующе�
 `<имя>.parquet.identity.json`. Sidecar привязан к SHA-256 и размеру конкретного
 parquet; изменение данных без повторной генерации sidecar приводит к ошибке.
 Sidecars проходят clean и все train/inference long/wide выходы.
+Режим `inference_only` также записывает sidecars для обычного и пустого
+inference результата.
+
+Локальный `identity_registry.yaml: enabled` пока не совмещайте с отдельным
+server canonical full refresh: его временный raw parquet не получает локальный
+identity sidecar и останавливается до feature stage. Локальные DVC
+ingest/clean/features/training entrypoints используют контракт выше;
+серверный PostgreSQL reader настраивается отдельно.
 
 Обычный training runner проверяет sidecar выбранного processed файла по
 content-addressed archive выбранного при старте snapshot и записывает ID и

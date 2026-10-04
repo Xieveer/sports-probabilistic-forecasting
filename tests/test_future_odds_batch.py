@@ -499,3 +499,29 @@ def test_provider_error_is_persisted_and_missing_market_is_not_a_failure(
             assert session.scalar(select(func.count()).select_from(OddsObservation)) == 0
     finally:
         empty_engine.dispose()
+
+
+def test_unauthorized_provider_error_keeps_enabled_batch_failure_semantics(
+    odds_session: Session,
+) -> None:
+    """401 INVALID_KEY при включённой ветке остаётся provider_unavailable."""
+    response = requests.Response()
+    response.status_code = 401
+    unauthorized = requests.HTTPError("401 INVALID_KEY")
+    unauthorized.response = response
+
+    attempt = run_nhl_future_odds_batch(
+        odds_session,
+        run_id="run-unauthorized",
+        now=NOW,
+        provider=_FakeProvider(unauthorized),
+        team_registry=_registry(),
+        clock=lambda: NOW,
+    )
+
+    persisted = odds_session.scalar(
+        select(OddsAcquisitionAttempt).where(OddsAcquisitionAttempt.run_id == "run-unauthorized")
+    )
+    assert attempt.status == "failed"
+    assert attempt.failure_code == "provider_unavailable"
+    assert persisted is not None and persisted.failure_code == "provider_unavailable"

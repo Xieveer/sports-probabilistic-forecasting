@@ -30,6 +30,19 @@ def _get_json(
     return payload
 
 
+def _check_docs(client: httpx.Client, url: str, errors: list[str]) -> None:
+    """Проверить HTML документации без попытки разобрать её как JSON."""
+    try:
+        response = client.get(url)
+    except httpx.HTTPError:
+        errors.append("docs: недоступен")
+        return
+    if response.status_code != 200:
+        errors.append(f"docs: HTTP {response.status_code}")
+    elif not response.headers.get("content-type", "").lower().startswith("text/html"):
+        errors.append("docs: ожидался HTML")
+
+
 def _check_worker(database_url: str, run_id: str, errors: list[str]) -> None:
     """Прочитать safe summary последнего Worker запуска без изменения БД."""
     try:
@@ -95,7 +108,10 @@ def check(
     with httpx.Client(timeout=5.0) as client:
         health = _get_json(client, f"{normalized_base_url}/health", label="health", errors=errors)
         ready = _get_json(client, f"{normalized_base_url}/ready", label="ready", errors=errors)
-        _get_json(client, f"{normalized_base_url}/docs", label="docs", errors=errors)
+        _check_docs(client, f"{normalized_base_url}/docs", errors)
+        openapi = _get_json(
+            client, f"{normalized_base_url}/openapi.json", label="openapi", errors=errors
+        )
         prediction = _get_json(
             client,
             f"{normalized_base_url}/{prediction_path.lstrip('/')}",
@@ -110,6 +126,10 @@ def check(
             errors.append("ready: PostgreSQL не подтверждена")
         if ready.get("version") != expected_app_version:
             errors.append("ready: версия API не совпадает")
+    if openapi is not None:
+        info = openapi.get("info")
+        if not isinstance(info, dict) or info.get("version") != expected_app_version:
+            errors.append("openapi: версия API не совпадает")
     if prediction is not None:
         model = prediction.get("model")
         if not isinstance(model, dict) or model.get("version") != expected_model_version:

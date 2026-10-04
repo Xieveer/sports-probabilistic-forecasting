@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from scripts.acceptance_check import _check_bot, check
+from scripts.acceptance_check import _check_bot, _check_docs, check
 
 
 def test_acceptance_check_is_read_only_and_checks_release_contract() -> None:
@@ -27,7 +27,12 @@ def test_acceptance_check_is_read_only_and_checks_release_contract() -> None:
                 status_code=200,
                 json=lambda: {"status": "ok", "db_connected": True, "version": "1.0.0"},
             ),
-            MagicMock(status_code=200, json=lambda: {}),
+            MagicMock(
+                status_code=200,
+                headers={"content-type": "text/html"},
+                json=MagicMock(side_effect=ValueError("not json")),
+            ),
+            MagicMock(status_code=200, json=lambda: {"info": {"version": "1.0.0"}}),
             MagicMock(
                 status_code=200,
                 json=lambda: {"model": {"version": "model-20260809"}},
@@ -49,6 +54,7 @@ def test_acceptance_check_is_read_only_and_checks_release_contract() -> None:
         "http://api/health",
         "http://api/ready",
         "http://api/docs",
+        "http://api/openapi.json",
         "http://api/predict/known?live_pinnacle=false",
     ]
     assert all(call.args == () for call in client.post.call_args_list)
@@ -69,7 +75,12 @@ def test_acceptance_check_reports_bad_model_and_worker_without_payloads() -> Non
                 status_code=200,
                 json=lambda: {"status": "ok", "db_connected": True, "version": "1.0.0"},
             ),
-            MagicMock(status_code=200, json=lambda: {}),
+            MagicMock(
+                status_code=200,
+                headers={"content-type": "text/html"},
+                json=MagicMock(side_effect=ValueError("not json")),
+            ),
+            MagicMock(status_code=200, json=lambda: {"info": {"version": "1.0.0"}}),
             MagicMock(status_code=200, json=lambda: {"model": {"version": "unexpected"}}),
         )
         connection = MagicMock()
@@ -104,3 +115,18 @@ def test_acceptance_check_rejects_empty_bot_health_command() -> None:
     _check_bot((), errors)
 
     assert errors == ["bot: heartbeat command не задана"]
+
+
+def test_acceptance_check_rejects_non_html_docs_without_parsing_payload() -> None:
+    """Статус 200 с неправильным media type не подтверждает Swagger UI."""
+    client = MagicMock()
+    client.get.return_value = MagicMock(
+        status_code=200,
+        headers={"content-type": "application/json"},
+        json=MagicMock(side_effect=AssertionError("payload must not be parsed")),
+    )
+    errors: list[str] = []
+
+    _check_docs(client, "http://api/docs", errors)
+
+    assert errors == ["docs: ожидался HTML"]

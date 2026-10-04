@@ -911,9 +911,8 @@ class DataCycleRunRepository:
         at: datetime | None = None,
     ) -> bool:
         """Пометить устаревший heartbeat как stalled; не освобождать active slot."""
-        run = self.session.scalar(
-            select(DataCycleRun).where(DataCycleRun.run_id == run_id).with_for_update()
-        )
+        is_postgresql = self.session.get_bind().dialect.name == "postgresql"
+        run = self.session.scalar(select(DataCycleRun).where(DataCycleRun.run_id == run_id))
         if (
             run is None
             or run.status != "running"
@@ -924,7 +923,7 @@ class DataCycleRunRepository:
         ):
             return False
         now = _utc_naive_for_query(at or datetime.now(UTC))
-        if self.session.get_bind().dialect.name == "postgresql":
+        if is_postgresql:
             marked = self.session.scalar(
                 select(func.public.mark_data_cycle_executor_stalled(run_id))
             )
@@ -1102,7 +1101,10 @@ class DataCycleRunRepository:
             else:
                 status = (
                     "partial_success"
-                    if any(result != "success" for result in states.values())
+                    if any(
+                        result != "success" and (stage in required or result != "skipped")
+                        for stage, result in states.items()
+                    )
                     else "success"
                 )
         if failed_required and status != "failed":
@@ -1116,7 +1118,11 @@ class DataCycleRunRepository:
         if status != "failed" and incomplete_required:
             raise ValueError("Обязательные стадии не выполнены: " + ",".join(incomplete_required))
         if status == "success":
-            incomplete = sorted(stage for stage, result in states.items() if result != "success")
+            incomplete = sorted(
+                stage
+                for stage, result in states.items()
+                if result != "success" and (stage in required or result != "skipped")
+            )
             if incomplete:
                 raise ValueError("Не все стадии завершились success: " + ",".join(incomplete))
         if status == "partial_success" and all(result == "success" for result in states.values()):

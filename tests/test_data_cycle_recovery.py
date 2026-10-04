@@ -6,16 +6,19 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from threading import Barrier
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ClauseElement
 
 from sports_forecast.orchestration.data_cycle_recovery import HostStopEvidence
 from sports_forecast.service.data_cycle_control import dispatch_due_run
 from sports_forecast.service.data_cycle_history import serialize_run
-from sports_forecast.service.db.models import Base
+from sports_forecast.service.db.models import Base, DataCycleRun
 from sports_forecast.service.db.repository import DataCycleRunRepository
 
 
@@ -93,6 +96,57 @@ def test_stale_heartbeat_alone_cannot_transfer_executor_ownership(
     assert run is not None
     assert run.status == "running"
     assert run.executor_owner_id == OWNER_A
+
+
+def test_postgresql_stall_mark_uses_security_definer_without_row_update_grant() -> None:
+    """Postgres control role вызывает definer function без row lock."""
+    run = DataCycleRun(
+        run_id="run-control-role",
+        tournament="nhl",
+        reason="scheduled",
+        status="running",
+        executor_generation=1,
+        executor_owner_id=OWNER_A,
+        heartbeat_at=datetime(2026, 9, 26, 10),
+        executor_stalled_at=None,
+    )
+
+    class ControlRoleSession:
+        def __init__(self) -> None:
+            self.bind = SimpleNamespace(dialect=SimpleNamespace(name="postgresql"))
+            self.mark_function_called = False
+            self.refreshed = False
+
+        def get_bind(self) -> SimpleNamespace:
+            return self.bind
+
+        def scalar(self, statement: ClauseElement) -> object:
+            compiled = str(statement.compile(dialect=postgresql.dialect()))
+            if "FOR UPDATE" in compiled:
+                raise PermissionError("У роли Control API нет UPDATE privilege")
+            if "mark_data_cycle_executor_stalled" in compiled:
+                self.mark_function_called = True
+                return True
+            return run
+
+        def refresh(self, instance: object, *, attribute_names: list[str]) -> None:
+            self.refreshed = True
+            assert attribute_names == ["executor_stalled_at"]
+            run.executor_stalled_at = datetime(2026, 9, 26, 12)
+
+    session = ControlRoleSession()
+    repository = DataCycleRunRepository(session)  # type: ignore[arg-type]
+
+    marked = repository.mark_executor_stalled(
+        "run-control-role",
+        before=datetime(2026, 9, 26, 11),
+        at=datetime(2026, 9, 26, 12),
+    )
+
+    assert marked is True
+    assert session.mark_function_called is True
+    assert session.refreshed is True
+    assert run.executor_stalled_at == datetime(2026, 9, 26, 12)
 
 
 def test_publication_guard_rejects_claimed_run_without_owner_environment(

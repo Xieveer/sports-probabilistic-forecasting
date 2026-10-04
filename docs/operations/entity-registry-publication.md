@@ -152,7 +152,7 @@ batch в БД. `collect-acks` отмечает только корректные
 
 ```bash
 uv run python -m sports_forecast.deploy.registry_feedback_cli \
-  --registry data/entity-registry.sqlite3 \
+  --registry data/registry/master.sqlite3 \
   --installation-id <stable-installation-uuid> \
   --max-batches 100
 ```

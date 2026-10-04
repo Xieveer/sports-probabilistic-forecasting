@@ -209,7 +209,17 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
         "SF_DATA_CYCLE_NOTIFICATION_ALIASES": (
             "${SF_DATA_CYCLE_NOTIFICATION_ALIASES:?set safe notification aliases}"
         ),
+        "ODDS_API_KEY_FREE_FILE": "/run/secrets/odds_api_key_free",
+        "ODDS_API_KEY_20K_FILE": "/run/secrets/odds_api_key_20k",
+        "ODDS_API_KEY_100K_FILE": "/run/secrets/odds_api_key_100k",
+        "ODDS_API_KEY_FILE": "/run/secrets/odds_api_key",
     }
+    assert {
+        "odds_api_key_free",
+        "odds_api_key_20k",
+        "odds_api_key_100k",
+        "odds_api_key",
+    }.issubset(set(cast(list[str], api["secrets"])))
     assert "volumes" not in api
     assert "volumes" not in bot
     assert "DATABASE_URL" not in cast(dict[str, str], bot["environment"])
@@ -234,6 +244,10 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
         "SF_APP_VERSION": "${SF_APP_VERSION:?set SF_APP_VERSION}",
         "SF_CANONICAL_SOURCE_CSV": "/app/data/source/nhl/current.csv",
         "SF_OPERATIONAL_ARCHIVE_ROOT": "/app/archive",
+        "ODDS_API_KEY_FREE_FILE": "/run/secrets/odds_api_key_free",
+        "ODDS_API_KEY_20K_FILE": "/run/secrets/odds_api_key_20k",
+        "ODDS_API_KEY_100K_FILE": "/run/secrets/odds_api_key_100k",
+        "ODDS_API_KEY_FILE": "/run/secrets/odds_api_key",
     }
     assert worker["labels"] == {
         "com.sfp.data-cycle.run-id": "${SF_DATA_CYCLE_RUN_ID:-untracked}",
@@ -246,6 +260,12 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
         "${SF_OPERATIONAL_ARCHIVE_ROOT:?set SF_OPERATIONAL_ARCHIVE_ROOT}:/app/archive",
     ]
     assert "SF_OBJECT_STORAGE_ACCESS_KEY_ID" not in cast(dict[str, str], worker["environment"])
+    assert {
+        "odds_api_key_free",
+        "odds_api_key_20k",
+        "odds_api_key_100k",
+        "odds_api_key",
+    }.issubset(set(cast(list[str], worker["secrets"])))
     assert source_acquirer["environment"] == {
         "DATABASE_URL_FILE": "/run/secrets/worker_database_url",
         "SF_DATA_CYCLE_RUN_ID": "${SF_DATA_CYCLE_RUN_ID:-untracked}",
@@ -276,6 +296,30 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     assert services["migrator"]["profiles"] == ["migration"]
     assert services["role-bootstrap"]["profiles"] == ["migration"]
     assert set(cast(dict[str, object], compose["volumes"])) == {"pg_data"}
+
+
+def test_archive_sync_host_network_remains_scoped_to_sync_process() -> None:
+    """Доступ к сети хоста получает только ограниченный S3 sync process."""
+    compose = _load_yaml("docker-compose.prod.yml")
+    services = cast(dict[str, dict[str, object]], compose["services"])
+    archive_sync = services["archive-sync"]
+
+    assert archive_sync["network_mode"] == "host"
+    assert all(
+        service_name == "archive-sync" or service.get("network_mode") != "host"
+        for service_name, service in services.items()
+    )
+    assert "ports" not in archive_sync
+    assert "networks" not in archive_sync
+    assert archive_sync.get("privileged") is not True
+    assert "cap_add" not in archive_sync
+    assert archive_sync["cap_drop"] == ["ALL"]
+    assert archive_sync["security_opt"] == ["no-new-privileges:true"]
+    assert set(cast(list[str], archive_sync["secrets"])) == {
+        "object_storage_access_key",
+        "object_storage_secret_key",
+    }
+    assert all("docker.sock" not in volume for volume in cast(list[str], archive_sync["volumes"]))
 
 
 def test_systemd_scheduler_has_durable_cycle_before_calendar_acquisition() -> None:
@@ -319,10 +363,12 @@ def test_systemd_scheduler_has_durable_cycle_before_calendar_acquisition() -> No
     assert "TimeoutStartSec=90m" in cycle_service
     assert "flock -n" in cycle_service
     assert "canonical_full_refresh_cli" in runner
+    assert "canonical_run_input_cli" in runner
     assert "source_snapshot_cli" in runner
-    assert runner.index("source_snapshot_cli") < runner.index("canonical_full_refresh_cli")
+    assert runner.index("source_snapshot_cli") < runner.index("canonical_run_input_cli")
+    assert runner.index("canonical_run_input_cli") < runner.index("archive_sync_cli")
+    assert runner.index("archive_sync_cli") < runner.index("canonical_full_refresh_cli")
     assert "archive-sync" in runner
-    assert runner.index("canonical_full_refresh_cli") < runner.index("archive-sync")
     assert "SF_NHL_SOURCE_STATE_PREFIX" in runner
     assert "SF_WORKER_RUN_ID" in runner
     assert "claim --run-id" in runner

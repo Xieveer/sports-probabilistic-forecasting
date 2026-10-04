@@ -8,7 +8,7 @@ Review UI запускается отдельным приложением и с
 Явно создать или обновить локальную schema registry:
 
 ```bash
-uv run python -c 'from pathlib import Path; from sports_forecast.identity import EntityRegistry; EntityRegistry(Path("data/entity-registry.sqlite3")).initialize()'
+uv run python -c 'from pathlib import Path; from sports_forecast.identity import EntityRegistry; EntityRegistry(Path("data/registry/master.sqlite3")).initialize()'
 ```
 
 Создать локальный секрет с ограниченными правами:
@@ -22,7 +22,7 @@ chmod 600 data/identity-review.secret
 Запустить из корня репозитория:
 
 ```bash
-uv run python -m sports_forecast.identity.review_server --registry data/entity-registry.sqlite3 --secret-file data/identity-review.secret --actor owner
+uv run python -m sports_forecast.identity.review_server --registry data/registry/master.sqlite3 --secret-file data/identity-review.secret --actor owner
 ```
 
 Открыть `http://127.0.0.1:8765/login` и ввести секрет. Остановить сервер: `Ctrl+C` в

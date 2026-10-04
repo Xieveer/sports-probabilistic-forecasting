@@ -12,11 +12,17 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import yaml
+from hydra._internal.config_loader_impl import ConfigLoaderImpl
+from hydra._internal.utils import create_config_search_path
+from hydra.errors import HydraException
+from hydra.types import RunMode
 from omegaconf import DictConfig, OmegaConf, open_dict
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from sports_forecast.config.loaders import (
+    PROJECT_ROOT,
     load_tournament_config,  # noqa: F401 - публичная точка подмены для теста.
     load_tournament_quality_gate_config,
 )
@@ -31,6 +37,7 @@ from sports_forecast.features.features_build import process_tournament_new
 from sports_forecast.identity.events import registry_event_reader_enabled
 from sports_forecast.identity.installation import pin_installed_registry
 from sports_forecast.materialize import materialize_predictions
+from sports_forecast.orchestration.canonical_run_input import load_prepared_input
 from sports_forecast.orchestration.future_odds import run_nhl_future_odds_batch
 from sports_forecast.service.db.engine import get_session
 from sports_forecast.service.db.models import CanonicalEvent, CanonicalEventRevision, Prediction
@@ -106,10 +113,75 @@ def _runtime_cfg(cfg: DictConfig, root: Path, bundle_path: Path) -> DictConfig:
     return runtime_cfg
 
 
+def _load_bundle_features_config(bundle_path: Path, *, algorithm: str) -> DictConfig:
+    """Скомпоновать featureset из проверенного bundle и проверить runtime algorithm."""
+    try:
+        deploy_config = yaml.safe_load((bundle_path / "deploy.yaml").read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, yaml.YAMLError) as exc:
+        raise BundleVerificationError("promoted model contract is unavailable or invalid") from exc
+
+    model_config = deploy_config.get("model") if isinstance(deploy_config, dict) else None
+    deployed_algorithm = model_config.get("algorithm") if isinstance(model_config, dict) else None
+    featureset = model_config.get("featureset") if isinstance(model_config, dict) else None
+    if (
+        not isinstance(deployed_algorithm, str)
+        or not deployed_algorithm.strip()
+        or deployed_algorithm != algorithm
+        or not isinstance(featureset, str)
+        or not featureset.strip()
+        or Path(featureset).name != featureset
+    ):
+        raise BundleVerificationError("promoted model contract does not match runtime config")
+
+    config_dir = (PROJECT_ROOT / "conf").resolve()
+    config_loader = ConfigLoaderImpl(create_config_search_path(str(config_dir)))
+    try:
+        composed = config_loader.load_configuration(
+            config_name=f"features/{featureset}", overrides=[], run_mode=RunMode.RUN
+        )
+    except HydraException as exc:
+        raise BundleVerificationError(
+            "promoted featureset config is unavailable or invalid"
+        ) from exc
+
+    features_config = composed.get("features")
+    if (
+        not isinstance(features_config, DictConfig)
+        or features_config.get("name") != featureset
+        or not isinstance(features_config.get("generators"), DictConfig)
+    ):
+        raise BundleVerificationError("promoted featureset config is invalid")
+    return features_config
+
+
 def _provenance_id(value: object) -> str:
     """Вернуть stable SHA-256 identity без provider payload в logs/DB."""
     encoded = json.dumps(value, sort_keys=True, default=str, separators=(",", ":")).encode()
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def _data_odds_enabled(cfg: DictConfig) -> bool:
+    """Принять лишь bool из Hydra config; некорректное значение закрывает refresh."""
+    value = cfg.get("data_odds_enabled", True)
+    if not isinstance(value, bool):
+        raise ValueError("data_odds_enabled должен быть boolean")
+    return value
+
+
+def _count_scheduled_data_odds_events(session: Session, *, tournament: str, at: datetime) -> int:
+    """Посчитать canonical scheduled events в стандартном 30-дневном окне Odds API."""
+    reference = at.astimezone(UTC).replace(tzinfo=None) if at.tzinfo is not None else at
+    return int(
+        session.scalar(
+            select(func.count(CanonicalEvent.id)).where(
+                CanonicalEvent.tournament == tournament,
+                CanonicalEvent.status == "scheduled",
+                CanonicalEvent.scheduled_at >= reference,
+                CanonicalEvent.scheduled_at <= reference + timedelta(days=30),
+            )
+        )
+        or 0
+    )
 
 
 def _assert_run_publication_owner(session: Session, run_id: str) -> None:
@@ -203,6 +275,7 @@ def _readiness_counts(
     *,
     tournament: str,
     at: datetime,
+    odds_enabled: bool = True,
 ) -> dict[str, int]:
     """Count event readiness on one explicit calendar window and timestamp."""
     selected = _eligible_calendar_events(session, tournament=tournament, at=at)
@@ -232,6 +305,7 @@ def _readiness_counts(
             policy,
             at,
             attempts.get(event.id, []),
+            odds_enabled,
         )
         prediction_state = readiness["prediction_readiness"]["status"]
         odds_state = readiness["odds_readiness"]["status"]
@@ -253,6 +327,7 @@ def run_full_refresh(
     refreshed_at: datetime,
     source_csv: Path | None = None,
     archive_root: Path | None = None,
+    prepared_archive_root: Path | None = None,
 ) -> FullRefreshResult:
     """Пересобрать NHL features и витрину только из current canonical snapshot.
 
@@ -260,6 +335,7 @@ def run_full_refresh(
     использованы execution/freshness lifecycle следующего среза. Здесь rebuild
     намеренно не читает persistent ``processed/inference_*.parquet``.
     """
+    odds_enabled = False if prepared_archive_root is not None else _data_odds_enabled(cfg)
     tournament = str(cfg.tournament.name)
     with get_session() as session:
         cycle = DataCycleRunRepository(session)
@@ -274,8 +350,8 @@ def run_full_refresh(
             locks.release(tournament=tournament, run_id=run_id)
             return FullRefreshResult(published=False, already_finished=True)
     try:
-        cycle_present = False
-        if source_csv is not None:
+        cycle_present = prepared_archive_root is not None
+        if source_csv is not None and prepared_archive_root is None:
             with get_session() as session:
                 import_summary = refresh_nhl_canonical_with_summary_from_csv(source_csv, session)
             with get_session() as session:
@@ -293,73 +369,118 @@ def run_full_refresh(
                             "changed_events": import_summary.changed_events,
                         },
                     )
-        if not cycle_present:
-            cycle_present = _start_cycle_stage(run_id, "data_odds")
-        else:
-            _start_cycle_stage(run_id, "data_odds")
-        if cycle_present:
+        if prepared_archive_root is not None:
             with get_session() as session:
-                attempt = run_nhl_future_odds_batch(
-                    session,
-                    run_id=run_id,
-                    now=refreshed_at,
+                cycle = DataCycleRunRepository(session)
+                run = cycle.get(run_id)
+                if run is None:
+                    raise ValueError("Подготовленный snapshot требует Data Cycle run")
+                cycle.finish_stage(
+                    run_id,
+                    "data_odds",
+                    status="skipped",
+                    counts={"disabled": 1},
                 )
-            stage_status = attempt.status
-            if stage_status == "success" and attempt.missing_events > 0:
+        else:
+            if not cycle_present:
+                cycle_present = _start_cycle_stage(run_id, "data_odds")
+            else:
+                _start_cycle_stage(run_id, "data_odds")
+        if cycle_present and prepared_archive_root is None:
+            if odds_enabled:
+                with get_session() as session:
+                    attempt = run_nhl_future_odds_batch(
+                        session,
+                        run_id=run_id,
+                        now=refreshed_at,
+                    )
+                stage_status = attempt.status
+                canonical_events = attempt.matched_events + attempt.missing_events
+                missing_events = attempt.missing_events
+                stage_errors = int(attempt.status == "failed")
+                if stage_status == "success" and missing_events > 0:
+                    stage_status = "partial_success"
+                failure_code = "odds_acquisition_failed" if attempt.status == "failed" else None
+            else:
+                with get_session() as session:
+                    canonical_events = _count_scheduled_data_odds_events(
+                        session, tournament=tournament, at=refreshed_at
+                    )
                 stage_status = "partial_success"
+                missing_events = canonical_events
+                stage_errors = 0
+                failure_code = None
+            stage_counts = {
+                "canonical_events": canonical_events,
+                "independently_observed_events": canonical_events - missing_events,
+                "stage_errors": stage_errors,
+                "disabled": int(not odds_enabled),
+            }
+            if not odds_enabled:
+                stage_counts["missing_events"] = missing_events
             with get_session() as session:
                 DataCycleRunRepository(session).finish_stage(
                     run_id,
                     "data_odds",
                     status=stage_status,
-                    counts={
-                        "canonical_events": attempt.matched_events + attempt.missing_events,
-                        "independently_observed_events": attempt.matched_events,
-                        "stage_errors": int(attempt.status == "failed"),
-                    },
-                    failure_code=(
-                        "odds_acquisition_failed" if attempt.status == "failed" else None
+                    counts=stage_counts,
+                    failure_code=failure_code,
+                )
+        if prepared_archive_root is None:
+            _start_cycle_stage(run_id, "quality")
+            quality_config = load_tournament_quality_gate_config(tournament)
+            with get_session() as session:
+                freshness = validate_prediction_result_freshness(
+                    session=session,
+                    tournament=tournament,
+                    refreshed_at=refreshed_at,
+                    match_duration_minutes=quality_config.match_duration_minutes,
+                    provider_grace_minutes=quality_config.provider_grace_minutes,
+                )
+            if not freshness.is_valid:
+                _finish_cycle_stage(
+                    run_id,
+                    "quality",
+                    status="failed",
+                    failure_code="quality_failed",
+                )
+                result = _record_publication_state(
+                    cfg,
+                    run_id=run_id,
+                    result=FullRefreshResult(
+                        published=False, failure_code="canonical_freshness_failed"
                     ),
                 )
-        _start_cycle_stage(run_id, "quality")
-        quality_config = load_tournament_quality_gate_config(tournament)
-        with get_session() as session:
-            freshness = validate_prediction_result_freshness(
-                session=session,
-                tournament=tournament,
-                refreshed_at=refreshed_at,
-                match_duration_minutes=quality_config.match_duration_minutes,
-                provider_grace_minutes=quality_config.provider_grace_minutes,
-            )
-        if not freshness.is_valid:
-            _finish_cycle_stage(
-                run_id,
-                "quality",
-                status="failed",
-                failure_code="quality_failed",
-            )
-            result = _record_publication_state(
-                cfg,
-                run_id=run_id,
-                result=FullRefreshResult(
-                    published=False, failure_code="canonical_freshness_failed"
-                ),
-            )
-            with get_session() as session:
-                WorkerExecutionRepository(session).fail(
-                    run_id, failure_code="canonical_freshness_failed"
-                )
-            return result
-        _finish_cycle_stage(run_id, "quality", status="success")
+                with get_session() as session:
+                    WorkerExecutionRepository(session).fail(
+                        run_id, failure_code="canonical_freshness_failed"
+                    )
+                return result
+            _finish_cycle_stage(run_id, "quality", status="success")
         _start_cycle_stage(run_id, "predictions")
         bundle = load_current_model_bundle(runtime_root, app_version=app_version)
-        snapshot = _canonical_rows(tournament)
+        features_config = _load_bundle_features_config(
+            bundle.path, algorithm=str(cfg.algorithm.name)
+        )
+        prepared_input = (
+            load_prepared_input(run_id=run_id, archive_root=prepared_archive_root)
+            if prepared_archive_root is not None
+            else None
+        )
+        snapshot = (
+            prepared_input.rows if prepared_input is not None else _canonical_rows(tournament)
+        )
         with tempfile.TemporaryDirectory(prefix=f"canonical-refresh-{tournament}-") as directory:
             root = Path(directory)
             runtime_cfg = _runtime_cfg(cfg, root, bundle.path)
             with open_dict(runtime_cfg):
+                runtime_cfg.features = features_config
                 runtime_cfg.refresh_run_id = run_id
-                runtime_cfg.canonical_snapshot_id = _provenance_id(snapshot)
+                runtime_cfg.canonical_snapshot_id = (
+                    prepared_input.canonical_artifact_id
+                    if prepared_input is not None
+                    else _provenance_id(snapshot)
+                )
                 runtime_cfg.feature_contract_id = _provenance_id(runtime_cfg.features)
             raw_dir = root / "raw" / tournament
             raw_dir.mkdir(parents=True)
@@ -382,6 +503,7 @@ def run_full_refresh(
                 root / "processed",
                 runtime_cfg.features,
                 tournament_cfg,
+                inference_only=True,
             )
             _finish_cycle_stage(
                 run_id,
@@ -411,6 +533,9 @@ def run_full_refresh(
                 cycle = DataCycleRunRepository(session)
                 cycle_exists = cycle.get(run_id) is not None
                 if published:
+                    # Production sessions disable autoflush; publish rows before deriving
+                    # execution and readiness counts inside this same transaction.
+                    session.flush()
                     predictions_count = int(
                         session.scalar(
                             select(func.count(Prediction.id)).where(
@@ -427,7 +552,12 @@ def run_full_refresh(
                     if cycle_exists:
                         publication_counts = {
                             "predictions": predictions_count,
-                            **_readiness_counts(session, tournament=tournament, at=readiness_as_of),
+                            **_readiness_counts(
+                                session,
+                                tournament=tournament,
+                                at=readiness_as_of,
+                                odds_enabled=odds_enabled,
+                            ),
                         }
                         cycle.finish_stage(
                             run_id,
@@ -440,7 +570,10 @@ def run_full_refresh(
                     execution.fail(run_id, failure_code="materialization_failed")
                     if cycle_exists:
                         publication_counts = _readiness_counts(
-                            session, tournament=tournament, at=readiness_as_of
+                            session,
+                            tournament=tournament,
+                            at=readiness_as_of,
+                            odds_enabled=odds_enabled,
                         )
                         cycle.finish_stage(
                             run_id,
@@ -450,7 +583,7 @@ def run_full_refresh(
                             counts=publication_counts,
                             failure_code="publication_failed",
                         )
-        if published and archive_root is not None:
+        if published and archive_root is not None and prepared_archive_root is None:
             with get_session() as session:
                 export_canonical_snapshot(
                     session,

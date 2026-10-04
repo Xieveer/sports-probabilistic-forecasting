@@ -14,13 +14,21 @@ logger = get_logger(__name__)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Получить mandatory source/odds и опубликовать current snapshot."""
+    """Получить source и опубликовать current snapshot с выбранным odds режимом."""
     parser = argparse.ArgumentParser(description="Обновить scheduler source snapshot")
     parser.add_argument("--tournament", required=True, help="Идентификатор tournament source")
+    parser.add_argument(
+        "--odds-enabled",
+        choices=("true", "false"),
+        default="true",
+        help="Выполнять odds post-step при сборе source",
+    )
     args = parser.parse_args(argv)
     try:
         snapshot = refresh_and_publish_source_snapshot(
-            args.tournament, Path(os.environ["SF_CANONICAL_SOURCE_SNAPSHOT"])
+            args.tournament,
+            Path(os.environ["SF_CANONICAL_SOURCE_SNAPSHOT"]),
+            odds_enabled=args.odds_enabled == "true",
         )
     except (KeyError, OSError, ValueError) as error:
         logger.error("Source snapshot не опубликован: %s", type(error).__name__)

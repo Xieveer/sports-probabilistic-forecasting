@@ -1,4 +1,4 @@
-"""Проверка финальных canonical results для ранее опубликованных прогнозов."""
+"""Проверка финальных canonical results для предматчевых прогнозов."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def validate_prediction_result_freshness(
     match_duration_minutes: int,
     provider_grace_minutes: int,
 ) -> ValidationResult:
-    """Потребовать `finished` result для прогнозов с истёкшим profile deadline."""
+    """Потребовать `finished` result для предматчевых прогнозов после deadline."""
     if match_duration_minutes < 0 or provider_grace_minutes < 0:
         raise ValueError("Параметры deadline не могут быть отрицательными")
     refreshed_utc = (
@@ -32,6 +32,7 @@ def validate_prediction_result_freshness(
             select(Prediction.match_id).where(
                 Prediction.tournament == tournament,
                 Prediction.match_datetime.is_not(None),  # type: ignore[attr-defined]
+                Prediction.prediction_ts < Prediction.match_datetime,
                 Prediction.match_datetime <= deadline_naive,
             )
         ).all()

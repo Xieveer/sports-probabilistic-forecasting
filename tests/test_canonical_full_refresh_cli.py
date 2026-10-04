@@ -14,8 +14,7 @@ from sports_forecast.orchestration.canonical_full_refresh import FullRefreshResu
 def test_cli_passes_scheduler_inputs_to_runner(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """CLI передаёт явный provider snapshot и не публикует при runner failure."""
-    monkeypatch.setenv("SF_CANONICAL_SOURCE_CSV", str(tmp_path / "source.csv"))
+    """CLI передаёт проверенный archive root Worker без provider reimport."""
     monkeypatch.setenv("SF_WORKER_RUN_ID", "daily-1")
     monkeypatch.setenv("SF_MODEL_RUNTIME_ROOT", str(tmp_path / "runtime"))
     monkeypatch.setenv("SF_APP_VERSION", "1.1.0")
@@ -30,15 +29,14 @@ def test_cli_passes_scheduler_inputs_to_runner(
     monkeypatch.setattr(cli, "configure_logging", lambda **_: None)
     cli.main.__wrapped__(OmegaConf.create({"logging": {"level": "INFO"}}))
     assert captured["run_id"] == "daily-1"
-    assert captured["source_csv"] == tmp_path / "source.csv"
-    assert captured["archive_root"] == tmp_path / "archive"
+    assert captured["prepared_archive_root"] == tmp_path / "archive"
+    assert "source_csv" not in captured
 
 
 def test_cli_treats_repeated_finished_run_as_success(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Повтор scheduler run_id не является ошибкой публикации."""
-    monkeypatch.setenv("SF_CANONICAL_SOURCE_CSV", str(tmp_path / "source.csv"))
     monkeypatch.setenv("SF_WORKER_RUN_ID", "daily-1")
     monkeypatch.setenv("SF_MODEL_RUNTIME_ROOT", str(tmp_path / "runtime"))
     monkeypatch.setenv("SF_APP_VERSION", "1.1.0")

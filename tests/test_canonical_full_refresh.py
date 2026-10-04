@@ -9,13 +9,20 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
 from sqlalchemy import create_engine
 
+from sports_forecast.deploy.model_bundle import BundleVerificationError
+from sports_forecast.orchestration.canonical_full_refresh import (
+    _count_scheduled_data_odds_events,
+    _data_odds_enabled,
+    _load_bundle_features_config,
+)
 from sports_forecast.service.db.engine import get_session, init_db, reset_engine
 from sports_forecast.service.db.models import (
     CanonicalEvent,
     CanonicalEventRevision,
+    DataCycleRun,
     OddsAcquisitionAttempt,
     OddsObservation,
     Prediction,
@@ -23,9 +30,11 @@ from sports_forecast.service.db.models import (
     WorkerExecution,
 )
 from sports_forecast.service.db.repository import DataCycleRunRepository, PredictionRepository
+from sports_forecast.service.event_readiness import evaluate_event_readiness
+from sports_forecast.service.readiness_policy import load_readiness_policy
 
 
-def _cfg() -> object:
+def _cfg(*, data_odds_enabled: object = True) -> DictConfig:
     return OmegaConf.create(
         {
             "tournament": {"name": "nhl"},
@@ -33,6 +42,7 @@ def _cfg() -> object:
             "market_spec": {"name": "winner_withOT", "data_format": "long"},
             "algorithm": {"name": "catboost"},
             "features": {"name": "basic"},
+            "data_odds_enabled": data_odds_enabled,
             "paths": {
                 "raw_dir": "data/raw",
                 "interim_dir": "data/interim",
@@ -44,8 +54,79 @@ def _cfg() -> object:
     )
 
 
+@pytest.mark.parametrize(
+    ("contract", "runtime_algorithm"),
+    [
+        ({"algorithm": "catboost", "featureset": "missing_featureset"}, "catboost"),
+        ({"algorithm": "other_algorithm", "featureset": "advanced"}, "catboost"),
+    ],
+)
+def test_bundle_feature_contract_rejects_mismatch_before_feature_generation(
+    tmp_path: Path, contract: dict[str, str], runtime_algorithm: str
+) -> None:
+    """Неизвестный featureset или другой algorithm отклоняется до feature generation."""
+    bundle_path = tmp_path / "bundle"
+    bundle_path.mkdir()
+    (bundle_path / "deploy.yaml").write_text(
+        f"model:\n  algorithm: {contract['algorithm']}\n  featureset: {contract['featureset']}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BundleVerificationError):
+        _load_bundle_features_config(bundle_path, algorithm=runtime_algorithm)
+
+
+@pytest.mark.parametrize("value", ["false", "off", 0, None])
+def test_data_odds_switch_requires_boolean_config(value: object) -> None:
+    """Direct Python callers cannot silently coerce malformed odds switch values."""
+    with pytest.raises(ValueError, match="data_odds_enabled"):
+        _data_odds_enabled(_cfg(data_odds_enabled=value))
+
+
+def test_data_odds_switch_is_respected_for_non_nhl_tournament_config() -> None:
+    """Глобальный переключатель не привязан к NHL slug."""
+    cfg = _cfg(data_odds_enabled=False)
+    cfg.tournament.name = "football_fixture"
+
+    assert _data_odds_enabled(cfg) is False
+
+
+def test_disabled_odds_canonical_count_uses_selected_tournament() -> None:
+    """Missing counts follow selected tournament so the switch remains reusable."""
+    engine = create_engine("sqlite:///:memory:")
+    init_db(engine)
+    at = datetime(2026, 9, 27, 12, tzinfo=UTC)
+    try:
+        with get_session(engine=engine) as session:
+            for tournament, event_id in (
+                ("nhl", "nhl-1"),
+                ("football_fixture", "football-1"),
+            ):
+                session.add(
+                    CanonicalEvent(
+                        sport="fixture",
+                        tournament=tournament,
+                        source="fixture_source",
+                        source_event_id=event_id,
+                        scheduled_at=(at + timedelta(days=1)).replace(tzinfo=None),
+                        status="scheduled",
+                        current_revision_sha256=event_id.ljust(64, "0"),
+                    )
+                )
+        with get_session(engine=engine) as session:
+            assert (
+                _count_scheduled_data_odds_events(session, tournament="football_fixture", at=at)
+                == 1
+            )
+            assert _count_scheduled_data_odds_events(session, tournament="nhl", at=at) == 1
+    finally:
+        reset_engine()
+        engine.dispose()
+
+
+@pytest.mark.parametrize("odds_enabled", [True, False])
 def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
-    tmp_path: Path,
+    tmp_path: Path, odds_enabled: bool
 ) -> None:
     """Runner передаёт full canonical history в clean/features перед inference."""
     from sports_forecast.orchestration.canonical_full_refresh import run_full_refresh
@@ -89,11 +170,37 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
 
         clean = MagicMock()
         features = MagicMock()
-        materialize = MagicMock(return_value=True)
+
+        def materialize(_cfg, *, version: str, session) -> bool:
+            """Simulate ORM materializer writes on production's autoflush=False session."""
+            assert version == "prod"
+            session.add(
+                Prediction(
+                    match_id="1",
+                    tournament="nhl",
+                    market="winner_withOT",
+                    market_spec="winner_withOT",
+                    model_version="prod",
+                    algorithm="catboost",
+                    featureset="advanced",
+                    predictions_json='{"home": 0.6, "away": 0.4}',
+                    match_datetime=scheduled_at.replace(tzinfo=None),
+                    refresh_run_id="nhl-20260814",
+                    prediction_ts=refreshed_at.replace(tzinfo=None),
+                )
+            )
+            return True
+
+        bundle_path = tmp_path / "bundle"
+        bundle_path.mkdir()
+        (bundle_path / "deploy.yaml").write_text(
+            "model:\n  algorithm: catboost\n  featureset: advanced\n", encoding="utf-8"
+        )
         odds_provider = MagicMock()
         odds_provider.fetch_future_nhl_odds.return_value = []
         odds_provider.last_quota.return_value.requests_remaining = 20
         odds_provider.last_quota.return_value.requests_used = 3
+        odds_client = MagicMock(return_value=odds_provider)
         with (
             patch(
                 "sports_forecast.orchestration.canonical_full_refresh.get_session",
@@ -101,7 +208,7 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
             ),
             patch(
                 "sports_forecast.orchestration.canonical_full_refresh.load_current_model_bundle",
-                return_value=MagicMock(path=tmp_path / "bundle"),
+                return_value=MagicMock(path=bundle_path),
             ),
             patch(
                 "sports_forecast.orchestration.canonical_full_refresh.load_tournament_config",
@@ -121,11 +228,11 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
             ),
             patch(
                 "sports_forecast.orchestration.future_odds.OddsApiClient",
-                return_value=odds_provider,
+                odds_client,
             ),
         ):
             result = run_full_refresh(
-                _cfg(),
+                _cfg(data_odds_enabled=odds_enabled),
                 run_id="nhl-20260814",
                 runtime_root=tmp_path,
                 app_version="1.1.0",
@@ -136,18 +243,18 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
         assert result.published is True
         assert clean.call_count == 1
         assert features.call_count == 1
+        assert features.call_args.args[3].name == "advanced"
+        assert features.call_args.kwargs["inference_only"] is True
         raw_path = clean.call_args.args[0] / "matches.parquet"
         assert raw_path.name == "matches.parquet"
         assert raw_path.parent.name == "nhl"
         assert raw_path.parent != tmp_path / "data" / "processed" / "nhl"
-        materialize.assert_called_once()
-        assert materialize.call_args.kwargs["version"] == "prod"
-        assert materialize.call_args.kwargs["session"] is not None
         with get_session(engine=engine) as session:
             state = session.query(TournamentPublicationState).one()
             execution = session.query(WorkerExecution).one()
             assert state.status == "public"
             assert execution.status == "succeeded"
+            assert execution.predictions_count == 1
             cycle = DataCycleRunRepository(session).get("nhl-20260814")
             assert cycle is not None
             stages = {stage.stage: stage for stage in cycle.stages}
@@ -160,18 +267,43 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
                 "new_events": 0,
             }
             assert statuses["data_odds"] == "partial_success"
+            assert stages["data_odds"].failure_code is None
+            assert json.loads(stages["data_odds"].counts_json or "{}")["stage_errors"] == 0
             assert statuses["quality"] == "success"
             assert statuses["predictions"] == "success"
             assert statuses["publication"] == "success"
             publication_counts = json.loads(stages["publication"].counts_json or "{}")
             assert publication_counts["eligible_events"] == 1
-            assert publication_counts["predictions_ready"] == 0
+            assert publication_counts["predictions"] == 1
+            assert publication_counts["predictions_ready"] == 1
             assert publication_counts["odds_ready"] == 0
             assert publication_counts["fully_ready_events"] == 0
-            odds_attempt = session.query(OddsAcquisitionAttempt).one()
-            assert odds_attempt.status == "success"
-            assert odds_attempt.missing_events == 1
-            assert odds_attempt.requests_remaining == 20
+            odds_attempts = session.query(OddsAcquisitionAttempt).all()
+            if odds_enabled:
+                odds_attempt = odds_attempts[0]
+                assert len(odds_attempts) == 1
+                assert odds_attempt.status == "success"
+                assert odds_attempt.missing_events == 1
+                assert odds_attempt.requests_remaining == 20
+                odds_provider.fetch_future_nhl_odds.assert_called_once()
+                odds_client.assert_called_once()
+                assert json.loads(stages["data_odds"].counts_json or "{}")["disabled"] == 0
+            else:
+                assert odds_attempts == []
+                odds_provider.fetch_future_nhl_odds.assert_not_called()
+                odds_client.assert_not_called()
+                disabled_counts = json.loads(stages["data_odds"].counts_json or "{}")
+                assert disabled_counts["canonical_events"] == 1
+                assert disabled_counts["missing_events"] == 1
+                event = session.query(CanonicalEvent).one()
+                readiness = evaluate_event_readiness(
+                    event,
+                    [],
+                    [],
+                    load_readiness_policy("nhl"),
+                    refreshed_at,
+                )
+                assert readiness["odds_readiness"]["status"] == "missing"
             cycle_repository = DataCycleRunRepository(session)
             cycle_repository.start_stage("nhl-20260814", "archive_sync")
             cycle_repository.finish_stage("nhl-20260814", "archive_sync", status="success")
@@ -184,6 +316,7 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
             )
             finished_run = cycle_repository.get("nhl-20260814")
             assert finished_run is not None and finished_run.status == "partial_success"
+            assert finished_run.failure_code is None
             finished_summary = json.loads(finished_run.summary_json or "{}")
             assert finished_summary["last_successful_updates"]["odds"]["status"] == "unknown"
             assert finished_summary["readiness_as_of"]["status"] == "known"
@@ -285,9 +418,10 @@ def test_full_refresh_blocks_slice_when_expired_prediction_has_no_result(tmp_pat
                     featureset="x",
                     predictions_json="{}",
                     match_datetime=datetime(2026, 8, 14, tzinfo=UTC),
+                    prediction_ts=datetime(2026, 8, 13, 23, tzinfo=UTC),
                 )
             )
-        bundle = MagicMock()
+        bundle = MagicMock(side_effect=AssertionError("Загрузка bundle до freshness gate"))
         with (
             patch(
                 "sports_forecast.orchestration.canonical_full_refresh.get_session",
@@ -388,6 +522,81 @@ def test_readiness_producers_use_policy_window_and_run_timestamp() -> None:
             "partially_ready_events": 0,
             "errors": 0,
         }
+    finally:
+        reset_engine()
+        engine.dispose()
+
+
+def test_disabled_odds_readiness_ignores_historical_rows_without_deleting_them() -> None:
+    """OFF publication counts follow API missing readiness and retain odds audit history."""
+    from sports_forecast.orchestration.canonical_full_refresh import _readiness_counts
+
+    engine = create_engine("sqlite:///:memory:")
+    init_db(engine)
+    run_at = datetime(2026, 9, 26, 0, tzinfo=UTC)
+    try:
+        with get_session(engine=engine) as session:
+            event = CanonicalEvent(
+                sport="ice_hockey",
+                tournament="nhl",
+                source="nhl_web_api",
+                source_event_id="historical-odds",
+                scheduled_at=datetime(2026, 9, 26, 1),
+                status="scheduled",
+                current_revision_sha256="a" * 64,
+                home_participant="NYR",
+                away_participant="PIT",
+            )
+            session.add(event)
+            session.add(
+                DataCycleRun(
+                    run_id="old-failed-odds",
+                    tournament="nhl",
+                    reason="scheduled",
+                    status="failed",
+                )
+            )
+            session.flush()
+            session.add(
+                OddsAcquisitionAttempt(
+                    run_id="old-failed-odds",
+                    tournament="nhl",
+                    provider="the_odds_api_v4",
+                    status="failed",
+                    failure_code="provider_unavailable",
+                    retrieved_at=run_at.replace(tzinfo=None),
+                    window_from=datetime(2026, 9, 26, 1),
+                    window_to=datetime(2026, 9, 26, 1),
+                    provider_events=0,
+                    matched_events=0,
+                    missing_events=1,
+                    rejected_events=0,
+                )
+            )
+            session.add(
+                OddsObservation(
+                    canonical_event_id=event.id,
+                    market="winner",
+                    market_spec="winner_withOT",
+                    bookmaker="pinnacle",
+                    event_scheduled_at=event.scheduled_at,
+                    event_home_participant="NYR",
+                    event_away_participant="PIT",
+                    observed_at=datetime(2026, 9, 25, 22),
+                    retrieved_at=datetime(2026, 9, 25, 22),
+                    values_json='{"home":1.9,"away":2.0}',
+                    source="fixture",
+                )
+            )
+            session.flush()
+
+            counts = _readiness_counts(session, tournament="nhl", at=run_at, odds_enabled=False)
+
+            assert session.query(OddsAcquisitionAttempt).count() == 1
+            assert session.query(OddsObservation).count() == 1
+        assert counts["odds_ready"] == 0
+        assert counts["errors"] == 0
+        assert counts["partially_ready_events"] == 1
     finally:
         reset_engine()
         engine.dispose()

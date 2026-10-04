@@ -539,6 +539,36 @@ def test_features_pipeline_writes_sidecars_for_train_and_inference_formats(
         )
         assert provenance.dataset_row_count == len(pd.read_parquet(data_path))
 
+    inference_only = tmp_path / "inference-only"
+    features_build.process_tournament_new(
+        "demo", interim_root, inference_only, OmegaConf.create({}), inference_only=True
+    )
+    for name in ("inference_long", "inference_wide"):
+        data_path = inference_only / "demo" / f"{name}.parquet"
+        provenance = read_identity_provenance(
+            data_path,
+            snapshot_root=project_root / "data" / "registry" / "snapshots",
+            expected_snapshot_id=snapshot.snapshot_id,
+        )
+        assert provenance.dataset_row_count == len(pd.read_parquet(data_path))
+
+    def finished_only(_self: object, _frame: pd.DataFrame, *, format: str):
+        return pd.DataFrame({"id": ["1"], "status": ["finished"]}), []
+
+    monkeypatch.setattr(StubPipeline, "generate_features", finished_only)
+    empty_only = tmp_path / "empty-inference-only"
+    features_build.process_tournament_new(
+        "demo", interim_root, empty_only, OmegaConf.create({}), inference_only=True
+    )
+    for name in ("inference_long", "inference_wide"):
+        data_path = empty_only / "demo" / f"{name}.parquet"
+        provenance = read_identity_provenance(
+            data_path,
+            snapshot_root=project_root / "data" / "registry" / "snapshots",
+            expected_snapshot_id=snapshot.snapshot_id,
+        )
+        assert provenance.dataset_row_count == 0
+
 
 @pytest.mark.parametrize("split", [False, True])
 def test_ingest_entrypoint_writes_raw_sidecars_for_single_and_split_outputs(

@@ -8,9 +8,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pandas as pd
 import pytest
 import yaml
 
+from scripts.build_first_rollout_fixtures import _source_rows
 from scripts.build_production_compose_env_fixture import build_fixture
 from scripts.run_production_first_rollout import (
     _assert_logs_are_redacted,
@@ -19,14 +21,31 @@ from scripts.run_production_first_rollout import (
     _disk_usage_delta,
     _parse_df_disk_usage,
     _parse_memory_usage_bytes,
+    _prepare_source_first_input,
+    _prepare_worker_data_cycle,
+    _probe_runtime_identities,
     _restore_fixture_mount_ownership,
     _restore_runtime_root_ownership,
+    _smoke_calendar_endpoints,
     _start_s3_fixture,
+    _sync_operational_archives,
+    _worker_failure_detail,
 )
 from scripts.verify_production_compose_contract import verify_contract
+from sports_forecast.data.clean import _select_nhl_model_rows
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_first_rollout_fixture_reaches_nhl_model_input() -> None:
+    """Тестовый источник использует реальные значения типа матча и не исчезает в clean."""
+    source = pd.DataFrame(_source_rows())
+
+    result = _select_nhl_model_rows(source, "nhl")
+
+    assert len(result) == len(source) == 12
+    assert set(result["game_type"]) == {"regular"}
 
 
 def test_production_compose_fixture_supplies_control_and_notification_requirements(
@@ -71,6 +90,112 @@ def test_production_compose_fixture_supplies_control_and_notification_requiremen
     )
 
 
+def test_first_rollout_claims_a_data_cycle_run_before_worker(monkeypatch, tmp_path: Path) -> None:
+    """Worker с подготовленным архивом получает принадлежащий executor-у run."""
+    env_file = tmp_path / "production.env"
+    build_fixture(env_file, root=tmp_path, app_version="1.2.0")
+    values = dict(
+        line.split("=", 1)
+        for line in env_file.read_text(encoding="utf-8").splitlines()
+        if "=" in line
+    )
+    commands: list[list[str]] = []
+
+    def record(command: list[str], *, values: dict[str, str], timeout: int = 120):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="1\n", stderr="")
+
+    monkeypatch.setattr("scripts.run_production_first_rollout._run_one_shot_checked", record)
+
+    generation = _prepare_worker_data_cycle(
+        project_name="rollout-test",
+        worker_image="worker@sha256:" + "a" * 64,
+        values=values,
+    )
+
+    assert generation == 1
+    assert len(commands) == 3
+    assert commands[0][-7:] == [
+        "create",
+        "--run-id",
+        values["SF_WORKER_RUN_ID"],
+        "--tournament",
+        "nhl",
+        "--reason",
+        "scheduled",
+    ]
+    assert commands[1][-5:] == [
+        "claim",
+        "--run-id",
+        values["SF_WORKER_RUN_ID"],
+        "--owner-id",
+        values["SF_DATA_CYCLE_OWNER_ID"],
+    ]
+    assert commands[2][-5:] == [
+        "start-stage",
+        "--run-id",
+        values["SF_WORKER_RUN_ID"],
+        "--stage",
+        "calendar",
+    ]
+
+
+def test_worker_failure_detail_is_bounded_and_secret_checked(tmp_path: Path) -> None:
+    """Ошибка Worker сохраняет полезный хвост без утечки секретов fixture."""
+    secret_file = tmp_path / "token"
+    secret_file.write_text("fixture-private-token", encoding="utf-8")
+    logs = "\n".join(f"line-{index}" for index in range(100))
+
+    detail = _worker_failure_detail(logs, {"BOT_TOKEN_FILE": str(secret_file)})
+
+    assert "line-99" in detail
+    assert "line-0" not in detail
+    assert len(detail) <= 2048
+    with pytest.raises(RuntimeError, match="secret value"):
+        _worker_failure_detail(
+            "failure fixture-private-token", {"BOT_TOKEN_FILE": str(secret_file)}
+        )
+
+
+def test_source_first_input_has_the_production_nhl_hydra_profile(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Подготовка canonical archive использует обязательную NHL Hydra-конфигурацию."""
+    env_file = tmp_path / "production.env"
+    build_fixture(env_file, root=tmp_path, app_version="1.2.0")
+    values = dict(
+        line.split("=", 1)
+        for line in env_file.read_text(encoding="utf-8").splitlines()
+        if "=" in line
+    )
+    commands: list[list[str]] = []
+
+    def record(command: list[str], *, values: dict[str, str], timeout: int = 120):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("scripts.run_production_first_rollout._run_one_shot_checked", record)
+
+    _prepare_source_first_input(
+        project_name="rollout-test",
+        worker_image="worker@sha256:" + "a" * 64,
+        values=values,
+        generation=1,
+    )
+
+    command = commands[0]
+    assert command[command.index("-m") + 1] == (
+        "sports_forecast.orchestration.canonical_run_input_cli"
+    )
+    assert {
+        "tournament=nhl",
+        "market=winner_withOT",
+        "market_spec=winner_withOT",
+        "algorithm=catboost_reg",
+        "features=advanced",
+    } <= set(command)
+
+
 def test_production_compose_fixture_renders_all_first_rollout_profiles(tmp_path: Path) -> None:
     """Fixture закрывает Compose interpolation для migration и runtime profiles."""
     docker = shutil.which("docker")
@@ -112,11 +237,33 @@ def test_production_compose_fixture_renders_all_first_rollout_profiles(tmp_path:
     verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
 
     config = yaml.safe_load(result.stdout)
+    config["services"]["archive-sync"]["network_mode"] = "bridge"
+    rendered.write_text(yaml.safe_dump(config), encoding="utf-8")
+    with pytest.raises(ValueError, match="archive-sync: host network обязателен"):
+        verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
+
+    config = yaml.safe_load(result.stdout)
+    config["services"]["api"]["network_mode"] = "host"
+    rendered.write_text(yaml.safe_dump(config), encoding="utf-8")
+    with pytest.raises(ValueError, match="api: host network запрещён"):
+        verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
+
+    config = yaml.safe_load(result.stdout)
     config["services"]["api"]["environment"]["SF_CONTROL_DATABASE_URL_FILE"] = (
         "postgresql://unsafe@db/sports_forecast"
     )
     rendered.write_text(yaml.safe_dump(config), encoding="utf-8")
-    with pytest.raises(ValueError, match="reader/control credentials"):
+    with pytest.raises(ValueError, match="reader/control/odds credentials"):
+        verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
+
+    config = yaml.safe_load(result.stdout)
+    config["services"]["api"]["secrets"] = [
+        secret
+        for secret in config["services"]["api"]["secrets"]
+        if secret["source"] != "odds_api_key_free"
+    ]
+    rendered.write_text(yaml.safe_dump(config), encoding="utf-8")
+    with pytest.raises(ValueError, match="odds secret mounts"):
         verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
 
     config = yaml.safe_load(result.stdout)
@@ -146,7 +293,8 @@ def test_runtime_commands_use_installed_environment_and_read_only_contract() -> 
         "sports_forecast.deploy.archive_sync_cli",
     ]
     assert "canonical_full_refresh_cli" in dockerfile
-    assert '"sports_forecast.bot", "hydra/job_logging=disabled"' in dockerfile
+    assert dockerfile.count('"hydra/job_logging=stdout"') == 2
+    assert dockerfile.count('"hydra.output_subdir=null"') == 2
     assert services["source-acquirer"]["command"] == [
         "/app/.venv/bin/python",
         "-m",
@@ -294,6 +442,28 @@ def test_first_rollout_runner_and_tag_gate_are_checked_in() -> None:
     assert '"all_service_logs_redacted"' in runner_source
     assert '"model_pointer"' in runner_source
     assert "has_table_privilege" in runner_source
+    assert (
+        "has_table_privilege('sf_api_reader', 'public.data_cycle_stage_results', 'SELECT')"
+        in runner_source
+    )
+    assert (
+        "has_column_privilege('sf_api_reader', 'public.data_cycle_runs', 'run_id', 'SELECT')"
+        in runner_source
+    )
+    assert (
+        "has_column_privilege('sf_api_reader', 'public.data_cycle_runs', 'tournament', 'SELECT')"
+        in runner_source
+    )
+    assert "JOIN data_cycle_runs" in runner_source
+    assert "compose, endpoint=s3_host_endpoint, values=values" in runner_source
+    assert "sports_forecast.deploy.archive_sync_cli" in runner_source
+    assert 'if role_contract != "t|t|t|t|f|f":' in runner_source
+    assert runner_source.index('evidence["health"]["api_ready"] = "ok"') < runner_source.index(
+        "_smoke_calendar_endpoints(compose)"
+    )
+    assert runner_source.index("_smoke_calendar_endpoints(compose)") < runner_source.index(
+        'up", "-d", "telegram-bot'
+    )
     assert "rollout_restore_sentinel" in runner_source
     assert "_clean_worktree_issues" in runner_source
     assert '"--untracked-files=all"' in runner_source
@@ -305,6 +475,167 @@ def test_first_rollout_runner_and_tag_gate_are_checked_in() -> None:
     assert "first-rollout:" in docker_workflow
     assert "needs: [verify, build-artifacts, first-rollout]" in docker_workflow
     assert "workflow_dispatch:" not in docker_workflow
+
+
+def test_first_rollout_api_reader_probe_executes_calendar_stage_join(monkeypatch) -> None:
+    """First-rollout role probe runs the exact join used by calendar readiness."""
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        "scripts.run_production_first_rollout._run_one_shot_checked",
+        lambda command, **_kwargs: commands.append(command),
+    )
+
+    _probe_runtime_identities(
+        project_name="fixture",
+        values={
+            "SF_API_DATABASE_URL_FILE": "/tmp/api-url",
+            "SF_WORKER_DATABASE_URL_FILE": "/tmp/worker-url",
+        },
+        postgres_image="postgres:fixture",
+    )
+
+    api_probe_command = commands[0][-1]
+    assert "JOIN data_cycle_runs AS run ON run.run_id = stage.run_id" in api_probe_command
+    assert "WHERE run.tournament = 'nhl' AND stage.stage = 'data_odds'" in api_probe_command
+    syntax = subprocess.run(
+        ["sh", "-n", "-c", api_probe_command], capture_output=True, text=True, check=False
+    )
+    assert syntax.returncode == 0, syntax.stderr
+
+
+def test_first_rollout_smokes_calendar_periods_without_logging_payloads(monkeypatch) -> None:
+    """Local release rehearsal checks NHL calendar 0/7/30 through API container."""
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        "scripts.run_production_first_rollout._run",
+        lambda command, **_kwargs: commands.append(command),
+    )
+
+    _smoke_calendar_endpoints(["docker", "compose", "-f", "docker-compose.prod.yml"])
+
+    assert [command[-1] for command in commands] == [
+        "http://localhost:8000/calendar/nhl?period=today",
+        "http://localhost:8000/calendar/nhl?period=7",
+        "http://localhost:8000/calendar/nhl?period=30",
+    ]
+    for command in commands:
+        assert command[-5:-1] == ["curl", "-fsS", "-o", "/dev/null"]
+        assert command[:3] == ["docker", "compose", "-f"]
+
+
+def test_first_rollout_syncs_each_artifact_with_runner_cli_and_matching_prefix(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """S3 fixture uses the production CLI, artifact path and per-artifact prefix contract."""
+    archive_root = tmp_path / "archive"
+    canonical_artifact = archive_root / "operational-archive" / f"sha256:{'a' * 64}"
+    source_state_artifact = (
+        archive_root / "operational-archive" / "nhl-source-state" / "v1" / f"sha256:{'b' * 64}"
+    )
+    canonical_artifact.mkdir(parents=True)
+    source_state_artifact.mkdir(parents=True)
+    manifests = [canonical_artifact / "manifest.json", source_state_artifact / "manifest.json"]
+    for manifest in manifests:
+        manifest.write_text("{}", encoding="utf-8")
+
+    captured: list[list[str]] = []
+    listing_commands: list[list[str]] = []
+
+    def record_listing(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        listing_commands.append(command)
+        output = "\0".join(manifest.relative_to(archive_root).as_posix() for manifest in manifests)
+        return subprocess.CompletedProcess(command, 0, stdout=output + "\0", stderr="")
+
+    monkeypatch.setattr(
+        "scripts.run_production_first_rollout._run",
+        record_listing,
+    )
+    monkeypatch.setattr(
+        "scripts.run_production_first_rollout._run_one_shot_checked",
+        lambda command, **_kwargs: captured.append(command),
+    )
+
+    count = _sync_operational_archives(
+        ["docker", "compose", "--project-name", "fixture"],
+        endpoint="http://127.0.0.1:49123",
+        values={
+            "SF_OPERATIONAL_ARCHIVE_ROOT": str(archive_root),
+            "SF_OPERATIONAL_ARCHIVE_PREFIX": "fixture-operational",
+            "SF_NHL_SOURCE_STATE_PREFIX": "fixture-source-state",
+        },
+    )
+
+    assert count == 2
+    assert len(listing_commands) == 1
+    listing_command = listing_commands[0]
+    assert listing_command[:3] == ["docker", "compose", "--project-name"]
+    assert listing_command[listing_command.index("archive-sync") + 1] == ("/app/.venv/bin/python")
+    listing_code = listing_command[listing_command.index("-c") + 1]
+    assert "'/app/archive/operational-archive'" in listing_code
+    assert "os.walk" in listing_code
+    assert "sys.stdout.buffer.write(os.fsencode(relative) + b'\\0')" in listing_code
+    assert not any("list-canonical-archive-manifests.sh" in item for item in listing_command)
+    compose_services = yaml.safe_load(
+        (PROJECT_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    )["services"]
+    archive_sync_service = compose_services["archive-sync"]
+    assert archive_sync_service["user"] == "10001:10001"
+    assert any(volume.endswith(":/app/archive:ro") for volume in archive_sync_service["volumes"])
+    assert len(captured) == 2
+    for command in captured:
+        assert "SF_OBJECT_STORAGE_ENDPOINT=http://127.0.0.1:49123" in command
+        assert command[command.index("archive-sync") + 1 : command.index("archive-sync") + 5] == [
+            "/app/.venv/bin/python",
+            "-m",
+            "sports_forecast.deploy.archive_sync_cli",
+            "sync",
+        ]
+        assert "--archive" in command
+        assert "--state-root" in command
+        assert command[command.index("--state-root") + 1] == "/app/sync-state"
+    assert captured[0][captured[0].index("--prefix") + 1] == "fixture-operational"
+    assert captured[1][captured[1].index("--prefix") + 1] == "fixture-source-state"
+
+
+@pytest.mark.parametrize(
+    ("present_type", "missing_type"),
+    (("canonical", "source-state"), ("source-state", "canonical")),
+)
+def test_first_rollout_requires_both_canonical_and_source_state_archives(
+    tmp_path: Path, monkeypatch, present_type: str, missing_type: str
+) -> None:
+    """Успешный rollout требует canonical и NHL source-state artifacts."""
+    archive_root = tmp_path / "archive"
+    if present_type == "canonical":
+        artifact = archive_root / "operational-archive" / f"sha256:{'a' * 64}"
+    else:
+        artifact = (
+            archive_root / "operational-archive" / "nhl-source-state" / "v1" / f"sha256:{'b' * 64}"
+        )
+    artifact.mkdir(parents=True)
+    manifest = artifact / "manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "scripts.run_production_first_rollout._run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=f"{manifest.relative_to(archive_root).as_posix()}\0",
+            stderr="",
+        ),
+    )
+    monkeypatch.setattr(
+        "scripts.run_production_first_rollout._run_one_shot_checked",
+        lambda *_args, **_kwargs: None,
+    )
+
+    with pytest.raises(RuntimeError, match=f"{missing_type}"):
+        _sync_operational_archives(
+            ["docker", "compose", "--project-name", "fixture"],
+            endpoint="http://127.0.0.1:49123",
+            values={"SF_OPERATIONAL_ARCHIVE_ROOT": str(archive_root)},
+        )
 
 
 def test_first_rollout_tests_prebuilt_image_archives_before_exact_publish() -> None:
@@ -489,7 +820,7 @@ def test_log_redaction_gate_rejects_fixture_secret(tmp_path: Path) -> None:
         )
 
 
-def test_s3_fixture_uses_project_image_on_compose_network(
+def test_s3_fixture_exposes_loopback_only_for_host_network_sync(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """S3 fixture запускается из переданного immutable project artifact."""
@@ -499,8 +830,14 @@ def test_s3_fixture_uses_project_image_on_compose_network(
         commands.append(command)
 
     monkeypatch.setattr("scripts.run_production_first_rollout._run_one_shot_checked", record)
+    monkeypatch.setattr(
+        "scripts.run_production_first_rollout._run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(
+            command, 0, stdout="127.0.0.1:49123\n", stderr=""
+        ),
+    )
 
-    _start_s3_fixture(
+    endpoint = _start_s3_fixture(
         fixture_name="sf-rollout-test-s3-fixture",
         network="sf-rollout-test_default",
         image="localhost:5000/sf-rollout-s3-fixture@sha256:" + "0" * 64,
@@ -520,6 +857,8 @@ def test_s3_fixture_uses_project_image_on_compose_network(
     ]
     assert "--read-only" in commands[0]
     assert "--tmpfs" in commands[0]
+    assert "127.0.0.1::9000" in commands[0]
+    assert endpoint == "http://127.0.0.1:49123"
     assert commands[0][-1] == "localhost:5000/sf-rollout-s3-fixture@sha256:" + "0" * 64
 
 

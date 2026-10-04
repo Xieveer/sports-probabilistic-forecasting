@@ -55,16 +55,38 @@ _KEY_ENV_TIERS: tuple[tuple[str, str], ...] = (
 
 
 def configured_odds_api_keys() -> tuple[OddsApiKey, ...]:
-    """Прочитать уникальные ключи в порядке расходования квоты."""
+    """Прочитать уникальные ключи в порядке расходования квоты.
+
+    Для каждого имени прямое значение окружения имеет приоритет над ``*_FILE``.
+    Файл применяется для контейнерных secrets; ошибка доступа не раскрывает его путь.
+    """
+
+    def read_key(env_name: str) -> str:
+        value = os.environ.get(env_name, "").strip()
+        if value:
+            return value
+
+        file_env_name = f"{env_name}_FILE"
+        file_path = os.environ.get(file_env_name, "").strip()
+        if not file_path:
+            return ""
+        try:
+            return Path(file_path).read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError):
+            raise ValueError(
+                f"Не удалось прочитать Odds API key из переменной {file_env_name}; "
+                "проверьте наличие файла и права доступа"
+            ) from None
+
     keys: list[OddsApiKey] = []
     seen: set[str] = set()
     for tier, env_name in _KEY_ENV_TIERS:
-        value = os.environ.get(env_name, "").strip()
+        value = read_key(env_name)
         if value and value not in seen:
             keys.append(OddsApiKey(tier=tier, value=value))
             seen.add(value)
     if not keys:
-        legacy = os.environ.get("ODDS_API_KEY", "").strip()
+        legacy = read_key("ODDS_API_KEY")
         if legacy:
             keys.append(OddsApiKey(tier="legacy", value=legacy))
     return tuple(keys)

@@ -145,3 +145,32 @@ def test_refresh_and_publish_keeps_future_calendar_event_without_close_odds(
 
     assert refresh_and_publish_source_snapshot("nhl", current) == current
     assert current.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
+
+
+def test_refresh_and_publish_without_odds_fetches_and_publishes_calendar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """OFF пропускает odds provider, сохраняя source calendar без odds колонок."""
+    source = tmp_path / "source.csv"
+    source.write_text("id,datetime,match_is_end\n1,2026-09-30T21:00:00Z,0\n", encoding="utf-8")
+    current = tmp_path / "current.csv"
+    calls: list[tuple[str, bool]] = []
+
+    def fake_refresh(tournament: str, *, skip_odds: bool) -> Path:
+        calls.append((tournament, skip_odds))
+        return source
+
+    def forbidden_odds_refresh(_tournament: str):
+        raise AssertionError("Odds provider must not be called when disabled")
+
+    monkeypatch.setattr(
+        "sports_forecast.orchestration.source_snapshot.refresh_source", fake_refresh
+    )
+    monkeypatch.setattr(
+        "sports_forecast.orchestration.source_snapshot.refresh_source_with_odds_result",
+        forbidden_odds_refresh,
+    )
+
+    assert refresh_and_publish_source_snapshot("nhl", current, odds_enabled=False) == current
+    assert calls == [("nhl", True)]
+    assert current.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")

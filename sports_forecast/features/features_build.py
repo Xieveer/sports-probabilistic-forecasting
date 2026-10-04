@@ -45,6 +45,7 @@ def process_tournament_new(
     processed_root: Path,
     features_cfg: DictConfig,
     tournament_cfg: DictConfig | None = None,
+    inference_only: bool = False,
     *,
     identity_snapshot: VerifiedRegistrySnapshot | None = None,
 ) -> None:
@@ -61,6 +62,8 @@ def process_tournament_new(
         processed_root: Корневая директория processed данных
         features_cfg: Конфигурация фичей
         tournament_cfg: Конфиг турнира (sport → rolling_context_names для rolling library)
+        inference_only: Сохранять только будущие матчи для refresh-прогнозов.
+        identity_snapshot: Закреплённая версия локального registry для этого run.
     """
     logger.info("=" * 70)
     logger.info("ТУРНИР: %s (Feature Generation System)", tournament_name)
@@ -82,6 +85,7 @@ def process_tournament_new(
     from sports_forecast.identity.data_provenance import (
         configured_snapshot_root,
         load_enabled_registry_snapshot,
+        propagate_identity_provenance,
         read_identity_provenance,
     )
 
@@ -132,6 +136,63 @@ def process_tournament_new(
     logger.info("\nГенерация фичей...")
     df_long, feature_names = pipeline.generate_features(df, format="wide")
     logger.info("  ✓ Сгенерировано %d фичей", len(feature_names))
+
+    if inference_only:
+        if "status" not in df_long.columns:
+            raise ValueError("Для inference_only необходима колонка status")
+        inference_long = df_long.loc[df_long["status"] == "upcoming"].copy()
+        output_dir = processed_root / tournament_name
+        output_dir.mkdir(parents=True, exist_ok=True)
+        if not inference_long.empty:
+            from sports_forecast.validation.gates import validate_processed
+
+            validate_processed(
+                inference_long,
+                data_format="long",
+                tournament=tournament_name,
+                raise_on_error=False,
+            )
+            inference_wide = long_to_wide(inference_long, aggregate_features=True)
+        else:
+            inference_wide = pd.DataFrame({"id": pd.Series(dtype="string")})
+            logger.info("Предстоящих матчей нет: сохраняю пустой inference")
+        inference_long_path = output_dir / "inference_long.parquet"
+        inference_wide_path = output_dir / "inference_wide.parquet"
+        inference_long.to_parquet(
+            inference_long_path,
+            index=False,
+            engine="pyarrow",
+            compression="snappy",
+        )
+        inference_wide.to_parquet(
+            inference_wide_path,
+            index=False,
+            engine="pyarrow",
+            compression="snappy",
+        )
+        if identity_snapshot is not None:
+            assert identity_root is not None
+            propagate_identity_provenance(
+                input_path,
+                inference_long_path,
+                snapshot_root=identity_root,
+                expected_snapshot_id=identity_snapshot.snapshot_id,
+                row_id_column="id",
+                allow_duplicate_row_ids=True,
+            )
+            propagate_identity_provenance(
+                input_path,
+                inference_wide_path,
+                snapshot_root=identity_root,
+                expected_snapshot_id=identity_snapshot.snapshot_id,
+                row_id_column="id",
+            )
+        logger.info(
+            "✓ Inference сохранен: %d строк, %d матчей",
+            len(inference_long),
+            len(inference_wide),
+        )
+        return
 
     # 4. Создание wide format
     logger.info("\nСоздание wide format...")
@@ -190,8 +251,6 @@ def process_tournament_new(
     train_long.to_parquet(train_long_path, index=False, engine="pyarrow", compression="snappy")
     train_wide.to_parquet(train_wide_path, index=False, engine="pyarrow", compression="snappy")
     if identity_snapshot is not None:
-        from sports_forecast.identity.data_provenance import propagate_identity_provenance
-
         propagate_identity_provenance(
             input_path,
             train_long_path,
