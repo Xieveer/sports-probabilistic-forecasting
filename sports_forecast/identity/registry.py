@@ -119,7 +119,7 @@ def _canonical_utc(value: str | None) -> str | None:
 class EntityRegistry:
     """Явно мигрируемый локальный registry на SQLite."""
 
-    schema_version = 5
+    schema_version = 7
 
     def __init__(self, path: Path) -> None:
         """Создать фасад для файла БД, не создавая файл и таблицы."""
@@ -164,6 +164,12 @@ class EntityRegistry:
                 version = 4
             if version == 4:
                 self._upgrade_v4(connection)
+                version = 5
+            if version == 5:
+                self._upgrade_v5(connection)
+                version = 6
+            if version == 6:
+                self._upgrade_v6(connection)
                 return
             if version != 0:
                 raise RegistryNotInitializedError(f"Неизвестная версия схемы registry: {version}")
@@ -232,7 +238,27 @@ class EntityRegistry:
                     seed_key TEXT PRIMARY KEY, content_hash TEXT NOT NULL,
                     imported_at TEXT NOT NULL
                 );
-                PRAGMA user_version = 5;
+                CREATE TABLE review_candidates (
+                    id TEXT PRIMARY KEY,
+                    designation_id TEXT NOT NULL REFERENCES designations(id),
+                    origin TEXT NOT NULL, idempotency_key TEXT NOT NULL,
+                    observed_at TEXT NOT NULL, facts_json TEXT NOT NULL,
+                    proposed_entity_ids_json TEXT NOT NULL, basis TEXT NOT NULL,
+                    revision INTEGER NOT NULL DEFAULT 1,
+                    status TEXT NOT NULL CHECK(status IN ('pending','confirmed','rejected','deferred')),
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                    UNIQUE(origin,idempotency_key)
+                );
+                CREATE INDEX review_candidate_queue ON review_candidates(status,observed_at,id);
+                CREATE TABLE review_candidate_history (
+                    candidate_id TEXT NOT NULL REFERENCES review_candidates(id),
+                    revision INTEGER NOT NULL,
+                    observed_at TEXT NOT NULL, facts_json TEXT NOT NULL,
+                    proposed_entity_ids_json TEXT NOT NULL, basis TEXT NOT NULL,
+                    status TEXT NOT NULL, saved_at TEXT NOT NULL,
+                    PRIMARY KEY(candidate_id,revision)
+                );
+                PRAGMA user_version = 7;
                 COMMIT;
                 """
             )
@@ -323,6 +349,54 @@ class EntityRegistry:
                 "CREATE INDEX designation_conflict_interval ON designation_conflicts(state,valid_from,valid_until)"
             )
             connection.execute("PRAGMA user_version = 5")
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+
+    @classmethod
+    def _upgrade_v5(cls, connection: sqlite3.Connection) -> None:
+        """Добавить локальную очередь evidence-кандидатов."""
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            connection.execute(
+                """CREATE TABLE review_candidates (
+                    id TEXT PRIMARY KEY,
+                    designation_id TEXT NOT NULL REFERENCES designations(id),
+                    origin TEXT NOT NULL, idempotency_key TEXT NOT NULL,
+                    observed_at TEXT NOT NULL, facts_json TEXT NOT NULL,
+                    proposed_entity_ids_json TEXT NOT NULL, basis TEXT NOT NULL,
+                    revision INTEGER NOT NULL DEFAULT 1,
+                    status TEXT NOT NULL CHECK(status IN ('pending','confirmed','rejected','deferred')),
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                    UNIQUE(origin,idempotency_key)
+                )"""
+            )
+            connection.execute(
+                "CREATE INDEX review_candidate_queue ON review_candidates(status,observed_at,id)"
+            )
+            connection.execute("PRAGMA user_version = 6")
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+
+    @classmethod
+    def _upgrade_v6(cls, connection: sqlite3.Connection) -> None:
+        """Сохранить прошлые evidence revisions кандидатов."""
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            connection.execute(
+                """CREATE TABLE review_candidate_history (
+                    candidate_id TEXT NOT NULL REFERENCES review_candidates(id),
+                    revision INTEGER NOT NULL,
+                    observed_at TEXT NOT NULL, facts_json TEXT NOT NULL,
+                    proposed_entity_ids_json TEXT NOT NULL, basis TEXT NOT NULL,
+                    status TEXT NOT NULL, saved_at TEXT NOT NULL,
+                    PRIMARY KEY(candidate_id,revision)
+                )"""
+            )
+            connection.execute("PRAGMA user_version = 7")
             connection.commit()
         except Exception:
             connection.rollback()
