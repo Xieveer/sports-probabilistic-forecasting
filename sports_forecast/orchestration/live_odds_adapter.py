@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -15,8 +15,10 @@ from sports_forecast.data.providers.odds.live_nhl_pinnacle import (
 from sports_forecast.data.providers.odds.team_name_registry import (
     load_nhl_team_name_registry,
 )
+from sports_forecast.identity.events import registry_event_reader_enabled
 from sports_forecast.orchestration.notification_state import QuoteSnapshot
 from sports_forecast.service.db.models import Prediction
+from sports_forecast.service.live_odds_enrichment import pinned_live_quote_matching
 
 
 if TYPE_CHECKING:
@@ -66,16 +68,25 @@ def fetch_odds_api_h2h_snapshots(
         raise ValueError("Не найден конфиг букмекера live odds adapter-а")
     registry_loader = TEAM_NAME_REGISTRY_LOADERS.get(team_registry)
     registry = registry_loader() if registry_loader is not None else None
+    project_ids: Mapping[str, str] | None = None
+    quote_resolver: Callable[[PinnacleH2HQuote], str | None] | None = None
+    if registry_event_reader_enabled():
+        project_ids, quote_resolver = pinned_live_quote_matching(
+            predictions, sport_key=sport_key, source=bookmaker_config
+        )
     quotes = fetch_nhl_pinnacle_quotes_for_refs(
         refs,
         book_cfg=book_cfg,
         team_registry=registry,
         sport_key=sport_key,
         bookmaker_key=bookmaker_key,
+        project_event_ids=project_ids,
+        quote_project_event_resolver=quote_resolver,
     )
     return [
         _snapshot_from_quote(ref.match_id, ref.commence_utc, quotes.get(ref.match_id))
         for ref in refs
+        if ref.commence_utc is not None
     ]
 
 

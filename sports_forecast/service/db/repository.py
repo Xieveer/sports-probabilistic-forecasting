@@ -147,7 +147,7 @@ class CalendarRepository:
         return cast(CalendarCoverage | None, result.first())
 
     def get_readiness_data(
-        self, events: list[CanonicalEvent]
+        self, events: list[CanonicalEvent], *, registry_snapshot_id: str | None = None
     ) -> tuple[
         dict[int, list[Prediction]],
         dict[int, list[OddsObservation]],
@@ -164,11 +164,14 @@ class CalendarRepository:
                 Prediction.__table__.c.tournament.in_([tournament for tournament, _ in identities]),
             )
         ).all()
-        odds = self.session.scalars(
-            select(OddsObservation).where(
-                OddsObservation.__table__.c.canonical_event_id.in_(event_ids)
+        odds_query = select(OddsObservation).where(
+            OddsObservation.__table__.c.canonical_event_id.in_(event_ids)
+        )
+        if registry_snapshot_id is not None:
+            odds_query = odds_query.where(
+                OddsObservation.__table__.c.registry_snapshot_id == registry_snapshot_id
             )
-        ).all()
+        odds = self.session.scalars(odds_query).all()
         event_times = [_utc_naive_for_query(event.scheduled_at) for event in events]
         attempt_columns = OddsAcquisitionAttempt.__table__.c
         attempts = self.session.scalars(
@@ -252,6 +255,7 @@ class CalendarRepository:
                     else None
                 ),
                 provider_event_id=observation.provider_event_id,
+                registry_snapshot_id=getattr(observation, "registry_snapshot_id", None),
                 values_json=json.dumps(observation.values, sort_keys=True),
                 source=observation.source,
             )
@@ -268,6 +272,7 @@ class CalendarRepository:
                 else None
             )
             row.provider_event_id = observation.provider_event_id
+            row.registry_snapshot_id = getattr(observation, "registry_snapshot_id", None)
             row.values_json = json.dumps(observation.values, sort_keys=True)
             row.source = observation.source
         return True

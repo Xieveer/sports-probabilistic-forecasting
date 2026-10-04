@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
@@ -22,8 +22,11 @@ from sports_forecast.data.providers.odds.team_name_registry import (
     TeamNameRegistry,
     load_nhl_team_name_registry,
 )
+from sports_forecast.identity.events import CanonicalEventRef, registry_event_reader_enabled
+from sports_forecast.identity.installation import InstalledRegistryReader, pin_installed_registry
 from sports_forecast.service.db.models import CanonicalEvent, OddsAcquisitionAttempt
 from sports_forecast.service.db.repository import CalendarRepository
+from sports_forecast.service.registry_candidate_capture import enqueue_unknown_designation
 from sports_forecast.utils.log_config import get_logger
 
 
@@ -59,6 +62,7 @@ class FutureOddsObservation:
     provider_event_id: str
     values: dict[str, float]
     source: str = _SOURCE
+    registry_snapshot_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -103,23 +107,46 @@ def _outcome_prices(
     home_team: str,
     away_team: str,
     registry: TeamNameRegistry,
+    expected_team_ids: tuple[str, str] | None = None,
+    resolve_team_id: Callable[[str, datetime], str | None] | None = None,
+    at: datetime | None = None,
 ) -> dict[str, float] | None:
     """Принять лишь точную двухисходную пару участников с decimal prices."""
     if not isinstance(outcomes, list) or len(outcomes) != 2:
         return None
-    expected = {registry.resolve(home_team): "home", registry.resolve(away_team): "away"}
+    if expected_team_ids is not None:
+        if resolve_team_id is None or at is None:
+            raise ValueError("Strict outcome matching требует подтверждённый team resolver")
+        home_id, away_id = expected_team_ids
+        if (
+            home_id == away_id
+            or resolve_team_id(home_team, at) != home_id
+            or resolve_team_id(away_team, at) != away_id
+        ):
+            return None
+        expected = {home_id: "home", away_id: "away"}
+    else:
+        expected = {registry.resolve(home_team): "home", registry.resolve(away_team): "away"}
     if not all(expected.values()) or len(expected) != 2:
         return None
     result: dict[str, float] = {}
     for outcome in outcomes:
         if not isinstance(outcome, dict):
             return None
-        normalized = registry.resolve(str(outcome.get("name") or ""))
+        raw_name = str(outcome.get("name") or "")
+        normalized = (
+            resolve_team_id(raw_name, at)
+            if expected_team_ids is not None and resolve_team_id is not None and at is not None
+            else registry.resolve(raw_name)
+        )
         side = expected.get(normalized)
         if side is None or side in result:
             return None
         try:
-            price = float(outcome.get("price"))
+            raw_price = outcome.get("price")
+            if raw_price is None:
+                return None
+            price = float(raw_price)
         except (TypeError, ValueError):
             return None
         if not math.isfinite(price) or price <= 1.0:
@@ -134,6 +161,11 @@ def parse_nhl_future_odds(
     team_registry: TeamNameRegistry,
     *,
     retrieved_at: datetime,
+    project_event_ids: Mapping[int, str] | None = None,
+    provider_project_event_id: Callable[[dict[str, Any]], str | None] | None = None,
+    project_event_team_ids: Mapping[int, tuple[str, str]] | None = None,
+    confirmed_team_id: Callable[[str, datetime], str | None] | None = None,
+    registry_snapshot_id: str | None = None,
 ) -> tuple[list[FutureOddsObservation], dict[str, int]]:
     """Сопоставить source batch по командам и точному UTC kickoff.
 
@@ -142,23 +174,44 @@ def parse_nhl_future_odds(
     """
     if not isinstance(payload, list):
         raise ValueError("Odds API batch должен быть списком событий")
+    if (project_event_ids is None) != (provider_project_event_id is None):
+        raise ValueError("Strict future odds требует обе registry projection")
+    strict = project_event_ids is not None
+    if strict and (project_event_team_ids is None or confirmed_team_id is None):
+        raise ValueError("Strict future odds требует подтверждённые team IDs")
     event_index: dict[tuple[str, str, datetime], list[Any]] = defaultdict(list)
     for event in events:
         kickoff = _utc(event.scheduled_at)
-        home = team_registry.resolve(str(event.home_participant or ""))
-        away = team_registry.resolve(str(event.away_participant or ""))
-        if event.status == "scheduled" and home and away and home != away:
-            event_index[(home, away, kickoff)].append(event)
+        if strict:
+            assert project_event_ids is not None
+            project_id = project_event_ids.get(int(event.id))
+            if event.status == "scheduled" and project_id is not None:
+                event_index[(project_id, "", kickoff)].append(event)
+        else:
+            home = team_registry.resolve(str(event.home_participant or ""))
+            away = team_registry.resolve(str(event.away_participant or ""))
+            if event.status == "scheduled" and home and away and home != away:
+                event_index[(home, away, kickoff)].append(event)
 
     provider_matches: dict[tuple[str, str, datetime], int] = defaultdict(int)
     for item in payload:
         if not isinstance(item, dict):
             continue
-        kickoff = _parse_time(item.get("commence_time"))
-        home = team_registry.resolve(str(item.get("home_team") or ""))
-        away = team_registry.resolve(str(item.get("away_team") or ""))
-        if kickoff is not None and home and away and (home, away, kickoff) in event_index:
-            provider_matches[(home, away, kickoff)] += 1
+        provider_kickoff = _parse_time(item.get("commence_time"))
+        if provider_kickoff is None:
+            continue
+        if strict:
+            assert provider_project_event_id is not None
+            project_id = provider_project_event_id(item)
+            if project_id is None:
+                continue
+            identity = (project_id, "", provider_kickoff)
+        else:
+            home = team_registry.resolve(str(item.get("home_team") or ""))
+            away = team_registry.resolve(str(item.get("away_team") or ""))
+            identity = (home, away, provider_kickoff)
+        if identity in event_index:
+            provider_matches[identity] += 1
 
     observations: list[FutureOddsObservation] = []
     matched_ids: set[int] = set()
@@ -168,22 +221,34 @@ def parse_nhl_future_odds(
             rejected += 1
             continue
         provider_id = str(provider_event.get("id") or "").strip()
-        kickoff = _parse_time(provider_event.get("commence_time"))
+        provider_kickoff = _parse_time(provider_event.get("commence_time"))
         home_team = str(provider_event.get("home_team") or "").strip()
         away_team = str(provider_event.get("away_team") or "").strip()
-        home = team_registry.resolve(home_team)
-        away = team_registry.resolve(away_team)
-        if not provider_id or kickoff is None or not home or not away:
+        if not provider_id or provider_kickoff is None or not home_team or not away_team:
             rejected += 1
             continue
-        candidates = event_index.get((home, away, kickoff), [])
+        if strict:
+            assert provider_project_event_id is not None
+            project_id = provider_project_event_id(provider_event)
+            if project_id is None:
+                continue
+            identity = (project_id, "", provider_kickoff)
+        else:
+            home = team_registry.resolve(home_team)
+            away = team_registry.resolve(away_team)
+            identity = (home, away, provider_kickoff)
+        candidates = event_index.get(identity, [])
         if not candidates:
             continue
-        identity = (home, away, kickoff)
         if len(candidates) != 1 or provider_matches[identity] != 1:
             rejected += 1
             continue
         event = candidates[0]
+        if strict and (
+            project_event_team_ids is None or int(event.id) not in project_event_team_ids
+        ):
+            rejected += 1
+            continue
         bookmakers = provider_event.get("bookmakers")
         pinnacle_bookmakers = [
             item
@@ -217,13 +282,20 @@ def parse_nhl_future_odds(
                 rejected += 1
                 continue
             timestamp_source = "bookmaker.last_update"
-            raw_observed_at = bookmaker.get("last_update")
+            raw_observed_at = bookmaker.get("last_update") if isinstance(bookmaker, dict) else None
         observed_at = _parse_time(raw_observed_at)
         values = _outcome_prices(
             market.get("outcomes"),
             home_team=home_team,
             away_team=away_team,
             registry=team_registry,
+            expected_team_ids=(
+                project_event_team_ids.get(int(event.id))
+                if project_event_team_ids is not None
+                else None
+            ),
+            resolve_team_id=confirmed_team_id,
+            at=provider_kickoff,
         )
         if (
             observed_at is None
@@ -246,6 +318,7 @@ def parse_nhl_future_odds(
                 retrieved_at=_utc(retrieved_at),
                 provider_event_id=provider_id,
                 values=values,
+                registry_snapshot_id=registry_snapshot_id,
             )
         )
         matched_ids.add(int(event.id))
@@ -277,8 +350,8 @@ def run_nhl_future_odds_batch(
     reference = _utc(now)
     existing_attempt = session.scalar(
         select(OddsAcquisitionAttempt).where(
-            OddsAcquisitionAttempt.run_id == run_id,
-            OddsAcquisitionAttempt.provider == _SOURCE,
+            OddsAcquisitionAttempt.__table__.c.run_id == run_id,
+            OddsAcquisitionAttempt.__table__.c.provider == _SOURCE,
         )
     )
     if existing_attempt is not None:
@@ -305,13 +378,90 @@ def run_nhl_future_odds_batch(
     events = list(
         session.scalars(
             select(CanonicalEvent).where(
-                CanonicalEvent.tournament == "nhl",
-                CanonicalEvent.status == "scheduled",
-                CanonicalEvent.scheduled_at >= reference.replace(tzinfo=None),
-                CanonicalEvent.scheduled_at <= (reference + horizon).replace(tzinfo=None),
+                CanonicalEvent.__table__.c.tournament == "nhl",
+                CanonicalEvent.__table__.c.status == "scheduled",
+                CanonicalEvent.__table__.c.scheduled_at >= reference.replace(tzinfo=None),
+                CanonicalEvent.__table__.c.scheduled_at
+                <= (reference + horizon).replace(tzinfo=None),
             )
         ).all()
     )
+    project_event_ids: dict[int, str] | None = None
+    project_event_team_ids: dict[int, tuple[str, str]] | None = None
+    registry_snapshot_id: str | None = None
+    provider_project_event_id: Callable[[dict[str, Any]], str | None] | None = None
+    confirmed_team_id: Callable[[str, datetime], str | None] | None = None
+    reader: InstalledRegistryReader | None = None
+    if registry_event_reader_enabled():
+        reader = pin_installed_registry(session)
+        event_snapshot = reader.event_snapshot
+        registry_snapshot_id = reader.snapshot_id
+        project_event_ids = {}
+        project_event_team_ids = {}
+        projects = {project.id: project for project in event_snapshot.event_snapshot.events}
+        sports = {str(event.sport) for event in events}
+        for event in events:
+            try:
+                mapping = reader.get_event_mapping(int(event.id), session)
+            except KeyError:
+                continue
+            if mapping.status == "resolved" and mapping.project_event_id is not None:
+                project_event_ids[int(event.id)] = mapping.project_event_id
+                project = projects.get(mapping.project_event_id)
+                if project is not None:
+                    project_event_team_ids[int(event.id)] = (
+                        project.home_team_id,
+                        project.away_team_id,
+                    )
+
+        def resolve_confirmed_team(raw: str, at: datetime) -> str | None:
+            if len(sports) != 1 or reader is None:
+                return None
+            sport = next(iter(sports))
+            tournament = reader.resolve_designation(
+                source="the_odds_api",
+                kind="tournament",
+                scope={"sport": sport},
+                value_kind="external_id",
+                raw_value="icehockey_nhl",
+                at=at.isoformat(),
+            )
+            if tournament.status != "resolved" or tournament.entity_id is None:
+                return None
+            team = reader.resolve_designation(
+                source="the_odds_api",
+                kind="team",
+                scope={"sport": sport, "tournament": tournament.entity_id},
+                value_kind="name",
+                raw_value=raw,
+                at=at.isoformat(),
+            )
+            return team.entity_id if team.status == "resolved" else None
+
+        confirmed_team_id = resolve_confirmed_team
+
+        def resolve_provider_event(item: dict[str, Any]) -> str | None:
+            if len(sports) != 1:
+                return None
+            provider_id = str(item.get("id") or "").strip()
+            kickoff = _parse_time(item.get("commence_time"))
+            if not provider_id or kickoff is None:
+                return None
+            resolution = event_snapshot.resolve(
+                CanonicalEventRef(
+                    canonical_event_id=0,
+                    sport=next(iter(sports)),
+                    tournament="icehockey_nhl",
+                    source="the_odds_api",
+                    source_event_id=provider_id,
+                    scheduled_at=kickoff,
+                    home_participant=str(item.get("home_team") or ""),
+                    away_participant=str(item.get("away_team") or ""),
+                )
+            )
+            return resolution.project_event_id if resolution.status == "resolved" else None
+
+        provider_project_event_id = resolve_provider_event
     registry = team_registry or load_nhl_team_name_registry()
     client = provider
     quota = OddsApiQuotaSnapshot(None, None)
@@ -334,8 +484,99 @@ def run_nhl_future_odds_batch(
             )
             retrieved_at = _utc(clock())
             quota = client.last_quota()
+            if reader is not None and isinstance(payload, list) and len(sports) == 1:
+                sport = next(iter(sports))
+                seen_candidates: set[tuple[str, str]] = set()
+                for item in payload:
+                    if not isinstance(item, dict):
+                        continue
+                    item_kickoff = _parse_time(item.get("commence_time"))
+                    if item_kickoff is None:
+                        continue
+                    league = reader.resolve_designation(
+                        source="the_odds_api",
+                        kind="tournament",
+                        scope={"sport": sport},
+                        value_kind="external_id",
+                        raw_value="icehockey_nhl",
+                        at=item_kickoff.isoformat(),
+                    )
+                    if league.status != "resolved" or league.entity_id is None:
+                        if ("tournament", "icehockey_nhl") not in seen_candidates:
+                            enqueue_unknown_designation(
+                                session,
+                                reader,
+                                source="the_odds_api",
+                                kind="tournament",
+                                scope={"sport": sport},
+                                value_kind="external_id",
+                                raw_value="icehockey_nhl",
+                                basis="Источник odds впервые встретил турнир",
+                                observed_at=retrieved_at,
+                                effective_at=item_kickoff,
+                                facts={"sport": sport},
+                            )
+                            seen_candidates.add(("tournament", "icehockey_nhl"))
+                        continue
+                    scope = {"sport": sport, "tournament": league.entity_id}
+                    teams_resolved = True
+                    for raw in (str(item.get("home_team") or ""), str(item.get("away_team") or "")):
+                        team = reader.resolve_designation(
+                            source="the_odds_api",
+                            kind="team",
+                            scope=scope,
+                            value_kind="name",
+                            raw_value=raw,
+                            at=item_kickoff.isoformat(),
+                        )
+                        teams_resolved = teams_resolved and team.status == "resolved"
+                        if raw and ("team", raw) not in seen_candidates:
+                            enqueue_unknown_designation(
+                                session,
+                                reader,
+                                source="the_odds_api",
+                                kind="team",
+                                scope=scope,
+                                value_kind="name",
+                                raw_value=raw,
+                                basis="Источник odds впервые встретил команду",
+                                observed_at=retrieved_at,
+                                effective_at=item_kickoff,
+                                facts={"sport_key": "icehockey_nhl"},
+                            )
+                            seen_candidates.add(("team", raw))
+                    source_event_id = str(item.get("id") or "")
+                    if (
+                        source_event_id
+                        and teams_resolved
+                        and provider_project_event_id is not None
+                        and provider_project_event_id(item) is None
+                        and ("event", source_event_id) not in seen_candidates
+                    ):
+                        enqueue_unknown_designation(
+                            session,
+                            reader,
+                            source="the_odds_api",
+                            kind="event",
+                            scope=scope,
+                            value_kind="external_id",
+                            raw_value=source_event_id,
+                            basis="Событие odds ожидает подтверждённой связи",
+                            observed_at=retrieved_at,
+                            effective_at=item_kickoff,
+                            facts={"sport_key": "icehockey_nhl"},
+                        )
+                        seen_candidates.add(("event", source_event_id))
             observations, counts = parse_nhl_future_odds(
-                events, payload, registry, retrieved_at=retrieved_at
+                events,
+                payload,
+                registry,
+                retrieved_at=retrieved_at,
+                project_event_ids=project_event_ids,
+                provider_project_event_id=provider_project_event_id,
+                project_event_team_ids=project_event_team_ids,
+                confirmed_team_id=confirmed_team_id,
+                registry_snapshot_id=registry_snapshot_id,
             )
             repository = CalendarRepository(session)
             for observation in observations:

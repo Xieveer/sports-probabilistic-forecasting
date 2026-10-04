@@ -7,6 +7,8 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query
 
+from sports_forecast.identity.events import registry_event_reader_enabled
+from sports_forecast.identity.installation import pin_installed_registry
 from sports_forecast.service.db.engine import get_session
 from sports_forecast.service.db.repository import CalendarRepository
 from sports_forecast.service.event_readiness import evaluate_event_readiness
@@ -67,8 +69,11 @@ def get_calendar(
         coverage = repository.get_coverage(
             tournament=tournament,
         )
+        registry_snapshot_id = (
+            pin_installed_registry(session).snapshot_id if registry_event_reader_enabled() else None
+        )
         predictions_by_event, odds_by_event, attempts_by_event = repository.get_readiness_data(
-            events
+            events, registry_snapshot_id=registry_snapshot_id
         )
         event_readiness = {
             event.id: evaluate_event_readiness(

@@ -10,16 +10,16 @@
 
 - Инициатива: `EPIC-026`.
 - Ветка инициативы: `initiative/epic-026-entity-registry`.
-- Workflow / этап: `engineering / TASK-026-6 implementation`; [REQ-026](../product/requirements/REQ-026-entity-registry.md) подтверждён, [ADR-027](../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md) принят; TASK-026-1…5 прошли независимое review, эксплуатационный gate TASK-026-5 открыт.
+- Workflow / этап: `engineering / TASK-026-6 reviewed, PR/CI pending`; [REQ-026](../product/requirements/REQ-026-entity-registry.md) подтверждён, [ADR-027](../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md) принят; TASK-026-1…6 прошли независимое review, эксплуатационный gate TASK-026-5 открыт.
 - Исходная цель: проектные ID и имена сущностей отделены от названий и ID источников; процесс применим к сотням турниров, локальный registry обслуживает загрузку истории и обучение.
 - Критерии и DoD: подтверждённые критерии 1–11 в [REQ-026](../product/requirements/REQ-026-entity-registry.md), затем TASK review, полное EPIC review и terminal CI.
 - Релиз: production-развёртывание не запрошено.
-- Выполнено: подтверждён REQ и создана ветка; TASK-026-1 реализовал локальный registry, TASK-026-2 — локальную веб-очередь, TASK-026-3 — строгий resolver событий и версионированный bridge, TASK-026-4 — полный локальный snapshot и provenance. TASK-026-5 реализовал Object Storage publisher, PostgreSQL projection и sync; код прошёл независимое review и 77 целевых тестов. Фактические endpoint/IAM/DB gates остаются открытыми.
+- Выполнено: подтверждён REQ и создана ветка; TASK-026-1 реализовал локальный registry, TASK-026-2 — локальную веб-очередь, TASK-026-3 — строгий resolver событий и версионированный bridge, TASK-026-4 — полный локальный snapshot и provenance. TASK-026-5 реализовал Object Storage publisher, PostgreSQL projection и sync. TASK-026-6 реализовал обратную очередь, локальное решение и строгую линию; полные локальные циклы NHL/EPL и независимое review прошли. `make test`: 1409 passed, 5 skipped. Фактические endpoint/IAM/DB gates остаются открытыми.
 - Решения: собственные ID и имена проекта; переименование сохраняет ID; неочевидные связи владелец подтверждает на локальной веб-странице с поиском и пакетными действиями; сервер читает опубликованный через существующий Object Storage снимок и передаёт новые кандидаты локально без собственного подтверждения. Registry применим к сотням турниров и будущим игрокам. Версионированная связь с `canonical_events.id` определена в ADR-027.
 - Артефакты: [REQ-026](../product/requirements/REQ-026-entity-registry.md), [ADR-027](../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md), [TASK-026-1](tasks/TASK-026-1-source-neutral-entity-registry.md), [ADR-026 календаря](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md), [долгосрочный план](index.md#долгосрочные-инициативы-платформы), [EPIC-003](EPIC-003-scalable-multisport-platform.md), [EPIC-025](EPIC-025-bot-schedule-readiness.md).
-- Предыдущая роль: Reviewer — TASK-026-5 без P0–P2 после исправления runbook; 77 целевых тестов и static checks прошли.
-- Следующая роль: Developer — реализовать обратную очередь и полный цикл по [TASK-026-6](tasks/TASK-026-6-registry-candidate-feedback.md).
-- Открытые вопросы: live contract probe текущего Object Storage endpoint остаётся gate TASK-026-5; в рабочем окружении credentials не заданы. Локальный fixture не заменяет этот gate.
+- Предыдущая роль: Reviewer — TASK-026-6 без P0–P2 после исправления stale relation CAS, strict odds и feedback; 84 ключевых теста и static checks прошли.
+- Следующая роль: Product Owner — зафиксировать PR, дождаться terminal CI; затем Operations Agent для live endpoint/IAM/DB/retention gate TASK-026-5 по отдельному эксплуатационному допуску.
+- Открытые вопросы: live contract probe текущего Object Storage endpoint и права IAM/DB остаются gate TASK-026-5; в рабочем окружении credentials не заданы. Локальный fixture не заменяет этот gate. В строгом режиме legacy merge historical odds в `source.csv` отключён до проверенного локального materialization по подтверждённым связям.
 - Research: не применяется.
 - Обновлено: 2026-10-04.
 

@@ -560,6 +560,29 @@ acquisition-процессу. Transport экспортирует bounded immutab
 Отказ storage оставляет outbox для retry. Ack означает доставку, не подтверждение:
 сервер продолжает ждать решения в новом snapshot.
 
+Реализация фиксирует для каждой установки стабильный UUID и монотонный номер
+batch. Идентификатор batch начинается с 20-значного номера, поэтому локальный
+importer может хранить cursor и останавливать обработку при пробеле в истории.
+Запись кандидатов и cursor происходит одной локальной транзакцией; ack создаётся
+лишь после commit. В одном batch не повторяется один idempotency key; новое
+наблюдение уже известного ключа увеличивает счётчик и обновляет last_seen.
+Серверный outbox публикует неизменяемый JSONL и сверяет прочитанные bytes.
+
+В строгом runtime режиме snapshot `ir1` закрепляется на обработку. Новые
+обозначения спортивного источника и букмекера попадают в durable outbox, но
+не создают подтверждённую связь. `OddsObservation` сохраняет `ir1` в
+`registry_snapshot_id`; readiness выбирает коэффициенты той же версии.
+При чтении ранее закреплённого bridge сервер повторно сверяет текущую
+canonical revision с source designations и relation того же `ir1`. Если
+спортивный источник исправил участников или турнир, старый mapping остаётся
+в immutable истории, но runtime видит `conflict`, не прикрепляет новые odds и
+передаёт владельцу кандидата на пересмотр relation. Подтверждённый source
+event ID сам по себе не оправдывает прежнюю пару команд после коррекции.
+Старый merge OddsStore в `source.csv` отключён в этом режиме, поскольку он
+опирается на сопоставление строк без подтверждённого проектного ID. Для
+включения registry mode в локальном обучении нужен отдельный проверенный путь
+materialization только подтверждённых historical odds.
+
 Права разделены: local publisher — Get/Put snapshots/publications/current;
 server sync — Get этих ключей; server feedback exporter — Put/Get verification
 только своего candidates prefix; local importer — List/Get candidates и Put ack;

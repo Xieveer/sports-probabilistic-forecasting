@@ -152,7 +152,7 @@ def _canonical_utc(value: str | None) -> str | None:
 class EntityRegistry:
     """Явно мигрируемый локальный registry на SQLite."""
 
-    schema_version = 9
+    schema_version = 11
 
     def __init__(self, path: Path) -> None:
         """Создать фасад для файла БД, не создавая файл и таблицы."""
@@ -209,6 +209,12 @@ class EntityRegistry:
                 version = 8
             if version == 8:
                 self._upgrade_v8(connection)
+                version = 9
+            if version == 9:
+                self._upgrade_v9(connection)
+                version = 10
+            if version == 10:
+                self._upgrade_v10(connection)
                 return
             if version != 0:
                 raise RegistryNotInitializedError(f"Неизвестная версия схемы registry: {version}")
@@ -289,9 +295,26 @@ class EntityRegistry:
                     revision INTEGER NOT NULL DEFAULT 1,
                     status TEXT NOT NULL CHECK(status IN ('pending','confirmed','rejected','deferred')),
                     created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                    first_seen_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    observation_count INTEGER NOT NULL DEFAULT 1 CHECK(observation_count >= 1),
                     UNIQUE(origin,idempotency_key)
                 );
                 CREATE INDEX review_candidate_queue ON review_candidates(status,observed_at,id);
+                CREATE TABLE candidate_feedback_cursors (
+                    installation_id TEXT PRIMARY KEY,
+                    batch_sequence INTEGER NOT NULL CHECK(batch_sequence >= 0),
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE candidate_feedback_import_batches (
+                    installation_id TEXT NOT NULL,
+                    batch_sequence INTEGER NOT NULL CHECK(batch_sequence > 0),
+                    batch_id TEXT NOT NULL,
+                    body_sha256 TEXT NOT NULL,
+                    imported_at TEXT NOT NULL,
+                    PRIMARY KEY(installation_id,batch_sequence),
+                    UNIQUE(installation_id,batch_id)
+                );
                 CREATE TABLE review_candidate_history (
                     candidate_id TEXT NOT NULL REFERENCES review_candidates(id),
                     revision INTEGER NOT NULL,
@@ -322,7 +345,7 @@ class EntityRegistry:
                     decided_at TEXT NOT NULL
                 );
                 CREATE INDEX event_relation_tournament ON event_relations(tournament_id,event_id);
-                PRAGMA user_version = 9;
+                PRAGMA user_version = 11;
                 COMMIT;
                 """
             )
@@ -502,6 +525,82 @@ class EntityRegistry:
         except Exception:
             connection.rollback()
             raise
+
+    @staticmethod
+    def _upgrade_v9(connection: sqlite3.Connection) -> None:
+        """Хранить durable import cursor для каждой server installation."""
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            connection.execute(
+                "CREATE TABLE candidate_feedback_cursors (installation_id TEXT PRIMARY KEY,batch_sequence INTEGER NOT NULL CHECK(batch_sequence >= 0),updated_at TEXT NOT NULL)"
+            )
+            connection.execute("PRAGMA user_version = 10")
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+
+    @staticmethod
+    def _upgrade_v10(connection: sqlite3.Connection) -> None:
+        """Сохранить повторные наблюдения и ledger импортированных feedback batches."""
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            connection.execute(
+                "ALTER TABLE review_candidates ADD COLUMN first_seen_at TEXT NOT NULL DEFAULT ''"
+            )
+            connection.execute(
+                "ALTER TABLE review_candidates ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT ''"
+            )
+            connection.execute(
+                "ALTER TABLE review_candidates ADD COLUMN observation_count INTEGER NOT NULL DEFAULT 1 CHECK(observation_count >= 1)"
+            )
+            connection.execute(
+                "UPDATE review_candidates SET first_seen_at=observed_at,last_seen_at=observed_at WHERE first_seen_at='' OR last_seen_at=''"
+            )
+            connection.execute(
+                "CREATE TABLE candidate_feedback_import_batches (installation_id TEXT NOT NULL,batch_sequence INTEGER NOT NULL CHECK(batch_sequence > 0),batch_id TEXT NOT NULL,body_sha256 TEXT NOT NULL,imported_at TEXT NOT NULL,PRIMARY KEY(installation_id,batch_sequence),UNIQUE(installation_id,batch_id))"
+            )
+            connection.execute("PRAGMA user_version = 11")
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+
+    def candidate_feedback_cursor(self, installation_id: str) -> int:
+        """Прочитать sequence последнего локально импортированного batch."""
+        with self._connect(write=False) as connection:
+            row = connection.execute(
+                "SELECT batch_sequence FROM candidate_feedback_cursors WHERE installation_id=?",
+                (installation_id,),
+            ).fetchone()
+            return int(row[0]) if row is not None else 0
+
+    def advance_candidate_feedback_cursor(
+        self, installation_id: str, *, expected_sequence: int, new_sequence: int
+    ) -> int:
+        """Атомарно продвинуть ack cursor ровно на один подтверждённый batch."""
+        if new_sequence != expected_sequence + 1 or expected_sequence < 0:
+            raise ValueError("Candidate cursor должен перейти на следующий sequence")
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT batch_sequence FROM candidate_feedback_cursors WHERE installation_id=?",
+                (installation_id,),
+            ).fetchone()
+            actual = int(row[0]) if row is not None else 0
+            if actual != expected_sequence:
+                raise ValueError("Candidate cursor изменился конкурентно")
+            now = _timestamp()
+            if row is None:
+                connection.execute(
+                    "INSERT INTO candidate_feedback_cursors VALUES (?,?,?)",
+                    (installation_id, new_sequence, now),
+                )
+            else:
+                connection.execute(
+                    "UPDATE candidate_feedback_cursors SET batch_sequence=?,updated_at=? WHERE installation_id=?",
+                    (new_sequence, now, installation_id),
+                )
+            return new_sequence
 
     @staticmethod
     def _strictly_contains(first: sqlite3.Row, second: sqlite3.Row) -> bool:

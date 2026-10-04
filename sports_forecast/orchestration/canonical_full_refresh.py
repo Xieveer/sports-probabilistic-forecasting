@@ -28,6 +28,8 @@ from sports_forecast.deploy.canonical_snapshot import export_canonical_snapshot
 from sports_forecast.deploy.model_bundle import BundleVerificationError, load_current_model_bundle
 from sports_forecast.deploy.source_state import export_nhl_source_state
 from sports_forecast.features.features_build import process_tournament_new
+from sports_forecast.identity.events import registry_event_reader_enabled
+from sports_forecast.identity.installation import pin_installed_registry
 from sports_forecast.materialize import materialize_predictions
 from sports_forecast.orchestration.future_odds import run_nhl_future_odds_batch
 from sports_forecast.service.db.engine import get_session
@@ -207,7 +209,12 @@ def _readiness_counts(
     if selected is None:
         return {}
     events, policy = selected
-    predictions, odds, attempts = CalendarRepository(session).get_readiness_data(events)
+    registry_snapshot_id = (
+        pin_installed_registry(session).snapshot_id if registry_event_reader_enabled() else None
+    )
+    predictions, odds, attempts = CalendarRepository(session).get_readiness_data(
+        events, registry_snapshot_id=registry_snapshot_id
+    )
     counts = {
         "eligible_events": len(events),
         "odds_eligible_events": len(events),

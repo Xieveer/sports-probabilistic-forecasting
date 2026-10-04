@@ -118,3 +118,55 @@ prefix. Проверка фактических IAM/DB grants, live endpoint pro
 
 Обратная доставка кандидатов находится в [TASK-026-6](../backlog/tasks/TASK-026-6-registry-candidate-feedback.md);
 полный контракт описан в [ADR-027](../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md).
+
+## Обратная очередь и решение владельца
+
+Задайте один стабильный `SF_ENTITY_REGISTRY_INSTALLATION_ID` для серверной
+установки и сохраните его при перезапусках. Для процесса обратной доставки
+выделите отдельный DB credential с доступом к outbox/sequence и отдельный
+Object Storage account: `PutObject`/`GetObject` только в
+`entity-registry/v1/candidates/<installation-id>/`, `GetObject` только в
+соответствующем `candidate-acks/`. Runtime ingestion пишет кандидатов в DB без
+Object Storage credential. Ошибка доставки оставляет строки outbox для retry.
+Задайте этому процессу `DATABASE_URL_FILE` с отдельной PostgreSQL ролью,
+`SF_REGISTRY_FEEDBACK_SERVER_ACCESS_KEY_ID_FILE` и
+`SF_REGISTRY_FEEDBACK_SERVER_SECRET_ACCESS_KEY_FILE`. Команды ограничивают
+число batch за запуск:
+
+```bash
+uv run python -m sports_forecast.deploy.registry_feedback_publish_cli publish --max-batches 10
+uv run python -m sports_forecast.deploy.registry_feedback_publish_cli collect-acks --max-batches 100
+```
+
+Запускайте обе команды периодически с раздельным от server sync расписанием;
+повтор после сбоя безопасен. Публикация сверяет удалённые bytes перед отметкой
+batch в БД. `collect-acks` отмечает только корректные ack своей установки.
+
+Локальному importer задайте `SF_REGISTRY_FEEDBACK_ACCESS_KEY_ID_FILE` и
+`SF_REGISTRY_FEEDBACK_SECRET_ACCESS_KEY_FILE` либо их значения без `_FILE`.
+Его account имеет `ListBucket` с ограничением собственного candidates prefix,
+`GetObject` для batches и `PutObject`/`GetObject` для собственного ack prefix.
+Он не получает права на `current.json`, snapshots или чужие установки.
+
+Импорт очереди запускается на локальной машине с доступом к master SQLite:
+
+```bash
+uv run python -m sports_forecast.deploy.registry_feedback_cli \
+  --registry data/entity-registry.sqlite3 \
+  --installation-id <stable-installation-uuid> \
+  --max-batches 100
+```
+
+Команда проверяет формат/порядок batch, переносит кандидатов и cursor в одной
+локальной транзакции, затем публикует ack. После сбоя повторите команду: уже
+принятые batches не продублируют задания. Ack подтверждает только доставку,
+решение о связи остаётся за владельцем в локальной веб-очереди. После решения
+экспортируйте и опубликуйте новый полный snapshot обычной командой publisher,
+затем запустите server sync. До установки новой версии неизвестные odds не
+прикрепляются к событию. Очередь, cursor и audit входят в backup локальной БД.
+
+Строгий reader включается только после установки проверенного снимка и
+подтверждения обратной доставки. В нём старый merge коэффициентов в
+`source.csv` пропускается: для обучения на historical odds нужен отдельный
+проверенный materialization по подтверждённым проектным связям. Старый режим
+остаётся включённым в `conf/identity_event.yaml` до эксплуатационного gate.

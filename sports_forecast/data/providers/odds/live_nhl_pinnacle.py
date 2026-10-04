@@ -17,7 +17,7 @@ false``), чтобы витрина и digest получали актуальн�
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from math import inf
@@ -144,9 +144,37 @@ def map_match_refs_to_pinnacle_quotes(
     team_registry: TeamNameRegistry | None = None,
     commence_tolerance_minutes: int = 360,
     event_id_to_match_id: Mapping[str, str] | None = None,
+    project_event_ids: Mapping[str, str] | None = None,
+    quote_project_event_ids: Mapping[str, str] | None = None,
 ) -> dict[str, PinnacleH2HQuote | None]:
     """Сопоставить ``match_id`` из витрины с котировками (overrides → fuzzy по командам/времени)."""
     out: dict[str, PinnacleH2HQuote | None] = {r.match_id: None for r in refs}
+    if (project_event_ids is None) != (quote_project_event_ids is None):
+        raise ValueError("Strict live odds matching требует обе registry projection")
+    if project_event_ids is not None and quote_project_event_ids is not None:
+        refs_by_project: dict[str, list[NHLLiveMatchRef]] = {}
+        quotes_by_project: dict[str, list[PinnacleH2HQuote]] = {}
+        for ref in refs:
+            project_id = project_event_ids.get(ref.match_id)
+            if project_id is not None:
+                refs_by_project.setdefault(project_id, []).append(ref)
+        for quote in quotes:
+            project_id = quote_project_event_ids.get(quote.odds_api_event_id)
+            if project_id is not None:
+                quotes_by_project.setdefault(project_id, []).append(quote)
+        for project_id, project_refs in refs_by_project.items():
+            project_quotes = quotes_by_project.get(project_id, [])
+            if len(project_refs) != 1 or len(project_quotes) != 1:
+                continue
+            ref, quote = project_refs[0], project_quotes[0]
+            if (
+                ref.commence_utc is not None
+                and quote.commence_utc is not None
+                and ref.commence_utc != quote.commence_utc
+            ):
+                continue
+            out[ref.match_id] = quote
+        return out
     quotes_by_id = {q.odds_api_event_id: q for q in quotes}
     used_quote_ids: set[str] = set()
 
@@ -232,6 +260,9 @@ def fetch_nhl_pinnacle_quotes_for_refs(
     client: OddsApiClient | None = None,
     sport_key: str | None = None,
     bookmaker_key: str | None = None,
+    project_event_ids: Mapping[str, str] | None = None,
+    quote_project_event_ids: Mapping[str, str] | None = None,
+    quote_project_event_resolver: Callable[[PinnacleH2HQuote], str | None] | None = None,
 ) -> dict[str, PinnacleH2HQuote | None]:
     """Один запрос odds NHL + сопоставление со списком матчей витрины.
 
@@ -283,12 +314,20 @@ def fetch_nhl_pinnacle_quotes_for_refs(
         bookmaker_key=resolved_bookmaker_key,
         team_registry=team_registry,
     )
+    if project_event_ids is not None and quote_project_event_resolver is not None:
+        quote_project_event_ids = {
+            quote.odds_api_event_id: project_id
+            for quote in quotes
+            if (project_id := quote_project_event_resolver(quote)) is not None
+        }
     return map_match_refs_to_pinnacle_quotes(
         refs,
         quotes,
         team_registry=team_registry,
         commence_tolerance_minutes=tol,
         event_id_to_match_id=overrides,
+        project_event_ids=project_event_ids,
+        quote_project_event_ids=quote_project_event_ids,
     )
 
 

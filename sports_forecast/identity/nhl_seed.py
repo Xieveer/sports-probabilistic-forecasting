@@ -12,12 +12,13 @@ from sports_forecast.identity.registry import Entity, EntityRegistry, _normalize
 
 
 NHL_SEED_ID = "trusted:nhl-team-name-registry:v1"
+_IMPORT_SCHEMA_VERSION = b"nhl-registry-aliases-v2\0"
 
 
 def import_nhl_yaml(registry: EntityRegistry, path: Path) -> str:
     """Атомарно импортировать проверенный mapping; вернуть стабильный seed ID."""
     content = Path(path).read_bytes()
-    digest = hashlib.sha256(content).hexdigest()
+    digest = hashlib.sha256(_IMPORT_SCHEMA_VERSION + content).hexdigest()
     parsed: Any = yaml.safe_load(content)
     if not isinstance(parsed, dict):
         raise ValueError("NHL seed должен быть YAML-объектом")
@@ -54,6 +55,34 @@ def import_nhl_yaml(registry: EntityRegistry, path: Path) -> str:
         tournament = registry._seed_entity_in_transaction(
             connection, "tournament", "NHL", "ice_hockey", NHL_SEED_ID
         )
+        for source, value_kind, raw_value in (
+            ("nhl_web_api", "name", "nhl"),
+            ("the_odds_api", "external_id", "icehockey_nhl"),
+        ):
+            tournament_scope = {"sport": "ice_hockey"}
+            existing = connection.execute(
+                "SELECT id FROM designations WHERE source=? AND kind='tournament' AND scope_json=? AND value_kind=? AND normalized_value=? LIMIT 1",
+                (
+                    source,
+                    registry._scope_json(tournament_scope),
+                    value_kind,
+                    _normalize(raw_value, value_kind),
+                ),
+            ).fetchone()
+            if existing is None:
+                registry._insert_designation(
+                    connection,
+                    entity_id=tournament.id,
+                    source=source,
+                    kind="tournament",
+                    scope=tournament_scope,
+                    value_kind=value_kind,
+                    raw_value=raw_value,
+                    state="confirmed",
+                    valid_from=None,
+                    valid_until=None,
+                    seed_key=NHL_SEED_ID,
+                )
         scope = {"sport": "ice_hockey", "tournament": tournament.id}
         scope_json = registry._scope_json(scope)
         entities = {}
@@ -95,6 +124,7 @@ def import_nhl_yaml(registry: EntityRegistry, path: Path) -> str:
                 )
         for source, mapping, value_kind in (
             ("nhl_api", nhl_api, "external_id"),
+            ("nhl_web_api", nhl_api, "name"),
             ("the_odds_api", odds_api, "name"),
         ):
             for raw_value, canonical_name in mapping.items():

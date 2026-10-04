@@ -341,10 +341,86 @@ class InstalledRegistryReader:
         )
 
     def get_event_mapping(self, canonical_event_id: int, session: Session) -> EventRegistryMapping:
-        """Получить bridge row для pinned `ir1` и существующего integer event ID."""
+        """Получить bridge и проверить актуальную canonical revision перед runtime use."""
         mapping = session.get(EventRegistryMapping, (self.snapshot_id, canonical_event_id))
         if mapping is None:
             raise KeyError((self.snapshot_id, canonical_event_id))
+        if mapping.status == "resolved":
+            event = session.get(CanonicalEvent, canonical_event_id)
+            if event is None:
+                raise KeyError(canonical_event_id)
+            scheduled_at = event.scheduled_at
+            if scheduled_at is not None and scheduled_at.tzinfo is None:
+                scheduled_at = scheduled_at.replace(tzinfo=UTC)
+            current = self.event_snapshot.resolve(
+                CanonicalEventRef(
+                    canonical_event_id=canonical_event_id,
+                    sport=event.sport,
+                    tournament=event.tournament,
+                    source=event.source,
+                    source_event_id=event.source_event_id,
+                    scheduled_at=scheduled_at,
+                    home_participant=event.home_participant,
+                    away_participant=event.away_participant,
+                )
+            )
+            project = next(
+                (
+                    item
+                    for item in self._snapshot.event_snapshot.events
+                    if item.id == mapping.project_event_id
+                ),
+                None,
+            )
+            at = scheduled_at.isoformat() if scheduled_at is not None else None
+            tournament = self.resolve_designation(
+                source=event.source,
+                kind="tournament",
+                scope={"sport": event.sport},
+                value_kind="name",
+                raw_value=event.tournament,
+                at=at,
+            )
+            scope = {
+                "sport": event.sport,
+                "tournament": tournament.entity_id or "",
+            }
+            home = self.resolve_designation(
+                source=event.source,
+                kind="team",
+                scope=scope,
+                value_kind="name",
+                raw_value=event.home_participant or "",
+                at=at,
+            )
+            away = self.resolve_designation(
+                source=event.source,
+                kind="team",
+                scope=scope,
+                value_kind="name",
+                raw_value=event.away_participant or "",
+                at=at,
+            )
+            if (
+                current.status != "resolved"
+                or current.project_event_id != mapping.project_event_id
+                or project is None
+                or project.sport != event.sport
+                or tournament.status != "resolved"
+                or tournament.entity_id != project.tournament_id
+                or home.status != "resolved"
+                or home.entity_id != project.home_team_id
+                or away.status != "resolved"
+                or away.entity_id != project.away_team_id
+            ):
+                return EventRegistryMapping(
+                    snapshot_id=self.snapshot_id,
+                    canonical_event_id=canonical_event_id,
+                    project_event_id=None,
+                    status="conflict",
+                    reason="Текущая canonical revision противоречит закреплённому bridge",
+                    policy_version=mapping.policy_version,
+                )
         return cast(EventRegistryMapping, mapping)
 
 
@@ -465,6 +541,39 @@ def pin_installed_registry(session: Session) -> InstalledRegistryReader:
         raise ValueError("Active pointer не соответствует immutable publication record")
     snapshot = _load_snapshot_rows(session, snapshot_id)
     return _make_reader(session, snapshot, sequence, publication_id, use_cache=True)
+
+
+def refresh_active_event_bridge(session: Session) -> tuple[EventRegistryMapping, ...]:
+    """Добавить mappings новых canonical rows к текущему ir1 без правки старых."""
+    lock = session.scalar(
+        select(RegistryInstallationLock)
+        .where(RegistryInstallationLock.__table__.c.id == 1)
+        .with_for_update()
+    )
+    if lock is None:
+        raise RuntimeError("Registry installation lock отсутствует")
+    active = session.get(ActiveRegistryInstallation, 1)
+    if active is None:
+        raise RuntimeError("Registry installation ещё не доступна")
+    snapshot = _load_snapshot_rows(session, active.snapshot_id)
+    before = {
+        item.canonical_event_id
+        for item in session.scalars(
+            select(EventRegistryMapping).where(
+                EventRegistryMapping.__table__.c.snapshot_id == active.snapshot_id
+            )
+        )
+    }
+    _install_event_bridge(session, snapshot)
+    return tuple(
+        item
+        for item in session.scalars(
+            select(EventRegistryMapping).where(
+                EventRegistryMapping.__table__.c.snapshot_id == active.snapshot_id
+            )
+        )
+        if item.canonical_event_id not in before
+    )
 
 
 def _make_reader(

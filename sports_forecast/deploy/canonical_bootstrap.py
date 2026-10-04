@@ -17,6 +17,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from sports_forecast.deploy.serving_data import ArchiveArtifact, archive_snapshot, verify_archive
+from sports_forecast.identity.events import registry_event_reader_enabled
+from sports_forecast.identity.installation import (
+    pin_installed_registry,
+    refresh_active_event_bridge,
+)
 from sports_forecast.service.db.engine import get_session
 from sports_forecast.service.db.models import (
     BootstrapImport,
@@ -25,6 +30,7 @@ from sports_forecast.service.db.models import (
     CanonicalEventRevision,
     RefreshWatermark,
 )
+from sports_forecast.service.registry_candidate_capture import enqueue_unresolved_canonical_event
 from sports_forecast.utils.log_config import get_logger
 
 
@@ -277,6 +283,9 @@ def import_nhl_bootstrap_bundle(bundle_path: Path, session: Session) -> Bootstra
         else:
             watermark.source = "nhl_web_api"
             watermark.snapshot_id = artifact.artifact_id
+        _refresh_registry_feedback_for_nhl_events(
+            session, {str(item["source_event_id"]) for item in events}, observed_at
+        )
         session.commit()
     except Exception:
         session.rollback()
@@ -341,12 +350,34 @@ def refresh_nhl_canonical_with_summary_from_csv(
         for event in events:
             _import_event(session, event, source_observed_at=observed_at)
         _import_calendar_coverage(source_csv, session)
+        _refresh_registry_feedback_for_nhl_events(session, set(events_by_id), observed_at)
         session.commit()
     except Exception:
         session.rollback()
         raise
     logger.info("NHL canonical refresh применён events=%d", summary.events_found)
     return summary
+
+
+def _refresh_registry_feedback_for_nhl_events(
+    session: Session, source_event_ids: set[str], observed_at: datetime
+) -> None:
+    """Сохранить bridge и неизвестные NHL обозначения вместе с canonical import."""
+    if not source_event_ids or not registry_event_reader_enabled():
+        return
+    session.flush()
+    refresh_active_event_bridge(session)
+    reader = pin_installed_registry(session)
+    events = session.scalars(
+        select(CanonicalEvent).where(
+            CanonicalEvent.__table__.c.tournament == "nhl",
+            CanonicalEvent.__table__.c.source == "nhl_web_api",
+            CanonicalEvent.__table__.c.source_event_id.in_(source_event_ids),
+        )
+    ).all()
+    for event in events:
+        mapping = reader.get_event_mapping(int(event.id), session)
+        enqueue_unresolved_canonical_event(session, reader, event, mapping, observed_at=observed_at)
 
 
 def _import_calendar_coverage(source_csv: Path, session: Session) -> None:

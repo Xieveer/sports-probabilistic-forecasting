@@ -183,6 +183,39 @@ def test_run_odds_refresh_mocked_backfill(tmp_path: Path, monkeypatch: pytest.Mo
     assert final.last_successful_date == "2025-12-25"
 
 
+def test_strict_registry_skips_legacy_source_csv_merge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Строгий registry не допускает fuzzy merge линии в обучающий source.csv."""
+    from sports_forecast.data.providers.odds import refresh
+
+    store = tmp_path / "odds.parquet"
+    state = tmp_path / "refresh_state.json"
+    source = tmp_path / "source.csv"
+    source.write_text("id,home_team,away_team\nm1,North,South\n", encoding="utf-8")
+    store_mod.save_odds_store(pd.DataFrame([_row()]), store)
+    monkeypatch.setattr(refresh, "load_bookmaker_config", lambda _key: _fake_book_cfg())
+    monkeypatch.setattr(refresh, "registry_event_reader_enabled", lambda: True, raising=False)
+
+    def forbidden_merge(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("fuzzy merge bypassed registry")
+
+    monkeypatch.setattr(refresh, "merge_odds_into_source_csv", forbidden_merge)
+    result = run_odds_refresh(
+        tournament="nhl",
+        store_path=store,
+        refresh_state_path=state,
+        source_csv_path=source,
+        project_root=tmp_path,
+        source_config_name=None,
+        today=date(2025, 12, 25),
+        run_backfill_fn=lambda **_kwargs: pd.DataFrame([_row()]),
+        auto_merge=True,
+    )
+    assert result.merged_source is False
+    assert source.read_text(encoding="utf-8") == "id,home_team,away_team\nm1,North,South\n"
+
+
 def _fake_book_cfg() -> object:
     return OmegaConf.create(
         {

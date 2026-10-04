@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sqlite3
 import subprocess
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from sports_forecast.identity.review_app import create_review_app
 from sports_forecast.identity.review_service import (
     CandidateDecision,
     CandidateObservation,
+    NewEventRelation,
     NewProjectEntity,
     ReviewQueueService,
 )
@@ -630,3 +632,404 @@ def test_post_bodies_are_rejected_before_form_parsing_when_oversized(tmp_path: P
 
     assert login.status_code == 413
     assert decision.status_code == 413
+
+
+def test_owner_can_create_project_event_with_audited_team_relation(tmp_path: Path) -> None:
+    registry = make_registry(tmp_path)
+    tournament = registry.create_entity("tournament", "Regional Cup", sport="hockey")
+    home = registry.create_entity("team", "North Stars", sport="hockey")
+    away = registry.create_entity("team", "South Wolves", sport="hockey")
+    queue = ReviewQueueService(registry)
+    candidate = queue.observe(
+        CandidateObservation(
+            source="sports-feed",
+            kind="event",
+            scope={"sport": "hockey", "tournament": tournament.id},
+            value_kind="external_id",
+            raw_value="game-42",
+            origin="server:install",
+            idempotency_key="batch/42",
+            observed_at="2026-10-04T10:00:00Z",
+            facts={"home": "North Stars", "away": "South Wolves"},
+            basis="Unknown sports event requires project event identity",
+        )
+    )
+    payload = NewProjectEntity(
+        kind="event",
+        project_name="North Stars vs South Wolves",
+        sport="hockey",
+        event_relation=NewEventRelation(
+            tournament_id=tournament.id,
+            home_team_id=home.id,
+            away_team_id=away.id,
+            scheduled_at="2026-10-05T17:30:00Z",
+        ),
+    )
+
+    result = queue.decide_batch(
+        [
+            CandidateDecision(
+                candidate.id,
+                candidate.revision,
+                candidate.designation_revision,
+                "create_entity",
+                "Owner confirms project event and participants",
+                new_entity=payload,
+            )
+        ],
+        actor="owner",
+    )
+
+    project_event = registry.get_designation(candidate.designation_id).entity_id
+    assert project_event is not None
+    assert result[0].status == "confirmed"
+    relation = registry.get_event_relation(project_event)
+    assert (relation.tournament_id, relation.home_team_id, relation.away_team_id) == (
+        tournament.id,
+        home.id,
+        away.id,
+    )
+    assert relation.scheduled_at == "2026-10-05T17:30:00.000000Z"
+    assert registry.list_event_relation_audit(project_event)[0].actor == "owner"
+
+
+def test_event_relation_failure_rolls_back_entity_decision_and_designation(tmp_path: Path) -> None:
+    registry = make_registry(tmp_path)
+    tournament = registry.create_entity("tournament", "Regional Cup", sport="hockey")
+    home = registry.create_entity("team", "North Stars", sport="hockey")
+    away = registry.create_entity("team", "South Wolves", sport="hockey")
+    queue = ReviewQueueService(registry)
+    candidate = queue.observe(
+        CandidateObservation(
+            source="sports-feed",
+            kind="event",
+            scope={"sport": "hockey", "tournament": tournament.id},
+            value_kind="external_id",
+            raw_value="game-fail",
+            origin="server:install",
+            idempotency_key="batch/fail",
+            observed_at="2026-10-04T10:00:00Z",
+            facts={},
+            basis="Unknown sports event requires project event identity",
+        )
+    )
+    payload = NewProjectEntity(
+        kind="event",
+        project_name="Should Roll Back",
+        sport="hockey",
+        event_relation=NewEventRelation(
+            tournament_id=tournament.id,
+            home_team_id=home.id,
+            away_team_id=away.id,
+            scheduled_at="2026-10-05T17:30:00Z",
+        ),
+    )
+
+    with sqlite3.connect(registry.path) as connection:
+        connection.execute(
+            "CREATE TRIGGER reject_event_relation BEFORE INSERT ON event_relations "
+            "BEGIN SELECT RAISE(ABORT, 'injected relation failure'); END"
+        )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        queue.decide_batch(
+            [
+                CandidateDecision(
+                    candidate.id,
+                    candidate.revision,
+                    candidate.designation_revision,
+                    "create_entity",
+                    "Invalid UTC timestamp",
+                    new_entity=payload,
+                )
+            ],
+            actor="owner",
+        )
+
+    assert registry.list_entities(kind="event") == []
+    assert registry.get_designation(candidate.designation_id).state == "pending"
+    assert registry.list_decisions(candidate.designation_id) == []
+
+
+def test_local_review_ui_searches_and_creates_event_with_selected_relations(
+    tmp_path: Path,
+) -> None:
+    registry = make_registry(tmp_path)
+    tournament = registry.create_entity("tournament", "Regional Cup", sport="hockey")
+    home = registry.create_entity("team", "North Stars", sport="hockey")
+    away = registry.create_entity("team", "South Wolves", sport="hockey")
+    queue = ReviewQueueService(registry)
+    candidate = queue.observe(
+        CandidateObservation(
+            source="sports-feed",
+            kind="event",
+            scope={"sport": "hockey"},
+            value_kind="external_id",
+            raw_value="ui-game-42",
+            origin="server:install",
+            idempotency_key="ui/event/42",
+            observed_at="2026-10-04T10:00:00Z",
+            facts={},
+            basis="Unknown event",
+        )
+    )
+    secret_path = tmp_path / "review.secret"
+    secret_path.write_text("a-long-random-owner-secret-for-tests", encoding="utf-8")
+    secret_path.chmod(0o600)
+    client = TestClient(
+        create_review_app(queue, secret_path=secret_path, actor="owner"),
+        base_url="http://127.0.0.1:8765",
+    )
+    client.post(
+        "/login",
+        data={"secret": "a-long-random-owner-secret-for-tests"},
+        headers={"Origin": "http://127.0.0.1:8765"},
+        follow_redirects=False,
+    )
+    page = client.get("/review?event_tournament_q=Regional&event_team_q=Stars").text
+    csrf = re.search(r"name='csrf' value='([^']+)'", page)
+    assert csrf is not None
+    assert f"value='{tournament.id}'>{tournament.project_name} ({tournament.id})</option>" in page
+    assert f"value='{home.id}'>{home.project_name} ({home.id})</option>" in page
+
+    response = client.post(
+        "/review/decision",
+        data={
+            "csrf": csrf.group(1),
+            "selected_id": candidate.id,
+            "candidate_id": candidate.id,
+            f"revision_{candidate.id}": str(candidate.revision),
+            f"designation_revision_{candidate.id}": str(candidate.designation_revision),
+            "new_entity_kind": "event",
+            "new_entity_name": "North Stars vs South Wolves",
+            "sport": "hockey",
+            "new_event_tournament_id": tournament.id,
+            "new_event_home_team_id": home.id,
+            "new_event_away_team_id": away.id,
+            "new_event_scheduled_at": "2026-10-05T17:30:00Z",
+            "action": "create_entity",
+            "reason": "Проверено владельцем",
+        },
+        headers={"Origin": "http://127.0.0.1:8765"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    event_id = registry.get_designation(candidate.designation_id).entity_id
+    assert event_id is not None
+    relation = registry.get_event_relation(event_id)
+    assert (relation.tournament_id, relation.home_team_id, relation.away_team_id) == (
+        tournament.id,
+        home.id,
+        away.id,
+    )
+    assert registry.list_event_relation_audit(event_id)[0].actor == "owner"
+
+
+def test_owner_can_correct_existing_event_relation_without_rebinding_candidate(
+    tmp_path: Path,
+) -> None:
+    registry = make_registry(tmp_path)
+    tournament = registry.create_entity("tournament", "Regional Cup", sport="hockey")
+    home = registry.create_entity("team", "North Stars", sport="hockey")
+    away = registry.create_entity("team", "South Wolves", sport="hockey")
+    corrected_home = registry.create_entity("team", "North Stars II", sport="hockey")
+    event = registry.create_entity("event", "North Stars vs South Wolves", sport="hockey")
+    registry.set_event_relation(
+        event.id,
+        tournament_id=tournament.id,
+        home_team_id=home.id,
+        away_team_id=away.id,
+        scheduled_at="2026-10-05T17:30:00Z",
+        actor="owner",
+        reason="Initial relation",
+    )
+    existing = registry.add_designation(
+        source="sports-feed",
+        kind="event",
+        scope={"sport": "hockey"},
+        value_kind="external_id",
+        raw_value="canonical-game-id",
+        entity_id=event.id,
+        state="confirmed",
+    )
+    queue = ReviewQueueService(registry)
+    conflict = queue.observe(
+        CandidateObservation(
+            source="sports-feed",
+            kind="event",
+            scope={"sport": "hockey", "event_id": "canonical-game-id"},
+            value_kind="external_id",
+            raw_value="canonical-game-id-conflict",
+            origin="server:install",
+            idempotency_key="conflict/1",
+            observed_at="2026-10-04T10:00:00Z",
+            facts={"home": "North Stars II"},
+            proposed_entity_ids=(event.id,),
+            basis="Published participants conflict with project event relation",
+        )
+    )
+
+    secret_path = tmp_path / "review.secret"
+    secret_path.write_text("a-long-random-owner-secret-for-tests", encoding="utf-8")
+    secret_path.chmod(0o600)
+    client = TestClient(
+        create_review_app(queue, secret_path=secret_path, actor="owner"),
+        base_url="http://127.0.0.1:8765",
+    )
+    client.post(
+        "/login",
+        data={"secret": "a-long-random-owner-secret-for-tests"},
+        headers={"Origin": "http://127.0.0.1:8765"},
+        follow_redirects=False,
+    )
+    page = client.get("/review?entity_q=North&event_tournament_q=Regional&event_team_q=South").text
+    csrf = re.search(r"name='csrf' value='([^']+)'", page)
+    assert csrf is not None
+    assert f"name='entity_id_{conflict.id}'" in page
+    assert f"value='{event.id}|1'>North Stars vs South Wolves ({event.id})</option>" in page
+    registry.set_event_relation(
+        event.id,
+        tournament_id=tournament.id,
+        home_team_id=home.id,
+        away_team_id=away.id,
+        scheduled_at="2026-10-05T17:45:00Z",
+        actor="owner",
+        reason="Concurrent correction",
+        expected_revision=1,
+    )
+    stale_response = client.post(
+        "/review/decision",
+        data={
+            "csrf": csrf.group(1),
+            "selected_id": conflict.id,
+            "candidate_id": conflict.id,
+            f"revision_{conflict.id}": str(conflict.revision),
+            f"designation_revision_{conflict.id}": str(conflict.designation_revision),
+            f"entity_id_{conflict.id}": f"{event.id}|1",
+            "new_event_tournament_id": tournament.id,
+            "new_event_home_team_id": corrected_home.id,
+            "new_event_away_team_id": away.id,
+            "new_event_scheduled_at": "2026-10-05T18:00:00Z",
+            "action": "update_relation",
+            "reason": "Owner corrected event participants",
+        },
+        headers={"Origin": "http://127.0.0.1:8765"},
+        follow_redirects=False,
+    )
+    assert stale_response.status_code == 409
+    assert queue.get(conflict.id).status == "pending"
+    assert registry.get_event_relation(event.id).revision == 2
+
+    refreshed_page = client.get(
+        "/review?entity_q=North&event_tournament_q=Regional&event_team_q=South"
+    ).text
+    assert (
+        f"value='{event.id}|2'>North Stars vs South Wolves ({event.id})</option>" in refreshed_page
+    )
+    refreshed_csrf = re.search(r"name='csrf' value='([^']+)'", refreshed_page)
+    assert refreshed_csrf is not None
+    response = client.post(
+        "/review/decision",
+        data={
+            "csrf": refreshed_csrf.group(1),
+            "selected_id": conflict.id,
+            "candidate_id": conflict.id,
+            f"revision_{conflict.id}": str(conflict.revision),
+            f"designation_revision_{conflict.id}": str(conflict.designation_revision),
+            f"entity_id_{conflict.id}": f"{event.id}|2",
+            "new_event_tournament_id": tournament.id,
+            "new_event_home_team_id": corrected_home.id,
+            "new_event_away_team_id": away.id,
+            "new_event_scheduled_at": "2026-10-05T18:00:00Z",
+            "action": "update_relation",
+            "reason": "Owner corrected event participants",
+        },
+        headers={"Origin": "http://127.0.0.1:8765"},
+        follow_redirects=False,
+    )
+
+    relation = registry.get_event_relation(event.id)
+    assert (relation.tournament_id, relation.home_team_id, relation.away_team_id) == (
+        tournament.id,
+        corrected_home.id,
+        away.id,
+    )
+    assert relation.scheduled_at == "2026-10-05T18:00:00.000000Z"
+    audit = registry.list_event_relation_audit(event.id)
+    assert audit[-1].prior_home_team_id == home.id
+    assert audit[-1].actor == "owner"
+    assert response.status_code == 303
+    assert queue.get(conflict.id).status == "rejected"
+    assert registry.list_decisions(conflict.designation_id)[0].action == "update_relation"
+    assert registry.get_designation(existing.id).state == "confirmed"
+    assert registry.get_designation(existing.id).entity_id == event.id
+    assert registry.get_designation(conflict.designation_id).state == "rejected"
+
+
+def test_event_relation_correction_rolls_back_with_candidate_decision(tmp_path: Path) -> None:
+    registry = make_registry(tmp_path)
+    tournament = registry.create_entity("tournament", "Regional Cup", sport="hockey")
+    home = registry.create_entity("team", "North Stars", sport="hockey")
+    away = registry.create_entity("team", "South Wolves", sport="hockey")
+    correction = registry.create_entity("team", "North Stars II", sport="hockey")
+    event = registry.create_entity("event", "North Stars vs South Wolves", sport="hockey")
+    registry.set_event_relation(
+        event.id,
+        tournament_id=tournament.id,
+        home_team_id=home.id,
+        away_team_id=away.id,
+        scheduled_at="2026-10-05T17:30:00Z",
+        actor="owner",
+        reason="Initial relation",
+    )
+    queue = ReviewQueueService(registry)
+    candidate = queue.observe(
+        CandidateObservation(
+            source="sports-feed",
+            kind="event",
+            scope={"sport": "hockey"},
+            value_kind="external_id",
+            raw_value="conflicting-game",
+            origin="server:install",
+            idempotency_key="conflict/rollback",
+            observed_at="2026-10-04T10:00:00Z",
+            facts={},
+            proposed_entity_ids=(event.id,),
+            basis="Conflicting event facts",
+        )
+    )
+    with sqlite3.connect(registry.path) as connection:
+        connection.execute(
+            "CREATE TRIGGER reject_relation_audit BEFORE INSERT ON event_relation_audit "
+            "WHEN NEW.revision=2 BEGIN SELECT RAISE(ABORT, 'injected audit failure'); END"
+        )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        queue.decide_batch(
+            [
+                CandidateDecision(
+                    candidate.id,
+                    candidate.revision,
+                    candidate.designation_revision,
+                    "update_relation",
+                    "Correct conflict",
+                    entity_id=event.id,
+                    event_relation=NewEventRelation(
+                        tournament_id=tournament.id,
+                        home_team_id=correction.id,
+                        away_team_id=away.id,
+                        scheduled_at="2026-10-05T18:00:00Z",
+                    ),
+                    expected_event_relation_revision=1,
+                )
+            ],
+            actor="owner",
+        )
+
+    relation = registry.get_event_relation(event.id)
+    assert relation.home_team_id == home.id
+    assert relation.revision == 1
+    assert queue.get(candidate.id).status == "pending"
+    assert registry.get_designation(candidate.designation_id).state == "pending"
+    assert registry.list_decisions(candidate.designation_id) == []

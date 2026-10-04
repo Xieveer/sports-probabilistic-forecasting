@@ -12,6 +12,8 @@ from sqlalchemy.pool import StaticPool
 
 from sports_forecast.data.providers.odds.client import OddsApiQuotaSnapshot, QuotaBudgetError
 from sports_forecast.data.providers.odds.team_name_registry import TeamNameRegistry
+from sports_forecast.identity.registry import Resolution
+from sports_forecast.orchestration import future_odds
 from sports_forecast.orchestration.future_odds import (
     FutureOddsObservation,
     parse_nhl_future_odds,
@@ -23,6 +25,7 @@ from sports_forecast.service.db.models import (
     DataCycleRun,
     OddsAcquisitionAttempt,
     OddsObservation,
+    RegistryCandidateOutbox,
 )
 from sports_forecast.service.db.repository import CalendarRepository
 
@@ -88,6 +91,65 @@ def test_calendar_only_event_gets_exact_two_way_odds_with_provider_timestamps() 
     assert quote.retrieved_at == NOW
     assert quote.values == {"home": 2.1, "away": 1.8}
     assert counts == {"provider_events": 1, "matched": 1, "missing": 0, "rejected": 0}
+
+
+def test_strict_future_odds_waits_for_project_event_confirmation() -> None:
+    """Точное legacy имя не прикрепляет odds до общего project event ID."""
+    unknown, _ = parse_nhl_future_odds(
+        [_event()],
+        [_provider_event()],
+        _registry(),
+        retrieved_at=NOW,
+        project_event_ids={1: "project-1"},
+        project_event_team_ids={1: ("home-uuid", "away-uuid")},
+        confirmed_team_id=lambda raw, _at: {
+            "Anaheim Ducks": "home-uuid",
+            "Boston Bruins": "away-uuid",
+        }.get(raw),
+        registry_snapshot_id="ir1:" + "a" * 64,
+        provider_project_event_id=lambda _row: None,
+    )
+    assert unknown == []
+    confirmed, _ = parse_nhl_future_odds(
+        [_event()],
+        [_provider_event()],
+        TeamNameRegistry(),
+        retrieved_at=NOW,
+        project_event_ids={1: "project-1"},
+        project_event_team_ids={1: ("home-uuid", "away-uuid")},
+        confirmed_team_id=lambda raw, _at: {
+            "Anaheim Ducks": "home-uuid",
+            "Boston Bruins": "away-uuid",
+        }.get(raw),
+        registry_snapshot_id="ir1:" + "a" * 64,
+        provider_project_event_id=lambda _row: "project-1",
+    )
+    assert len(confirmed) == 1
+    assert confirmed[0].registry_snapshot_id == "ir1:" + "a" * 64
+
+
+def test_strict_future_odds_rejects_legacy_only_outcome_alias() -> None:
+    """Подтверждённое событие не превращает legacy outcome alias в связь."""
+    provider_event = _provider_event(
+        outcomes=[
+            {"name": "ANAHEIMDUCKS", "price": 2.1},
+            {"name": "Boston Bruins", "price": 1.8},
+        ]
+    )
+    observations, _ = parse_nhl_future_odds(
+        [_event()],
+        [provider_event],
+        _registry(),
+        retrieved_at=NOW,
+        project_event_ids={1: "project-1"},
+        project_event_team_ids={1: ("home-uuid", "away-uuid")},
+        confirmed_team_id=lambda raw, _at: {
+            "Anaheim Ducks": "home-uuid",
+            "Boston Bruins": "away-uuid",
+        }.get(raw),
+        provider_project_event_id=lambda _row: "project-1",
+    )
+    assert observations == []
 
 
 def test_draw_or_other_outcomes_do_not_confirm_winner_with_ot() -> None:
@@ -275,6 +337,43 @@ def test_batch_persists_calendar_only_observation_and_attempt_idempotently(
     assert odds_session.scalar(select(func.count()).select_from(OddsObservation)) == 1
     assert odds_session.scalar(select(func.count()).select_from(OddsAcquisitionAttempt)) == 1
     assert len(provider.calls) == 1
+
+
+def test_strict_batch_queues_unknown_tournament_without_attaching_odds(
+    odds_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Новый источник odds оставляет календарь и передаёт alias владельцу."""
+    monkeypatch.setenv("SF_ENTITY_REGISTRY_INSTALLATION_ID", "11111111-1111-4111-8111-111111111111")
+
+    class FakeReader:
+        snapshot_id = "ir1:" + "a" * 64
+        event_snapshot = SimpleNamespace(
+            resolve=lambda _ref: SimpleNamespace(status="unresolved", project_event_id=None),
+            event_snapshot=SimpleNamespace(events=()),
+        )
+
+        def get_event_mapping(self, _event_id, _session):
+            return SimpleNamespace(status="resolved", project_event_id="project-1")
+
+        def resolve_designation(self, **_kwargs):
+            return Resolution("unresolved", None, "fixture")
+
+    monkeypatch.setattr(future_odds, "registry_event_reader_enabled", lambda: True)
+    monkeypatch.setattr(future_odds, "pin_installed_registry", lambda _session: FakeReader())
+    attempt = run_nhl_future_odds_batch(
+        odds_session,
+        run_id="run-1",
+        now=NOW,
+        provider=_FakeProvider([_provider_event()]),
+        team_registry=_registry(),
+        clock=lambda: NOW,
+    )
+    assert attempt.status == "success"
+    assert attempt.matched_events == 0
+    assert odds_session.scalar(select(OddsObservation)) is None
+    candidates = odds_session.scalars(select(RegistryCandidateOutbox)).all()
+    assert len(candidates) == 1
+    assert '"raw_value":"icehockey_nhl"' in candidates[0].payload_json
 
 
 def test_new_rescheduled_identity_replaces_old_later_provider_timestamp(

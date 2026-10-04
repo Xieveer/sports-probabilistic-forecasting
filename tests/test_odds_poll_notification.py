@@ -307,6 +307,39 @@ def test_direct_h2h_adapter_makes_one_batch_request(monkeypatch) -> None:
     ]
 
 
+def test_direct_h2h_adapter_passes_pinned_registry_linkage(monkeypatch) -> None:
+    """Notification adapter не обходится без strict matcher при активном registry."""
+    import sports_forecast.orchestration.live_odds_adapter as subject
+
+    now = datetime(2026, 8, 7, 9, tzinfo=UTC)
+    prediction = SimpleNamespace(
+        match_id="match-1", home_player="Home", away_player="Away", match_datetime=now
+    )
+    seen = {}
+
+    def resolver(_quote):
+        return None
+
+    monkeypatch.setattr(subject, "registry_event_reader_enabled", lambda: True)
+    monkeypatch.setattr(subject, "load_bookmaker_config", lambda _name: object())
+    monkeypatch.setattr(subject, "pinned_live_quote_matching", lambda *_a, **_kw: ({}, resolver))
+
+    def fake_fetch(_refs, **kwargs):
+        seen.update(kwargs)
+        return {"match-1": None}
+
+    monkeypatch.setattr(subject, "fetch_nhl_pinnacle_quotes_for_refs", fake_fetch)
+    subject.fetch_odds_api_h2h_snapshots(
+        cast(Sequence[Prediction], [prediction]),
+        bookmaker_config="the_odds_api",
+        sport_key="icehockey_nhl",
+        bookmaker_key="pinnacle",
+        team_registry="unknown",
+    )
+    assert seen["project_event_ids"] == {}
+    assert seen["quote_project_event_resolver"] is resolver
+
+
 def test_profile_adapter_runtime_contract_is_tournament_neutral(monkeypatch) -> None:
     """CLI передаёт нейтральный профиль registry без условий по tournament slug."""
     import sports_forecast.orchestration.odds_poll_cli as subject

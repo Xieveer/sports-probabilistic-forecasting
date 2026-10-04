@@ -370,6 +370,9 @@ class OddsObservation(Base):
     observed_at_source: str | None = Column(String(64), nullable=True)
     retrieved_at: datetime | None = Column(DateTime, nullable=True)
     provider_event_id: str | None = Column(String(128), nullable=True)
+    registry_snapshot_id: str | None = Column(
+        String(80), ForeignKey("registry_identity_snapshots.snapshot_id"), nullable=True
+    )
     values_json: str = Column(Text, nullable=False)
     source: str = Column(String(128), nullable=False)
 
@@ -382,6 +385,9 @@ class OddsObservation(Base):
             name="uq_odds_observation_event_market_bookmaker",
         ),
         Index("ix_odds_observation_event", "canonical_event_id", "observed_at"),
+        Index(
+            "ix_odds_observation_registry_snapshot", "canonical_event_id", "registry_snapshot_id"
+        ),
     )
 
 
@@ -576,6 +582,51 @@ class RefreshWatermark(Base):
     source: str = Column(String(128), nullable=False)
     snapshot_id: str = Column(String(80), nullable=False)
     updated_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class RegistryCandidateOutbox(Base):
+    """Durable candidate observations waiting for owner-side registry review."""
+
+    __tablename__ = "registry_candidate_outbox"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    installation_id: str = Column(String(36), nullable=False)
+    idempotency_key: str = Column(String(200), nullable=False)
+    payload_json: str = Column(Text, nullable=False)
+    status: str = Column(String(16), nullable=False, server_default="pending")
+    batch_id: str | None = Column(String(64), nullable=True)
+    attempts: int = Column(Integer, nullable=False, server_default="0")
+    last_error_code: str | None = Column(String(32), nullable=True)
+    created_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+    published_at: datetime | None = Column(DateTime, nullable=True)
+    acknowledged_at: datetime | None = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('pending','staged','awaiting_ack','acknowledged')"),
+        CheckConstraint("attempts >= 0"),
+        CheckConstraint(
+            "(status = 'pending' AND batch_id IS NULL) OR "
+            "(status <> 'pending' AND batch_id IS NOT NULL)"
+        ),
+        Index(
+            "ix_registry_candidate_outbox_delivery",
+            "installation_id",
+            "status",
+            "id",
+        ),
+        Index("ix_registry_candidate_outbox_batch", "installation_id", "batch_id"),
+    )
+
+
+class RegistryCandidateBatchSequence(Base):
+    """Транзакционный счётчик непрерывных batch IDs одной server installation."""
+
+    __tablename__ = "registry_candidate_batch_sequences"
+
+    installation_id: str = Column(String(36), primary_key=True)
+    last_sequence: int = Column(BigInteger, nullable=False, server_default="0")
+
+    __table_args__ = (CheckConstraint("last_sequence >= 0"),)
 
 
 class BootstrapImport(Base):

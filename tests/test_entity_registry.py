@@ -178,6 +178,28 @@ def test_trusted_nhl_yaml_seed_is_idempotent_and_does_not_override_owner_decisio
     assert col.status == "resolved"
     assert (
         registry.resolve(
+            "nhl_web_api", "tournament", {"sport": "ice_hockey"}, "name", "nhl"
+        ).entity_id
+        == tournament.id
+    )
+    assert (
+        registry.resolve(
+            "the_odds_api", "tournament", {"sport": "ice_hockey"}, "external_id", "icehockey_nhl"
+        ).entity_id
+        == tournament.id
+    )
+    assert (
+        registry.resolve(
+            "nhl_web_api",
+            "team",
+            {"sport": "ice_hockey", "tournament": tournament.id},
+            "name",
+            "COL",
+        ).entity_id
+        == col.entity_id
+    )
+    assert (
+        registry.resolve(
             "the_odds_api",
             "team",
             {"sport": "ice_hockey", "tournament": tournament.id},
@@ -546,7 +568,7 @@ def test_initialize_upgrades_version_two_schema(tmp_path: Path) -> None:
     registry.initialize()
 
     with sqlite3.connect(path) as migrated:
-        assert migrated.execute("PRAGMA user_version").fetchone()[0] == 9
+        assert migrated.execute("PRAGMA user_version").fetchone()[0] == 11
         assert "review_candidates" in {
             row[0] for row in migrated.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
