@@ -501,6 +501,16 @@ cadence — раз в пять минут с jitter, ограниченным ti
 
 Installer проверяет весь снимок и staging-таблицы до активации. Таблицы
 проекции адресуются `(snapshot_id, entity/key)`; установленные версии immutable.
+Установленное поколение хранит полный `ir1` manifest и immutable JSONL records
+по ключу `(snapshot_id, file_name, record_key)`. Отдельная таблица содержит
+производную event-проекцию `ev1` с её digest; её происхождение проверяется по
+полному `ir1`. Для header вида `registry_manifest` поле
+`registry_identity_snapshots.projection_sha256` обозначает digest manifest,
+а digest производной event-проекции хранится отдельно. Server bridge
+адресуется `ir1`; publication history неизменяема, active pointer
+переключается под installation lock. Уже существующий mapping данного `ir1`
+не пересчитывается при повторной установке или откате; новые canonical rows
+разрешаются с учётом закреплённых прежних связей.
 Активная пара `(publication_sequence, snapshot_id)` переключается одной
 PostgreSQL-транзакцией после всех проверок, включая versioned event mappings.
 Каждый resolver request и batch run сначала закрепляет snapshot ID, включая
@@ -518,6 +528,12 @@ runs и не перезаписываются при backfill или актив�
 `previous_publication_id` и устанавливает недостающие records по порядку;
 installer принимает только следующую sequence и предыдущий активный
 publication ID. Это не позволяет произвольному пропуску скрыть подмену истории.
+Число публикаций, суммарный объём проверенных пакетов и длительность catch-up
+ограничены конфигурируемыми бюджетами. Превышение завершает sync с прежней
+active version; восстановление сверх лимита требует явного операторского
+решения. Runtime закрепляет `ir1` один раз; повторно использовать проверенный
+immutable reader допустимо только по этому ID. Проверка производительности
+на нагрузке сотен турниров остаётся отдельным gate до их массового включения.
 Повтор идентичной publication — no-op; тот же sequence с другим publication ID
 или содержимым — конфликт. До первой установки registry
 mode возвращает unavailable; не подменяет пустой registry legacy-сопоставлением.

@@ -7,7 +7,7 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, TypedDict, cast
+from typing import TYPE_CHECKING, Literal, TypedDict, cast
 
 import yaml
 from sqlalchemy import select
@@ -19,6 +19,10 @@ from sports_forecast.service.db.models import (
     EventRegistryMapping,
     RegistryIdentitySnapshot,
 )
+
+
+if TYPE_CHECKING:
+    from sports_forecast.identity.installation import InstalledEventSnapshot
 
 
 EventResolutionStatus = Literal["resolved", "unresolved", "ambiguous", "conflict"]
@@ -440,6 +444,13 @@ def load_event_snapshot(session: Session, *, snapshot_id: str) -> EventIdentityS
     return snapshot
 
 
+def load_installed_event_snapshot(session: Session, *, snapshot_id: str) -> InstalledEventSnapshot:
+    """Загрузить event resolver projection, закреплённую полным server `ir1`."""
+    from sports_forecast.identity.installation import load_installed_event_snapshot as load_full
+
+    return load_full(session, snapshot_id=snapshot_id)
+
+
 def _parse_utc(value: str | datetime | None) -> datetime | None:
     if value is None:
         return None
@@ -707,29 +718,29 @@ class RegistryEventResolver:
         for index, (ref, result) in enumerate(zip(refs, results, strict=True)):
             if result.status != "resolved" or result.project_event_id is None:
                 continue
-            tournament_status, tournament_id = self._resolve_alias(
+            tournament_status, resolved_tournament_id = self._resolve_alias(
                 ref.source,
                 "tournament",
                 {"sport": ref.sport},
                 ref.tournament,
                 at=_parse_utc(ref.scheduled_at),
             )
-            if tournament_status != "resolved" or tournament_id is None:
+            if tournament_status != "resolved" or resolved_tournament_id is None:
                 continue
-            key = (ref.source, ref.sport, tournament_id, result.project_event_id)
+            key = (ref.source, ref.sport, resolved_tournament_id, result.project_event_id)
             claims.setdefault(key, []).append((index, ref.source_event_id))
 
-        for (_source, _sport, _tournament_id, event_id), matches in claims.items():
+        for (_source, _sport, _tournament_id, claimed_event_id), matches in claims.items():
             source_ids = {source_id for _, source_id in matches}
             if len(source_ids) < 2:
                 continue
-            for index, _ in matches:
-                if index is None:
+            for claim_index, _ in matches:
+                if claim_index is None:
                     continue
-                result = results[index]
+                result = results[claim_index]
                 if result.reason != "Уникальное точное время и подтверждённые участники":
                     continue
-                results[index] = EventResolution(
+                results[claim_index] = EventResolution(
                     status="ambiguous",
                     project_event_id=None,
                     reason=(
@@ -738,7 +749,7 @@ class RegistryEventResolver:
                     ),
                     snapshot_id=result.snapshot_id,
                     policy_version=result.policy_version,
-                    candidate_ids=(event_id,),
+                    candidate_ids=(claimed_event_id,),
                 )
         return tuple(results)
 

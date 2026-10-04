@@ -1,6 +1,6 @@
 # TASK-026-5 — Публикация registry и серверная установленная версия
 
-> **Статус:** in_progress
+> **Статус:** blocked
 > **Владелец:** Developer
 > **Эпик:** [EPIC-026](../EPIC-026-entity-registry.md)
 > **Требование:** [REQ-026](../../product/requirements/REQ-026-entity-registry.md)
@@ -15,15 +15,16 @@ Production включение требует отдельного release gate.
 
 ## Критерии приёмки
 
-- [ ] Remote bytes проверены до смены current; CAS не теряет конкурирующую
-      публикацию. Возможности текущего endpoint подтверждены contract probe.
-- [ ] Ошибка сети, checksum или установки сохраняет прежнюю active version.
-- [ ] Установка snapshot идемпотентна, а новая publication sequence активируется
+- [x] Remote bytes проверены до смены current; CAS не теряет конкурирующую
+      публикацию. Условные записи проверены на локальном S3 endpoint.
+- [x] Ошибка сети, checksum или установки сохраняет прежнюю active version.
+- [x] Установка snapshot идемпотентна, а новая publication sequence активируется
       даже при откате к ранее установленному snapshot.
-- [ ] Одновременные запросы и runs читают pinned snapshot; API/Worker не получают
+- [x] Одновременные запросы и runs читают pinned snapshot; API/Worker не получают
       Object Storage credentials.
 - [ ] Предыдущие версии сохраняются для выполняющихся runs и отката;
-      grants, retention и runbook проверены без production deployment.
+      runbook и требуемые grants описаны. Фактические grants, retention и
+      contract probe текущего endpoint ожидают эксплуатационной проверки.
 
 ## План реализации
 
@@ -36,4 +37,7 @@ Production включение требует отдельного release gate.
 - После [TASK-026-4](TASK-026-4-local-registry-snapshot.md).
 - Затрагивает Object Storage sync, server DB, runtime reader, grants и runbook;
   команды записать в отдельном отчёте `done`.
-- Следующий gate: независимый review, затем TASK-026-6.
+- Код прошёл независимый review; evidence —
+  [отчёт о реализации](../../changes/done/TASK-026-5-registry-publication.md).
+  Блокер завершения TASK — live probe текущего endpoint и проверка IAM/DB grants,
+  retention. Разработка TASK-026-6 может продолжаться на проверенном контракте.

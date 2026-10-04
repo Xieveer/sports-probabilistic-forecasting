@@ -19,6 +19,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Column,
@@ -239,7 +240,69 @@ class RegistryIdentitySnapshot(Base):
     policy_version: str = Column(String(64), nullable=False)
     normalization_version: str = Column(String(64), nullable=False)
     projection_json: str = Column(Text, nullable=False)
+    manifest_json: str | None = Column(Text, nullable=True)
     created_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class RegistrySnapshotRecord(Base):
+    """Неизменяемая строка одного JSONL файла установленного полного snapshot."""
+
+    __tablename__ = "registry_snapshot_records"
+
+    snapshot_id: str = Column(
+        ForeignKey("registry_identity_snapshots.snapshot_id"), primary_key=True
+    )
+    file_name: str = Column(String(32), primary_key=True)
+    record_key: str = Column(String(256), primary_key=True)
+    payload_json: str = Column(Text, nullable=False)
+
+
+class RegistryPublication(Base):
+    """Неизменяемая запись установленной Object Storage publication."""
+
+    __tablename__ = "registry_publications"
+
+    publication_sequence: int = Column(BigInteger, primary_key=True)
+    publication_id: str = Column(String(128), nullable=False, unique=True)
+    snapshot_id: str = Column(ForeignKey("registry_identity_snapshots.snapshot_id"), nullable=False)
+    previous_publication_id: str | None = Column(String(128), nullable=True)
+    published_at: datetime = Column(DateTime, nullable=False)
+    actor: str = Column(String(64), nullable=False)
+    created_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class ActiveRegistryInstallation(Base):
+    """Один атомарный указатель на активную публикацию registry."""
+
+    __tablename__ = "active_registry_installation"
+
+    id: int = Column(Integer, primary_key=True)
+    publication_sequence: int = Column(BigInteger, nullable=False)
+    publication_id: str = Column(String(128), nullable=False)
+    snapshot_id: str = Column(ForeignKey("registry_identity_snapshots.snapshot_id"), nullable=False)
+    activated_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class RegistryInstallationLock(Base):
+    """Сериализует installer включая первоначальное создание active pointer."""
+
+    __tablename__ = "registry_installation_locks"
+
+    id: int = Column(Integer, primary_key=True)
+    lock_version: int = Column(Integer, nullable=False, default=0)
+
+
+class RegistryEventResolverProjection(Base):
+    """Проверяемая ev1 проекция, производная от полного ir1 snapshot."""
+
+    __tablename__ = "registry_event_resolver_projections"
+
+    snapshot_id: str = Column(
+        ForeignKey("registry_identity_snapshots.snapshot_id"), primary_key=True
+    )
+    event_snapshot_id: str = Column(String(68), nullable=False)
+    projection_sha256: str = Column(String(64), nullable=False)
+    projection_json: str = Column(Text, nullable=False)
 
 
 class EventRegistryMapping(Base):
@@ -248,7 +311,7 @@ class EventRegistryMapping(Base):
     __tablename__ = "registry_canonical_event_mappings"
 
     snapshot_id: str = Column(
-        ForeignKey("registry_identity_snapshots.snapshot_id"), primary_key=True
+        String(80), ForeignKey("registry_identity_snapshots.snapshot_id"), primary_key=True
     )
     canonical_event_id: int = Column(
         ForeignKey("canonical_events.id"), primary_key=True, nullable=False

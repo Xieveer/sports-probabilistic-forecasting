@@ -1,6 +1,6 @@
 # TASK-026-6 — Обратная очередь и полный цикл registry
 
-> **Статус:** backlog
+> **Статус:** in_progress
 > **Владелец:** Developer
 > **Эпик:** [EPIC-026](../EPIC-026-entity-registry.md)
 > **Требование:** [REQ-026](../../product/requirements/REQ-026-entity-registry.md)

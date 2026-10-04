@@ -435,7 +435,10 @@ Product Owner ведёт отдельную ветку и компактную �
 [руководстве локального review](docs/development/local-identity-review.md).
 Проектная идентичность событий и версионированный bridge описаны в
 [ADR-027](docs/architecture/adr/ADR-027-local-entity-registry-and-snapshots.md);
-строгий reader пока выключен в `conf/identity_event.yaml`.
+[локальный снимок и provenance обучения](docs/operations/identity-registry-local.md),
+а также [публикация через Object Storage](docs/operations/entity-registry-publication.md)
+имеют отдельные руководства. Строгий серверный reader пока выключен в
+`conf/identity_event.yaml`.
 
 ### Пользовательская (Sphinx)
 
