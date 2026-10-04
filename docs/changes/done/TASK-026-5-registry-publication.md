@@ -38,6 +38,23 @@
   1100 records, 391200 bytes) cold pin занял 29,150 мс, cache pin 0,583 мс;
   это локальное измерение, не оценка производительности для сотен турниров.
 
+### Повторная локальная проверка 2026-10-04
+
+- Изолированные PostgreSQL 16 и MinIO из локальных Docker-образов: endpoint
+  probe вернул `supported` для `If-None-Match` и `If-Match`; 12 тестов установки
+  registry прошли на PostgreSQL.
+- Сквозной цикл с реальным S3 transport и PostgreSQL projection прошёл:
+  публикации с sequence 1 → 2 → 3, сохранение project ID после переименования,
+  идемпотентный повтор sync и откат к прежнему snapshot новой публикацией.
+- На отдельной пустой PostgreSQL БД `alembic upgrade head` применил миграции
+  до `0021`, `alembic check` не обнаружил новых операций.
+- Шесть целевых suites публикации, sync и обратной очереди: **51 passed**.
+  `make test` с тестовой PostgreSQL: **1475 passed, 2 skipped, 40 warnings**.
+  Два пропуска относятся к тестам прав отдельных runtime DB roles, URL которых
+  не были настроены в локальной среде.
+- Использованы только локальные тестовые bucket, prefix и БД. Рабочий Object
+  Storage endpoint и фактические IAM/DB grants этой проверкой не охвачены.
+
 ## Открытый эксплуатационный gate
 
 В рабочем окружении нет Object Storage credentials и отдельной sync DB role.
