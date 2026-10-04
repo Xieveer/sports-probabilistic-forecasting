@@ -1,6 +1,6 @@
 # TASK-026-6 — Обратная очередь и полный цикл registry
 
-> **Статус:** реализация и независимое review завершены; CI и эксплуатационный gate открыты
+> **Статус:** done; эксплуатационный gate EPIC-026 открыт в TASK-026-5
 > **Задача:** [TASK-026-6](../../backlog/tasks/TASK-026-6-registry-candidate-feedback.md)
 > **Требование:** [REQ-026](../../product/requirements/REQ-026-entity-registry.md)
 > **Решение:** [ADR-027](../../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md)
@@ -44,7 +44,9 @@
 - Независимый Reviewer перепроверил найденные P1/P2 после исправления:
   итоговых P0–P2 нет. Он выполнил 84 ключевых теста после последнего CAS
   исправления, pre-commit mypy, scoped Ruff и `git diff --check`.
-- Внешний CI ещё не завершён.
+- [PR #61](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/61):
+  CI Python 3.12, аудит зависимостей и проверка filesystem/secrets завершились
+  успешно на объединённой с `main` ветке. PR остаётся draft до внешнего gate.
 
 ## Открытые gates
 

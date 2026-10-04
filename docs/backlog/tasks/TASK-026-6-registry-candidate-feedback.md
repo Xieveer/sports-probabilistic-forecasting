@@ -1,6 +1,6 @@
 # TASK-026-6 — Обратная очередь и полный цикл registry
 
-> **Статус:** in_progress
+> **Статус:** done
 > **Владелец:** Developer
 > **Эпик:** [EPIC-026](../EPIC-026-entity-registry.md)
 > **Требование:** [REQ-026](../../product/requirements/REQ-026-entity-registry.md)
@@ -22,7 +22,7 @@ durable outbox и Object Storage. Владелец решает их локал�
       snapshot без ручной правки серверной БД.
 - [x] NHL и контрольный второй турнир проходят один и тот же сквозной процесс;
       имя/ID турнира не зашиты в Python-ветвление.
-- [ ] Совместимость, наблюдаемость, recovery/runbook и независимый EPIC review
+- [x] Совместимость, наблюдаемость, recovery/runbook и независимый EPIC review
       подтверждены; будущий player contract не требует player-прогнозов.
 
 ## План реализации
@@ -37,4 +37,6 @@ durable outbox и Object Storage. Владелец решает их локал�
   [TASK-026-5](TASK-026-5-registry-publication.md).
 - Затрагивает server outbox, Object Storage feedback, local queue, runtime
   odds/calendar и тесты; команды записать в отдельном отчёте `done`.
-- Следующий gate: независимый TASK review и полный EPIC review/CI.
+- Итог: [отчёт](../../changes/done/TASK-026-6-registry-candidate-feedback.md),
+  независимый review и CI в [PR #61](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/61)
+  прошли. Открытый эксплуатационный gate относится к TASK-026-5.
