@@ -37,6 +37,7 @@ import pandas as pd
 from omegaconf import DictConfig
 
 from sports_forecast.config.loaders import load_paths_config, load_tournament_config
+from sports_forecast.identity.snapshot import VerifiedRegistrySnapshot
 from sports_forecast.utils.log_config import get_logger
 
 
@@ -447,7 +448,11 @@ def _apply_derived_columns(
 
 
 def process_tournament(
-    tournament_dir: Path, tournament_cfg: DictConfig, paths_cfg: DictConfig
+    tournament_dir: Path,
+    tournament_cfg: DictConfig,
+    paths_cfg: DictConfig,
+    *,
+    identity_snapshot: VerifiedRegistrySnapshot | None = None,
 ) -> None:
     """Обработать один турнир: raw → interim.
 
@@ -461,13 +466,45 @@ def process_tournament(
         paths_cfg: Конфиг с путями (из paths.yaml).
     """
     tournament_name = tournament_dir.name
+    from sports_forecast.identity.data_provenance import identity_mode_for_tournament
+
+    identity_enabled = identity_mode_for_tournament(PROJECT_ROOT, tournament_name)
     raw_path = tournament_dir / "matches.parquet"
 
     if not raw_path.exists():
+        if identity_enabled:
+            raise FileNotFoundError(f"Enabled tournament {tournament_name}: отсутствует raw input")
         logger.warning("Турнир %s: файл %s не найден, пропускаю", tournament_name, raw_path)
         return
 
     logger.info("Турнир %s: читаю raw %s", tournament_name, raw_path)
+
+    from sports_forecast.identity.data_provenance import (
+        configured_snapshot_root,
+        load_enabled_registry_snapshot,
+        propagate_identity_provenance,
+        read_identity_provenance,
+    )
+
+    if identity_enabled and identity_snapshot is None:
+        identity_snapshot = load_enabled_registry_snapshot(
+            PROJECT_ROOT, tournament_name=tournament_name
+        )
+    if identity_enabled and identity_snapshot is None:
+        raise ValueError(f"Для enabled турнира {tournament_name} не найден snapshot pin")
+    if not identity_enabled:
+        identity_snapshot = None
+    identity_root = (
+        configured_snapshot_root(PROJECT_ROOT) if identity_snapshot is not None else None
+    )
+    if identity_snapshot is not None:
+        assert identity_root is not None
+        read_identity_provenance(
+            raw_path,
+            snapshot_root=identity_root,
+            expected_snapshot_id=identity_snapshot.snapshot_id,
+        )
+
     df: pd.DataFrame = pd.read_parquet(raw_path)
 
     if df is None or df.empty:
@@ -613,6 +650,14 @@ def process_tournament(
         out_path,
     )
     df.to_parquet(out_path, index=False)
+    if identity_snapshot is not None:
+        propagate_identity_provenance(
+            raw_path,
+            out_path,
+            snapshot_root=identity_root,
+            expected_snapshot_id=identity_snapshot.snapshot_id,
+            row_id_column="id",
+        )
 
 
 def run() -> None:
@@ -647,6 +692,10 @@ def run() -> None:
 
     logger.info("Найдено турниров в raw: %d", len(tournaments))
 
+    from sports_forecast.identity.data_provenance import load_enabled_registry_snapshot
+
+    stage_snapshot = load_enabled_registry_snapshot(PROJECT_ROOT)
+
     for tournament_dir in tournaments:
         tournament_name = tournament_dir.name
         logger.info("=" * 60)
@@ -654,9 +703,18 @@ def run() -> None:
 
         try:
             tournament_cfg = load_tournament_config(tournament_name)
-            process_tournament(tournament_dir, tournament_cfg, paths_cfg)
+            process_tournament(
+                tournament_dir,
+                tournament_cfg,
+                paths_cfg,
+                identity_snapshot=stage_snapshot,
+            )
 
         except Exception:
+            from sports_forecast.identity.data_provenance import identity_mode_for_tournament
+
+            if identity_mode_for_tournament(PROJECT_ROOT, tournament_name):
+                raise
             logger.exception("Турнир %s: ошибка при обработке", tournament_name)
             continue
 

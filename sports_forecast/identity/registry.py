@@ -152,7 +152,7 @@ def _canonical_utc(value: str | None) -> str | None:
 class EntityRegistry:
     """Явно мигрируемый локальный registry на SQLite."""
 
-    schema_version = 8
+    schema_version = 9
 
     def __init__(self, path: Path) -> None:
         """Создать фасад для файла БД, не создавая файл и таблицы."""
@@ -206,6 +206,9 @@ class EntityRegistry:
                 version = 7
             if version == 7:
                 self._upgrade_v7(connection)
+                version = 8
+            if version == 8:
+                self._upgrade_v8(connection)
                 return
             if version != 0:
                 raise RegistryNotInitializedError(f"Неизвестная версия схемы registry: {version}")
@@ -252,7 +255,10 @@ class EntityRegistry:
                     id TEXT PRIMARY KEY, designation_id TEXT NOT NULL REFERENCES designations(id),
                     actor TEXT NOT NULL, action TEXT NOT NULL, reason TEXT NOT NULL,
                     prior_state TEXT NOT NULL, prior_revision INTEGER NOT NULL,
-                    decided_at TEXT NOT NULL
+                    decided_at TEXT NOT NULL,
+                    evidence_candidate_id TEXT REFERENCES review_candidates(id),
+                    evidence_revision INTEGER,
+                    CHECK(evidence_revision IS NULL OR evidence_revision > 0)
                 );
                 CREATE TABLE entity_audit (
                     id TEXT PRIMARY KEY, entity_id TEXT NOT NULL REFERENCES entities(id),
@@ -316,7 +322,7 @@ class EntityRegistry:
                     decided_at TEXT NOT NULL
                 );
                 CREATE INDEX event_relation_tournament ON event_relations(tournament_id,event_id);
-                PRAGMA user_version = 8;
+                PRAGMA user_version = 9;
                 COMMIT;
                 """
             )
@@ -475,6 +481,23 @@ class EntityRegistry:
                 "CREATE INDEX event_relation_tournament ON event_relations(tournament_id,event_id)"
             )
             connection.execute("PRAGMA user_version = 8")
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+
+    @staticmethod
+    def _upgrade_v8(connection: sqlite3.Connection) -> None:
+        """Связать owner decision с точной редакцией review evidence."""
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            connection.execute(
+                "ALTER TABLE decisions ADD COLUMN evidence_candidate_id TEXT REFERENCES review_candidates(id)"
+            )
+            connection.execute(
+                "ALTER TABLE decisions ADD COLUMN evidence_revision INTEGER CHECK(evidence_revision IS NULL OR evidence_revision > 0)"
+            )
+            connection.execute("PRAGMA user_version = 9")
             connection.commit()
         except Exception:
             connection.rollback()

@@ -523,7 +523,7 @@ class ReviewQueueService:
                         (target, row["designation_id"]),
                     )
                 connection.execute(
-                    "INSERT INTO decisions (id,designation_id,actor,action,reason,prior_state,prior_revision,decided_at) VALUES (?,?,?,?,?,?,?,?)",
+                    "INSERT INTO decisions (id,designation_id,actor,action,reason,prior_state,prior_revision,decided_at,evidence_candidate_id,evidence_revision) VALUES (?,?,?,?,?,?,?,?,?,?)",
                     (
                         str(uuid.uuid4()),
                         row["designation_id"],
@@ -533,6 +533,8 @@ class ReviewQueueService:
                         designation["state"],
                         designation["revision"],
                         now,
+                        item.candidate_id,
+                        item.expected_revision,
                     ),
                 )
                 connection.execute(

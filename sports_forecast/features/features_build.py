@@ -31,6 +31,7 @@ from omegaconf import DictConfig
 from sports_forecast.features.long_format import long_to_wide
 from sports_forecast.features.pipeline import FeaturePipeline
 from sports_forecast.features.rolling_contexts import materialize_features_config
+from sports_forecast.identity.snapshot import VerifiedRegistrySnapshot
 from sports_forecast.utils.log_config import configure_logging, get_logger
 
 
@@ -44,6 +45,8 @@ def process_tournament_new(
     processed_root: Path,
     features_cfg: DictConfig,
     tournament_cfg: DictConfig | None = None,
+    *,
+    identity_snapshot: VerifiedRegistrySnapshot | None = None,
 ) -> None:
     """
     Обработка турнира с использованием НОВОГО Feature Generation System.
@@ -63,11 +66,43 @@ def process_tournament_new(
     logger.info("ТУРНИР: %s (Feature Generation System)", tournament_name)
     logger.info("=" * 70)
 
+    from sports_forecast.identity.data_provenance import identity_mode_for_tournament
+
+    identity_enabled = identity_mode_for_tournament(PROJECT_ROOT, tournament_name)
     # 1. Загрузка данных
     input_path = interim_root / tournament_name / "matches_interim.parquet"
     if not input_path.exists():
+        if identity_enabled:
+            raise FileNotFoundError(
+                f"Enabled tournament {tournament_name}: отсутствует interim input"
+            )
         logger.warning("Файл %s не найден, пропускаю турнир %s", input_path, tournament_name)
         return
+
+    from sports_forecast.identity.data_provenance import (
+        configured_snapshot_root,
+        load_enabled_registry_snapshot,
+        read_identity_provenance,
+    )
+
+    if identity_enabled and identity_snapshot is None:
+        identity_snapshot = load_enabled_registry_snapshot(
+            PROJECT_ROOT, tournament_name=tournament_name
+        )
+    if identity_enabled and identity_snapshot is None:
+        raise ValueError(f"Для enabled турнира {tournament_name} не найден snapshot pin")
+    if not identity_enabled:
+        identity_snapshot = None
+    identity_root = (
+        configured_snapshot_root(PROJECT_ROOT) if identity_snapshot is not None else None
+    )
+    if identity_snapshot is not None:
+        assert identity_root is not None
+        read_identity_provenance(
+            input_path,
+            snapshot_root=identity_root,
+            expected_snapshot_id=identity_snapshot.snapshot_id,
+        )
 
     df = pd.read_parquet(input_path)
     logger.info("Загружено: %s (%d строк, %d колонок)", input_path, len(df), len(df.columns))
@@ -154,6 +189,24 @@ def process_tournament_new(
 
     train_long.to_parquet(train_long_path, index=False, engine="pyarrow", compression="snappy")
     train_wide.to_parquet(train_wide_path, index=False, engine="pyarrow", compression="snappy")
+    if identity_snapshot is not None:
+        from sports_forecast.identity.data_provenance import propagate_identity_provenance
+
+        propagate_identity_provenance(
+            input_path,
+            train_long_path,
+            snapshot_root=identity_root,
+            expected_snapshot_id=identity_snapshot.snapshot_id,
+            row_id_column="id",
+            allow_duplicate_row_ids=True,
+        )
+        propagate_identity_provenance(
+            input_path,
+            train_wide_path,
+            snapshot_root=identity_root,
+            expected_snapshot_id=identity_snapshot.snapshot_id,
+            row_id_column="id",
+        )
 
     logger.info(
         "✓ Train сохранен:\n    - %s (%d строк, %.2f MB)\n    - %s (%d строк, %.2f MB)",
@@ -176,6 +229,22 @@ def process_tournament_new(
         inference_wide.to_parquet(
             inference_wide_path, index=False, engine="pyarrow", compression="snappy"
         )
+        if identity_snapshot is not None:
+            propagate_identity_provenance(
+                input_path,
+                inference_long_path,
+                snapshot_root=identity_root,
+                expected_snapshot_id=identity_snapshot.snapshot_id,
+                row_id_column="id",
+                allow_duplicate_row_ids=True,
+            )
+            propagate_identity_provenance(
+                input_path,
+                inference_wide_path,
+                snapshot_root=identity_root,
+                expected_snapshot_id=identity_snapshot.snapshot_id,
+                row_id_column="id",
+            )
 
         logger.info(
             "✓ Inference сохранен:\n    - %s (%d строк)\n    - %s (%d строк)",
@@ -236,6 +305,10 @@ def run(cfg: DictConfig) -> None:
     interim_root = PROJECT_ROOT / cfg.paths.interim_dir
     processed_root = PROJECT_ROOT / cfg.paths.processed_dir
 
+    from sports_forecast.identity.data_provenance import load_enabled_registry_snapshot
+
+    stage_snapshot = load_enabled_registry_snapshot(PROJECT_ROOT)
+
     try:
         process_tournament_new(
             tournament_name,
@@ -243,8 +316,13 @@ def run(cfg: DictConfig) -> None:
             processed_root,
             cfg.features,
             tournament_cfg=cfg.tournament,
+            identity_snapshot=stage_snapshot,
         )
     except Exception as e:
+        from sports_forecast.identity.data_provenance import identity_mode_for_tournament
+
+        if identity_mode_for_tournament(PROJECT_ROOT, tournament_name):
+            raise
         logger.error("Ошибка обработки турнира %s: %s", tournament_name, e, exc_info=True)
 
     logger.info("=" * 70)

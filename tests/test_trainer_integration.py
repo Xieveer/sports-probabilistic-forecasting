@@ -233,6 +233,116 @@ def test_pool_entrypoint_trains_prevalidated_dataframe_without_loading_files(mon
     assert train.call_args.args[:2] == (dataframe, target)
 
 
+def test_pool_entrypoint_fails_closed_when_registry_mode_has_unverified_dataframe(
+    tmp_path: Path,
+    df_with_features: pd.DataFrame,
+) -> None:
+    """Pool DataFrame без per-file sidecars не получает caller-claimed provenance."""
+    from sports_forecast.identity import EntityRegistry
+    from sports_forecast.identity.snapshot import export_registry_snapshot
+
+    project_root = tmp_path / "project"
+    (project_root / "conf").mkdir(parents=True)
+    registry = EntityRegistry(tmp_path / "master.sqlite3")
+    registry.initialize()
+    registry.create_entity("tournament", "League", sport="ice_hockey")
+    package = export_registry_snapshot(registry, project_root / "data" / "registry" / "snapshots")
+    import shutil
+
+    selected = project_root / "data" / "registry" / "current" / "package"
+    selected.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(package.path, selected)
+    (project_root / "conf" / "identity_registry.yaml").write_text(
+        "enabled: true\n"
+        "enabled_tournaments: [test_tournament]\n"
+        "adapters:\n  test_tournament:\n    source: feed\n    sport: hockey\n    row_id: id\n    event_id: event\n    scheduled_at: date\n    home_id: home\n    away_id: away\n"
+        "snapshot_root: data/registry/snapshots\n"
+        "selected_package_path: data/registry/current/package\n"
+        "master_db: data/registry/master.sqlite3\n",
+        encoding="utf-8",
+    )
+    cfg = _make_cfg(model_pool={"name": "test-pool", "identity": "pool:identity"})
+    runner = SingleExperimentRunner(cfg, project_root)
+
+    with pytest.raises(ValueError, match="per-file sidecars"):
+        runner.run_experiment_with_dataframe(df_with_features)
+
+
+def test_file_training_loader_verifies_processed_sidecar_against_selected_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sports_forecast.identity import EntityRegistry
+    from sports_forecast.identity.data_provenance import (
+        IdentityRowResolution,
+        write_identity_provenance,
+    )
+    from sports_forecast.identity.snapshot import export_registry_snapshot, verify_registry_snapshot
+
+    project_root = tmp_path / "project"
+    (project_root / "conf").mkdir(parents=True)
+    registry = EntityRegistry(tmp_path / "master.sqlite3")
+    registry.initialize()
+    registry.create_entity("tournament", "League", sport="ice_hockey")
+    exported = export_registry_snapshot(registry, project_root / "data" / "registry" / "snapshots")
+    snapshot = verify_registry_snapshot(exported.path)
+    import shutil
+
+    selected = project_root / "data" / "registry" / "current" / "package"
+    selected.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(snapshot.path, selected)
+    (project_root / "conf" / "identity_registry.yaml").write_text(
+        "enabled: true\n"
+        "enabled_tournaments: [test_tournament]\n"
+        "adapters:\n  test_tournament:\n    source: feed\n    sport: hockey\n    row_id: id\n    event_id: event\n    scheduled_at: date\n    home_id: home\n    away_id: away\n"
+        "snapshot_root: data/registry/snapshots\n"
+        "selected_package_path: data/registry/current/package\n",
+        encoding="utf-8",
+    )
+    cfg = _make_cfg(
+        tournament={
+            "name": "test_tournament",
+            "data": {
+                "processed_dir": "data/processed/test_tournament",
+                "formats": {"long": "train_long.parquet"},
+            },
+        }
+    )
+    runner = SingleExperimentRunner(cfg, project_root)
+    data_path = project_root / "data" / "processed" / "test_tournament" / "train_long.parquet"
+    data_path.parent.mkdir(parents=True)
+    pd.DataFrame({"id": ["row-1"], "feature": [1.0]}).to_parquet(data_path)
+    write_identity_provenance(
+        data_path,
+        snapshot=snapshot,
+        adapter_name="fixture",
+        source="fixture-feed",
+        tournament="test_tournament",
+        resolutions=(IdentityRowResolution("row-1", "evt-1", "unresolved", None, "Review"),),
+    )
+    set_tag = MagicMock()
+    log_dict = MagicMock()
+    log_artifact = MagicMock()
+    monkeypatch.setattr("sports_forecast.training.trainer.mlflow.set_tag", set_tag)
+    monkeypatch.setattr("sports_forecast.training.trainer.mlflow.log_dict", log_dict)
+    monkeypatch.setattr("sports_forecast.training.trainer.mlflow.log_artifact", log_artifact)
+    run = SimpleNamespace(info=SimpleNamespace(run_id="identity-run"))
+    monkeypatch.setattr(
+        "sports_forecast.training.trainer.mlflow.start_run",
+        lambda **_kwargs: nullcontext(run),
+    )
+    monkeypatch.setattr("sports_forecast.training.trainer.mlflow.log_text", MagicMock())
+    monkeypatch.setattr(runner, "_compute_target", MagicMock(return_value=pd.Series([1])))
+    monkeypatch.setattr(runner, "_train_model", MagicMock(return_value=True))
+
+    assert runner.run_experiment() is True
+    set_tag.assert_called_once_with("registry_snapshot_id", snapshot.snapshot_id)
+    assert log_dict.call_count == 2
+    log_artifact.assert_called_once()
+    pd.DataFrame({"id": ["row-1"], "feature": [2.0]}).to_parquet(data_path)
+    with pytest.raises(ValueError, match="Parquet hash/size"):
+        runner.run_experiment()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # _save_feature_names
 # ─────────────────────────────────────────────────────────────────────────────

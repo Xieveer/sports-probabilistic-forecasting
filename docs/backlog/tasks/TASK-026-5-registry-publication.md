@@ -1,6 +1,6 @@
 # TASK-026-5 — Публикация registry и серверная установленная версия
 
-> **Статус:** backlog
+> **Статус:** in_progress
 > **Владелец:** Developer
 > **Эпик:** [EPIC-026](../EPIC-026-entity-registry.md)
 > **Требование:** [REQ-026](../../product/requirements/REQ-026-entity-registry.md)
