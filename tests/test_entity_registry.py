@@ -546,11 +546,17 @@ def test_initialize_upgrades_version_two_schema(tmp_path: Path) -> None:
     registry.initialize()
 
     with sqlite3.connect(path) as migrated:
-        assert migrated.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert migrated.execute("PRAGMA user_version").fetchone()[0] == 8
         assert "review_candidates" in {
             row[0] for row in migrated.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
         assert "review_candidate_history" in {
+            row[0] for row in migrated.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        assert "event_relations" in {
+            row[0] for row in migrated.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        assert "event_relation_audit" in {
             row[0] for row in migrated.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
         assert "revision" in {row[1] for row in migrated.execute("PRAGMA table_info(designations)")}

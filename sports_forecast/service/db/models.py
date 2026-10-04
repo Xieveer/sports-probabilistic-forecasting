@@ -227,6 +227,48 @@ class CanonicalEventRevision(Base):
     )
 
 
+class RegistryIdentitySnapshot(Base):
+    """Полный immutable projection локальной идентичности в server DB."""
+
+    __tablename__ = "registry_identity_snapshots"
+
+    snapshot_id: str = Column(String(68), primary_key=True)
+    snapshot_kind: str = Column(String(32), nullable=False)
+    projection_sha256: str = Column(String(64), nullable=False)
+    projection_schema_version: int = Column(Integer, nullable=False)
+    policy_version: str = Column(String(64), nullable=False)
+    normalization_version: str = Column(String(64), nullable=False)
+    projection_json: str = Column(Text, nullable=False)
+    created_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class EventRegistryMapping(Base):
+    """Project event bridge закреплённого registry snapshot."""
+
+    __tablename__ = "registry_canonical_event_mappings"
+
+    snapshot_id: str = Column(
+        ForeignKey("registry_identity_snapshots.snapshot_id"), primary_key=True
+    )
+    canonical_event_id: int = Column(
+        ForeignKey("canonical_events.id"), primary_key=True, nullable=False
+    )
+    project_event_id: str | None = Column(String(36), nullable=True)
+    status: str = Column(String(16), nullable=False)
+    reason: str = Column(Text, nullable=False)
+    policy_version: str = Column(String(64), nullable=False)
+    decision_id: str | None = Column(String(36), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('resolved','unresolved','ambiguous','conflict')"),
+        CheckConstraint(
+            "(status = 'resolved' AND project_event_id IS NOT NULL) OR "
+            "(status <> 'resolved' AND project_event_id IS NULL)"
+        ),
+        Index("ix_registry_event_mapping_canonical", "canonical_event_id", "snapshot_id"),
+    )
+
+
 class CalendarCoverage(Base):
     """Последняя проверка полноты календарного окна по источнику."""
 

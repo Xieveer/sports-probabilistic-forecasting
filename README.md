@@ -433,6 +433,9 @@ Product Owner ведёт отдельную ветку и компактную �
 Локальная очередь проверки связей спортивных сущностей запускается отдельно от
 публичного API; подготовка registry, вход и остановка описаны в
 [руководстве локального review](docs/development/local-identity-review.md).
+Проектная идентичность событий и версионированный bridge описаны в
+[ADR-027](docs/architecture/adr/ADR-027-local-entity-registry-and-snapshots.md);
+строгий reader пока выключен в `conf/identity_event.yaml`.
 
 ### Пользовательская (Sphinx)
 

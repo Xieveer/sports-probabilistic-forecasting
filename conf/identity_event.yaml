@@ -1,0 +1,2 @@
+# Строгий registry event resolver включается только после installed snapshot gate (TASK-026-5).
+registry_event_reader_enabled: false

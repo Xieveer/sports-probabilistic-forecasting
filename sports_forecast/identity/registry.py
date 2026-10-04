@@ -84,6 +84,39 @@ class EntityAudit:
 
 
 @dataclass(frozen=True)
+class EventRelation:
+    """Подтверждённые tournament/team relations проектного события."""
+
+    event_id: str
+    tournament_id: str
+    home_team_id: str
+    away_team_id: str
+    scheduled_at: str | None
+    revision: int
+
+
+@dataclass(frozen=True)
+class EventRelationAudit:
+    """Неизменяемая история правки состава или времени project event."""
+
+    id: str
+    event_id: str
+    actor: str
+    reason: str
+    prior_revision: int
+    revision: int
+    prior_tournament_id: str | None
+    tournament_id: str
+    prior_home_team_id: str | None
+    home_team_id: str
+    prior_away_team_id: str | None
+    away_team_id: str
+    prior_scheduled_at: str | None
+    scheduled_at: str | None
+    decided_at: str
+
+
+@dataclass(frozen=True)
 class Resolution:
     """Результат точного разрешения обозначения."""
 
@@ -119,7 +152,7 @@ def _canonical_utc(value: str | None) -> str | None:
 class EntityRegistry:
     """Явно мигрируемый локальный registry на SQLite."""
 
-    schema_version = 7
+    schema_version = 8
 
     def __init__(self, path: Path) -> None:
         """Создать фасад для файла БД, не создавая файл и таблицы."""
@@ -170,6 +203,9 @@ class EntityRegistry:
                 version = 6
             if version == 6:
                 self._upgrade_v6(connection)
+                version = 7
+            if version == 7:
+                self._upgrade_v7(connection)
                 return
             if version != 0:
                 raise RegistryNotInitializedError(f"Неизвестная версия схемы registry: {version}")
@@ -258,7 +294,29 @@ class EntityRegistry:
                     status TEXT NOT NULL, saved_at TEXT NOT NULL,
                     PRIMARY KEY(candidate_id,revision)
                 );
-                PRAGMA user_version = 7;
+                CREATE TABLE event_relations (
+                    event_id TEXT PRIMARY KEY REFERENCES entities(id),
+                    tournament_id TEXT NOT NULL REFERENCES entities(id),
+                    home_team_id TEXT NOT NULL REFERENCES entities(id),
+                    away_team_id TEXT NOT NULL REFERENCES entities(id),
+                    scheduled_at TEXT,
+                    revision INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    CHECK(home_team_id <> away_team_id)
+                );
+                CREATE TABLE event_relation_audit (
+                    id TEXT PRIMARY KEY,
+                    event_id TEXT NOT NULL REFERENCES entities(id),
+                    actor TEXT NOT NULL, reason TEXT NOT NULL,
+                    prior_revision INTEGER NOT NULL, revision INTEGER NOT NULL,
+                    prior_tournament_id TEXT, tournament_id TEXT NOT NULL,
+                    prior_home_team_id TEXT, home_team_id TEXT NOT NULL,
+                    prior_away_team_id TEXT, away_team_id TEXT NOT NULL,
+                    prior_scheduled_at TEXT, scheduled_at TEXT,
+                    decided_at TEXT NOT NULL
+                );
+                CREATE INDEX event_relation_tournament ON event_relations(tournament_id,event_id);
+                PRAGMA user_version = 8;
                 COMMIT;
                 """
             )
@@ -397,6 +455,26 @@ class EntityRegistry:
                 )"""
             )
             connection.execute("PRAGMA user_version = 7")
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+
+    @classmethod
+    def _upgrade_v7(cls, connection: sqlite3.Connection) -> None:
+        """Добавить проектные связи tournament/home/away для событий."""
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            connection.execute(
+                "CREATE TABLE event_relations (event_id TEXT PRIMARY KEY REFERENCES entities(id), tournament_id TEXT NOT NULL REFERENCES entities(id), home_team_id TEXT NOT NULL REFERENCES entities(id), away_team_id TEXT NOT NULL REFERENCES entities(id), scheduled_at TEXT, revision INTEGER NOT NULL, updated_at TEXT NOT NULL, CHECK(home_team_id <> away_team_id))"
+            )
+            connection.execute(
+                "CREATE TABLE event_relation_audit (id TEXT PRIMARY KEY,event_id TEXT NOT NULL REFERENCES entities(id),actor TEXT NOT NULL,reason TEXT NOT NULL,prior_revision INTEGER NOT NULL,revision INTEGER NOT NULL,prior_tournament_id TEXT,tournament_id TEXT NOT NULL,prior_home_team_id TEXT,home_team_id TEXT NOT NULL,prior_away_team_id TEXT,away_team_id TEXT NOT NULL,prior_scheduled_at TEXT,scheduled_at TEXT,decided_at TEXT NOT NULL)"
+            )
+            connection.execute(
+                "CREATE INDEX event_relation_tournament ON event_relations(tournament_id,event_id)"
+            )
+            connection.execute("PRAGMA user_version = 8")
             connection.commit()
         except Exception:
             connection.rollback()
@@ -1173,3 +1251,128 @@ class EntityRegistry:
                 (player_id,),
             ).fetchall()
         return [(r["team_id"], r["relation_kind"], r["valid_from"], r["valid_until"]) for r in rows]
+
+    def set_event_relation(
+        self,
+        event_id: str,
+        *,
+        tournament_id: str,
+        home_team_id: str,
+        away_team_id: str,
+        scheduled_at: datetime | str | None,
+        actor: str,
+        reason: str,
+        expected_revision: int = 0,
+    ) -> EventRelation:
+        """Создать или скорректировать audited project event relation."""
+        if not actor.strip() or not reason.strip():
+            raise ValueError("Автор и основание изменения обязательны")
+        if home_team_id == away_team_id:
+            raise ValueError("Home и away team должны быть разными сущностями")
+        timestamp = scheduled_at.isoformat() if isinstance(scheduled_at, datetime) else scheduled_at
+        normalized_time = _canonical_utc(timestamp)
+        with self._connect() as connection:
+            expected_kinds = (
+                (event_id, "event"),
+                (tournament_id, "tournament"),
+                (home_team_id, "team"),
+                (away_team_id, "team"),
+            )
+            entities: list[sqlite3.Row] = []
+            for entity_id, expected_kind in expected_kinds:
+                row = connection.execute(
+                    "SELECT id,kind,sport FROM entities WHERE id=? AND state='active'",
+                    (entity_id,),
+                ).fetchone()
+                if row is None or row["kind"] != expected_kind:
+                    raise ValueError(f"{entity_id} должен иметь тип {expected_kind}")
+                entities.append(row)
+            if len({row["sport"] for row in entities}) != 1:
+                raise ValueError("Событие, турнир и команды должны принадлежать одному виду спорта")
+            prior = connection.execute(
+                "SELECT * FROM event_relations WHERE event_id=?", (event_id,)
+            ).fetchone()
+            prior_revision = prior["revision"] if prior is not None else 0
+            if prior_revision != expected_revision:
+                raise ValueError("Revision event relation устарела; перечитайте запись")
+            revision = prior_revision + 1
+            now = _timestamp()
+            values = (tournament_id, home_team_id, away_team_id, normalized_time)
+            if prior is None:
+                connection.execute(
+                    "INSERT INTO event_relations VALUES (?,?,?,?,?,?,?)",
+                    (event_id, *values, revision, now),
+                )
+            else:
+                connection.execute(
+                    "UPDATE event_relations SET tournament_id=?,home_team_id=?,away_team_id=?,scheduled_at=?,revision=?,updated_at=? WHERE event_id=?",
+                    (*values, revision, now, event_id),
+                )
+            connection.execute(
+                "INSERT INTO event_relation_audit VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    str(uuid.uuid4()),
+                    event_id,
+                    actor,
+                    reason,
+                    prior_revision,
+                    revision,
+                    prior["tournament_id"] if prior is not None else None,
+                    tournament_id,
+                    prior["home_team_id"] if prior is not None else None,
+                    home_team_id,
+                    prior["away_team_id"] if prior is not None else None,
+                    away_team_id,
+                    prior["scheduled_at"] if prior is not None else None,
+                    normalized_time,
+                    now,
+                ),
+            )
+        return EventRelation(
+            event_id, tournament_id, home_team_id, away_team_id, normalized_time, revision
+        )
+
+    def get_event_relation(self, event_id: str) -> EventRelation:
+        """Получить подтверждённые relations проектного события."""
+        with self._connect(write=False) as connection:
+            row = connection.execute(
+                "SELECT * FROM event_relations WHERE event_id=?", (event_id,)
+            ).fetchone()
+        if row is None:
+            raise KeyError(event_id)
+        return EventRelation(
+            row["event_id"],
+            row["tournament_id"],
+            row["home_team_id"],
+            row["away_team_id"],
+            row["scheduled_at"],
+            row["revision"],
+        )
+
+    def list_event_relation_audit(self, event_id: str) -> list[EventRelationAudit]:
+        """Вернуть полную историю решений по отношениям project event."""
+        with self._connect(write=False) as connection:
+            rows = connection.execute(
+                "SELECT * FROM event_relation_audit WHERE event_id=? ORDER BY revision,id",
+                (event_id,),
+            ).fetchall()
+        return [
+            EventRelationAudit(
+                row["id"],
+                row["event_id"],
+                row["actor"],
+                row["reason"],
+                row["prior_revision"],
+                row["revision"],
+                row["prior_tournament_id"],
+                row["tournament_id"],
+                row["prior_home_team_id"],
+                row["home_team_id"],
+                row["prior_away_team_id"],
+                row["away_team_id"],
+                row["prior_scheduled_at"],
+                row["scheduled_at"],
+                row["decided_at"],
+            )
+            for row in rows
+        ]

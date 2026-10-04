@@ -10,15 +10,15 @@
 
 - Инициатива: `EPIC-026`.
 - Ветка инициативы: `initiative/epic-026-entity-registry`.
-- Workflow / этап: `engineering / TASK-026-3`; [REQ-026](../product/requirements/REQ-026-entity-registry.md) подтверждён, [ADR-027](../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md) принят после независимого review; TASK-026-1 и TASK-026-2 прошли независимое review.
+- Workflow / этап: `engineering / TASK-026-4`; [REQ-026](../product/requirements/REQ-026-entity-registry.md) подтверждён, [ADR-027](../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md) принят после независимого review; TASK-026-1, TASK-026-2 и TASK-026-3 прошли независимое review.
 - Исходная цель: проектные ID и имена сущностей отделены от названий и ID источников; процесс применим к сотням турниров, локальный registry обслуживает загрузку истории и обучение.
 - Критерии и DoD: подтверждённые критерии 1–11 в [REQ-026](../product/requirements/REQ-026-entity-registry.md), затем TASK review, полное EPIC review и terminal CI.
 - Релиз: production-развёртывание не запрошено.
-- Выполнено: подтверждён REQ и создана ветка; TASK-026-1 реализовал локальный source-neutral registry (51 целевой тест), TASK-026-2 — локальную веб-очередь с аудитом и пакетными решениями (58 тестов); оба среза прошли независимое review.
+- Выполнено: подтверждён REQ и создана ветка; TASK-026-1 реализовал локальный registry, TASK-026-2 — локальную веб-очередь, TASK-026-3 — строгий resolver событий и версионированный bridge; все три среза прошли независимое review (соответственно 51, 58 и 68 целевых тестов).
 - Решения: собственные ID и имена проекта; переименование сохраняет ID; неочевидные связи владелец подтверждает на локальной веб-странице с поиском и пакетными действиями; сервер читает опубликованный через существующий Object Storage снимок и передаёт новые кандидаты локально без собственного подтверждения. Registry применим к сотням турниров и будущим игрокам. Версионированная связь с `canonical_events.id` определена в ADR-027.
 - Артефакты: [REQ-026](../product/requirements/REQ-026-entity-registry.md), [ADR-027](../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md), [TASK-026-1](tasks/TASK-026-1-source-neutral-entity-registry.md), [ADR-026 календаря](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md), [долгосрочный план](index.md#долгосрочные-инициативы-платформы), [EPIC-003](EPIC-003-scalable-multisport-platform.md), [EPIC-025](EPIC-025-bot-schedule-readiness.md).
-- Предыдущая роль: Reviewer — TASK-026-2 без P0–P2, независимые проверки пройдены.
-- Следующая роль: Developer — выполнить [TASK-026-3](tasks/TASK-026-3-event-identity-bridge.md) через red → green → refactor.
+- Предыдущая роль: Reviewer — TASK-026-3 без P0–P2, независимые проверки пройдены.
+- Следующая роль: Developer — выполнить [TASK-026-4](tasks/TASK-026-4-local-registry-snapshot.md) через red → green → refactor.
 - Открытые вопросы: provider contract probe и параметры нагрузки остаются gates будущих TASK; первый локальный срез ими не блокируется.
 - Research: не применяется.
 - Обновлено: 2026-10-04.
@@ -57,12 +57,12 @@
 |---|---|---|---|
 | [026-1](tasks/TASK-026-1-source-neutral-entity-registry.md) | Локальные ID, имена, обозначения и игроки; 1, 2, 7, 8 | SQLite/домен, NHL и второй турнир | done |
 | [026-2](tasks/TASK-026-2-local-review-ui.md) | Локальная очередь и решения; 3 | HTTP/DB, пакет и security | done |
-| [026-3](tasks/TASK-026-3-event-identity-bridge.md) | Проектные события, bridge, совместимость; 1, 4, 6 | повторные матчи, перенос и pinned mapping | backlog |
+| [026-3](tasks/TASK-026-3-event-identity-bridge.md) | Проектные события, bridge, совместимость; 1, 4, 6 | повторные матчи, перенос и pinned mapping | done |
 | [026-4](tasks/TASK-026-4-local-registry-snapshot.md) | Полный снимок и provenance; 8, 9 | проверка снимка и offline training | backlog |
 | [026-5](tasks/TASK-026-5-registry-publication.md) | Object Storage и серверная версия; 9, 11 | fault tests, contract probe и DB activation | backlog |
 | [026-6](tasks/TASK-026-6-registry-candidate-feedback.md) | Обратная очередь и полный цикл; 4, 5, 10 | end-to-end NHL и второй турнир | backlog |
 
-Следующий gate — реализация и review [TASK-026-3](tasks/TASK-026-3-event-identity-bridge.md).
+Следующий gate — реализация и review [TASK-026-4](tasks/TASK-026-4-local-registry-snapshot.md).
 
 ## Риски и rollout
 
