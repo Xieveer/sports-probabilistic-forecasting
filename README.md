@@ -436,6 +436,18 @@ Product Owner ведёт отдельную ветку и компактную �
 
 ## Документация
 
+Локальная очередь проверки связей спортивных сущностей запускается отдельно от
+публичного API; подготовка registry, вход и остановка описаны в
+[руководстве локального review](docs/development/local-identity-review.md).
+Проектная идентичность событий и версионированный bridge описаны в
+[ADR-029](docs/architecture/adr/ADR-029-local-entity-registry-and-snapshots.md);
+[локальный снимок и provenance обучения](docs/operations/identity-registry-local.md),
+а также [публикация через Object Storage](docs/operations/entity-registry-publication.md)
+имеют отдельные руководства. Последнее руководство описывает обратную доставку
+новых обозначений в локальную очередь и повторную публикацию после решения
+владельца. Строгий серверный reader пока выключен в
+`conf/identity_event.yaml`.
+
 ### Пользовательская (Sphinx)
 
 Сборка из `docs/source/`: `make docs`, локальный просмотр — `make docs-serve` (см. `make help`).

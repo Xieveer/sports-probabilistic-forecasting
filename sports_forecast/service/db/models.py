@@ -19,6 +19,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Column,
@@ -227,6 +228,110 @@ class CanonicalEventRevision(Base):
     )
 
 
+class RegistryIdentitySnapshot(Base):
+    """Полный immutable projection локальной идентичности в server DB."""
+
+    __tablename__ = "registry_identity_snapshots"
+
+    snapshot_id: str = Column(String(68), primary_key=True)
+    snapshot_kind: str = Column(String(32), nullable=False)
+    projection_sha256: str = Column(String(64), nullable=False)
+    projection_schema_version: int = Column(Integer, nullable=False)
+    policy_version: str = Column(String(64), nullable=False)
+    normalization_version: str = Column(String(64), nullable=False)
+    projection_json: str = Column(Text, nullable=False)
+    manifest_json: str | None = Column(Text, nullable=True)
+    created_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class RegistrySnapshotRecord(Base):
+    """Неизменяемая строка одного JSONL файла установленного полного snapshot."""
+
+    __tablename__ = "registry_snapshot_records"
+
+    snapshot_id: str = Column(
+        ForeignKey("registry_identity_snapshots.snapshot_id"), primary_key=True
+    )
+    file_name: str = Column(String(32), primary_key=True)
+    record_key: str = Column(String(256), primary_key=True)
+    payload_json: str = Column(Text, nullable=False)
+
+
+class RegistryPublication(Base):
+    """Неизменяемая запись установленной Object Storage publication."""
+
+    __tablename__ = "registry_publications"
+
+    publication_sequence: int = Column(BigInteger, primary_key=True)
+    publication_id: str = Column(String(128), nullable=False, unique=True)
+    snapshot_id: str = Column(ForeignKey("registry_identity_snapshots.snapshot_id"), nullable=False)
+    previous_publication_id: str | None = Column(String(128), nullable=True)
+    published_at: datetime = Column(DateTime, nullable=False)
+    actor: str = Column(String(64), nullable=False)
+    created_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class ActiveRegistryInstallation(Base):
+    """Один атомарный указатель на активную публикацию registry."""
+
+    __tablename__ = "active_registry_installation"
+
+    id: int = Column(Integer, primary_key=True)
+    publication_sequence: int = Column(BigInteger, nullable=False)
+    publication_id: str = Column(String(128), nullable=False)
+    snapshot_id: str = Column(ForeignKey("registry_identity_snapshots.snapshot_id"), nullable=False)
+    activated_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class RegistryInstallationLock(Base):
+    """Сериализует installer включая первоначальное создание active pointer."""
+
+    __tablename__ = "registry_installation_locks"
+
+    id: int = Column(Integer, primary_key=True)
+    lock_version: int = Column(Integer, nullable=False, default=0)
+
+
+class RegistryEventResolverProjection(Base):
+    """Проверяемая ev1 проекция, производная от полного ir1 snapshot."""
+
+    __tablename__ = "registry_event_resolver_projections"
+
+    snapshot_id: str = Column(
+        ForeignKey("registry_identity_snapshots.snapshot_id"), primary_key=True
+    )
+    event_snapshot_id: str = Column(String(68), nullable=False)
+    projection_sha256: str = Column(String(64), nullable=False)
+    projection_json: str = Column(Text, nullable=False)
+
+
+class EventRegistryMapping(Base):
+    """Project event bridge закреплённого registry snapshot."""
+
+    __tablename__ = "registry_canonical_event_mappings"
+
+    snapshot_id: str = Column(
+        String(80), ForeignKey("registry_identity_snapshots.snapshot_id"), primary_key=True
+    )
+    canonical_event_id: int = Column(
+        ForeignKey("canonical_events.id"), primary_key=True, nullable=False
+    )
+    project_event_id: str | None = Column(String(36), nullable=True)
+    status: str = Column(String(16), nullable=False)
+    reason: str = Column(Text, nullable=False)
+    policy_version: str = Column(String(64), nullable=False)
+    decision_id: str | None = Column(String(36), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('resolved','unresolved','ambiguous','conflict')"),
+        CheckConstraint(
+            "(status = 'resolved' AND project_event_id IS NOT NULL) OR "
+            "(status <> 'resolved' AND project_event_id IS NULL)"
+        ),
+        Index("ix_registry_event_mapping_canonical", "canonical_event_id", "snapshot_id"),
+    )
+
+
 class CalendarCoverage(Base):
     """Последняя проверка полноты календарного окна по источнику."""
 
@@ -265,6 +370,9 @@ class OddsObservation(Base):
     observed_at_source: str | None = Column(String(64), nullable=True)
     retrieved_at: datetime | None = Column(DateTime, nullable=True)
     provider_event_id: str | None = Column(String(128), nullable=True)
+    registry_snapshot_id: str | None = Column(
+        String(80), ForeignKey("registry_identity_snapshots.snapshot_id"), nullable=True
+    )
     values_json: str = Column(Text, nullable=False)
     source: str = Column(String(128), nullable=False)
 
@@ -277,6 +385,9 @@ class OddsObservation(Base):
             name="uq_odds_observation_event_market_bookmaker",
         ),
         Index("ix_odds_observation_event", "canonical_event_id", "observed_at"),
+        Index(
+            "ix_odds_observation_registry_snapshot", "canonical_event_id", "registry_snapshot_id"
+        ),
     )
 
 
@@ -471,6 +582,51 @@ class RefreshWatermark(Base):
     source: str = Column(String(128), nullable=False)
     snapshot_id: str = Column(String(80), nullable=False)
     updated_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class RegistryCandidateOutbox(Base):
+    """Durable candidate observations waiting for owner-side registry review."""
+
+    __tablename__ = "registry_candidate_outbox"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    installation_id: str = Column(String(36), nullable=False)
+    idempotency_key: str = Column(String(200), nullable=False)
+    payload_json: str = Column(Text, nullable=False)
+    status: str = Column(String(16), nullable=False, server_default="pending")
+    batch_id: str | None = Column(String(64), nullable=True)
+    attempts: int = Column(Integer, nullable=False, server_default="0")
+    last_error_code: str | None = Column(String(32), nullable=True)
+    created_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+    published_at: datetime | None = Column(DateTime, nullable=True)
+    acknowledged_at: datetime | None = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('pending','staged','awaiting_ack','acknowledged')"),
+        CheckConstraint("attempts >= 0"),
+        CheckConstraint(
+            "(status = 'pending' AND batch_id IS NULL) OR "
+            "(status <> 'pending' AND batch_id IS NOT NULL)"
+        ),
+        Index(
+            "ix_registry_candidate_outbox_delivery",
+            "installation_id",
+            "status",
+            "id",
+        ),
+        Index("ix_registry_candidate_outbox_batch", "installation_id", "batch_id"),
+    )
+
+
+class RegistryCandidateBatchSequence(Base):
+    """Транзакционный счётчик непрерывных batch IDs одной server installation."""
+
+    __tablename__ = "registry_candidate_batch_sequences"
+
+    installation_id: str = Column(String(36), primary_key=True)
+    last_sequence: int = Column(BigInteger, nullable=False, server_default="0")
+
+    __table_args__ = (CheckConstraint("last_sequence >= 0"),)
 
 
 class BootstrapImport(Base):

@@ -84,6 +84,30 @@ def test_map_override_wins() -> None:
     assert out["999"].odds_api_event_id == "evt_tor_bos"
 
 
+def test_strict_map_requires_same_project_event_and_ignores_override() -> None:
+    """Legacy override и имена не дают line без подтверждённой общей связи."""
+    quotes = parse_pinnacle_h2h_quotes_from_payload(_sample_payload(), bookmaker_key="pinnacle")
+    refs = [NHLLiveMatchRef("m1", "TOR", "BOS", datetime(2026, 1, 10, tzinfo=UTC))]
+    unresolved = map_match_refs_to_pinnacle_quotes(
+        refs,
+        quotes,
+        quote_project_event_ids={},
+        project_event_ids={"m1": "project-1"},
+        event_id_to_match_id={"evt_tor_bos": "m1"},
+    )
+    assert unresolved["m1"] is None
+
+    resolved = map_match_refs_to_pinnacle_quotes(
+        refs,
+        quotes,
+        quote_project_event_ids={"evt_tor_bos": "project-1"},
+        project_event_ids={"m1": "project-1"},
+        event_id_to_match_id={"evt_tor_bos": "m1"},
+    )
+    assert resolved["m1"] is not None
+    assert resolved["m1"].odds_api_event_id == "evt_tor_bos"
+
+
 def test_map_by_team_and_commence_tolerance() -> None:
     quotes = parse_pinnacle_h2h_quotes_from_payload(
         _sample_payload(),
@@ -191,3 +215,34 @@ def test_fetch_with_injected_client_no_network() -> None:
     assert call_kw[0][0] == "icehockey_nhl"
     assert call_kw[1]["markets"] == ["h2h"]
     assert call_kw[1].get("use_cache") is False
+
+
+def test_fetch_strict_resolves_quote_after_payload_and_rejects_unknown() -> None:
+    cfg = OmegaConf.create(
+        {
+            "bookmaker": {
+                "sport_keys": {"nhl": "icehockey_nhl"},
+                "bookmakers": {"primary": "pinnacle"},
+                "live_inference": {"event_id_to_match_id": {"evt_tor_bos": "m1"}},
+            }
+        }
+    )
+    client = MagicMock()
+    client.fetch_odds_for_sport.return_value = _sample_payload()
+    refs = [NHLLiveMatchRef("m1", "TOR", "BOS", datetime(2026, 1, 10, tzinfo=UTC))]
+    unknown = fetch_nhl_pinnacle_quotes_for_refs(
+        refs,
+        book_cfg=cfg,
+        client=client,
+        project_event_ids={"m1": "project-1"},
+        quote_project_event_resolver=lambda _quote: None,
+    )
+    assert unknown["m1"] is None
+    confirmed = fetch_nhl_pinnacle_quotes_for_refs(
+        refs,
+        book_cfg=cfg,
+        client=client,
+        project_event_ids={"m1": "project-1"},
+        quote_project_event_resolver=lambda _quote: "project-1",
+    )
+    assert confirmed["m1"] is not None

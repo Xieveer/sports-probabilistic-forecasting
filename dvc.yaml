@@ -25,6 +25,12 @@ stages:
     cmd: uv run python -m sports_forecast.data.ingest
     deps:
       - sports_forecast/data/ingest.py
+      - sports_forecast/identity/events.py
+      - sports_forecast/identity/snapshot.py
+      - sports_forecast/identity/data_provenance.py
+      - sports_forecast/identity/ingest.py
+      - conf/identity_registry.yaml
+      - data/registry/current/
       - sports_forecast/data/providers/smart_tables/
       - conf/source/
       - conf/bookmaker/
@@ -40,6 +46,10 @@ stages:
     cmd: uv run python -m sports_forecast.data.clean
     deps:
       - sports_forecast/data/clean.py
+      - sports_forecast/identity/snapshot.py
+      - sports_forecast/identity/data_provenance.py
+      - conf/identity_registry.yaml
+      - data/registry/current/
       - sports_forecast/validation/schemas.py
       - conf/tournament/
       - conf/sport/
@@ -62,6 +72,10 @@ stages:
       - features.config
     deps:
       - sports_forecast/features/features_build.py
+      - sports_forecast/identity/snapshot.py
+      - sports_forecast/identity/data_provenance.py
+      - conf/identity_registry.yaml
+      - data/registry/current/
       - sports_forecast/features/pipeline.py
       - sports_forecast/features/rolling_contexts.py
       - sports_forecast/features/feature_pipeline_compose.py

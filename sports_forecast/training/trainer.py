@@ -154,6 +154,17 @@ class SingleExperimentRunner:
         cfg = self.config
         if cfg.get("model_pool") is None:
             raise ValueError("Pool training требует явный model_pool context")
+        from sports_forecast.identity.data_provenance import load_enabled_registry_snapshot
+
+        tournament_name = str(cfg.tournament.name)
+        if (
+            load_enabled_registry_snapshot(self.project_root, tournament_name=tournament_name)
+            is not None
+        ):
+            raise ValueError(
+                "Registry-enabled pool training требует проверенную provenance каждого input; "
+                "DataFrame без per-file sidecars не допускается"
+            )
 
         run_name = self._get_run_name(cfg)
         run_tags = self._get_run_tags(cfg)
@@ -256,6 +267,38 @@ class SingleExperimentRunner:
             )
 
         df = pd.read_parquet(full_path)
+        from sports_forecast.identity.data_provenance import (
+            configured_snapshot_root,
+            identity_sidecar_path,
+            load_enabled_registry_snapshot,
+            read_identity_provenance,
+        )
+
+        identity_snapshot = load_enabled_registry_snapshot(
+            self.project_root, tournament_name=str(cfg.tournament.name)
+        )
+        if identity_snapshot is not None:
+            provenance = read_identity_provenance(
+                full_path,
+                snapshot_root=configured_snapshot_root(self.project_root),
+                expected_snapshot_id=identity_snapshot.snapshot_id,
+                row_id_column="id",
+            )
+            mlflow.set_tag("registry_snapshot_id", provenance.snapshot_id)
+            mlflow.log_dict(provenance.snapshot.manifest, "registry_snapshot_manifest.json")
+            mlflow.log_dict(
+                {
+                    "adapter_name": provenance.adapter_name,
+                    "source": provenance.source,
+                    "tournament": provenance.tournament,
+                    "parquet_sha256": provenance.parquet_sha256,
+                    "dataset_row_count": provenance.dataset_row_count,
+                },
+                "dataset_identity_provenance.json",
+            )
+            mlflow.log_artifact(
+                str(identity_sidecar_path(full_path)), artifact_path="dataset_identity"
+            )
         logger.info("Загружено %d строк, %d колонок", len(df), len(df.columns))
         return df
 

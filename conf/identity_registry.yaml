@@ -1,0 +1,27 @@
+# Переключатель offline identity pipeline. Enabled mode проверяет immutable package
+# из selected_package_path; сеть во время DVC/train не используется.
+enabled: false
+enabled_tournaments: []
+snapshot_root: data/registry/snapshots
+selected_package_path: data/registry/current/package
+master_db: data/registry/master.sqlite3
+
+# Явные схемы provider adapters. Имена колонок сверяются с source documentation.
+adapters:
+  nhl:
+    source: nhl_api
+    sport: ice_hockey
+    event_id: nhl_id
+    row_id: id
+    scheduled_at: datetime
+    home: home_team
+    away: away_team
+  football_nationals:
+    source: smart_tables
+    sport: football
+    event_id: match_id
+    row_id: match_id
+    scheduled_at: datetime
+    tournament: competition_code
+    home_id: home_team_id
+    away_id: away_team_id

@@ -36,6 +36,7 @@ from sports_forecast.data.providers.odds.team_name_registry import (
     TeamNameRegistry,
     load_nhl_team_name_registry,
 )
+from sports_forecast.identity.events import registry_event_reader_enabled
 from sports_forecast.utils.log_config import get_logger
 from sports_forecast.validation.schemas import validate_odds_float_columns
 
@@ -520,6 +521,9 @@ def run_odds_refresh(
     buf = b_def if buffer_days is None else buffer_days
     mx_days = m_def if max_days_per_refresh is None else max_days_per_refresh
     do_merge = am_def if auto_merge is None else auto_merge
+    if do_merge and registry_event_reader_enabled():
+        logger.info("odds refresh: source.csv merge отключён при strict registry reader")
+        do_merge = False
     min_cov_cfg = cfg_min_cov if min_odds_coverage_pct is None else float(min_odds_coverage_pct)
     if buf < 0:
         raise ValueError("buffer_days must be >= 0")

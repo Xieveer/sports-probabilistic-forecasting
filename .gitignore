@@ -65,6 +65,16 @@ data/source/*/odds/
 # The Odds API JSON cache (регенерируется клиентом; не коммитить)
 data/cache/the_odds_api/
 /data/.schema_snapshots
+# Локальная master identity DB и секрет отдельного review UI
+/data/identity-review.secret
+/data/registry/*
+!/data/registry/current/
+!/data/registry/current/.gitkeep
+/data/registry/current/*
+!/data/registry/current/.gitkeep
+/data/**/*.identity.json
+/data/*entity-registry*.sqlite
+/data/*entity-registry*.sqlite3
 /models/*.cbm
 /models/*/*.cbm
 .dvc/tmp

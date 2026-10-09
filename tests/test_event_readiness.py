@@ -9,11 +9,13 @@ from typing import cast
 
 import pandas as pd
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from sports_forecast.data.providers.odds.team_name_registry import TeamNameRegistry
+from sports_forecast.identity.registry import Resolution
+from sports_forecast.service import odds_projection
 from sports_forecast.service.app import app
 from sports_forecast.service.db.models import (
     Base,
@@ -21,7 +23,9 @@ from sports_forecast.service.db.models import (
     OddsAcquisitionAttempt,
     OddsObservation,
     Prediction,
+    RegistryCandidateOutbox,
 )
+from sports_forecast.service.db.repository import CalendarRepository
 from sports_forecast.service.event_readiness import evaluate_event_readiness
 from sports_forecast.service.odds_projection import (
     OddsMarketColumns,
@@ -84,6 +88,174 @@ def test_odds_link_requires_unique_exact_event_identity_and_preserves_fetched_at
         "pinnacle_winner_withOT_home_close": 1.95,
         "pinnacle_winner_withOT_away_close": 1.88,
     }
+
+
+def test_strict_odds_link_waits_for_confirmed_bookmaker_aliases() -> None:
+    """Неизвестное букмекерское имя не даёт line даже при legacy совпадении."""
+    scheduled = datetime(2026, 10, 1, 23, tzinfo=UTC)
+    events = [_event(1, scheduled)]
+    odds = pd.DataFrame([_row("2026-10-01T20:00:00Z")])
+    registry = TeamNameRegistry.from_source_sections(
+        {"NYR": "NYR", "PIT": "PIT"},
+        {"NEWYORKRANGERS": "NYR", "PITTSBURGHPENGUINS": "PIT"},
+    )
+
+    strict = project_odds_rows(
+        events,
+        odds,
+        [WINNER_COLUMNS],
+        registry,
+        registry_project_events={1: ("event-uuid", "league-uuid", "home-uuid", "away-uuid")},
+        confirmed_bookmaker_teams={
+            ("league-uuid", "NEWYORKRANGERS", scheduled): "home-uuid",
+        },
+    )
+    assert strict == []
+
+    confirmed = project_odds_rows(
+        events,
+        odds,
+        [WINNER_COLUMNS],
+        registry,
+        registry_project_events={1: ("event-uuid", "league-uuid", "home-uuid", "away-uuid")},
+        confirmed_bookmaker_teams={
+            ("league-uuid", "NEWYORKRANGERS", scheduled): "home-uuid",
+            ("league-uuid", "PITTSBURGH PENGUINS", scheduled): "away-uuid",
+        },
+    )
+    assert len(confirmed) == 1
+    assert confirmed[0].canonical_event_id == 1
+
+
+def test_strict_odds_link_uses_same_contract_for_football() -> None:
+    """Второй турнир использует ту же project identity без имён в коде."""
+    scheduled = datetime(2026, 10, 1, 23, tzinfo=UTC)
+    event = SimpleNamespace(
+        id=11,
+        tournament="epl",
+        scheduled_at=scheduled,
+        home_participant="ARS",
+        away_participant="CHE",
+    )
+    row = {
+        **_row("2026-10-01T20:00:00Z"),
+        "home_team_norm": "Arsenal",
+        "away_team_norm": "Chelsea",
+    }
+    linked = project_odds_rows(
+        [event],
+        pd.DataFrame([row]),
+        [WINNER_COLUMNS],
+        TeamNameRegistry(),
+        registry_project_events={11: ("match-uuid", "league-uuid", "ars-uuid", "che-uuid")},
+        confirmed_bookmaker_teams={
+            ("league-uuid", "Arsenal", scheduled): "ars-uuid",
+            ("league-uuid", "Chelsea", scheduled): "che-uuid",
+        },
+    )
+    assert [item.canonical_event_id for item in linked] == [11]
+
+
+def test_odds_sync_pins_registry_and_does_not_use_legacy_aliases(monkeypatch) -> None:
+    """Strict sync обращается к закреплённому snapshot и пропускает unknown alias."""
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    scheduled = datetime(2026, 10, 1, 23, tzinfo=UTC)
+    registry = TeamNameRegistry.from_source_sections(
+        {"NYR": "NYR", "PIT": "PIT"},
+        {"NEWYORKRANGERS": "NYR", "PITTSBURGHPENGUINS": "PIT"},
+    )
+    project = SimpleNamespace(
+        id="event-uuid",
+        sport="ice_hockey",
+        tournament_id="league-uuid",
+        home_team_id="home-uuid",
+        away_team_id="away-uuid",
+    )
+    confirmed = {"NEWYORKRANGERS": "home-uuid"}
+    monkeypatch.setenv("SF_ENTITY_REGISTRY_INSTALLATION_ID", "11111111-1111-4111-8111-111111111111")
+
+    class FakeReader:
+        snapshot_id = "ir1:" + "a" * 64
+        event_snapshot = SimpleNamespace(event_snapshot=SimpleNamespace(events=(project,)))
+
+        def get_event_mapping(self, event_id, session):
+            return SimpleNamespace(status="resolved", project_event_id="event-uuid")
+
+        def resolve_designation(self, *, raw_value, **kwargs):
+            value = confirmed.get(raw_value)
+            return Resolution("resolved" if value else "unresolved", value, "fixture")
+
+    monkeypatch.setattr(odds_projection, "registry_event_reader_enabled", lambda: True)
+    monkeypatch.setattr(odds_projection, "pin_installed_registry", lambda _session: FakeReader())
+    policy = {"odds_markets": [dict(vars(WINNER_COLUMNS))]}
+    with Session(engine) as session:
+        session.add(
+            CanonicalEvent(
+                sport="ice_hockey",
+                tournament="nhl",
+                source="nhl_api",
+                source_event_id="1",
+                scheduled_at=scheduled,
+                status="scheduled",
+                current_revision_sha256="a" * 64,
+                home_participant="NYR",
+                away_participant="PIT",
+            )
+        )
+        session.flush()
+        frame = pd.DataFrame([_row("2026-10-01T20:00:00Z")])
+        assert sync_odds_store_observations(session, "nhl", frame, policy, registry) == 0
+        candidates = session.scalars(select(RegistryCandidateOutbox)).all()
+        assert len(candidates) == 1
+        assert '"raw_value":"PITTSBURGH PENGUINS"' in candidates[0].payload_json
+        confirmed["PITTSBURGH PENGUINS"] = "away-uuid"
+        assert sync_odds_store_observations(session, "nhl", frame, policy, registry) == 1
+    engine.dispose()
+
+
+def test_calendar_readiness_filters_legacy_odds_in_strict_mode() -> None:
+    """Сохранённая до registry линия остаётся в БД, но не считается текущей."""
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    scheduled = datetime(2026, 10, 1, 23)
+    with Session(engine) as session:
+        event = CanonicalEvent(
+            sport="ice_hockey",
+            tournament="nhl",
+            source="nhl_api",
+            source_event_id="1",
+            scheduled_at=scheduled,
+            status="scheduled",
+            current_revision_sha256="a" * 64,
+            home_participant="NYR",
+            away_participant="PIT",
+        )
+        session.add(event)
+        session.flush()
+        session.add(
+            OddsObservation(
+                canonical_event_id=event.id,
+                market="winner",
+                market_spec="winner_withOT",
+                bookmaker="pinnacle",
+                event_scheduled_at=scheduled,
+                event_home_participant="NYR",
+                event_away_participant="PIT",
+                observed_at=datetime(2026, 10, 1, 20),
+                values_json='{"home":1.95,"away":1.88}',
+                source="the_odds_api",
+            )
+        )
+        session.flush()
+        repository = CalendarRepository(session)
+        _, legacy, _ = repository.get_readiness_data([event])
+        _, strict, _ = repository.get_readiness_data(
+            [event], registry_snapshot_id="ir1:" + "a" * 64
+        )
+        assert len(legacy[event.id]) == 1
+        assert strict[event.id] == []
+    engine.dispose()
 
 
 def test_odds_link_rejects_legacy_row_without_market_provider_timestamp() -> None:

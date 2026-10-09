@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -681,6 +682,16 @@ def test_football_fixture_uses_shared_producer_with_its_own_policy(monkeypatch) 
 
             counts = _readiness_counts(session, tournament="football_fixture", at=run_at)
 
+            monkeypatch.setattr(
+                canonical_full_refresh, "registry_event_reader_enabled", lambda: True
+            )
+            monkeypatch.setattr(
+                canonical_full_refresh,
+                "pin_installed_registry",
+                lambda _session: SimpleNamespace(snapshot_id="ir1:" + "a" * 64),
+            )
+            strict_counts = _readiness_counts(session, tournament="football_fixture", at=run_at)
+
         assert counts == {
             "eligible_events": 1,
             "odds_eligible_events": 1,
@@ -690,6 +701,8 @@ def test_football_fixture_uses_shared_producer_with_its_own_policy(monkeypatch) 
             "partially_ready_events": 0,
             "errors": 0,
         }
+        assert strict_counts["odds_ready"] == 0
+        assert strict_counts["fully_ready_events"] == 0
     finally:
         reset_engine()
         engine.dispose()

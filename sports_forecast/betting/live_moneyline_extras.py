@@ -33,7 +33,11 @@ from sports_forecast.data.providers.odds.live_nhl_pinnacle import (
 class LiveMoneylinePredictionInput(Protocol):
     """Минимальный контракт строки предсказания для NHL moneyline live extras."""
 
-    match_id: str | int
+    @property
+    def match_id(self) -> str | int:
+        """Идентификатор события источника."""
+        ...
+
     home_player: str | None
     away_player: str | None
     match_datetime: datetime | None

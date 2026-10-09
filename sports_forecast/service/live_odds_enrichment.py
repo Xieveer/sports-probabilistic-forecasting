@@ -11,9 +11,12 @@ Live Pinnacle (The Odds API) для ответов публичного predicti
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import requests
+from omegaconf import OmegaConf
+from sqlalchemy import select
 
 from sports_forecast.betting.live_moneyline_extras import (
     build_live_moneyline_extras,
@@ -31,7 +34,10 @@ from sports_forecast.data.providers.odds.team_name_registry import (
     TeamNameRegistry,
     load_nhl_team_name_registry,
 )
-from sports_forecast.service.db.models import Prediction
+from sports_forecast.identity.events import CanonicalEventRef, registry_event_reader_enabled
+from sports_forecast.identity.installation import pin_installed_registry
+from sports_forecast.service.db.engine import get_session
+from sports_forecast.service.db.models import CanonicalEvent, Prediction
 from sports_forecast.service.service_api_settings import load_edge_decision_params
 from sports_forecast.utils.log_config import get_logger
 
@@ -56,6 +62,60 @@ def _registry() -> TeamNameRegistry:
     return load_nhl_team_name_registry()
 
 
+def pinned_live_quote_matching(
+    predictions: Sequence[Prediction], *, sport_key: str, source: str = "the_odds_api"
+) -> tuple[dict[str, str], Callable[[PinnacleH2HQuote], str | None]]:
+    """Закрепить project IDs source матчей и resolver котировок на одном ir1."""
+    with get_session() as session:
+        reader = pin_installed_registry(session)
+        event_snapshot = reader.event_snapshot
+        project_event_ids: dict[str, str] = {}
+        source_sports: set[str] = set()
+        for prediction in predictions:
+            match_id = str(prediction.match_id)
+            canonical = session.scalars(
+                select(CanonicalEvent).where(
+                    CanonicalEvent.__table__.c.tournament == prediction.tournament,
+                    CanonicalEvent.__table__.c.source_event_id == match_id,
+                )
+            ).all()
+            if len(canonical) != 1:
+                continue
+            event = canonical[0]
+            source_sports.add(str(event.sport))
+            try:
+                mapping = reader.get_event_mapping(int(event.id), session)
+            except KeyError:
+                continue
+            if mapping.status == "resolved" and mapping.project_event_id is not None:
+                project_event_ids[match_id] = mapping.project_event_id
+
+    def resolve_quote_project_id(quote: PinnacleH2HQuote) -> str | None:
+        candidate_ids = {
+            resolution.project_event_id
+            for sport in source_sports
+            if (
+                resolution := event_snapshot.resolve(
+                    CanonicalEventRef(
+                        canonical_event_id=0,
+                        sport=sport,
+                        tournament=sport_key,
+                        source=source,
+                        source_event_id=quote.odds_api_event_id,
+                        scheduled_at=quote.commence_utc,
+                        home_participant=quote.home_team,
+                        away_participant=quote.away_team,
+                    )
+                )
+            ).status
+            == "resolved"
+            and resolution.project_event_id is not None
+        }
+        return next(iter(candidate_ids)) if len(candidate_ids) == 1 else None
+
+    return project_event_ids, resolve_quote_project_id
+
+
 def _fetch_quotes_map(preds: list[Prediction]) -> dict[str, PinnacleH2HQuote | None]:
     by_mid: dict[str, Prediction] = {}
     for p in preds:
@@ -67,11 +127,23 @@ def _fetch_quotes_map(preds: list[Prediction]) -> dict[str, PinnacleH2HQuote | N
     if book_cfg is None:
         raise RuntimeError("the_odds_api bookmaker config missing")
     client = build_odds_client_for_live(book_cfg)
+    if not registry_event_reader_enabled():
+        return fetch_nhl_pinnacle_quotes_for_refs(
+            refs, book_cfg=book_cfg, team_registry=_registry(), client=client
+        )
+
+    sport_key = str(OmegaConf.select(book_cfg, "bookmaker.sport_keys.nhl") or "icehockey_nhl")
+    project_event_ids, resolve_quote_project_id = pinned_live_quote_matching(
+        list(by_mid.values()), sport_key=sport_key
+    )
+
     return fetch_nhl_pinnacle_quotes_for_refs(
         refs,
         book_cfg=book_cfg,
         team_registry=_registry(),
         client=client,
+        project_event_ids=project_event_ids,
+        quote_project_event_resolver=resolve_quote_project_id,
     )
 
 

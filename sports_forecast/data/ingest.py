@@ -45,9 +45,11 @@ from __future__ import annotations
 import ast
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
+import yaml
 from omegaconf import DictConfig
 
 from sports_forecast.config.loaders import (
@@ -60,6 +62,8 @@ from sports_forecast.data.providers import (
     SourceProviderError,
     get_provider,
 )
+from sports_forecast.identity.data_provenance import IdentityRowResolution
+from sports_forecast.identity.snapshot import VerifiedRegistrySnapshot
 from sports_forecast.utils.log_config import get_logger
 
 
@@ -68,6 +72,36 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 #: Логгер модуля для отслеживания процесса загрузки
 logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class _IdentityIngestContext:
+    snapshot: VerifiedRegistrySnapshot
+    adapter_name: str
+    source: str
+    row_id_column: str
+    resolutions: tuple[IdentityRowResolution, ...]
+    snapshot_root: Path
+
+
+def _write_identity_sidecar(
+    data_path: Path, context: _IdentityIngestContext, row_ids: set[str] | None = None
+) -> None:
+    """Сохранить provenance ingest parquet или его split части."""
+    from sports_forecast.identity.data_provenance import write_identity_provenance
+
+    selected = tuple(
+        item for item in context.resolutions if row_ids is None or item.row_id in row_ids
+    )
+    write_identity_provenance(
+        data_path,
+        snapshot=context.snapshot,
+        adapter_name=context.adapter_name,
+        source=context.source,
+        tournament=data_path.parent.name,
+        resolutions=selected,
+        row_id_column=context.row_id_column,
+    )
 
 
 def _get_tournament_filter() -> set[str] | None:
@@ -129,6 +163,7 @@ def split_tournament_by_config(
     tournament_name: str,
     split_cfg: DictConfig,
     odds_cfg: DictConfig | None = None,
+    identity_context: _IdentityIngestContext | None = None,
 ) -> None:
     """Универсальная функция разделения турнира на подтурниры согласно конфигу.
 
@@ -202,6 +237,12 @@ def split_tournament_by_config(
             engine="pyarrow",
             compression="snappy",
         )
+        if identity_context is not None:
+            _write_identity_sidecar(
+                output_parquet,
+                identity_context,
+                {str(value).strip() for value in sub_df[identity_context.row_id_column]},
+            )
 
         file_size = output_parquet.stat().st_size
         logger.info(
@@ -425,6 +466,8 @@ def process_tournament(
     source_dir: Path,
     raw_root: Path,
     paths_cfg: DictConfig | None = None,
+    *,
+    identity_snapshot: VerifiedRegistrySnapshot | None = None,
 ) -> None:
     """Обработать один турнир: CSV → Parquet (ингест данных).
 
@@ -466,6 +509,9 @@ def process_tournament(
         paths_cfg = load_paths_config()
 
     tournament_name = source_dir.name
+    from sports_forecast.identity.data_provenance import identity_mode_for_tournament
+
+    identity_enabled = identity_mode_for_tournament(PROJECT_ROOT, tournament_name)
     output_parquet = raw_root / tournament_name / "matches.parquet"
 
     source_config = None
@@ -482,12 +528,16 @@ def process_tournament(
     try:
         source_csv = provider.fetch(tournament_name)
     except SourceDataNotFoundError:
+        if identity_enabled:
+            raise
         logger.warning(
             "Пропускаю турнир %s: исходные данные недоступны (file provider / отсутствует файл)",
             tournament_name,
         )
         return
     except SourceProviderError as e:
+        if identity_enabled:
+            raise
         logger.error("Пропускаю турнир %s: ошибка провайдера данных — %s", tournament_name, e)
         return
 
@@ -514,6 +564,44 @@ def process_tournament(
         if df.empty:
             logger.warning("Турнир %s: CSV файл пустой, пропускаю", tournament_name)
             return
+
+        identity_context = None
+        from sports_forecast.identity.data_provenance import (
+            configured_snapshot_root,
+            load_enabled_registry_snapshot,
+        )
+
+        if identity_enabled:
+            identity_snapshot = identity_snapshot or load_enabled_registry_snapshot(
+                PROJECT_ROOT, tournament_name=tournament_name
+            )
+            if identity_snapshot is None:
+                raise ValueError(f"Для enabled турнира {tournament_name} не найден snapshot pin")
+            from sports_forecast.identity.ingest import resolve_source_frame
+            from sports_forecast.identity.registry import EntityRegistry
+
+            identity_config = yaml.safe_load(
+                (PROJECT_ROOT / "conf" / "identity_registry.yaml").read_text(encoding="utf-8")
+            )
+            master_path = Path(identity_config["master_db"])
+            if not master_path.is_absolute():
+                master_path = PROJECT_ROOT / master_path
+            master = EntityRegistry(master_path)
+            adapter_name, source, row_id_column, resolutions = resolve_source_frame(
+                df,
+                tournament_name=tournament_name,
+                source_config_path=PROJECT_ROOT / "conf" / "identity_registry.yaml",
+                snapshot=identity_snapshot,
+                master_registry=master,
+            )
+            identity_context = _IdentityIngestContext(
+                identity_snapshot,
+                adapter_name,
+                source,
+                row_id_column,
+                resolutions,
+                configured_snapshot_root(PROJECT_ROOT),
+            )
 
         logger.info(
             "Турнир %s: загружено %d записей, %d колонок",
@@ -543,6 +631,7 @@ def process_tournament(
                 tournament_name,
                 source_config.split_strategy,
                 odds_cfg,
+                identity_context,
             )
 
             logger.info("Источник %s: разделение завершено", tournament_name)
@@ -561,6 +650,8 @@ def process_tournament(
             engine="pyarrow",
             compression="snappy",  # Сжатие для экономии места
         )
+        if identity_context is not None:
+            _write_identity_sidecar(output_parquet, identity_context)
 
         # Проверяем, что файл создан
         if output_parquet.exists():
@@ -591,6 +682,8 @@ def process_tournament(
     except PermissionError as e:
         logger.error("Турнир %s: нет прав на запись - %s", tournament_name, e)
     except Exception:
+        if identity_enabled:
+            raise
         logger.exception("Турнир %s: неожиданная ошибка", tournament_name)
 
 
@@ -659,8 +752,17 @@ def run() -> None:
 
     logger.info("Найдено турниров: %d", len(tournaments))
 
+    from sports_forecast.identity.data_provenance import load_enabled_registry_snapshot
+
+    stage_snapshot = load_enabled_registry_snapshot(PROJECT_ROOT)
+
     for tournament_dir in tournaments:
-        process_tournament(tournament_dir, data_raw_dir, paths_cfg)
+        process_tournament(
+            tournament_dir,
+            data_raw_dir,
+            paths_cfg,
+            identity_snapshot=stage_snapshot,
+        )
 
 
 if __name__ == "__main__":
