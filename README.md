@@ -440,7 +440,7 @@ Product Owner ведёт отдельную ветку и компактную �
 публичного API; подготовка registry, вход и остановка описаны в
 [руководстве локального review](docs/development/local-identity-review.md).
 Проектная идентичность событий и версионированный bridge описаны в
-[ADR-027](docs/architecture/adr/ADR-027-local-entity-registry-and-snapshots.md);
+[ADR-029](docs/architecture/adr/ADR-029-local-entity-registry-and-snapshots.md);
 [локальный снимок и provenance обучения](docs/operations/identity-registry-local.md),
 а также [публикация через Object Storage](docs/operations/entity-registry-publication.md)
 имеют отдельные руководства. Последнее руководство описывает обратную доставку

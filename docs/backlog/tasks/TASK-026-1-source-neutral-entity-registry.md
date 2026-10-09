@@ -4,7 +4,7 @@
 > **Владелец:** Developer
 > **Эпик:** [EPIC-026](../EPIC-026-entity-registry.md)
 > **Требование:** [REQ-026](../../product/requirements/REQ-026-entity-registry.md)
-> **ADR:** [ADR-027](../../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md) (`accepted`)
+> **ADR:** [ADR-029](../../architecture/adr/ADR-029-local-entity-registry-and-snapshots.md) (`accepted`)
 
 ## Результат и границы
 
@@ -58,7 +58,7 @@ ingest, прогнозы и текущий YAML-мэппинг в этой TASK 
 
 - `sports_forecast/identity/` с локальной SQLite-схемой и seed importer,
   `tests/test_entity_registry.py`, TASK и отчёт `done`.
-- [ADR-027](../../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md)
+- [ADR-029](../../architecture/adr/ADR-029-local-entity-registry-and-snapshots.md)
   принят после независимого review. Локальная веб-очередь выполняется
   отдельной TASK.
 

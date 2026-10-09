@@ -3,7 +3,7 @@
 > **Статус:** независимый review пройден
 > **Задача:** [TASK-026-4](../../backlog/tasks/TASK-026-4-local-registry-snapshot.md)
 > **Требование:** [REQ-026](../../product/requirements/REQ-026-entity-registry.md)
-> **Решение:** [ADR-027](../../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md)
+> **Решение:** [ADR-029](../../architecture/adr/ADR-029-local-entity-registry-and-snapshots.md)
 
 ## Изменения
 

@@ -4,7 +4,7 @@
 > **Владелец:** Developer
 > **Эпик:** [EPIC-026](../EPIC-026-entity-registry.md)
 > **Требование:** [REQ-026](../../product/requirements/REQ-026-entity-registry.md)
-> **ADR:** [ADR-027](../../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md)
+> **ADR:** [ADR-029](../../architecture/adr/ADR-029-local-entity-registry-and-snapshots.md)
 
 ## Результат и границы
 

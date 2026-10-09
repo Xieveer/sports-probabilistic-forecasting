@@ -4,7 +4,7 @@
 > **Владелец:** Developer
 > **Эпик:** [EPIC-026](../EPIC-026-entity-registry.md)
 > **Требование:** [REQ-026](../../product/requirements/REQ-026-entity-registry.md)
-> **ADR:** [ADR-027](../../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md)
+> **ADR:** [ADR-029](../../architecture/adr/ADR-029-local-entity-registry-and-snapshots.md)
 
 ## Результат и границы
 
@@ -22,9 +22,12 @@ Production включение требует отдельного release gate.
       даже при откате к ранее установленному snapshot.
 - [x] Одновременные запросы и runs читают pinned snapshot; API/Worker не получают
       Object Storage credentials.
-- [ ] Предыдущие версии сохраняются для выполняющихся runs и отката;
-      runbook и требуемые grants описаны. Фактические grants, retention и
-      contract probe текущего endpoint ожидают эксплуатационной проверки.
+- [x] Предыдущие версии сохраняются для выполняющихся runs и отката;
+      runbook описывает требуемые grants. На рабочем Object Storage проверены
+      conditional writes, фактические IAM grants и retention prefix.
+- [ ] При следующем релизе отдельные PostgreSQL grants и server sync/feedback
+      проверены в целевой среде; credentials доставлены только выделенным
+      процессам. До этого TASK остаётся `blocked`.
 
 ## План реализации
 
@@ -39,5 +42,6 @@ Production включение требует отдельного release gate.
   команды записать в отдельном отчёте `done`.
 - Код прошёл независимый review; evidence —
   [отчёт о реализации](../../changes/done/TASK-026-5-registry-publication.md).
-  Блокер завершения TASK — live probe текущего endpoint и проверка IAM/DB grants,
-  retention. Разработка TASK-026-6 может продолжаться на проверенном контракте.
+  Object Storage gate закрыт 2026-10-09; см. раздел live evidence в отчёте.
+  Блокер завершения TASK — PostgreSQL grants и серверная интеграция,
+  перенесённые владельцем на следующий релиз новой версии 2026-10-09.

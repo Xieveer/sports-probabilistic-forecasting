@@ -112,18 +112,23 @@ grants: локальный publisher — условные `GetObject`/`PutObject
 `entity-registry/v1/snapshots/`, `publications/`, `current.json`; server sync —
 только `GetObject` на эти ключи. `DeleteObject` не нужен. Старые
 `operational-archive/` grants и 90-дневный lifecycle не должны захватить этот
-prefix. Проверка фактических IAM/DB grants, live endpoint probe и включение
-расписания остаются эксплуатационными gates; в рабочем окружении credentials
-для них не заданы. До этих gates production registry mode не включать.
+prefix. На 2026-10-09 live endpoint probe, IAM grants и lifecycle текущего
+bucket проверены; четыре пары ключей выпущены в защищённые локальные файлы,
+но серверные credentials на VPS не доставлены. PostgreSQL grants, server
+sync/feedback и расписание остаются эксплуатационными gates. До этих gates
+production registry mode не включать.
 
 Обратная доставка кандидатов находится в [TASK-026-6](../backlog/tasks/TASK-026-6-registry-candidate-feedback.md);
-полный контракт описан в [ADR-027](../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md).
+полный контракт описан в [ADR-029](../architecture/adr/ADR-029-local-entity-registry-and-snapshots.md).
 
 ## Обратная очередь и решение владельца
 
 Задайте один стабильный `SF_ENTITY_REGISTRY_INSTALLATION_ID` для серверной
-установки и сохраните его при перезапусках. Для процесса обратной доставки
-выделите отдельный DB credential с доступом к outbox/sequence и отдельный
+установки и сохраните его при перезапусках. Для текущей Object Storage
+конфигурации выбран `e8608691-baf7-46fb-ae0e-594cb86f1fcf`; смена этого ID
+требует отдельного изменения prefix grants и миграции очереди. Для процесса
+обратной доставки выделите отдельный DB credential с доступом к outbox/sequence
+и отдельный
 Object Storage account: `PutObject`/`GetObject` только в
 `entity-registry/v1/candidates/<installation-id>/`, `GetObject` только в
 соответствующем `candidate-acks/`. Runtime ingestion пишет кандидатов в DB без

@@ -3,7 +3,7 @@
 > **Статус:** реализация и независимый review завершены; эксплуатационный gate открыт
 > **Задача:** [TASK-026-5](../../backlog/tasks/TASK-026-5-registry-publication.md)
 > **Требование:** [REQ-026](../../product/requirements/REQ-026-entity-registry.md)
-> **Решение:** [ADR-027](../../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md)
+> **Решение:** [ADR-029](../../architecture/adr/ADR-029-local-entity-registry-and-snapshots.md)
 
 ## Изменения
 
@@ -57,9 +57,25 @@
 
 ## Открытый эксплуатационный gate
 
-В рабочем окружении нет Object Storage credentials и отдельной sync DB role.
-Live probe текущего endpoint/bucket, фактические IAM/DB grants, retention prefix
-и расписание sync не проверялись. Поэтому [TASK-026-5](../../backlog/tasks/TASK-026-5-registry-publication.md)
-остаётся `blocked`, production registry mode не включён. Разработка
-[TASK-026-6](../../backlog/tasks/TASK-026-6-registry-candidate-feedback.md)
-продолжается на проверенном локальном контракте.
+### Live Object Storage gate 2026-10-09
+
+- На существующем bucket `sports-probabilistic-forecasting` сохранены 14 прежних
+  правил policy и добавлены семь правил для четырёх отдельных registry service
+  accounts. IAM роли назначены только на этот bucket; публичный доступ закрыт.
+- Для `entity-registry-contract-probe/` добавлено единственное lifecycle правило
+  удаления через семь дней. `entity-registry/v1/` не охвачен автоматическим
+  удалением; `DeleteObject` новым accounts не предоставлен.
+- Live endpoint probe приложения подтвердил `If-None-Match`, `If-Match`,
+  сохранность bytes после конфликтов и отказ устаревшего ETag. Проверены 14
+  разрешённых и запрещённых IAM операций, включая запрет чужого prefix.
+  Policy и lifecycle перечитаны после применения.
+- Значения ключей не выводились и не попали в Git. Секретные файлы размещены
+  вне репозитория с правами `0600`; на VPS ключи пока не доставлены. Подробные
+  идентификаторы, схема доступа и rollback записаны Operations Agent в
+  `docs/changes/2026-10-09-epic026-object-storage-access.md` и
+  `docs/runbooks/sports-forecast-epic026-object-storage.md` отдельного
+  репозитория `operations-agent`.
+
+Отдельная sync DB role, фактические PostgreSQL grants, server sync/feedback и
+расписание не проверялись. Поэтому [TASK-026-5](../../backlog/tasks/TASK-026-5-registry-publication.md)
+остаётся `blocked`; production registry mode не включён.

@@ -3,7 +3,7 @@
 > **Статус:** done; эксплуатационный gate EPIC-026 открыт в TASK-026-5
 > **Задача:** [TASK-026-6](../../backlog/tasks/TASK-026-6-registry-candidate-feedback.md)
 > **Требование:** [REQ-026](../../product/requirements/REQ-026-entity-registry.md)
-> **Решение:** [ADR-027](../../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md)
+> **Решение:** [ADR-029](../../architecture/adr/ADR-029-local-entity-registry-and-snapshots.md)
 
 ## Изменения
 

@@ -2,7 +2,7 @@
 
 > **Статус:** выполнено, независимое review пройдено
 > **Требование:** [REQ-026](../../product/requirements/REQ-026-entity-registry.md)
-> **Решение:** [ADR-027](../../architecture/adr/ADR-027-local-entity-registry-and-snapshots.md)
+> **Решение:** [ADR-029](../../architecture/adr/ADR-029-local-entity-registry-and-snapshots.md)
 > **Задача:** [TASK-026-1](../../backlog/tasks/TASK-026-1-source-neutral-entity-registry.md)
 
 **Проверенный коммит:** `2c316f8`.
@@ -128,4 +128,4 @@ defer с несколькими кандидатами, частичное ре�
 SQLite schema version 5 имеет upgrade migration с версии 2 через v3 и v4. Downgrade не
 предусмотрен. Resolver и SQLite тесты не включают измерение конкурентной writer
 нагрузки или публикацию snapshot. Database access остаётся sqlite3 за локальным
-repository contract; Architect согласовал уточнение этого решения в ADR-027.
+repository contract; Architect согласовал уточнение этого решения в ADR-029.
