@@ -87,6 +87,8 @@
 закреплённому NHL/Pinnacle/`winner_withOT` срезу. [Итоговый отчёт](../../research/epic-030-nhl-financial-result.md)
 содержит 1568 сопоставимых матчей, независимое research review и решение
 Product Owner **STOP** для зафиксированной гипотезы: ROI, bootstrap и profit
-против baseline не прошли пороги. Следующий gate инициативы — полное EPIC
-review и terminal CI PR. Новая гипотеза потребует нового протокола и
+против baseline не прошли пороги. Полное EPIC review принято; следующий gate
+инициативы — финальный CI
+[PR #69](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/69)
+и merge. Новая гипотеза потребует нового протокола и
 заранее закреплённого holdout; текущий тест не используется для перенастройки.

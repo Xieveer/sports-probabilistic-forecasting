@@ -1,6 +1,6 @@
 # EPIC-030 — Воспроизводимая финансовая оценка моделей
 
-> **Статус:** in_progress — исследование завершено решением STOP; ожидается полное EPIC review и PR/CI
+> **Статус:** done — исследование завершено решением STOP; PR #69 ожидает merge после финального CI
 > **Приоритет:** medium
 > **Владелец:** Product Owner
 > **Требование:** [REQ-030](../product/requirements/REQ-030-financial-research-validation.md) (`confirmed`)
@@ -10,7 +10,7 @@
 
 - Инициатива: `EPIC-030`.
 - Ветка инициативы: `initiative/epic-030-financial-research-validation`, отдельный worktree.
-- Workflow / этап: `research + ограниченный engineering / все TASK done; research и полное EPIC review приняты; PR/CI`.
+- Workflow / этап: `research + ограниченный engineering / все TASK done; research и полное EPIC review приняты; PR #69 и финальный CI`.
 - Исходная цель: сравнивать кандидата с baseline по вероятностным и финансовым метрикам на исторически доступной информации.
 - Критерии и DoD: сценарии ниже и [REQ-030](../product/requirements/REQ-030-financial-research-validation.md); владелец подтвердил ROI > 0, долю block-bootstrap прогонов с ROI > 0 не ниже 80%, покрытие ставок не ниже 20% пригодных событий и profit выше baseline на тех же матчах.
 - Релиз: production-развёртывание не запрошено; GO не означает promotion.
@@ -29,7 +29,8 @@
 - Решение Product Owner: **STOP** для зафиксированной гипотезы NHL/Pinnacle/`winner_withOT` с данным кандидатом и policy. Новая гипотеза, включая предел свежести 1 час, требует отдельного заранее закреплённого holdout; текущий разрез не используется для перенастройки. Production promotion не выполняется.
 - Gate полного EPIC review: Reviewer принял кодовые TASK и связность REQ/ADR/EPIC/TASK/README/исследовательского отчёта без P0–P2; ссылки и границы проверены. После правок REQ и README типовых секретов не найдено, `git diff --check` пройден.
 - Evidence commit gate: проверенный diff закреплён Reviewer в `8296cb886533de8ba9b2d1d08e6fc512e50304ec`; pre-commit hooks `ruff`, `ruff-format`, `mypy` и проверка AI roles/skills прошли. Отдельный documentation-only commit фиксирует этот hash для PR и terminal CI.
-- Следующая роль: Reviewer — commit gate; затем Product Owner — PR и terminal CI.
+- Gate интеграции: [PR #69](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/69) открыт; CI `lint-test (3.12)` и Security `Python dependencies` / `Filesystem and secrets` завершились успешно на evidence commit `ebe20277fb72d2bd0eefe2bd211ca8e38565681b`. После этого изменения статуса нужен новый terminal CI.
+- Следующая роль: Reviewer — documentation commit gate статуса; затем Product Owner — terminal CI и merge без release.
 - Открытые ограничения: `retrieved_at` неизвестен для 1568 пригодных исторических цен, 1181 матч не имеет подтверждённого bookmaker mapping; simulated stake не подтверждает исполнимость ставки.
 - Обновлено: 2026-10-10.
 
@@ -55,7 +56,7 @@
 
 ## Зависимости и следующий gate
 
-Исторический контракт [EPIC-027](EPIC-027-historical-odds.md), финансовые критерии [REQ-030](../product/requirements/REQ-030-financial-research-validation.md) и результат [исследования](../research/epic-030-nhl-financial-result.md) закреплены. Следующий gate — полное EPIC review и terminal CI PR; отдельная новая гипотеза не входит в эту инициативу. Исследование не заменяет [EPIC-021](EPIC-021-football-1x2-research.md) и не меняет статус его historical odds.
+Исторический контракт [EPIC-027](EPIC-027-historical-odds.md), финансовые критерии [REQ-030](../product/requirements/REQ-030-financial-research-validation.md) и результат [исследования](../research/epic-030-nhl-financial-result.md) закреплены. Следующий gate — финальный CI PR и merge; отдельная новая гипотеза не входит в эту инициативу. Исследование не заменяет [EPIC-021](EPIC-021-football-1x2-research.md) и не меняет статус его historical odds.
 
 ## Риски и rollout
 
