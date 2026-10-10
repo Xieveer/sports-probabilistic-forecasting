@@ -297,14 +297,24 @@ def _validate_managed_contract(manifest: dict[str, object]) -> None:
     if (
         not isinstance(rules, dict)
         or not isinstance(rules.get("overtime"), bool)
+        or not isinstance(rules.get("shootout"), bool)
         or not isinstance(rules.get("draw"), bool)
     ):
-        raise BundleVerificationError("market rules должны явно задавать overtime и draw")
+        raise BundleVerificationError("market rules должны явно задавать overtime, shootout и draw")
     expected_outcomes = (
         ("home_win", "draw", "away_win") if rules["draw"] else ("home_win", "away_win")
     )
     if not isinstance(outcomes, list) or tuple(outcomes) != expected_outcomes:
         raise BundleVerificationError("outcomes не соответствуют market rules")
+    if manifest["market_spec"] == "winner_withOT" and (
+        not rules["overtime"]
+        or not rules["shootout"]
+        or rules["draw"]
+        or tuple(outcomes) != ("home_win", "away_win")
+    ):
+        raise BundleVerificationError(
+            "winner_withOT требует overtime, shootout, отсутствие ничьей и два исхода"
+        )
     if (
         not isinstance(features, list)
         or not features
@@ -350,9 +360,10 @@ def _verify_compatibility_files(path: Path, manifest: dict[str, object]) -> None
             deploy = yaml.safe_load(deploy_path.read_text(encoding="utf-8"))
         except (OSError, yaml.YAMLError) as exc:
             raise BundleVerificationError("deploy.yaml недоступен или некорректен") from exc
-        if not isinstance(deploy, dict) or deploy.get("algorithm") != manifest["algorithm"]:
+        model = deploy.get("model") if isinstance(deploy, dict) else None
+        if not isinstance(model, dict) or model.get("algorithm") != manifest["algorithm"]:
             raise BundleVerificationError("deploy.yaml не соответствует manifest v2")
-        configured_entrypoint = deploy.get("model_entrypoint", deploy.get("model_path"))
+        configured_entrypoint = model.get("model_entrypoint", model.get("model_path"))
         if (
             configured_entrypoint is not None
             and configured_entrypoint != manifest["model_entrypoint"]

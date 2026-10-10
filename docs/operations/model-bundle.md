@@ -15,9 +15,13 @@ app version и checksums всех файлов. Все поля manifest, вкл
 участвуют в `bundle_id`. Verifier блокирует неизвестный алгоритм, traversal,
 дублирующиеся/лишние/повреждённые файлы, несовпадающие outcomes, а также
 несогласованные `deploy.yaml` и `features.txt`, если эти совместимые файлы есть.
+Для `deploy.yaml` verifier сверяет реальный вложенный ключ `model.algorithm` и
+entrypoint, указанный внутри `model`.
 
 Для рынка с ничьей контракт требует `home_win / draw / away_win`; без ничьей —
-`home_win / away_win`. Правила `draw` и `overtime` указываются явно.
+`home_win / away_win`. Правила `draw`, `overtime` и `shootout` указываются явно.
+Для `winner_withOT` обязательны `overtime=true`, `shootout=true`, `draw=false`
+и исходы `home_win / away_win`.
 `build_managed_model_bundle()` создаёт schema v2 и возвращает
 `VerifiedModelBundle`; прежний `build_model_bundle()` и v1 hash остаются
 неизменными для legacy установщика. Проверка выполняется до записи `current` или

@@ -292,7 +292,7 @@ def test_manifest_v2_roundtrip_and_content_hash_cover_managed_contract(tmp_path:
         "app_version": "1.2.0",
         "model_pool": "nhl",
         "market_spec": "winner_withOT",
-        "market_rules": {"overtime": True, "draw": False},
+        "market_rules": {"overtime": True, "shootout": True, "draw": False},
         "outcomes": ["home_win", "away_win"],
         "feature_contract_id": "nhl-features-v1",
         "features": [{"name": "home_form", "type": "float"}],
@@ -315,7 +315,7 @@ def test_manifest_v2_roundtrip_and_content_hash_cover_managed_contract(tmp_path:
     variants = [
         ("model_pool", "nhl_alt"),
         ("market_spec", "winner_withOT_alt"),
-        ("market_rules", {"overtime": False, "draw": False}),
+        ("market_rules", {"overtime": False, "shootout": False, "draw": False}),
         ("outcomes", ["home_win", "draw", "away_win"]),
         ("feature_contract_id", "nhl-features-v2"),
         ("features", [{"name": "away_form", "type": "float"}]),
@@ -326,8 +326,10 @@ def test_manifest_v2_roundtrip_and_content_hash_cover_managed_contract(tmp_path:
     for field, value in variants:
         changed: dict[str, object] = dict(contract)
         changed[field] = value
+        if field in {"market_rules", "outcomes"}:
+            changed["market_spec"] = "winner"
         if field == "outcomes":
-            changed["market_rules"] = {"overtime": True, "draw": True}
+            changed["market_rules"] = {"overtime": False, "shootout": False, "draw": True}
         other = build_managed_model_bundle(
             source, tmp_path / "bundles", **cast(ManagedBundleOptions, changed)
         )
@@ -361,7 +363,7 @@ def test_manifest_v2_rejects_invalid_managed_contract(
     contract: dict[str, object] = {
         "model_pool": "nhl",
         "market_spec": "winner_withOT",
-        "market_rules": {"overtime": True, "draw": False},
+        "market_rules": {"overtime": True, "shootout": True, "draw": False},
         "outcomes": ["home_win", "away_win"],
         "feature_contract_id": "features-v1",
         "features": [{"name": "home_form", "type": "float"}],
@@ -381,6 +383,39 @@ def test_manifest_v2_rejects_invalid_managed_contract(
         )
 
 
+@pytest.mark.parametrize(
+    ("rules", "outcomes"),
+    [
+        ({"overtime": False, "shootout": True, "draw": False}, ["home_win", "away_win"]),
+        ({"overtime": True, "shootout": False, "draw": False}, ["home_win", "away_win"]),
+        ({"overtime": True, "shootout": True, "draw": True}, ["home_win", "draw", "away_win"]),
+    ],
+)
+def test_winner_with_ot_requires_full_match_rules_and_two_outcomes(
+    tmp_path: Path, rules: dict[str, object], outcomes: list[str]
+) -> None:
+    """winner_withOT требует ОТ, буллиты, отсутствие ничьей и два исхода."""
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "model.cbm").write_bytes(b"model")
+    with pytest.raises(BundleVerificationError, match="winner_withOT"):
+        build_managed_model_bundle(
+            source,
+            tmp_path / "bundles",
+            model_identity="nhl:winner_withOT:catboost",
+            app_version="1.2.0",
+            model_pool="nhl",
+            market_spec="winner_withOT",
+            market_rules=rules,
+            outcomes=outcomes,
+            feature_contract_id="features-v1",
+            features=[{"name": "home_form", "type": "float"}],
+            transformations_version="1",
+            algorithm="catboost",
+            model_entrypoint="model.cbm",
+        )
+
+
 def test_manifest_v2_rejects_tampering_and_inconsistent_compatibility_files(
     tmp_path: Path,
 ) -> None:
@@ -389,7 +424,8 @@ def test_manifest_v2_rejects_tampering_and_inconsistent_compatibility_files(
     source.mkdir()
     (source / "model.cbm").write_bytes(b"model")
     (source / "deploy.yaml").write_text(
-        "algorithm: catboost\nmodel_entrypoint: model.cbm\n", encoding="utf-8"
+        "model:\n  algorithm: catboost\n  model_entrypoint: model.cbm\n",
+        encoding="utf-8",
     )
     (source / "features.txt").write_text("home_form\n", encoding="utf-8")
     kwargs: ManagedBundleOptions = {
@@ -397,7 +433,7 @@ def test_manifest_v2_rejects_tampering_and_inconsistent_compatibility_files(
         "app_version": "1.2.0",
         "model_pool": "nhl",
         "market_spec": "winner_withOT",
-        "market_rules": {"overtime": True, "draw": False},
+        "market_rules": {"overtime": True, "shootout": True, "draw": False},
         "outcomes": ["home_win", "away_win"],
         "feature_contract_id": "features-v1",
         "features": [{"name": "home_form", "type": "float"}],
@@ -412,6 +448,6 @@ def test_manifest_v2_rejects_tampering_and_inconsistent_compatibility_files(
     with pytest.raises(BundleVerificationError, match="checksum"):
         verify_model_bundle(bundle.path, app_version="1.2.0")
 
-    (source / "deploy.yaml").write_text("algorithm: lgbm\n", encoding="utf-8")
+    (source / "deploy.yaml").write_text("model:\n  algorithm: lgbm\n", encoding="utf-8")
     with pytest.raises(BundleVerificationError, match="deploy.yaml"):
         build_managed_model_bundle(source, tmp_path / "bundles", **kwargs)

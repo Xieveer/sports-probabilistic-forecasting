@@ -15,6 +15,11 @@ entrypoint, повреждённые, лишние или неучтённые �
 ожидаются три исхода; для бинарного — `home_win / away_win`. Профиль
 `winner_withOT` задаёт overtime явно и draw=false.
 
+После независимого review исправлены два finding: проверка совместимого
+`deploy.yaml` теперь читает фактический вложенный `model.algorithm`;
+`winner_withOT` требует `overtime=true`, `shootout=true`, `draw=false` и ровно
+`home_win / away_win`.
+
 `build_model_bundle()` и manifest v1 сохранены без изменения hash-контракта.
 V1 по-прежнему возвращает прежний `ModelBundle`, а v2 — расширенный тип с полями
 managed contract. Установка и rollback прежнего v1 bundle остаются совместимыми.
@@ -30,6 +35,10 @@ managed contract. Установка и rollback прежнего v1 bundle ос
   files и повреждение model bytes.
 - **Refactor:** контрактная валидация вынесена в helper и выполняется до записи
   bundle-каталога. Документация формата и legacy пути обновлена.
+- **Review red:** `uv run pytest -q tests/test_model_bundle.py -k 'winner_with_ot or compatibility_files'`
+  показал 3 пропущенных invalid market cases и отказ валидного nested deployment fixture.
+- **Review green:** повторный targeted запуск — 4 passed после сверки
+  `model.algorithm` и уточнения rules для `winner_withOT`.
 
 ## Проверки
 
