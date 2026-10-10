@@ -46,6 +46,13 @@ partial unique index для active deployment одной пары. Старые 
 Проверка ограничения выполняется перед managed activation; production pointer
 этим TASK не переключался.
 
+Revision `0023_prediction_revisions` создаёт append-only историю managed
+публикаций. `predictions.current_revision_id` остаётся nullable: legacy строки
+без подтверждённого bundle не получают выдуманную revision. Новая revision,
+обновление текущей витрины и ссылка на неё записываются одной транзакцией.
+Таблица защищена от UPDATE/DELETE на уровне БД; историю нельзя чистить обычным
+retention витрины. Для исправления схемы используется новая forward migration.
+
 ## Проверка и recovery
 
 Перед изменением или после прерванной операции узнайте состояние revision:

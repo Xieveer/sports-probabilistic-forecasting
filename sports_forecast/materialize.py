@@ -317,6 +317,12 @@ def _aggregate_long_predictions(
                 "proba_away": round(p_away_norm, 6),
                 "predictions_json": json.dumps(predictions, ensure_ascii=False),
                 "odds_raw": str(odds_raw_val) if odds_raw_val is not None else None,
+                "canonical_event_id": (
+                    int(home["canonical_event_id"])
+                    if "canonical_event_id" in group.columns
+                    and pd.notna(home["canonical_event_id"])
+                    else None
+                ),
             }
         )
 
@@ -507,35 +513,50 @@ def materialize_predictions(
             _assert_pin_current(db_session, model_pool, market_spec_name, pinned_model)
             repo = PredictionRepository(db_session)
             records: list[dict[str, object]] = []
+            publication_run_id = (
+                cfg.get("refresh_run_id")
+                or os.environ.get("SF_WORKER_RUN_ID")
+                or f"materialize-{uuid4().hex}"
+            )
             for _, row in preds_df.iterrows():
-                records.append(
-                    {
-                        "match_id": row["match_id"],
-                        "tournament": tournament_name,
-                        "market": market_name,
-                        "market_spec": market_spec_name,
-                        "predictions": json.loads(row["predictions_json"]),
-                        "model_version": model_version,
-                        "algorithm": algorithm_name,
-                        "featureset": featureset_name,
-                        "model_pool": model_pool,
-                        "immutable_model_version": immutable_model_version,
-                        "refresh_run_id": cfg.get("refresh_run_id"),
-                        "canonical_snapshot_id": cfg.get("canonical_snapshot_id"),
-                        "feature_contract_id": (
-                            pinned_model.bundle.feature_contract_id
-                            if pinned_model is not None
-                            else cfg.get("feature_contract_id")
-                        ),
-                        "home_player": row.get("home_player"),
-                        "away_player": row.get("away_player"),
-                        "match_datetime": row.get("match_datetime"),
-                        "proba_home": row.get("proba_home"),
-                        "proba_away": row.get("proba_away"),
-                        "odds_raw": row.get("odds_raw"),
-                        "status": "ok",
-                    }
-                )
+                publication_record: dict[str, object] = {
+                    "match_id": row["match_id"],
+                    "tournament": tournament_name,
+                    "market": market_name,
+                    "market_spec": market_spec_name,
+                    "predictions": json.loads(row["predictions_json"]),
+                    "model_version": model_version,
+                    "algorithm": algorithm_name,
+                    "featureset": featureset_name,
+                    "model_pool": model_pool,
+                    "immutable_model_version": immutable_model_version,
+                    "refresh_run_id": publication_run_id,
+                    "canonical_snapshot_id": cfg.get("canonical_snapshot_id"),
+                    "feature_contract_id": (
+                        pinned_model.bundle.feature_contract_id
+                        if pinned_model is not None
+                        else cfg.get("feature_contract_id")
+                    ),
+                    "home_player": row.get("home_player"),
+                    "away_player": row.get("away_player"),
+                    "match_datetime": row.get("match_datetime"),
+                    "proba_home": row.get("proba_home"),
+                    "proba_away": row.get("proba_away"),
+                    "odds_raw": row.get("odds_raw"),
+                    "status": "ok",
+                }
+                if pinned_model is not None:
+                    publication_record.update(
+                        {
+                            "refresh_run_id": publication_run_id,
+                            "bundle_id": pinned_model.bundle_id,
+                            "model_identity": pinned_model.model_identity,
+                            "source_namespace": cfg.get("source_namespace"),
+                            "canonical_event_id": row.get("canonical_event_id"),
+                            "input_snapshot_ref": cfg.get("canonical_snapshot_id"),
+                        }
+                    )
+                records.append(publication_record)
             count = repo.publish_showcase(
                 records,
                 tournament=tournament_name,

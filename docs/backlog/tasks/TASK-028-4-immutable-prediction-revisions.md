@@ -1,6 +1,6 @@
 # TASK-028-4 — Неизменяемые версии опубликованного прогноза
 
-> **Статус:** backlog
+> **Статус:** in_review
 > **Владелец:** Developer
 > **Эпик:** [EPIC-028](../EPIC-028-production-model-contract.md)
 > **Требование:** [REQ-028](../../product/requirements/REQ-028-production-model-contract.md)
@@ -18,35 +18,36 @@ EPIC-027 владеет наблюдениями коэффициентов: э�
 
 ## Критерии приёмки
 
-- [ ] Revision хранит точный `bundle_id`, `model_identity`, `model_pool`,
+- [x] Revision хранит точный `bundle_id`, `model_identity`, `model_pool`,
   `feature_contract_id`, UTC время расчёта, run/input reference, canonical event
   ID либо tournament + source namespace + source event ID, `market_spec`,
   явные outcomes и полный набор вероятностей.
-- [ ] Повтор того же run/event/market с тем же payload возвращает тот же
+- [x] Повтор того же run/event/market с тем же payload возвращает тот же
   revision ID; иной payload под тем же ключом отвергается. Новый run создаёт
   новую revision даже при тех же вероятностях.
-- [ ] Revision и `predictions.current_revision_id` с текущими значениями
+- [x] Revision и `predictions.current_revision_id` с текущими значениями
   сохраняются атомарно. Ошибка после создания revision, empty input и stale
   transition не оставляют частичной публикации и не стирают прежние revisions.
-- [ ] Ключ текущей витрины включает tournament; совпадающий source match ID в
+- [x] Ключ текущей витрины включает tournament; совпадающий source match ID в
   разных турнирах не перезаписывает чужой прогноз. Старые строки без доказанного
   bundle имеют nullable revision reference и не получают фиктивную историю.
-- [ ] Внутреннее чтение по revision ID возвращает прежние вероятности и
+- [x] Внутреннее чтение по revision ID возвращает прежние вероятности и
   provenance после новых materialize; API продолжает выдавать актуальную строку.
 
 ## План реализации
 
-1. **Schema gate:** с EPIC-027 согласовать Alembic head, event namespace,
-   стабильный ID revision и nullable будущую связь odds observation; зафиксировать
-   совместимые типы до миграции. Связь с odds при отсутствии наблюдения не
-   обязательна; поздняя связь оформляется отдельной записью.
-2. **Red:** DB integration tests для повторного run, нового run, двух турниров
-   с одним source ID, rollback транзакции между revision и витриной, legacy row
-   без bundle и чтения прежней revision.
-3. **Green:** аддитивная миграция, append-only repository и атомарный
-   `publish_showcase`; сохранить API/бот contract текущей витрины.
-4. **Refactor:** убрать только затронутое дублирование записи, обновить
-   документацию витрины и migration/recovery notes.
+1. **Schema gate:** Alembic revision `0023` следует за `0022`; revision использует
+   namespace `source` канонического события либо явно заданный namespace вместе с
+   source event ID. Odds observation не добавлялась: namespace `ho1` принадлежит
+   EPIC-027, а будущая связь оформляется отдельно.
+2. **Red:** новый DB test сначала упал на отсутствующем `PredictionRevision`.
+   Дополнительно проверены повтор run с тем же payload и отказ на изменённый
+   payload; новый run и tournament создают отдельные revisions.
+3. **Green:** добавлены аддитивная миграция, append-only repository и атомарный
+   `publish_showcase`; SQLite проверяет rollback после создания revision,
+   сохранение истории при пустой витрине, legacy без bundle и API response.
+4. **Refactor:** managed payload отделён от legacy `bulk_upsert`, ключ mutable
+   витрины включает tournament; обновлены migration и materialization runbooks.
 
 ## Затрагиваемые области и зависимости
 
@@ -60,10 +61,14 @@ EPIC-027 владеет наблюдениями коэффициентов: э�
 
 ## Проверка
 
-- Адресные тесты `tests/test_prediction_publication.py`,
-  `tests/test_materialize.py`, новые DB revision tests и API regression tests —
-  ожидается success на SQLite; миграция и атомарность проверяются на PostgreSQL.
-- `make lint`, `make test-unit` и независимый review после реализации.
+- `make lint` — passed.
+- `make test-unit` — 1502 passed, 15 deselected, 40 warnings.
+- `uv run pytest -q tests/test_prediction_revisions.py tests/test_prediction_publication.py tests/test_materialize.py` — 29 passed, 1 PostgreSQL-only test deselected/skipped, 3 warnings.
+- PostgreSQL disposable schema: Alembic upgrade с `0001` по `0023` прошёл;
+  `current` и `heads` указывают на единственный `0023_prediction_revisions`.
+- PostgreSQL integration rollback/append-only gate — 1 passed; API regression
+  входит в SQLite адресный набор.
+- Независимый review остаётся следующим gate.
 - Наблюдение: два разных revision ID для двух run одного события, прежняя
   версия читается, API возвращает последнюю.
 

@@ -41,6 +41,10 @@ allow-listed failure code. Тексты исключений, ключи и payl
 активной. Перед публикацией materializer блокирует и повторно сверяет managed
 DB pointer с pin, полученным до inference; смена модели во время расчёта
 отклоняет результат. Stale+upsert одного tournament/market/spec и проверка pin
-выполняются в одной транзакции. Реальная периодичность, фактическое измерение и alert routing
-остаются evidence TASK-005-6 и Operations Agent; этот документ не разрешает
-deployment.
+выполняются в одной транзакции. Для managed bundle эта транзакция также добавляет
+immutable строку `prediction_revisions` и ставит её ID в `predictions.current_revision_id`.
+Ключ повторной публикации содержит run ID, tournament, source namespace/event ID и
+рынок; тот же payload возвращает прежний revision ID, другой payload под ключом
+отклоняется. API продолжает читать текущую строку витрины. Реальная периодичность,
+фактическое измерение и alert routing остаются evidence TASK-005-6 и Operations
+Agent; этот документ не разрешает deployment.

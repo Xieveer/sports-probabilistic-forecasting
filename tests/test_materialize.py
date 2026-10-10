@@ -254,6 +254,7 @@ def test_managed_materialize_preserves_publication_boundaries(
             "market": {"name": "winner_withOT"},
             "market_spec": {"name": "winner_withOT", "data_format": "long"},
             "model_pool": {"name": "nhl"},
+            "source_namespace": "nhl_api",
             "runtime_model_bundle_app_version": "1.2.15",
             "runtime_model_bundle_root": str(tmp_path / "bundles"),
         }

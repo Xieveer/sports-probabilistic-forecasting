@@ -16,6 +16,7 @@ CRUD операции над таблицей ``predictions``.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -43,6 +44,7 @@ from sports_forecast.service.db.models import (
     OddsAcquisitionAttempt,
     OddsObservation,
     Prediction,
+    PredictionRevision,
     TournamentPublicationState,
     WorkerExecution,
 )
@@ -501,6 +503,7 @@ class PredictionRepository:
         proba_away: float | None = None,
         odds_raw: str | None = None,
         status: str = "ok",
+        current_revision_id: str | None = None,
     ) -> Prediction:
         """Создать или обновить предсказание.
 
@@ -532,6 +535,7 @@ class PredictionRepository:
             .filter(
                 and_(
                     Prediction.match_id == str(match_id),
+                    Prediction.tournament == tournament,
                     Prediction.market == market,
                     Prediction.market_spec == market_spec,
                 )
@@ -553,6 +557,7 @@ class PredictionRepository:
             existing.refresh_run_id = refresh_run_id
             existing.canonical_snapshot_id = canonical_snapshot_id
             existing.feature_contract_id = feature_contract_id
+            existing.current_revision_id = current_revision_id
             existing.proba_home = proba_home
             existing.proba_away = proba_away
             existing.odds_raw = odds_raw
@@ -584,6 +589,7 @@ class PredictionRepository:
             refresh_run_id=refresh_run_id,
             canonical_snapshot_id=canonical_snapshot_id,
             feature_contract_id=feature_contract_id,
+            current_revision_id=current_revision_id,
             predictions_json=predictions_json,
             proba_home=proba_home,
             proba_away=proba_away,
@@ -623,7 +629,152 @@ class PredictionRepository:
         и уже записанные строки, сохранив прежнюю валидную витрину.
         """
         self.mark_stale(tournament=tournament, market=market, market_spec=market_spec)
-        return self.bulk_upsert(records)
+        if not any(record.get("bundle_id") is not None for record in records):
+            return self.bulk_upsert(records)
+        count = 0
+        for record in records:
+            publication = dict(record)
+            if publication.get("bundle_id") is not None:
+                revision = self._create_prediction_revision(publication)
+                publication["current_revision_id"] = revision.revision_id
+                for field in (
+                    "bundle_id",
+                    "model_identity",
+                    "source_namespace",
+                    "input_snapshot_ref",
+                    "canonical_event_id",
+                ):
+                    publication.pop(field, None)
+            self.upsert_prediction(**publication)
+            count += 1
+        return count
+
+    def _create_prediction_revision(self, record: dict[str, Any]) -> PredictionRevision:
+        """Создать или вернуть idempotent managed revision до обновления витрины."""
+        required = (
+            "refresh_run_id",
+            "bundle_id",
+            "model_identity",
+            "model_pool",
+            "feature_contract_id",
+        )
+        missing = [name for name in required if not record.get(name)]
+        if missing:
+            raise ValueError(f"Managed prediction revision lacks required provenance: {missing}")
+        match_id = str(record["match_id"])
+        tournament = str(record["tournament"])
+        market = str(record["market"])
+        market_spec = str(record["market_spec"])
+        source_namespace = record.get("source_namespace")
+        canonical_event_id = record.get("canonical_event_id")
+        from sports_forecast.service.db.models import CanonicalEvent
+
+        if not source_namespace:
+            query = self.session.query(CanonicalEvent).filter_by(
+                tournament=tournament, source_event_id=match_id
+            )
+            if canonical_event_id is not None:
+                query = query.filter_by(id=int(canonical_event_id))
+            events = query.all()
+            if len(events) != 1:
+                raise ValueError(
+                    "Managed prediction revision requires an unambiguous event namespace"
+                )
+            source_namespace = events[0].source
+            canonical_event_id = events[0].id
+        elif canonical_event_id is not None:
+            event = (
+                self.session.query(CanonicalEvent)
+                .filter_by(
+                    tournament=tournament,
+                    source=str(source_namespace),
+                    source_event_id=match_id,
+                    id=int(canonical_event_id),
+                )
+                .one_or_none()
+            )
+            if event is None:
+                raise ValueError(
+                    "Managed prediction canonical event reference does not match source key"
+                )
+        else:
+            event = (
+                self.session.query(CanonicalEvent)
+                .filter_by(
+                    tournament=tournament,
+                    source=str(source_namespace),
+                    source_event_id=match_id,
+                )
+                .one_or_none()
+            )
+            if event is not None:
+                canonical_event_id = event.id
+        probabilities = record["predictions"]
+        if not isinstance(probabilities, dict) or not probabilities:
+            raise ValueError("Managed prediction revision requires full probabilities payload")
+        payload = {
+            "run_id": str(record["refresh_run_id"]),
+            "tournament": tournament,
+            "source_namespace": str(source_namespace),
+            "source_event_id": match_id,
+            "market": market,
+            "market_spec": market_spec,
+            "outcomes": sorted(str(key) for key in probabilities),
+            "probabilities": probabilities,
+            "model_pool": str(record["model_pool"]),
+            "bundle_id": str(record["bundle_id"]),
+            "model_identity": str(record["model_identity"]),
+            "feature_contract_id": str(record["feature_contract_id"]),
+            "input_snapshot_ref": record.get("input_snapshot_ref")
+            or record.get("canonical_snapshot_id"),
+        }
+        canonical_payload = json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
+        payload_sha256 = hashlib.sha256(canonical_payload.encode("utf-8")).hexdigest()
+        existing = (
+            self.session.query(PredictionRevision)
+            .filter_by(
+                run_id=payload["run_id"],
+                tournament=tournament,
+                source_namespace=payload["source_namespace"],
+                source_event_id=match_id,
+                market=market,
+                market_spec=market_spec,
+            )
+            .one_or_none()
+        )
+        if existing is not None:
+            if existing.payload_sha256 != payload_sha256:
+                raise ValueError("Managed revision idempotency key reused with different payload")
+            return cast(PredictionRevision, existing)
+
+        revision = PredictionRevision(
+            revision_id=str(uuid4()),
+            run_id=payload["run_id"],
+            tournament=tournament,
+            source_namespace=payload["source_namespace"],
+            source_event_id=match_id,
+            canonical_event_id=int(canonical_event_id) if canonical_event_id is not None else None,
+            market=market,
+            market_spec=market_spec,
+            outcomes_json=json.dumps(payload["outcomes"], ensure_ascii=False),
+            probabilities_json=json.dumps(probabilities, sort_keys=True, ensure_ascii=False),
+            model_pool=payload["model_pool"],
+            bundle_id=payload["bundle_id"],
+            model_identity=payload["model_identity"],
+            feature_contract_id=payload["feature_contract_id"],
+            calculated_at=datetime.now(tz=UTC),
+            input_snapshot_ref=payload["input_snapshot_ref"],
+            payload_sha256=payload_sha256,
+        )
+        self.session.add(revision)
+        self.session.flush()
+        return revision
+
+    def get_revision(self, revision_id: str) -> PredictionRevision | None:
+        """Прочитать сохранённую immutable revision по ID."""
+        return cast(PredictionRevision | None, self.session.get(PredictionRevision, revision_id))
 
     def count_showcase(self, *, tournament: str, market: str, market_spec: str) -> int:
         """Вернуть число опубликованных строк одного serving-среза."""
