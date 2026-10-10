@@ -46,6 +46,9 @@ trainer его не применял.
   реальный запуск создал исправленный отчёт.
 - Повторный независимый review: P0–P2 нет; Reviewer проверил формулы и
   документацию, запустил 75 целевых тестов и `git diff --check`.
+- Проверенный reviewer-коммит: `c189f5baed382b6c6dd66b50225a1539a2c44b8c`.
+  Commit hooks (`ruff`, `ruff format`, `mypy`, AI roles and skills и проверки
+  файлов) завершились успешно. Этот hash фиксирует проверенный код и отчёт.
 - `.venv/bin/pytest -q` на девяти затронутых suites: **128 passed, 5 warnings**,
   включая Smart Tables, каталог, validation, model pool, NHL provider и бот.
 - `.venv/bin/ruff check sports_forecast tests` — passed;
