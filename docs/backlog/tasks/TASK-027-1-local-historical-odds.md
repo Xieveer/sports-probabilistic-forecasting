@@ -4,14 +4,15 @@
 > **Владелец:** Developer
 > **Эпик:** [EPIC-027](../EPIC-027-historical-odds.md)
 > **Требование:** [REQ-027](../../product/requirements/REQ-027-historical-odds.md) (`confirmed`)
-> **ADR:** [ADR-031](../../architecture/adr/ADR-031-historical-odds.md) (`proposed`)
+> **ADR:** [ADR-031](../../architecture/adr/ADR-031-historical-odds.md) (`accepted`)
 
 ## Результат и границы
 
 Один локальный вертикальный срез: существующий cache The Odds API → отдельный
-SQLite журнал → запрос NHL/Pinnacle `winner_withOT` по pinned registry и T →
-отчёт покрытия. Реализовать после принятия ADR Product Owner. Scope включает
-шесть подтверждённых критериев REQ; synthetic tests дополняет реальный пример.
+SQLite журнал → запрос NHL/Pinnacle `winner_withOT` по pinned registry и T.
+ADR принят Product Owner 2026-10-10. Срез закрывает критерии 1–4 REQ на synthetic
+fixture и одном реальном событии. Покрытие и итоговая проверка критериев 5–6 —
+[TASK-027-2](TASK-027-2-historical-odds-coverage.md).
 
 Область Developer: новые локальные модули/CLI в
 `sports_forecast/data/providers/odds/`, focused tests, описание источника и usage,
@@ -33,21 +34,20 @@ registry contract чтением; изменение его поведения �
 - [ ] Pinned ir1 strict resolution исключает unresolved/ambiguous/conflict и
   конкурирующие source IDs. Новое решение registry разрешает старый факт без
   изменения observation ID; старый snapshot сохраняет прежний результат.
-- [ ] Coverage использует явный expected universe и T, считает отдельно
-  no_line/no_snapshot/mapping_error/covered, неприписанные source events,
-  import failures и unknown retrieval; нулевое покрытие допустимо и честно.
 - [ ] Минимальный реальный пример двух изменившихся Pinnacle snapshots прошёл
-  confirmed mapping, запрос до/между/после и контрольное отсутствие линии.
+  confirmed mapping и запрос до/между/после для одного события.
   Evidence содержит IDs/digests/времена/счётчики, без полного provider response.
-- [ ] Прежние close/T−15 и current odds тесты проходят; CLI работает без API key
-  и сетевых обращений и не изменяет входной cache/старые stores.
+- [ ] Локальный import/query entrypoint работает без API key и сетевых обращений
+  и не изменяет входной cache/старые stores. Отчёт покрытия пока не требуется.
 
 ## Red → green → refactor
 
 1. Red: synthetic historical envelopes, временный SQLite и минимальный
    verified registry fixture; поведенческие tests по критериям выше.
-2. Green: immutable facts/receipts, атомарный importer с diagnostics,
-   pinned query и coverage через один domain/repository contract; локальный CLI.
+2. Green: immutable facts/receipts, атомарный importer и pinned query через
+   один domain/repository contract; минимальный локальный entrypoint.
+   Сохранить исходные факты отсутствия рынка и коды ошибок, необходимые будущему
+   coverage; агрегацию, expected universe и report CLI выполняет TASK-027-2.
 3. Проверить повтор interrupted import и реальный локальный пример без копирования
    больших артефактов в Git. Refactor только внутри новых модулей при зелёных тестах.
 4. Обновить usage/канонические статусы и создать
@@ -56,11 +56,12 @@ registry contract чтением; изменение его поведения �
 
 ## Проверка и handoff
 
-Минимум: новые focused tests и затронутые существующие odds/client/store/backfill
-и identity tests; lint изменённых Python. Полные gates выбирать по фактическому
-риску, не заявлять непроведённые команды. Реальный acceptance не заменять mocks.
+Минимум: новые focused tests, применимые identity tests и lint изменённых Python.
+Регрессии запускать по фактическому diff; итоговую совместимость close/T−15/current
+odds подтверждает TASK-027-2. Реальный пример одного события не заменять mocks.
 
 Developer → Product Owner → независимый Reviewer; finding запускает исправление.
-После review — документация, финальные проверки, PR и terminal CI.
+После review — актуальная документация и переход к зависимой TASK-027-2.
+PR и terminal CI инициативы следуют после итогового acceptance/review.
 Production rollout не запрошен. Для продолжения достаточно этого TASK, REQ и ADR;
 изменение временной семантики или общей схемы возвращается Architect через PO.

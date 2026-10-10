@@ -1,10 +1,14 @@
 # ADR-031 — Неизменяемые исторические наблюдения коэффициентов
 
-> **Статус:** proposed
+> **Статус:** accepted
 > **Дата:** 2026-10-10
 > **Связанное требование:** [REQ-027](../../product/requirements/REQ-027-historical-odds.md) (`confirmed`)
 > **Инициатива:** [EPIC-027](../../backlog/EPIC-027-historical-odds.md)
 > **Первый срез:** [TASK-027-1](../../backlog/tasks/TASK-027-1-local-historical-odds.md)
+
+Product Owner принял решение 2026-10-10: отдельный SQLite журнал, раздельная
+временная семантика, pinned `ir1`, отсутствие общей service migration.
+Реализация разделена на два последовательных проверяемых TASK.
 
 ## Контекст и критерии выбора
 
@@ -197,15 +201,19 @@ selection_mode, T)` и проверяет bridge UUID ↔ service event ID и ma
 
 ## Проверка и пересмотр
 
-TASK-027-1 даёт минимальный полный локальный цикл import → pinned query → coverage
-с synthetic fixture и двумя реальными изменившимися снимками после подтверждения
-mapping. Red проверяет ещё отсутствующий контракт, затем green и регрессии старых
-close/T−15 и current odds. Требуются duplicate/reorder/retry, прерванная транзакция,
+[TASK-027-1](../../backlog/tasks/TASK-027-1-local-historical-odds.md) даёт
+минимальный цикл import → pinned query на synthetic fixture и одном реальном
+событии с двумя изменившимися снимками после подтверждения mapping.
+[TASK-027-2](../../backlog/tasks/TASK-027-2-historical-odds-coverage.md) добавляет
+coverage, диагностику отсутствий, полный реальный acceptance и регрессии старых
+close/T−15/current odds. Каждый TASK проходит собственный red → green и review.
+Совокупно требуются duplicate/reorder/retry, прерванная транзакция,
 unknown retrieval, late retrieval, future envelope/old last_update, конфликт
 одного timestamp, неизвестный рынок, отсутствие линии/снимка и смена registry.
 
 После green Developer записывает фактический local evidence и done; независимый
-Reviewer проверяет границы и временную семантику перед PR/CI. ADR пока proposed.
+Reviewer проверяет границы и временную семантику; после второго TASK — итоговый
+acceptance и review инициативы перед PR/CI. ADR принят Product Owner.
 Если подтвердить реальный mapping пока нельзя, synthetic успех не закрывает
 реальный acceptance gate: Product Owner фиксирует конкретный блокер.
 
