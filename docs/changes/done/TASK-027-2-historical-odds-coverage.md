@@ -1,6 +1,6 @@
 # TASK-027-2 — Покрытие истории и итоговая проверка Pinnacle
 
-> **Статус:** done, передан на финальный независимый review
+> **Статус:** done — независимый review без P0–P2
 > **Ветка:** `initiative/epic-027-historical-odds`
 > **Требование:** [REQ-027](../../product/requirements/REQ-027-historical-odds.md)
 > **Решение:** [ADR-031](../../architecture/adr/ADR-031-historical-odds.md)

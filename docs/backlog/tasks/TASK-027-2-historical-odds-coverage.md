@@ -1,6 +1,6 @@
 # TASK-027-2 — Покрытие истории и итоговая проверка Pinnacle
 
-> **Статус:** done, ожидает финальный независимый review
+> **Статус:** done — независимый review без P0–P2
 > **Владелец:** Developer
 > **Эпик:** [EPIC-027](../EPIC-027-historical-odds.md)
 > **Требование:** [REQ-027](../../product/requirements/REQ-027-historical-odds.md) (`confirmed`)
