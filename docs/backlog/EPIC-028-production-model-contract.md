@@ -4,7 +4,7 @@
 > **Приоритет:** high
 > **Владелец:** Product Owner
 > **Требование:** [REQ-028](../product/requirements/REQ-028-production-model-contract.md), confirmed
-> **ADR:** решение о единственном production pointer принять перед реализацией
+> **ADR:** [ADR-030](../architecture/adr/ADR-030-production-model-contract.md), proposed
 
 ## Память Product Owner
 
@@ -38,14 +38,16 @@
 
 Можно вести отдельно от EPIC-027; нужен до полного результата [EPIC-029](EPIC-029-configured-tournament-onboarding.md) и [EPIC-031](EPIC-031-real-bets-ledger.md). Перед TASK — REQ и ADR о pointer/bundle/loader.
 
-Первый вертикальный TASK после ADR: создать локальный контракт выбора проверенного
-bundle для одной пары `nhl / winner_withOT`; red-тест предъявляет несовпадение
-registry `model_identity` и bundle manifest, green сохраняет прежнюю публикацию
-при mismatch и записывает `bundle_id` у новой версии прогноза. Проверка —
-целевой unit/integration test `bundle → Worker → materialize → DB` с двумя
-алгоритмами и rollback. Хранение версий и ссылки на odds observation согласовать
-с EPIC-027 до общей миграции. Затрагиваемые области: deploy bundle, materialize,
-PredictionRepository и DB models; Worker/API без алгоритмических веток.
+Архитектурный handoff: [ADR-030](../architecture/adr/ADR-030-production-model-contract.md)
+сравнивает источники истины и предлагает DB registry pointer для managed-пар,
+manifest v2 и append-only prediction revisions. Решение имеет статус `proposed`.
+
+Первый малый срез — [TASK-028-1](tasks/TASK-028-1-bundle-registry-guard.md):
+проверять совпадение verified bundle и registry до inference и публикации,
+включая empty input. Он не требует миграции и не закрывает весь REQ.
+После него Product Owner выделяет задачи на managed pointer/manifest v2,
+immutable revisions и сквозной двухалгоритмовый прогон с rollback.
+Схему revisions и odds observations согласовать с EPIC-027 до миграций.
 
 ## Риски и rollout
 
