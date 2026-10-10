@@ -53,6 +53,12 @@ Revision `0023_prediction_revisions` создаёт append-only историю m
 Таблица защищена от UPDATE/DELETE на уровне БД; историю нельзя чистить обычным
 retention витрины. Для исправления схемы используется новая forward migration.
 
+Revision `0024_prediction_source_namespace` добавляет nullable
+`predictions.source_namespace` и составной lookup index. Новые managed-публикации
+разделяют mutable showcase по namespace источника внутри турнира. Старые строки
+остаются с `NULL`; migration не угадывает их источник. Как и прочие schema
+изменения, исправление выполняется forward migration, без Alembic downgrade.
+
 ## Проверка и recovery
 
 Перед изменением или после прерванной операции узнайте состояние revision:

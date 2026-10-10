@@ -29,8 +29,11 @@ EPIC-027 владеет наблюдениями коэффициентов: э�
   сохраняются атомарно. Ошибка после создания revision, empty input и stale
   transition не оставляют частичной публикации и не стирают прежние revisions.
 - [x] Ключ текущей витрины включает tournament; совпадающий source match ID в
-  разных турнирах не перезаписывает чужой прогноз. Старые строки без доказанного
-  bundle имеют nullable revision reference и не получают фиктивную историю.
+  разных турнирах или source namespace не перезаписывает чужой прогноз. Старые
+  строки без доказанного bundle имеют nullable revision reference и не получают
+  фиктивную историю.
+- [x] Вероятности winner проверяются на конечность, диапазон [0, 1] и сумму до
+  записи showcase/revision.
 - [x] Внутреннее чтение по revision ID возвращает прежние вероятности и
   provenance после новых materialize; API продолжает выдавать актуальную строку.
 
@@ -48,6 +51,10 @@ EPIC-027 владеет наблюдениями коэффициентов: э�
    сохранение истории при пустой витрине, legacy без bundle и API response.
 4. **Refactor:** managed payload отделён от legacy `bulk_upsert`, ключ mutable
    витрины включает tournament; обновлены migration и materialization runbooks.
+5. **Review fixes:** после P2 добавлена nullable source namespace в mutable
+   showcase, фильтры repository/API и stale scope по источнику. Вероятности
+   валидируются до любой materialize публикации. Новая migration `0024` аддитивно
+   добавляет namespace; legacy rows сохраняют `NULL`.
 
 ## Затрагиваемые области и зависимости
 
@@ -64,10 +71,11 @@ EPIC-027 владеет наблюдениями коэффициентов: э�
 - `make lint` — passed.
 - `make test-unit` — 1502 passed, 15 deselected, 40 warnings.
 - `uv run pytest -q tests/test_prediction_revisions.py tests/test_prediction_publication.py tests/test_materialize.py` — 29 passed, 1 PostgreSQL-only test deselected/skipped, 3 warnings.
-- PostgreSQL disposable schema: Alembic upgrade с `0001` по `0023` прошёл;
-  `current` и `heads` указывают на единственный `0023_prediction_revisions`.
+- PostgreSQL disposable schema: Alembic upgrade с `0001` по `0024` прошёл;
+  `current` и `heads` указывают на единственный `0024_prediction_source_namespace`.
 - PostgreSQL integration rollback/append-only gate — 1 passed; API regression
-  входит в SQLite адресный набор.
+  входит в SQLite адресный набор. После review fixes: `tests/test_prediction_revisions.py`
+  и `tests/test_materialize.py` адресный набор — 5 passed; PostgreSQL integration — 1 passed.
 - Независимый review остаётся следующим gate.
 - Наблюдение: два разных revision ID для двух run одного события, прежняя
   версия читается, API возвращает последнюю.

@@ -51,6 +51,7 @@ def _to_response(
     base: dict[str, Any] = {
         "match_id": pred.match_id,
         "tournament": pred.tournament,
+        "source_namespace": pred.source_namespace,
         "market": pred.market,
         "market_spec": pred.market_spec,
         "home_player": pred.home_player,
@@ -94,6 +95,7 @@ def get_prediction(
     match_id: str,
     market: str = Query("winner", description="Тип рынка"),
     market_spec: str | None = Query(None, description="Спецификация рынка"),
+    source_namespace: str | None = Query(None, description="Namespace источника события"),
     live_pinnacle: bool = Query(
         True,
         description=(
@@ -121,6 +123,7 @@ def get_prediction(
             match_id=match_id,
             market=market,
             market_spec=market_spec,
+            source_namespace=source_namespace,
         )
 
     if pred is None:
@@ -140,6 +143,7 @@ def get_prediction(
 )
 def get_all_predictions_for_match(
     match_id: str,
+    source_namespace: str | None = Query(None, description="Namespace источника события"),
     live_pinnacle: bool = Query(
         True,
         description="См. ``/predict/{match_id}`` — батч live Pinnacle для NHL moneyline в списке.",
@@ -155,7 +159,7 @@ def get_all_predictions_for_match(
     """
     with get_session() as session:
         repo = PredictionRepository(session)
-        preds = repo.get_predictions_by_match(match_id)
+        preds = repo.get_predictions_by_match(match_id, source_namespace=source_namespace)
 
     if not preds:
         raise HTTPException(
@@ -253,7 +257,12 @@ def _is_cache_valid() -> bool:
 
 
 @lru_cache(maxsize=512)
-def _cached_prediction(match_id: str, market: str, market_spec: str | None) -> dict | None:
+def _cached_prediction(
+    match_id: str,
+    market: str,
+    market_spec: str | None,
+    source_namespace: str | None = None,
+) -> dict | None:
     """Кешированный запрос предсказания из БД.
 
     Args:
@@ -270,6 +279,7 @@ def _cached_prediction(match_id: str, market: str, market_spec: str | None) -> d
             match_id=match_id,
             market=market,
             market_spec=market_spec,
+            source_namespace=source_namespace,
         )
     if pred is None:
         return None
@@ -278,6 +288,7 @@ def _cached_prediction(match_id: str, market: str, market_spec: str | None) -> d
     return {
         "match_id": pred.match_id,
         "tournament": pred.tournament,
+        "source_namespace": pred.source_namespace,
         "market": pred.market,
         "market_spec": pred.market_spec,
         "home_player": pred.home_player,
@@ -302,6 +313,7 @@ def get_prediction_cached(
     match_id: str,
     market: str = Query("winner", description="Тип рынка"),
     market_spec: str | None = Query(None, description="Спецификация рынка"),
+    source_namespace: str | None = Query(None, description="Namespace источника события"),
 ) -> PredictionResponse:
     """Получить предсказание с in-memory LRU кешем.
 
@@ -327,7 +339,7 @@ def get_prediction_cached(
         _cached_prediction.cache_clear()
         _cache_timestamp = time.time()
 
-    result = _cached_prediction(match_id, market, market_spec)
+    result = _cached_prediction(match_id, market, market_spec, source_namespace)
 
     if result is None:
         raise HTTPException(

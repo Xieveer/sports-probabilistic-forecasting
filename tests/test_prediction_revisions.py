@@ -19,7 +19,13 @@ from sports_forecast.service.db.models import Prediction, PredictionRevision
 from sports_forecast.service.db.repository import PredictionRepository
 
 
-def _record(*, run_id: str = "run-1", tournament: str = "nhl", p: float = 0.6) -> dict[str, object]:
+def _record(
+    *,
+    run_id: str = "run-1",
+    tournament: str = "nhl",
+    source_namespace: str = "nhl_api",
+    p: float = 0.6,
+) -> dict[str, object]:
     return {
         "match_id": "game-1",
         "tournament": tournament,
@@ -35,7 +41,7 @@ def _record(*, run_id: str = "run-1", tournament: str = "nhl", p: float = 0.6) -
         "model_identity": "identity-v1",
         "feature_contract_id": "features-v1",
         "refresh_run_id": run_id,
-        "source_namespace": "nhl_api",
+        "source_namespace": source_namespace,
         "input_snapshot_ref": "snapshot-v1",
     }
 
@@ -93,6 +99,29 @@ def test_new_run_and_tournament_are_distinct_showcase_keys(db_engine) -> None:
         assert PredictionRepository(session).get_revision(old_id).probabilities_json == (
             '{"away_win": 0.4, "home_win": 0.6}'
         )
+
+
+def test_same_event_id_from_two_sources_has_distinct_showcase_rows(db_engine) -> None:
+    with get_session(engine=db_engine) as session:
+        _publish(session, _record(source_namespace="provider-a"))
+        _publish(session, _record(source_namespace="provider-b"))
+    with get_session(engine=db_engine) as session:
+        rows = session.query(Prediction).order_by(Prediction.source_namespace).all()
+        assert len(rows) == 2
+        assert [row.source_namespace for row in rows] == ["provider-a", "provider-b"]
+        assert [row.status for row in rows] == ["ok", "ok"]
+        assert session.query(PredictionRevision).count() == 2
+        repository = PredictionRepository(session)
+        assert (
+            repository.get_latest_prediction(
+                "game-1", "winner", "winner_withOT", source_namespace="provider-b"
+            ).source_namespace
+            == "provider-b"
+        )
+        assert [
+            row.source_namespace
+            for row in repository.get_predictions_by_match("game-1", source_namespace="provider-a")
+        ] == ["provider-a"]
 
 
 def test_revision_creation_rolls_back_with_failed_showcase(db_engine, monkeypatch) -> None:
@@ -160,14 +189,28 @@ def test_prediction_api_continues_to_return_current_showcase(db_engine, monkeypa
     )
     with get_session(engine=db_engine) as session:
         _publish(session, second_api_record)
+    alternate_source_record = dict(api_record)
+    alternate_source_record.update(
+        {
+            "refresh_run_id": "run-api-other-source",
+            "source_namespace": "nhl_partner_api",
+            "predictions": {"home_win": 0.4, "away_win": 0.6},
+        }
+    )
+    with get_session(engine=db_engine) as session:
+        _publish(session, alternate_source_record)
     response = TestClient(app).get(
         "/predict/upcoming/nhl",
         params={"market": "winner", "market_spec": "winner_withOT", "live_pinnacle": "false"},
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["count"] == 1
-    assert body["predictions"][0]["predictions"] == {"home_win": 0.7, "away_win": 0.3}
+    assert body["count"] == 2
+    by_namespace = {item["source_namespace"]: item["predictions"] for item in body["predictions"]}
+    assert by_namespace == {
+        "nhl_api": {"home_win": 0.7, "away_win": 0.3},
+        "nhl_partner_api": {"home_win": 0.4, "away_win": 0.6},
+    }
 
 
 @pytest.mark.integration

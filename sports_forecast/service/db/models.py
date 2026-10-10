@@ -75,6 +75,7 @@ class Prediction(Base):
     # Match identification
     match_id: str = Column(String(64), nullable=False, index=True)
     tournament: str = Column(String(64), nullable=False, index=True)
+    source_namespace: str | None = Column(String(128), nullable=True)
     market: str = Column(String(32), nullable=False)
     market_spec: str = Column(String(32), nullable=False)
 
@@ -132,6 +133,14 @@ class Prediction(Base):
         Index("ix_pred_match_market", "match_id", "market", "market_spec"),
         Index("ix_pred_tournament_status", "tournament", "status"),
         Index("ix_pred_prediction_ts", "prediction_ts"),
+        Index(
+            "ix_prediction_source_event_market",
+            "tournament",
+            "source_namespace",
+            "match_id",
+            "market",
+            "market_spec",
+        ),
     )
 
     def __repr__(self) -> str:

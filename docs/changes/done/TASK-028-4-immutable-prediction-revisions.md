@@ -20,10 +20,17 @@ namespace и ссылка на odds observation не добавлялись: э�
 EPIC-027.
 
 Mutable showcase upsert теперь включает tournament в ключ, поэтому совпадающий
-source match ID разных турниров больше не перезаписывает соседнюю витрину.
-Legacy publication сохраняет старый путь и nullable `current_revision_id`.
+source match ID разных турниров или source namespace больше не перезаписывает
+соседнюю витрину. Migration `0024_prediction_source_namespace` добавляет
+nullable namespace и индекс; repository readers и API принимают namespace filter,
+а stale transition ограничен источником managed-публикации. Legacy publication
+сохраняет nullable `source_namespace` и `current_revision_id`.
 Revision защищена от UPDATE/DELETE триггерами в PostgreSQL и SQLite migrations.
 API продолжает отдавать актуальную строку витрины; добавлен API regression test.
+
+После независимого review устранены два P2: showcase был разделён по
+`source_namespace`, а model probabilities теперь проверяются на конечность,
+диапазон [0, 1] и сумму до создания любых записей публикации.
 
 ## Red → green → refactor
 
@@ -44,7 +51,9 @@ API продолжает отдавать актуальную строку ви
 - `make test-unit` — 1502 passed, 15 deselected, 40 warnings.
 - `uv run pytest -q tests/test_prediction_revisions.py tests/test_prediction_publication.py tests/test_materialize.py` — 29 passed, 1 PostgreSQL-only test skipped, 3 warnings.
 - `SF_TEST_PREDICTION_REVISION_DATABASE_URL=<disposable-schema-url> uv run pytest -q tests/test_prediction_revisions.py -m integration` — 1 passed.
-- `DATABASE_URL=<disposable-schema-url> uv run alembic -c alembic.ini upgrade head` — успешно; `alembic current` и `alembic heads` показали один head `0023_prediction_revisions`.
+- `uv run pytest -q tests/test_prediction_revisions.py tests/test_materialize.py -k 'same_event_id_from_two_sources or prediction_api_continues_to_return_current_showcase or aggregate_rejects_invalid_model_probabilities'` — 5 passed.
+- `DATABASE_URL=<disposable-schema-url> uv run alembic -c alembic.ini upgrade head` — успешно; `alembic current` и `alembic heads` показали один head `0024_prediction_source_namespace`.
+- `SF_TEST_PREDICTION_REVISION_DATABASE_URL=<disposable-schema-url> uv run pytest -q tests/test_prediction_revisions.py -m integration` — 1 passed на схеме с revision `0024`.
 - `uv run ruff check` по затронутым исходникам, migration и tests — passed;
   `git diff --check` — passed.
 

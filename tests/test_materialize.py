@@ -153,6 +153,28 @@ def test_aggregate_long_prefers_pl_short_name_en_over_pl() -> None:
     assert out.iloc[0]["away_player"] == "Away Star"
 
 
+@pytest.mark.parametrize(
+    "probabilities",
+    [
+        [[float("nan"), float("nan")], [0.4, 0.6]],
+        [[-0.1, 1.1], [0.4, 0.6]],
+        [[0.2, 0.7], [0.4, 0.6]],
+    ],
+    ids=["non-finite", "out-of-range", "row-sum"],
+)
+def test_aggregate_rejects_invalid_model_probabilities(probabilities: list[list[float]]) -> None:
+    frame = pd.DataFrame(
+        {
+            "id": ["m1", "m1"],
+            "side": ["h", "a"],
+            "datetime": ["2026-05-14T00:00:00Z"] * 2,
+            "pl": ["CAR", "BUF"],
+        }
+    )
+    with pytest.raises(ValueError, match="probabilit"):
+        _aggregate_long_predictions(frame, np.array(probabilities))
+
+
 def test_resolve_verified_model_provenance_matches_active_pointer(tmp_path: Path) -> None:
     """Managed provenance берётся из bundle после совпадения с active registry."""
     source = tmp_path / "source"

@@ -348,6 +348,8 @@ class PredictionRepository:
         match_id: str,
         market: str = "winner",
         market_spec: str | None = None,
+        *,
+        source_namespace: str | None = None,
     ) -> Prediction | None:
         """Получить последнее предсказание для матча.
 
@@ -369,13 +371,17 @@ class PredictionRepository:
 
         if market_spec is not None:
             query = query.filter(Prediction.market_spec == market_spec)
+        if source_namespace is not None:
+            query = query.filter(Prediction.source_namespace == source_namespace)
 
         result: Prediction | None = query.order_by(
             Prediction.prediction_ts.desc()  # type: ignore[attr-defined]
         ).first()
         return result
 
-    def get_predictions_by_match(self, match_id: str) -> list[Prediction]:
+    def get_predictions_by_match(
+        self, match_id: str, *, source_namespace: str | None = None
+    ) -> list[Prediction]:
         """Получить все предсказания для матча (все рынки).
 
         Args:
@@ -384,12 +390,14 @@ class PredictionRepository:
         Returns:
             Список Prediction.
         """
-        rows: list[Prediction] = (
-            self.session.query(Prediction)
-            .filter(Prediction.match_id == str(match_id), _public_slice_predicate())
-            .order_by(Prediction.prediction_ts.desc())  # type: ignore[attr-defined]
-            .all()
+        query = self.session.query(Prediction).filter(
+            Prediction.match_id == str(match_id), _public_slice_predicate()
         )
+        if source_namespace is not None:
+            query = query.filter(Prediction.source_namespace == source_namespace)
+        rows: list[Prediction] = query.order_by(
+            Prediction.prediction_ts.desc()  # type: ignore[attr-defined]
+        ).all()
         return rows
 
     def get_upcoming_predictions(
@@ -504,6 +512,7 @@ class PredictionRepository:
         odds_raw: str | None = None,
         status: str = "ok",
         current_revision_id: str | None = None,
+        source_namespace: str | None = None,
     ) -> Prediction:
         """Создать или обновить предсказание.
 
@@ -530,18 +539,17 @@ class PredictionRepository:
         Returns:
             Созданный или обновлённый Prediction.
         """
-        existing: Prediction | None = (
-            self.session.query(Prediction)
-            .filter(
-                and_(
-                    Prediction.match_id == str(match_id),
-                    Prediction.tournament == tournament,
-                    Prediction.market == market,
-                    Prediction.market_spec == market_spec,
-                )
-            )
-            .first()
+        lookup = self.session.query(Prediction).filter(
+            Prediction.match_id == str(match_id),
+            Prediction.tournament == tournament,
+            Prediction.market == market,
+            Prediction.market_spec == market_spec,
         )
+        if source_namespace is None:
+            lookup = lookup.filter(cast(Any, Prediction.source_namespace).is_(None))
+        else:
+            lookup = lookup.filter(Prediction.source_namespace == source_namespace)
+        existing: Prediction | None = lookup.first()
 
         predictions_json = json.dumps(predictions, ensure_ascii=False)
         now = datetime.now(tz=UTC)
@@ -557,6 +565,7 @@ class PredictionRepository:
             existing.refresh_run_id = refresh_run_id
             existing.canonical_snapshot_id = canonical_snapshot_id
             existing.feature_contract_id = feature_contract_id
+            existing.source_namespace = source_namespace
             existing.current_revision_id = current_revision_id
             existing.proba_home = proba_home
             existing.proba_away = proba_away
@@ -576,6 +585,7 @@ class PredictionRepository:
         pred = Prediction(
             match_id=str(match_id),
             tournament=tournament,
+            source_namespace=source_namespace,
             market=market,
             market_spec=market_spec,
             home_player=home_player,
@@ -628,23 +638,35 @@ class PredictionRepository:
         Исключение не перехватывается: ``get_session`` откатит и stale-метки,
         и уже записанные строки, сохранив прежнюю валидную витрину.
         """
-        self.mark_stale(tournament=tournament, market=market, market_spec=market_spec)
         if not any(record.get("bundle_id") is not None for record in records):
+            self.mark_stale(tournament=tournament, market=market, market_spec=market_spec)
             return self.bulk_upsert(records)
         count = 0
+        prepared: list[dict[str, Any]] = []
+        namespaces: set[str] = set()
         for record in records:
             publication = dict(record)
             if publication.get("bundle_id") is not None:
                 revision = self._create_prediction_revision(publication)
                 publication["current_revision_id"] = revision.revision_id
+                publication["source_namespace"] = revision.source_namespace
+                namespaces.add(revision.source_namespace)
                 for field in (
                     "bundle_id",
                     "model_identity",
-                    "source_namespace",
                     "input_snapshot_ref",
                     "canonical_event_id",
                 ):
                     publication.pop(field, None)
+            prepared.append(publication)
+        for namespace in namespaces:
+            self.mark_stale(
+                tournament=tournament,
+                market=market,
+                market_spec=market_spec,
+                source_namespace=namespace,
+            )
+        for publication in prepared:
             self.upsert_prediction(**publication)
             count += 1
         return count
@@ -798,6 +820,7 @@ class PredictionRepository:
         *,
         market: str | None = None,
         market_spec: str | None = None,
+        source_namespace: str | None = None,
     ) -> int:
         """Пометить устаревшие предсказания как stale.
 
@@ -819,6 +842,8 @@ class PredictionRepository:
             query = query.filter(Prediction.market == market)
         if market_spec is not None:
             query = query.filter(Prediction.market_spec == market_spec)
+        if source_namespace is not None:
+            query = query.filter(Prediction.source_namespace == source_namespace)
 
         result: int = query.update({"status": "stale"})
         return result

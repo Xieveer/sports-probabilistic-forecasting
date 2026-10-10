@@ -265,8 +265,27 @@ def _aggregate_long_predictions(
         match_id, match_datetime, home_player, away_player,
         proba_home, proba_away, predictions_json, odds_raw.
     """
-    # P(win) = proba[:, 1] для бинарной классификации
-    proba_win = proba[:, 1] if proba.ndim == 2 and proba.shape[1] == 2 else proba
+    model_probabilities = np.asarray(proba, dtype=float)
+    if model_probabilities.shape[0] != len(df):
+        raise ValueError("Model probability row count does not match inference input")
+    if model_probabilities.ndim == 2:
+        if model_probabilities.shape[1] != 2:
+            raise ValueError("winner market requires exactly two model probability outcomes")
+        if not np.isfinite(model_probabilities).all():
+            raise ValueError("Model probabilities must be finite")
+        if ((model_probabilities < 0) | (model_probabilities > 1)).any():
+            raise ValueError("Model probabilities must be in the range [0, 1]")
+        if not np.allclose(model_probabilities.sum(axis=1), 1.0, rtol=0, atol=1e-6):
+            raise ValueError("Model probability outcomes must sum to one per input row")
+        proba_win = model_probabilities[:, 1]
+    elif model_probabilities.ndim == 1:
+        if not np.isfinite(model_probabilities).all():
+            raise ValueError("Model probabilities must be finite")
+        if ((model_probabilities < 0) | (model_probabilities > 1)).any():
+            raise ValueError("Model probabilities must be in the range [0, 1]")
+        proba_win = model_probabilities
+    else:
+        raise ValueError("Model probabilities must be a vector or two-outcome matrix")
 
     df = df.copy()
     df["proba_win"] = proba_win
@@ -287,15 +306,23 @@ def _aggregate_long_predictions(
 
         p_home = float(home["proba_win"])
         p_away = float(away["proba_win"])
+        if not np.isfinite([p_home, p_away]).all() or not (0 <= p_home <= 1 and 0 <= p_away <= 1):
+            raise ValueError(
+                "Aggregated model probabilities must be finite and in the range [0, 1]"
+            )
 
         # Нормализуем (сумма = 1.0)
         total = p_home + p_away
-        if total > 0:
-            p_home_norm = p_home / total
-            p_away_norm = p_away / total
-        else:
-            p_home_norm = 0.5
-            p_away_norm = 0.5
+        if not np.isfinite(total) or total <= 0:
+            raise ValueError("Aggregated model probabilities must have a positive finite sum")
+        p_home_norm = p_home / total
+        p_away_norm = p_away / total
+        if (
+            not np.isfinite([p_home_norm, p_away_norm]).all()
+            or not (0 <= p_home_norm <= 1 and 0 <= p_away_norm <= 1)
+            or not np.isclose(p_home_norm + p_away_norm, 1.0, rtol=0, atol=1e-12)
+        ):
+            raise ValueError("Aggregated outcome probabilities must be finite and sum to one")
 
         predictions = {
             "home_win": round(p_home_norm, 4),
