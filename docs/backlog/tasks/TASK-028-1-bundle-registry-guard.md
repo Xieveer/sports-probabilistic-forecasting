@@ -4,7 +4,7 @@
 > **Владелец:** Developer
 > **Эпик:** [EPIC-028](../EPIC-028-production-model-contract.md)
 > **Требование:** [REQ-028](../../product/requirements/REQ-028-production-model-contract.md)
-> **ADR:** [ADR-030](../../architecture/adr/ADR-030-production-model-contract.md), proposed
+> **ADR:** [ADR-030](../../architecture/adr/ADR-030-production-model-contract.md), accepted
 
 ## Результат и границы
 

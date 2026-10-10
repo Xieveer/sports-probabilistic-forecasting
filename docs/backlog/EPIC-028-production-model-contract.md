@@ -4,22 +4,22 @@
 > **Приоритет:** high
 > **Владелец:** Product Owner
 > **Требование:** [REQ-028](../product/requirements/REQ-028-production-model-contract.md), confirmed
-> **ADR:** [ADR-030](../architecture/adr/ADR-030-production-model-contract.md), proposed
+> **ADR:** [ADR-030](../architecture/adr/ADR-030-production-model-contract.md), accepted
 
 ## Память Product Owner
 
 - Инициатива: `EPIC-028`.
 - Ветка инициативы: `initiative/epic-028-production-model-contract`; отдельный worktree `.worktrees/epic-028-production-model-contract`.
-- Workflow / этап: `engineering / уточнение требований`.
+- Workflow / этап: `engineering / review TASK-028-1`.
 - Исходная цель: production загружает выбранную проверенную модель без знания её алгоритма и сохраняет точную версию каждого прогноза.
 - Критерии и DoD: [REQ-028](../product/requirements/REQ-028-production-model-contract.md); пара legacy NHL CatBoost + локальная LightGBM на том же `winner_withOT` подтверждена. Затем ADR, red → green → refactor, независимый review, PR и окончательно зелёный CI.
 - Релиз: production-развёртывание не запрошено.
-- Выполнено: направление зафиксировано 2026-10-04; 2026-10-10 изучены bundle, registry, Worker, materialize, витрина и их тесты; REQ подтверждён для локальной пары двух алгоритмов.
-- Решения: использовать существующие model bundle и promotion как исходные механизмы; источник истины и cardinality pointer ещё не выбраны. Нынешний upsert не сохраняет историю версий.
-- Артефакты: [REQ-028](../product/requirements/REQ-028-production-model-contract.md), [долгосрочный план](index.md#долгосрочные-инициативы-платформы), [EPIC-003](EPIC-003-scalable-multisport-platform.md), [EPIC-005](EPIC-005-production-serving-readiness.md).
-- Предыдущая роль: Product Owner — анализ текущего контракта и draft требований.
-- Следующая роль: Architect — ADR о единственном источнике истины для выбранной модели, согласовании registry и bundle pointer, формате loader; затем Developer для минимального среза.
-- Открытые вопросы / блокеры: одобренный NHL payload отсутствует в Git и должен быть доступен на изолированном контуре; соответствие registry pointer файловому bundle; общий schema gate с EPIC-027 для ссылок на prediction revisions и odds observations.
+- Выполнено: направление зафиксировано 2026-10-04; 2026-10-10 подтверждён REQ, принят ADR-030, TASK-028-1 реализован через red → green → refactor; 47 адресных тестов и commit hooks прошли. Независимое review открыто.
+- Решения: [ADR-030](../architecture/adr/ADR-030-production-model-contract.md) принят Product Owner 2026-10-10: registry DB — единственный pointer managed-пары; legacy-файловый pointer остаётся явным отдельным профилем. Нынешний upsert не сохраняет историю версий.
+- Артефакты: [REQ-028](../product/requirements/REQ-028-production-model-contract.md), [ADR-030](../architecture/adr/ADR-030-production-model-contract.md), [TASK-028-1](tasks/TASK-028-1-bundle-registry-guard.md), [отчёт TASK-028-1](../changes/done/TASK-028-1-bundle-registry-guard.md), [долгосрочный план](index.md#долгосрочные-инициативы-платформы).
+- Предыдущая роль: Developer — TASK-028-1 и адресные проверки.
+- Следующая роль: Reviewer — независимая проверка TASK-028-1, включая прямой вызов materialize и пустой вход; затем Product Owner декомпозирует следующие срезы ADR-030.
+- Открытые вопросы / блокеры: одобренный NHL payload отсутствует в Git и нужен на изолированном контуре; общий schema gate с EPIC-027 для ссылок на prediction revisions и odds observations.
 - Research: не применяется.
 - Обновлено: 2026-10-10.
 
@@ -39,8 +39,8 @@
 Можно вести отдельно от EPIC-027; нужен до полного результата [EPIC-029](EPIC-029-configured-tournament-onboarding.md) и [EPIC-031](EPIC-031-real-bets-ledger.md). Перед TASK — REQ и ADR о pointer/bundle/loader.
 
 Архитектурный handoff: [ADR-030](../architecture/adr/ADR-030-production-model-contract.md)
-сравнивает источники истины и предлагает DB registry pointer для managed-пар,
-manifest v2 и append-only prediction revisions. Решение имеет статус `proposed`.
+сравнивает источники истины и закрепляет DB registry pointer для managed-пар,
+manifest v2 и append-only prediction revisions. Решение принято.
 
 Первый малый срез — [TASK-028-1](tasks/TASK-028-1-bundle-registry-guard.md):
 проверять совпадение verified bundle и registry до inference и публикации,

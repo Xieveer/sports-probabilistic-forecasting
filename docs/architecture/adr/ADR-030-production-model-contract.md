@@ -1,6 +1,6 @@
 # ADR-030 — Выбранный bundle и неизменяемая версия прогноза
 
-> **Статус:** proposed
+> **Статус:** accepted
 > **Дата:** 2026-10-10
 > **Связанное требование:** [REQ-028](../../product/requirements/REQ-028-production-model-contract.md)
 > **Инициатива:** [EPIC-028](../../backlog/EPIC-028-production-model-contract.md)
