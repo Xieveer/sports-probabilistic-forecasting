@@ -78,3 +78,34 @@ uv run python -m sports_forecast.data.providers.odds.backfill \
 поэтому запускать её следует небольшими диапазонами и наблюдать квоту API.
 Сначала рекомендуется прогон на одном дне и проверка Parquet store. Данные
 остаются локальными до отдельного verified archive sync по TASK-007-8.
+
+## Локальный provider history
+
+Offline импорт существующих historical response JSON в отдельный SQLite журнал и
+запрос цены к моменту `T` доступны без API key и сетевого клиента:
+
+```bash
+uv run python -m sports_forecast.data.providers.odds.historical_cli import \
+  --source data/cache/the_odds_api \
+  --database data/local/historical_odds.sqlite3
+uv run python -m sports_forecast.data.providers.odds.historical_cli query \
+  --database data/local/historical_odds.sqlite3 \
+  --registry-snapshot data/registry/current/package \
+  --event-id PROJECT_EVENT_UUID \
+  --at 2025-01-01T12:00:00Z
+```
+
+Импорт выбирает только `icehockey_nhl` / Pinnacle / `h2h` с двумя точными
+участниками и конечными decimal price > 1; подтверждённое правило рынка —
+`winner_withOT`, `home_win` / `away_win`, включая ОТ и буллиты. `observed_at`
+берётся только из envelope `timestamp`; более поздний `last_update` не переносит
+snapshot назад. Legacy cache не доказывает время локального получения:
+`retrieved_at` остаётся неизвестным, пока его не подтвердит отдельный receipt.
+`imported_at` показывает только время импорта. Запрос явно отвечает
+`provider_as_of` и не утверждает, что цена была локально известна к `T`.
+
+Перед query передайте полный проверенный pinned `ir1` пакет. Strict resolver
+использует source event ID, исходные названия участников и точный UTC kickoff;
+неподтверждённая или неоднозначная связь не возвращает project event price.
+SQLite journal, исходный cache и registry остаются локальными; не добавляйте
+cache responses или SQLite файл в Git.

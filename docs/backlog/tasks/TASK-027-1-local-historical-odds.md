@@ -1,6 +1,6 @@
 # TASK-027-1 — Локальный импорт и запрос истории Pinnacle
 
-> **Статус:** backlog
+> **Статус:** done
 > **Владелец:** Developer
 > **Эпик:** [EPIC-027](../EPIC-027-historical-odds.md)
 > **Требование:** [REQ-027](../../product/requirements/REQ-027-historical-odds.md) (`confirmed`)
@@ -22,22 +22,22 @@ registry contract чтением; изменение его поведения �
 
 ## Критерии приёмки
 
-- [ ] Два snapshots сохраняют две цены и два ID; повтор файла/перестановка
+- [x] Два snapshots сохраняют две цены и два ID; повтор файла/перестановка
   outcomes/другой путь не создают дубль. Сбой транзакции не оставляет частичный импорт.
-- [ ] Between/after/before query выбирает правильный snapshot/отсутствие;
+- [x] Between/after/before query выбирает правильный snapshot/отсутствие;
   old last_update в будущем envelope не допускает утечку. Несовпадающие факты
   одного provider timestamp дают конфликт, не зависят от порядка файлов.
-- [ ] Legacy retrieval остаётся null; известное позднее retrieval явно отмечено,
+- [x] Legacy retrieval остаётся null; известное позднее retrieval явно отмечено,
   imported_at не подменяет retrieval. Provider-as-of не заявляет local-known.
-- [ ] Source h2h и проектное winner_withOT имеют согласованные правила,
+- [x] Source h2h и проектное winner_withOT имеют согласованные правила,
   home_win/away_win и ОТ/буллиты. Regulation/draw/unknown/дубликаты отвергаются.
-- [ ] Pinned ir1 strict resolution исключает unresolved/ambiguous/conflict и
+- [x] Pinned ir1 strict resolution исключает unresolved/ambiguous/conflict и
   конкурирующие source IDs. Новое решение registry разрешает старый факт без
   изменения observation ID; старый snapshot сохраняет прежний результат.
-- [ ] Минимальный реальный пример двух изменившихся Pinnacle snapshots прошёл
+- [x] Минимальный реальный пример двух изменившихся Pinnacle snapshots прошёл
   confirmed mapping и запрос до/между/после для одного события.
   Evidence содержит IDs/digests/времена/счётчики, без полного provider response.
-- [ ] Локальный import/query entrypoint работает без API key и сетевых обращений
+- [x] Локальный import/query entrypoint работает без API key и сетевых обращений
   и не изменяет входной cache/старые stores. Отчёт покрытия пока не требуется.
 
 ## Red → green → refactor
@@ -53,6 +53,17 @@ registry contract чтением; изменение его поведения �
 4. Обновить usage/канонические статусы и создать
    `docs/changes/done/TASK-027-1-local-historical-odds.md` с точными командами,
    результатами red/green, IDs локального evidence и остаточными ограничениями.
+
+## Evidence
+
+Подтверждённый владельцем mapping: NHL API game `2023020180` ↔ The Odds API
+event `b42367c52f8c596d01199dd31258cc62`, CAR–BUF, kickoff
+`2023-11-08T00:00:00Z`. Проверенный локальный snapshot:
+`ir1:ef9cc3818aeb73dcbe68dbebd1bd912ea30b68a30ea898167676f4cd8dcce210`.
+Evidence bundle находится вне репозитория в
+`/tmp/sports-forecast-epic-027-evidence-final2`; source cache hashes, observation
+IDs и результаты запросов перечислены в отчёте done. Raw ответы и SQLite в Git
+не добавлялись.
 
 ## Проверка и handoff
 
