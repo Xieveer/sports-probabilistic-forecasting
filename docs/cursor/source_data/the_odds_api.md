@@ -93,6 +93,12 @@ uv run python -m sports_forecast.data.providers.odds.historical_cli query \
   --registry-snapshot data/registry/current/package \
   --event-id PROJECT_EVENT_UUID \
   --at 2025-01-01T12:00:00Z
+uv run python -m sports_forecast.data.providers.odds.historical_cli coverage \
+  --database data/local/historical_odds.sqlite3 \
+  --registry-snapshot data/registry/current/package \
+  --from 2025-01-01T00:00:00Z \
+  --to 2025-02-01T00:00:00Z \
+  --at 2025-01-31T23:59:00Z
 ```
 
 Импорт выбирает только `icehockey_nhl` / Pinnacle / `h2h` с двумя точными
@@ -103,6 +109,20 @@ snapshot назад. Legacy cache не доказывает время лока�
 `retrieved_at` остаётся неизвестным, пока его не подтвердит отдельный receipt.
 `imported_at` показывает только время импорта. Запрос явно отвечает
 `provider_as_of` и не утверждает, что цена была локально известна к `T`.
+
+Команда `coverage` использует ожидаемые NHL события из переданного закреплённого
+registry snapshot по UTC kickoff окну `[from, to)`. `--at` задаёт общий provider
+момент `T` для всех событий. JSON отчёт выводит `covered`, `no_line`,
+`no_snapshot` и `mapping_error`; их сумма равна знаменателю ожидаемых событий.
+Для каждой строки указана причина. `unmapped_source_events` считает уникальные
+source IDs, которые не разрешились через pinned registry, отдельно от знаменателя.
+Отчёт также содержит количество и fingerprint импортированных файлов,
+импортные диагностические коды, конфликты фактов, receipts с неизвестным
+`retrieved_at` и receipts, полученные позже `T`. Импортные диагностики относятся
+к строкам событий/рынков; фатальный отказ импорта файла прерывает CLI-команду.
+При нулевом покрытии команда возвращает нулевой числитель и фактические причины,
+не используя текущую котировку как замену. Ни одна команда локальной истории не
+требует API key или сети.
 
 Перед query передайте полный проверенный pinned `ir1` пакет. Strict resolver
 использует source event ID, исходные названия участников и точный UTC kickoff;

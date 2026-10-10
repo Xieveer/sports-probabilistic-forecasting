@@ -1,6 +1,6 @@
 # TASK-027-2 — Покрытие истории и итоговая проверка Pinnacle
 
-> **Статус:** backlog
+> **Статус:** in_progress
 > **Владелец:** Developer
 > **Эпик:** [EPIC-027](../EPIC-027-historical-odds.md)
 > **Требование:** [REQ-027](../../product/requirements/REQ-027-historical-odds.md) (`confirmed`)
@@ -20,13 +20,13 @@ Alembic, prediction revisions и production runtime не меняются. Пр�
 
 ## Критерии приёмки
 
-- [ ] Expected universe берётся из pinned registry по UTC kickoff `[from, to)`;
+- [x] Expected universe берётся из pinned registry по UTC kickoff `[from, to)`;
   report фиксирует T либо явные T событий, bookmaker, market, ir1 и fingerprint
   импортированного набора. Знаменатель включает события, отсутствующие в cache.
-- [ ] Взаимоисключающие категории no_line/no_snapshot/mapping_error/covered
+- [x] Взаимоисключающие категории no_line/no_snapshot/mapping_error/covered
   следуют ADR-031; subreasons различают отсутствие source evidence, неподходящий
   timestamp и invalid data. Непривязанные source events идут отдельным счётчиком.
-- [ ] Отчёт показывает числитель/знаменатель, import failures, конфликты,
+- [x] Отчёт показывает числитель/знаменатель, import failures, конфликты,
   unknown retrieval и late retrieval; нулевое покрытие честно отражается без
   порога и без current odds fallback. Нет двойного счёта outcomes/файлов.
 - [ ] Полный локальный реальный цикл import → query → coverage выполнен на
@@ -34,9 +34,9 @@ Alembic, prediction revisions и production runtime не меняются. Пр�
   правильные before/between/after ответы; контрольное отсутствие линии видно
   отдельной причиной. При отсутствии подходящего реального контроля явно
   зафиксировать блокер, не выдавать synthetic fixture за реальный evidence.
-- [ ] Реальный повтор импорта идемпотентен; legacy retrieval остаётся неизвестным;
+- [x] Реальный повтор импорта идемпотентен; legacy retrieval остаётся неизвестным;
   итоговые evidence содержат IDs/digests/времена/счётчики без full responses.
-- [ ] Старые close/T−15 и current odds остаются читаемы; пройдены применимые
+- [x] Старые close/T−15 и current odds остаются читаемы; пройдены применимые
   store/backfill/client/current odds и identity regressions, входные данные
   не изменены. Локальный report не требует API key и сети.
 
@@ -64,3 +64,25 @@ Developer → Product Owner → независимый Reviewer; findings исп
 итогового review инициативы. Затем каноническая документация, финальные проверки,
 PR и terminal CI. Production release не запрошен; зелёные synthetic tests
 не закрывают отсутствующий реальный acceptance.
+
+## Текущий ход реализации
+
+2026-10-10: добавлены отчёт coverage и команда `historical_cli coverage` поверх
+существующего `ho1`/`ir1` контракта. Synthetic tests подтверждают expected
+universe, `covered`, `no_line`, `no_snapshot`, `mapping_error`, unmapped source
+events, import diagnostics, timestamp conflicts, нулевое покрытие и отбор по T.
+Регрессии old store/backfill/client и identity зелёные.
+
+Реальный acceptance прошёл для подтверждённого CAR–BUF: исходные два файла дали
+21 observation, без diagnostic failures; отчет по реальному окну содержит 1
+expected / 1 covered, 0 no_line / 0 no_snapshot / 0 mapping_error, 2 imported
+files, 0 conflicts, 2 unknown retrieval и 13 unmapped source event IDs.
+Provider queries before/between/after вернули null / ранний / поздний snapshot;
+повторный import вставил 0 observations. Cache hashes совпали с TASK-027-1.
+
+Реальный `no_line` контроль найден в cache для Anaheim Ducks — St Louis Blues:
+The Odds API `c4e420f552d6ffa6f1a1e5dec5a0db3e`, kickoff
+`2023-11-20T01:00:00Z`, NHL API `2023020271`. Четыре локальных исторических
+envelopes не содержат Pinnacle/h2h. Ожидается подтверждение владельца этого
+bridge перед внесением второго event ID в pinned registry и финальным coverage
+acceptance; без него его не считаем доказанным mapping.

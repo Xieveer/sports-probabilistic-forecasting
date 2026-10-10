@@ -16,6 +16,7 @@ from sports_forecast.data.providers.odds.historical import (
     list_imported_source_events,
     query_provider_as_of,
 )
+from sports_forecast.data.providers.odds.historical_coverage import build_coverage_report
 from sports_forecast.identity import EntityRegistry
 from sports_forecast.identity.snapshot import (
     RegistrySnapshotReader,
@@ -373,6 +374,197 @@ def test_import_keeps_nhl_source_event_without_target_market_for_coverage(
     assert records[0].source_event_id == "source-event-1"
     assert records[0].target_market_status == "no_pinnacle"
     assert records[0].commence_time == datetime(2025, 1, 1, tzinfo=UTC)
+
+
+def test_coverage_counts_pinned_universe_and_reports_absent_line_separately(
+    tmp_path: Path,
+) -> None:
+    reader, event_id, registry = _reader(tmp_path)
+    tournament = registry.list_entities(kind="tournament")[0]
+    home, away = registry.list_entities(kind="team")
+    no_line_event = registry.create_entity(
+        "event", "Boston Bruins v Buffalo Sabres without line", sport="ice_hockey"
+    )
+    registry.set_event_relation(
+        no_line_event.id,
+        tournament_id=tournament.id,
+        home_team_id=home.id,
+        away_team_id=away.id,
+        scheduled_at="2025-01-02T00:00:00Z",
+        actor="owner",
+        reason="Проверка покрытия без линии",
+    )
+    registry.add_designation(
+        entity_id=no_line_event.id,
+        source="the_odds_api",
+        kind="event",
+        scope={"sport": "ice_hockey", "tournament": tournament.id},
+        value_kind="external_id",
+        raw_value="source-event-no-line",
+        state="confirmed",
+    )
+    snapshot = export_registry_snapshot(registry, tmp_path / "updated-snapshots")
+    reader = RegistrySnapshotReader(verify_registry_snapshot(snapshot.path))
+
+    database = tmp_path / "history.sqlite3"
+    covered = _cache(tmp_path / "covered.json", "2025-01-01T12:00:00Z", 1.8, 2.1)
+    no_line = _cache(tmp_path / "no-line.json", "2025-01-01T12:00:00Z", 1.8, 2.1)
+    payload = json.loads(no_line.read_text(encoding="utf-8"))
+    payload["data"][0]["id"] = "source-event-no-line"
+    payload["data"][0]["bookmakers"] = []
+    no_line.write_text(json.dumps(payload), encoding="utf-8")
+    import_historical_cache((covered, no_line), database)
+
+    report = build_coverage_report(
+        database,
+        reader,
+        start=datetime(2025, 1, 1, tzinfo=UTC),
+        end=datetime(2025, 1, 3, tzinfo=UTC),
+        at=datetime(2025, 1, 2, tzinfo=UTC),
+    )
+
+    assert report.expected_events == 2
+    assert report.covered == 1
+    assert report.no_line == 1
+    assert report.no_snapshot == 0
+    assert report.mapping_error == 0
+    assert report.unmapped_source_events == 0
+    assert report.imported_files == 2
+    assert report.imported_file_fingerprint.startswith("sha256:")
+    assert report.categories["no_line"][0]["subreason"] == "no_pinnacle"
+    assert {item["project_event_id"] for item in report.categories["covered"]} == {event_id}
+
+
+def test_coverage_zero_line_reports_no_snapshot_and_unmapped_source_event(
+    tmp_path: Path,
+) -> None:
+    reader, event_id, _ = _reader(tmp_path)
+    database = tmp_path / "empty-history.sqlite3"
+    source = _cache(tmp_path / "unmapped.json", "2025-01-01T12:00:00Z", 1.8, 2.1)
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    payload["data"][0]["id"] = "unknown-source-event"
+    payload["data"][0]["home_team"] = "Unregistered Home Team"
+    source.write_text(json.dumps(payload), encoding="utf-8")
+    import_historical_cache((source,), database)
+
+    report = build_coverage_report(
+        database,
+        reader,
+        start=datetime(2025, 1, 1, tzinfo=UTC),
+        end=datetime(2025, 1, 2, tzinfo=UTC),
+        at=datetime(2025, 1, 2, tzinfo=UTC),
+    )
+
+    assert report.expected_events == 1
+    assert report.covered == 0
+    assert report.no_snapshot == 1
+    assert report.no_line == report.mapping_error == 0
+    assert report.categories["no_snapshot"][0] == {
+        "project_event_id": event_id,
+        "kickoff_utc": "2025-01-01T00:00:00.000000Z",
+        "subreason": "no_source_evidence",
+    }
+    assert report.imported_files == 1
+    assert report.unmapped_source_events == 1
+
+
+def test_coverage_separates_invalid_mapping_from_missing_snapshot(tmp_path: Path) -> None:
+    reader, event_id, _ = _reader(tmp_path)
+    database = tmp_path / "history.sqlite3"
+    source = _cache(tmp_path / "mis-mapped.json", "2025-01-01T12:00:00Z", 1.8, 2.1)
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    payload["data"][0]["home_team"] = "Different Home Team"
+    source.write_text(json.dumps(payload), encoding="utf-8")
+    import_historical_cache((source,), database)
+
+    report = build_coverage_report(
+        database,
+        reader,
+        start=datetime(2025, 1, 1, tzinfo=UTC),
+        end=datetime(2025, 1, 2, tzinfo=UTC),
+        at=datetime(2025, 1, 2, tzinfo=UTC),
+    )
+
+    assert report.expected_events == 1
+    assert report.mapping_error == 1
+    assert report.categories["mapping_error"][0]["project_event_id"] == event_id
+    assert report.no_snapshot == report.no_line == report.covered == 0
+
+
+def test_coverage_reports_snapshot_after_t_as_no_snapshot(tmp_path: Path) -> None:
+    reader, event_id, _ = _reader(tmp_path)
+    database = tmp_path / "history.sqlite3"
+    source = _cache(tmp_path / "after-t.json", "2025-01-01T00:02:00Z", 1.8, 2.1)
+    import_historical_cache((source,), database)
+
+    report = build_coverage_report(
+        database,
+        reader,
+        start=datetime(2025, 1, 1, tzinfo=UTC),
+        end=datetime(2025, 1, 2, tzinfo=UTC),
+        at=datetime(2025, 1, 1, 0, 1, tzinfo=UTC),
+    )
+
+    assert report.no_snapshot == 1
+    assert report.categories["no_snapshot"][0] == {
+        "project_event_id": event_id,
+        "kickoff_utc": "2025-01-01T00:00:00.000000Z",
+        "subreason": "no_snapshot_at_or_before_T",
+    }
+
+
+def test_coverage_reports_invalid_snapshot_time_as_no_snapshot(tmp_path: Path) -> None:
+    reader, event_id, _ = _reader(tmp_path)
+    database = tmp_path / "history.sqlite3"
+    source = _cache(tmp_path / "invalid-time.json", "2025-01-01T00:02:00Z", 1.8, 2.1)
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    payload["timestamp"] = "not-a-timestamp"
+    source.write_text(json.dumps(payload), encoding="utf-8")
+    import_historical_cache((source,), database)
+
+    report = build_coverage_report(
+        database,
+        reader,
+        start=datetime(2025, 1, 1, tzinfo=UTC),
+        end=datetime(2025, 1, 2, tzinfo=UTC),
+        at=datetime(2025, 1, 1, 0, 3, tzinfo=UTC),
+    )
+
+    assert report.no_snapshot == 1
+    assert report.mapping_error == 0
+    assert report.categories["no_snapshot"][0]["project_event_id"] == event_id
+    assert report.categories["no_snapshot"][0]["subreason"] == "invalid_envelope_timestamp"
+
+
+def test_coverage_counts_import_diagnostics_and_timestamp_conflicts(tmp_path: Path) -> None:
+    reader, event_id, _ = _reader(tmp_path)
+    database = tmp_path / "history.sqlite3"
+    first = _cache(tmp_path / "first.json", "2025-01-01T00:00:00Z", 1.8, 2.1)
+    conflicting = _cache(tmp_path / "conflicting.json", "2025-01-01T00:00:00Z", 1.81, 2.1)
+    invalid = _cache(tmp_path / "invalid.json", "2025-01-01T00:02:00Z", 1.8, 2.1)
+    invalid_payload = json.loads(invalid.read_text(encoding="utf-8"))
+    invalid_payload["data"][0]["bookmakers"][0]["markets"][0]["outcomes"].append(
+        {"name": "Draw", "price": 10.0}
+    )
+    invalid.write_text(json.dumps(invalid_payload), encoding="utf-8")
+    import_historical_cache((first, conflicting, invalid), database)
+
+    report = build_coverage_report(
+        database,
+        reader,
+        start=datetime(2025, 1, 1, tzinfo=UTC),
+        end=datetime(2025, 1, 2, tzinfo=UTC),
+        at=datetime(2025, 1, 1, 0, 1, tzinfo=UTC),
+    )
+
+    assert report.expected_events == 1
+    assert report.conflicts == 1
+    assert report.import_failures == 1
+    assert report.import_diagnostics == {"invalid_h2h_outcomes": 1}
+    assert report.mapping_error == 1
+    assert report.covered + report.no_line + report.no_snapshot + report.mapping_error == 1
+    assert report.categories["mapping_error"][0]["project_event_id"] == event_id
+    assert report.imported_file_fingerprint.startswith("sha256:")
 
 
 def test_import_rejects_draw_outcome_and_keeps_diagnostic(tmp_path: Path) -> None:
