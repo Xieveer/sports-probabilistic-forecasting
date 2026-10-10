@@ -1,6 +1,6 @@
 # TASK-027-2 — Покрытие истории и итоговая проверка Pinnacle
 
-> **Статус:** in_progress
+> **Статус:** done, ожидает финальный независимый review
 > **Владелец:** Developer
 > **Эпик:** [EPIC-027](../EPIC-027-historical-odds.md)
 > **Требование:** [REQ-027](../../product/requirements/REQ-027-historical-odds.md) (`confirmed`)
@@ -29,7 +29,7 @@ Alembic, prediction revisions и production runtime не меняются. Пр�
 - [x] Отчёт показывает числитель/знаменатель, import failures, конфликты,
   unknown retrieval и late retrieval; нулевое покрытие честно отражается без
   порога и без current odds fallback. Нет двойного счёта outcomes/файлов.
-- [ ] Полный локальный реальный цикл import → query → coverage выполнен на
+- [x] Полный локальный реальный цикл import → query → coverage выполнен на
   выбранном окне. Два изменившихся snapshots одного confirmed события дают
   правильные before/between/after ответы; контрольное отсутствие линии видно
   отдельной причиной. При отсутствии подходящего реального контроля явно
@@ -73,17 +73,19 @@ universe, `covered`, `no_line`, `no_snapshot`, `mapping_error`, unmapped source
 events, import diagnostics, timestamp conflicts, нулевое покрытие и отбор по T.
 Регрессии old store/backfill/client и identity зелёные.
 
-Реальный acceptance прошёл для подтверждённого CAR–BUF: исходные два файла дали
-21 observation, без diagnostic failures; отчет по реальному окну содержит 1
-expected / 1 covered, 0 no_line / 0 no_snapshot / 0 mapping_error, 2 imported
-files, 0 conflicts, 2 unknown retrieval и 13 unmapped source event IDs:
-12 `mismatch` и 1 `missing` по resolver reason.
-Provider queries before/between/after вернули null / ранний / поздний snapshot;
-повторный import вставил 0 observations. Cache hashes совпали с TASK-027-1.
+Реальный acceptance выполнен на подтверждённом CAR–BUF и контрольном ANA–STL.
+Владелец подтвердил второй bridge `2023020271` ↔
+`c4e420f552d6ffa6f1a1e5dec5a0db3e`; изолированный pinned snapshot вне Git:
+`ir1:7f6ee9a8004c00dde23e42017de491f44dbccf6150a75ec9ca01d65773e7c9c9`.
+Coverage окна `[2023-11-07T00:00:00Z, 2023-11-21T00:00:00Z)` при
+`T=2023-11-19T13:00:00Z`: 2 expected, 1 covered (CAR–BUF), 1 `no_line`
+(ANA–STL, `no_pinnacle`), 0 `no_snapshot`, 0 `mapping_error`; 6 imported files,
+0 import diagnostics/conflicts/late retrieval, 6 unknown retrieval, 32 unmapped
+source IDs (`30 mismatch`, `2 missing`). Fingerprint:
+`sha256:20e0ff034f6a5c095d8910df1979acce11bada3ae8202534d70f88743956a962`.
 
-Реальный `no_line` контроль найден в cache для Anaheim Ducks — St Louis Blues:
-The Odds API `c4e420f552d6ffa6f1a1e5dec5a0db3e`, kickoff
-`2023-11-20T01:00:00Z`, NHL API `2023020271`. Четыре локальных исторических
-envelopes не содержат Pinnacle/h2h. Ожидается подтверждение владельца этого
-bridge перед внесением второго event ID в pinned registry и финальным coverage
-acceptance; без него его не считаем доказанным mapping.
+В повторном импорте всех шести cache files каждый вызов вставил 0 observations.
+Для CAR–BUF queries before/between/after дали null, ранний и поздний snapshot;
+retrieval неизвестен, `locally_known_at_t=false`. SHA-256 исходных шести файлов
+совпали до и после импорта. В Git не добавлялись cache responses, registry,
+SQLite или локальные evidence artifacts.
