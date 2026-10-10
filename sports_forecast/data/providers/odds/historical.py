@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -271,9 +272,14 @@ def import_historical_cache(
     try:
         for source_path in files:
             path = Path(source_path)
-            if path.is_symlink() or not path.is_file() or path.stat().st_size > _MAX_FILE_BYTES:
+            if path.is_symlink() or not path.is_file():
                 raise ValueError("Источник должен быть обычным JSON-файлом допустимого размера")
-            content = path.read_bytes()
+            with path.open("rb") as source:
+                if os.fstat(source.fileno()).st_size > _MAX_FILE_BYTES:
+                    raise ValueError("Источник должен быть обычным JSON-файлом допустимого размера")
+                content = source.read(_MAX_FILE_BYTES + 1)
+            if len(content) > _MAX_FILE_BYTES:
+                raise ValueError("Источник должен быть обычным JSON-файлом допустимого размера")
             file_digest = hashlib.sha256(content).hexdigest()
             try:
                 payload = json.loads(content)

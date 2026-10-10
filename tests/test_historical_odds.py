@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -153,6 +155,56 @@ def test_import_is_idempotent_and_query_selects_provider_snapshot(tmp_path: Path
     assert between.includes_shootout is True
     assert between.source_file_sha256
     assert between.age_seconds == 900
+
+
+def test_import_bounds_read_when_file_grows_after_descriptor_size_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "growing.json"
+    content = b" " * 64
+    source.write_bytes(content)
+    monkeypatch.setattr(historical, "_MAX_FILE_BYTES", len(content))
+    original_open = Path.open
+    requested_reads: list[int] = []
+    descriptor_sizes: list[int] = []
+    original_fstat = os.fstat
+
+    def recording_fstat(fd: int) -> os.stat_result:
+        result = original_fstat(fd)
+        descriptor_sizes.append(result.st_size)
+        return result
+
+    def growing_open(path: Path, mode: str = "r", *args: Any, **kwargs: Any) -> Any:
+        opened = original_open(path, mode, *args, **kwargs)
+        if path != source or mode != "rb":
+            return opened
+
+        class GrowingReader:
+            def __enter__(self) -> GrowingReader:
+                return self
+
+            def __exit__(self, *_: object) -> None:
+                opened.close()
+
+            def fileno(self) -> int:
+                return cast(int, opened.fileno())
+
+            def read(self, size: int) -> bytes:
+                requested_reads.append(size)
+                with original_open(source, "ab") as append_handle:
+                    append_handle.write(b"x")
+                return cast(bytes, opened.read(size))
+
+        return GrowingReader()
+
+    monkeypatch.setattr(os, "fstat", recording_fstat)
+    monkeypatch.setattr(Path, "open", growing_open)
+
+    with pytest.raises(ValueError, match="обычным JSON-файлом допустимого размера"):
+        import_historical_cache((source,), tmp_path / "history.sqlite3")
+
+    assert descriptor_sizes == [len(content)]
+    assert requested_reads == [len(content) + 1]
 
 
 def test_query_rejects_timezone_naive_instant(tmp_path: Path) -> None:

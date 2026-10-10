@@ -40,6 +40,10 @@ cache responses и локальные SQLite/registry артефакты в Git 
   draw outcome покрыты focused integration tests.
 - Refactor: форматирование и lint новых Python модулей; отдельный локальный
   registry snapshot подтвердил реальный Pinnacle пример через CLI.
+- Reviewer P2 regression: сначала тест ожидал отказ из-за oversize, но прежний
+  `read_bytes()` передал выросший файл в JSON parser. После фикса тест проверяет
+  размер через `fstat` открытого дескриптора, моделирует рост файла после этого
+  момента и подтверждает вызов ограниченного `read(MAX + 1)` с последующим отказом.
 
 ## Реальное локальное evidence
 
@@ -71,9 +75,12 @@ event rows: 21 наблюдение Pinnacle h2h сохранено, ошибо�
 
 ## Проверки
 
-Фактически выполнены:
+Фактически выполнены для исходного среза и P2 исправления:
 
-- `uv run pytest -q tests/test_historical_odds.py tests/test_registry_snapshot.py` — 24 passed.
+- `uv run pytest -q tests/test_historical_odds.py -k bounds_read_when_file_grows` — 1 passed после исправления; до исправления тест завершался ошибкой на JSON parse, подтверждая дефект.
+- `uv run ruff format sports_forecast/data/providers/odds/historical.py tests/test_historical_odds.py` — выполнено.
+- `uv run ruff check sports_forecast/data/providers/odds/historical.py tests/test_historical_odds.py` — passed.
+- `uv run pytest -q tests/test_historical_odds.py tests/test_registry_snapshot.py` — 25 passed.
 - `uv run ruff check sports_forecast/data/providers/odds/historical.py sports_forecast/data/providers/odds/historical_cli.py tests/test_historical_odds.py` — passed.
 - `uv run ruff format sports_forecast/data/providers/odds/historical.py sports_forecast/data/providers/odds/historical_cli.py tests/test_historical_odds.py` — completed.
 - `uv run python -m sports_forecast.data.providers.odds.historical_cli --help` — passed.
