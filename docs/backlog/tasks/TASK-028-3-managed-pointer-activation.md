@@ -57,6 +57,10 @@ immutable bundle v2, а Worker, canonical refresh и прямой materialize п
   переключения на ранее зарегистрированный bundle.
 - [x] Parquet пишется во временный файл и заменяет production файл только после
   успешного DB publication gate; stale pin сохраняет предыдущий parquet.
+- [x] Legacy rollback проверяет active deployment под pair lock и отклоняет
+  legacy target при active managed pointer. API/бот читают DB showcase; локальный
+  parquet вторичен, external `Session` его не публикует, а ошибка file replace
+  после внутреннего DB commit не отменяет успешный результат materialization.
 
 ## Затрагиваемые области и зависимости
 

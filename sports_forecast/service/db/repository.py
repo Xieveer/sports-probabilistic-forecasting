@@ -1598,6 +1598,7 @@ class ModelRegistryRepository:
 
     def rollback(self, model_pool: str, market_spec: str, model_identity: str) -> ModelDeployment:
         """Явно вернуть pointer к ранее сохранённой версии без удаления записей."""
+        self._lock_pair(model_pool, market_spec)
         deployment = self.get_by_identity(model_identity)
         if (
             deployment is None
@@ -1607,7 +1608,9 @@ class ModelRegistryRepository:
             raise ValueError("Версия для rollback не найдена в указанном model pool")
         if deployment.is_managed:
             raise ValueError("Managed deployment требует проверенного managed rollback")
-        self._lock_pair(model_pool, market_spec)
+        active = self.get_active(model_pool, market_spec, for_update=True)
+        if active is not None and active.is_managed:
+            raise ValueError("Legacy rollback не может заменить active managed deployment")
         self.session.query(ModelDeployment).filter(
             ModelDeployment.model_pool == model_pool,
             ModelDeployment.market_spec == market_spec,

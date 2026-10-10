@@ -20,7 +20,12 @@ bundle и передают материализатору один pinned contra
 `runtime_root/current` для такого запуска не читается. Legacy deployment
 сохраняет явный v1 путь. Перед DB publication materializer блокирует active
 deployment и сравнивает её identity и bundle с pin; если указатель изменился,
-текущая витрина остаётся прежней.
+текущая витрина остаётся прежней. БД — источник публикации для API и бота;
+`predictions_*.parquet` — локальный вспомогательный артефакт, не источник для
+получателей. При внешнем `Session` его транзакция может быть откачена caller-ом,
+поэтому parquet не заменяется. При внутренней транзакции parquet обновляется
+только после успешного DB commit; ошибка замены файла оставляет DB публикацию
+успешной и фиксируется как warning.
 
 Legacy rollback выполняется явным вызовом `rollback(model_pool, market_spec,
 model_identity)` только для legacy deployment. Managed rollback выполняется через

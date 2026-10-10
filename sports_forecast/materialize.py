@@ -341,6 +341,14 @@ def _publish_empty_showcase(
         )
 
 
+def _remove_staged_predictions(path: Path) -> None:
+    """Best-effort cleanup артефакта, не влияющий на результат DB publication."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        logger.warning("Не удалось удалить временный parquet: %s", path, exc_info=True)
+
+
 def materialize_predictions(
     cfg: DictConfig, version: str = "prod", *, session: Session | None = None
 ) -> bool:
@@ -537,15 +545,31 @@ def materialize_predictions(
 
             logger.info("Записано %d предсказаний в Prediction Store", count)
 
-        staged_predictions_path.replace(out_path)
-        logger.info("Parquet сохранён: %s", out_path)
+        if session is None:
+            try:
+                staged_predictions_path.replace(out_path)
+                logger.info("Parquet сохранён: %s", out_path)
+            except OSError:
+                logger.warning(
+                    "DB-витрина обновлена, но локальный parquet не обновлён: %s",
+                    out_path,
+                    exc_info=True,
+                )
+            finally:
+                _remove_staged_predictions(staged_predictions_path)
+            staged_predictions_path = None
+        else:
+            # Внешний владелец транзакции может откатить DB после возврата.
+            # Parquet в таком сценарии не является подтверждённой публикацией.
+            _remove_staged_predictions(staged_predictions_path)
+            staged_predictions_path = None
 
         logger.info("Материализация для %s завершена успешно", tournament_name)
         return True
 
     except Exception:
         if staged_predictions_path is not None:
-            staged_predictions_path.unlink(missing_ok=True)
+            _remove_staged_predictions(staged_predictions_path)
         logger.exception("Ошибка материализации для %s", tournament_name)
         if session is not None:
             # Внешний владелец транзакции обязан получить ошибку, чтобы отозвать

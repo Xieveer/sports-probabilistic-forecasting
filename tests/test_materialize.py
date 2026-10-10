@@ -188,10 +188,11 @@ def test_resolve_verified_model_provenance_matches_active_pointer(tmp_path: Path
     )
 
 
-def test_managed_materialize_rejects_pointer_changed_during_inference(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("failure", ["stale_pin", "database_publish", "parquet_replace"])
+def test_managed_materialize_preserves_publication_boundaries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
-    """Race после inference не меняет прежнюю валидную витрину."""
+    """DB commit управляет успехом; stale DB или файловые ошибки не портят parquet."""
     reset_engine()
     engine = create_engine("sqlite:///:memory:")
     init_db(engine)
@@ -270,30 +271,43 @@ def test_managed_materialize_rejects_pointer_changed_during_inference(
 
     class RacingModel:
         def predict_proba(self, _features: pd.DataFrame) -> np.ndarray:
-            with get_session(engine=engine) as session:
-                ModelRegistryRepository(session).promote_managed(
-                    model_pool="nhl",
-                    market_spec="winner_withOT",
-                    model_identity="pool:nhl:winner_withOT:new",
-                    candidate_report_ref="reports/new.json",
-                    artifact_ref="sha256:new",
-                    bundle_id="sha256:new",
-                    managed_artifact_location="sha256:new/model.bin",
-                )
+            if failure == "stale_pin":
+                with get_session(engine=engine) as session:
+                    ModelRegistryRepository(session).promote_managed(
+                        model_pool="nhl",
+                        market_spec="winner_withOT",
+                        model_identity="pool:nhl:winner_withOT:new",
+                        candidate_report_ref="reports/new.json",
+                        artifact_ref="sha256:new",
+                        bundle_id="sha256:new",
+                        managed_artifact_location="sha256:new/model.bin",
+                    )
             return np.array([[0.2, 0.8], [0.7, 0.3]])
 
     monkeypatch.setattr(
         "sports_forecast.materialize.load_model_from_path", lambda *_: RacingModel()
     )
+    if failure == "database_publish":
+        monkeypatch.setattr(
+            PredictionRepository,
+            "publish_showcase",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("DB publish failed")),
+        )
+    if failure == "parquet_replace":
+        monkeypatch.setattr(Path, "replace", lambda *_args: (_ for _ in ()).throw(OSError("disk")))
     try:
-        assert materialize_predictions(OmegaConf.create(cfg_data), version="prod") is False
+        result = materialize_predictions(OmegaConf.create(cfg_data), version="prod")
+        assert result is (failure == "parquet_replace")
         pd.testing.assert_frame_equal(pd.read_parquet(output_path), preserved_file)
         assert list(output_path.parent.glob(".*.tmp")) == []
         with get_session(engine=engine) as session:
             rows = session.query(Prediction).all()
-        assert [(row.match_id, row.predictions_json, row.status) for row in rows] == [
-            ("old-match", '{"home_win": 0.6, "away_win": 0.4}', "ok")
-        ]
+        if failure == "parquet_replace":
+            assert {row.match_id for row in rows} == {"old-match", "new-match"}
+        else:
+            assert [(row.match_id, row.predictions_json, row.status) for row in rows] == [
+                ("old-match", '{"home_win": 0.6, "away_win": 0.4}', "ok")
+            ]
     finally:
         reset_engine()
         engine.dispose()
@@ -388,10 +402,11 @@ def test_managed_materialize_rejects_invalid_contract_before_model_load(
         engine.dispose()
 
 
-def test_external_materialization_failure_rolls_back_stale_transition(
-    tmp_path: Path, monkeypatch
+@pytest.mark.parametrize("rollback_after_success", [False, True])
+def test_external_materialization_preserves_file_until_caller_commit(
+    tmp_path: Path, monkeypatch, rollback_after_success: bool
 ) -> None:
-    """Failure after mark_stale propagates so caller rolls back and keeps prior showcase."""
+    """External transaction failure/rollback leaves the pre-existing parquet intact."""
     reset_engine()
     engine = create_engine("sqlite:///:memory:")
     init_db(engine)
@@ -426,6 +441,12 @@ def test_external_materialization_failure_rolls_back_stale_transition(
         ).to_parquet(processed / "inference_long.parquet", index=False)
 
         cfg = OmegaConf.create(_build_cfg())
+        output_path = (
+            tmp_path / "data" / "predictions" / "uel_kz_1" / "winner" / "predictions_prod.parquet"
+        )
+        output_path.parent.mkdir(parents=True)
+        preserved_file = pd.DataFrame({"match_id": ["still-current"]})
+        preserved_file.to_parquet(output_path, index=False)
         model_file = bundle / "model_prod.cbm"
         monkeypatch.setattr("sports_forecast.materialize.PROJECT_ROOT", tmp_path)
         monkeypatch.setattr(
@@ -441,12 +462,20 @@ def test_external_materialization_failure_rolls_back_stale_transition(
             assert previous.status == "stale"
             raise RuntimeError("simulated bulk upsert failure")
 
-        monkeypatch.setattr(PredictionRepository, "bulk_upsert", fail_after_stale)
-        with (
-            pytest.raises(RuntimeError, match="simulated bulk upsert failure"),
-            get_session(engine=engine) as session,
-        ):
-            materialize_predictions(cfg, version="prod", session=session)
+        if not rollback_after_success:
+            monkeypatch.setattr(PredictionRepository, "bulk_upsert", fail_after_stale)
+        if rollback_after_success:
+            with get_session(engine=engine) as session:
+                assert materialize_predictions(cfg, version="prod", session=session) is True
+                session.rollback()
+        else:
+            with (
+                pytest.raises(RuntimeError, match="simulated bulk upsert failure"),
+                get_session(engine=engine) as session,
+            ):
+                materialize_predictions(cfg, version="prod", session=session)
+        pd.testing.assert_frame_equal(pd.read_parquet(output_path), preserved_file)
+        assert list(output_path.parent.glob(".*.tmp")) == []
 
         with get_session(engine=engine) as session:
             rows = session.query(Prediction).all()

@@ -221,6 +221,13 @@ def test_legacy_promote_cannot_replace_active_managed_pointer(tmp_path: Path) ->
     try:
         with get_session(engine=engine) as session:
             registry = ModelRegistryRepository(session)
+            legacy = registry.promote(
+                model_pool="nhl",
+                market_spec="winner_withOT",
+                model_identity="pool:nhl:winner_withOT:legacy",
+                candidate_report_ref="reports/legacy.json",
+                artifact_ref="models/legacy",
+            )
             current = registry.promote_managed(
                 model_pool="nhl",
                 market_spec="winner_withOT",
@@ -240,6 +247,8 @@ def test_legacy_promote_cannot_replace_active_managed_pointer(tmp_path: Path) ->
                 )
             with pytest.raises(ValueError, match="managed rollback"):
                 registry.rollback("nhl", "winner_withOT", current.model_identity)
+            with pytest.raises(ValueError, match="active managed"):
+                registry.rollback("nhl", "winner_withOT", legacy.model_identity)
             assert registry.get_active("nhl", "winner_withOT").id == current.id
     finally:
         engine.dispose()

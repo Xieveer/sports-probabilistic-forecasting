@@ -97,3 +97,26 @@ Product Owner синхронизирует статус EPIC-028 и выполн
 - `uv run pytest -q tests/test_materialize.py -k managed_materialize_rejects_pointer_changed` — 1 passed; дополнительно проверено сохранение parquet и отсутствие staging-файла.
 - `SF_TEST_MANAGED_MODEL_DATABASE_URL='postgresql+psycopg2://…?options=-csearch_path%3Depic028_review_fix_test' uv run pytest -q tests/test_managed_model_activation.py -m integration` — 1 passed на PostgreSQL 14.24 в выделенной схеме; конкурентный promotion после pin отклоняет stale publication.
 - `uv run pytest -q tests/test_model_registry.py tests/test_managed_model_activation.py -m 'not integration' tests/test_materialize.py tests/test_worker.py tests/test_canonical_full_refresh.py` — 49 passed, 1 deselected, 3 warnings.
+
+## Повторный review: rollback и граница публикации
+
+Legacy rollback теперь берёт advisory pair lock до чтения target и проверяет
+active deployment под row lock. Если target legacy, а active pointer managed,
+rollback отклоняется до любых изменений.
+
+DB showcase остаётся единственной опубликованной витриной для API/бота; parquet
+является локальным артефактом. Для внешнего `Session` materialize очищает staging
+файл и оставляет прежний parquet, поскольку commit принадлежит caller. Для
+внутренней сессии parquet заменяется только после DB commit. Ошибка `replace`
+логируется отдельно и не меняет успех уже committed DB публикации.
+
+Red → green и проверки после повторного review:
+
+- До fix `test_legacy_promote_cannot_replace_active_managed_pointer` упал:
+  legacy rollback на inactive target переключил active managed pointer.
+- До fix параметр `parquet_replace` упал: materialize вернул `False` после
+  успешного DB commit; external-session success заменил файл до caller rollback.
+- `uv run pytest -q tests/test_managed_model_activation.py -k legacy_promote` — 1 passed.
+- `uv run pytest -q tests/test_materialize.py -k 'preserves_publication_boundaries or preserves_file_until_caller_commit'` — 5 passed: stale pin, DB publication failure, replace failure, external caller rollback и внешний DB failure сохраняют нужные границы; tmp очищаются.
+- Затронутый набор registry/activation/materialize/worker/canonical refresh — 52 passed, 1 deselected, 3 warnings.
+- Disposable PostgreSQL 14.24 concurrency test — 1 passed; временная схема удалена.
