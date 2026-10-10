@@ -1,6 +1,6 @@
 # TASK-029-1 — Кандидат Premier League
 
-> **Статус:** реализация, независимый review и первоначальный CI PR #67 завершены
+> **Статус:** реализация, независимый review и terminal CI PR #67 завершены
 > **Задача:** [TASK-029-1](../../backlog/tasks/TASK-029-1-premier-league-candidate.md)
 > **Требование:** [REQ-029](../../product/requirements/REQ-029-premier-league-candidate.md)
 > **Решение:** [ADR-030](../../architecture/adr/ADR-030-local-candidate-cycle.md)
@@ -60,7 +60,8 @@ trainer его не применял.
 - На коммите `54e93b9` в [PR #67](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/67)
   прошли GitHub Actions `lint-test (3.12)`, `Python dependencies` и
   `Filesystem and secrets`; после фиксации этого результата изменена только
-  документация закрытия, для неё требуется повторный terminal CI.
+  документация закрытия. На окончательном HEAD `dcb6d10` те же проверки
+  прошли повторно; PR слит в `main` merge commit `c8d5244`.
 - Полный `.venv/bin/pytest -q` остановлен вручную после длительного ожидания
   на `tests/test_admin_control_api.py` (exit 130); полный suite не подтверждён.
   `uv run pytest` не стартовал из-за ограничений установленного snap `uv`,

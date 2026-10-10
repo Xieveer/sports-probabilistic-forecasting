@@ -1,6 +1,6 @@
 # TASK-029-1 — Конфигурационный кандидат Premier League
 
-> **Статус:** done — реализация, независимый review и первоначальный CI PR #67 завершены
+> **Статус:** done — реализация, независимый review и terminal CI PR #67 завершены
 > **EPIC:** [EPIC-029](../EPIC-029-configured-tournament-onboarding.md)
 > **Требование:** [REQ-029](../../product/requirements/REQ-029-premier-league-candidate.md)
 > **Архитектура:** [ADR-030](../../architecture/adr/ADR-030-local-candidate-cycle.md),
