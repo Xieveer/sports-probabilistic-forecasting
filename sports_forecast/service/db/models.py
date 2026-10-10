@@ -75,6 +75,7 @@ class Prediction(Base):
     # Match identification
     match_id: str = Column(String(64), nullable=False, index=True)
     tournament: str = Column(String(64), nullable=False, index=True)
+    source_namespace: str | None = Column(String(128), nullable=True)
     market: str = Column(String(32), nullable=False)
     market_spec: str = Column(String(32), nullable=False)
 
@@ -90,6 +91,9 @@ class Prediction(Base):
     refresh_run_id: str | None = Column(String(128), nullable=True, index=True)
     canonical_snapshot_id: str | None = Column(String(128), nullable=True, index=True)
     feature_contract_id: str | None = Column(String(128), nullable=True)
+    current_revision_id: str | None = Column(
+        ForeignKey("prediction_revisions.revision_id", ondelete="RESTRICT"), nullable=True
+    )
     algorithm: str = Column(String(32), nullable=False)
     featureset: str = Column(String(32), nullable=False)
     model_tag: str = Column(
@@ -129,6 +133,14 @@ class Prediction(Base):
         Index("ix_pred_match_market", "match_id", "market", "market_spec"),
         Index("ix_pred_tournament_status", "tournament", "status"),
         Index("ix_pred_prediction_ts", "prediction_ts"),
+        Index(
+            "ix_prediction_source_event_market",
+            "tournament",
+            "source_namespace",
+            "match_id",
+            "market",
+            "market_spec",
+        ),
     )
 
     def __repr__(self) -> str:
@@ -138,6 +150,44 @@ class Prediction(Base):
             f"market={self.market!r}, "
             f"status={self.status!r})>"
         )
+
+
+class PredictionRevision(Base):
+    """Неизменяемая запись одной managed-публикации прогноза."""
+
+    __tablename__ = "prediction_revisions"
+
+    revision_id: str = Column(String(36), primary_key=True)
+    run_id: str = Column(String(128), nullable=False)
+    tournament: str = Column(String(64), nullable=False)
+    source_namespace: str = Column(String(128), nullable=False)
+    source_event_id: str = Column(String(128), nullable=False)
+    canonical_event_id: int | None = Column(BigInteger, nullable=True)
+    market: str = Column(String(32), nullable=False)
+    market_spec: str = Column(String(64), nullable=False)
+    outcomes_json: str = Column(Text, nullable=False)
+    probabilities_json: str = Column(Text, nullable=False)
+    model_pool: str = Column(String(128), nullable=False)
+    bundle_id: str = Column(String(80), nullable=False)
+    model_identity: str = Column(String(192), nullable=False)
+    feature_contract_id: str = Column(String(128), nullable=False)
+    calculated_at: datetime = Column(DateTime(timezone=True), nullable=False)
+    input_snapshot_ref: str | None = Column(String(256), nullable=True)
+    payload_sha256: str = Column(String(64), nullable=False)
+    created_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "tournament",
+            "source_namespace",
+            "source_event_id",
+            "market",
+            "market_spec",
+            name="uq_prediction_revision_idempotency",
+        ),
+        Index("ix_prediction_revision_event", "tournament", "source_namespace", "source_event_id"),
+    )
 
 
 class ModelDeployment(Base):
@@ -156,11 +206,26 @@ class ModelDeployment(Base):
     model_identity: str = Column(String(192), nullable=False, unique=True)
     candidate_report_ref: str = Column(String(512), nullable=False)
     artifact_ref: str = Column(String(512), nullable=False)
+    bundle_id: str | None = Column(String(80), nullable=True)
+    managed_artifact_location: str | None = Column(String(512), nullable=True)
+    is_managed: bool = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     is_active: bool = Column(Boolean, nullable=False, default=False)
     promoted_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
 
     __table_args__ = (
         Index("ix_model_deployment_pool_spec_active", "model_pool", "market_spec", "is_active"),
+        Index(
+            "uq_model_deployment_active_pair",
+            "model_pool",
+            "market_spec",
+            unique=True,
+            postgresql_where=text("is_active = true"),
+            sqlite_where=text("is_active = 1"),
+        ),
+        CheckConstraint(
+            "is_managed = false OR (bundle_id IS NOT NULL AND managed_artifact_location IS NOT NULL)",
+            name="ck_model_deployment_managed_bundle_bound",
+        ),
     )
 
 

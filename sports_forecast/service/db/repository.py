@@ -16,6 +16,7 @@ CRUD операции над таблицей ``predictions``.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -24,7 +25,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import uuid4
 
-from sqlalchemy import and_, exists, func, insert, or_, select, update
+from sqlalchemy import and_, exists, func, insert, or_, select, text, update
 from sqlalchemy.engine import ScalarResult
 from sqlalchemy.orm import Session
 
@@ -43,6 +44,7 @@ from sports_forecast.service.db.models import (
     OddsAcquisitionAttempt,
     OddsObservation,
     Prediction,
+    PredictionRevision,
     TournamentPublicationState,
     WorkerExecution,
 )
@@ -346,6 +348,8 @@ class PredictionRepository:
         match_id: str,
         market: str = "winner",
         market_spec: str | None = None,
+        *,
+        source_namespace: str | None = None,
     ) -> Prediction | None:
         """Получить последнее предсказание для матча.
 
@@ -367,13 +371,17 @@ class PredictionRepository:
 
         if market_spec is not None:
             query = query.filter(Prediction.market_spec == market_spec)
+        if source_namespace is not None:
+            query = query.filter(Prediction.source_namespace == source_namespace)
 
         result: Prediction | None = query.order_by(
             Prediction.prediction_ts.desc()  # type: ignore[attr-defined]
         ).first()
         return result
 
-    def get_predictions_by_match(self, match_id: str) -> list[Prediction]:
+    def get_predictions_by_match(
+        self, match_id: str, *, source_namespace: str | None = None
+    ) -> list[Prediction]:
         """Получить все предсказания для матча (все рынки).
 
         Args:
@@ -382,12 +390,14 @@ class PredictionRepository:
         Returns:
             Список Prediction.
         """
-        rows: list[Prediction] = (
-            self.session.query(Prediction)
-            .filter(Prediction.match_id == str(match_id), _public_slice_predicate())
-            .order_by(Prediction.prediction_ts.desc())  # type: ignore[attr-defined]
-            .all()
+        query = self.session.query(Prediction).filter(
+            Prediction.match_id == str(match_id), _public_slice_predicate()
         )
+        if source_namespace is not None:
+            query = query.filter(Prediction.source_namespace == source_namespace)
+        rows: list[Prediction] = query.order_by(
+            Prediction.prediction_ts.desc()  # type: ignore[attr-defined]
+        ).all()
         return rows
 
     def get_upcoming_predictions(
@@ -501,6 +511,8 @@ class PredictionRepository:
         proba_away: float | None = None,
         odds_raw: str | None = None,
         status: str = "ok",
+        current_revision_id: str | None = None,
+        source_namespace: str | None = None,
     ) -> Prediction:
         """Создать или обновить предсказание.
 
@@ -527,17 +539,17 @@ class PredictionRepository:
         Returns:
             Созданный или обновлённый Prediction.
         """
-        existing: Prediction | None = (
-            self.session.query(Prediction)
-            .filter(
-                and_(
-                    Prediction.match_id == str(match_id),
-                    Prediction.market == market,
-                    Prediction.market_spec == market_spec,
-                )
-            )
-            .first()
+        lookup = self.session.query(Prediction).filter(
+            Prediction.match_id == str(match_id),
+            Prediction.tournament == tournament,
+            Prediction.market == market,
+            Prediction.market_spec == market_spec,
         )
+        if source_namespace is None:
+            lookup = lookup.filter(cast(Any, Prediction.source_namespace).is_(None))
+        else:
+            lookup = lookup.filter(Prediction.source_namespace == source_namespace)
+        existing: Prediction | None = lookup.first()
 
         predictions_json = json.dumps(predictions, ensure_ascii=False)
         now = datetime.now(tz=UTC)
@@ -553,6 +565,8 @@ class PredictionRepository:
             existing.refresh_run_id = refresh_run_id
             existing.canonical_snapshot_id = canonical_snapshot_id
             existing.feature_contract_id = feature_contract_id
+            existing.source_namespace = source_namespace
+            existing.current_revision_id = current_revision_id
             existing.proba_home = proba_home
             existing.proba_away = proba_away
             existing.odds_raw = odds_raw
@@ -571,6 +585,7 @@ class PredictionRepository:
         pred = Prediction(
             match_id=str(match_id),
             tournament=tournament,
+            source_namespace=source_namespace,
             market=market,
             market_spec=market_spec,
             home_player=home_player,
@@ -584,6 +599,7 @@ class PredictionRepository:
             refresh_run_id=refresh_run_id,
             canonical_snapshot_id=canonical_snapshot_id,
             feature_contract_id=feature_contract_id,
+            current_revision_id=current_revision_id,
             predictions_json=predictions_json,
             proba_home=proba_home,
             proba_away=proba_away,
@@ -616,14 +632,177 @@ class PredictionRepository:
         tournament: str,
         market: str,
         market_spec: str,
+        source_namespace: str | None = None,
     ) -> int:
         """Атомарно заменить один срез витрины внутри внешней DB-транзакции.
 
         Исключение не перехватывается: ``get_session`` откатит и stale-метки,
         и уже записанные строки, сохранив прежнюю валидную витрину.
         """
-        self.mark_stale(tournament=tournament, market=market, market_spec=market_spec)
-        return self.bulk_upsert(records)
+        if not any(record.get("bundle_id") is not None for record in records):
+            self.mark_stale(
+                tournament=tournament,
+                market=market,
+                market_spec=market_spec,
+                source_namespace=source_namespace,
+            )
+            return self.bulk_upsert(records)
+        count = 0
+        prepared: list[dict[str, Any]] = []
+        namespaces: set[str] = set()
+        for record in records:
+            publication = dict(record)
+            if publication.get("bundle_id") is not None:
+                revision = self._create_prediction_revision(publication)
+                publication["current_revision_id"] = revision.revision_id
+                publication["source_namespace"] = revision.source_namespace
+                namespaces.add(revision.source_namespace)
+                for field in (
+                    "bundle_id",
+                    "model_identity",
+                    "input_snapshot_ref",
+                    "canonical_event_id",
+                ):
+                    publication.pop(field, None)
+            prepared.append(publication)
+        for namespace in namespaces:
+            self.mark_stale(
+                tournament=tournament,
+                market=market,
+                market_spec=market_spec,
+                source_namespace=namespace,
+            )
+        for publication in prepared:
+            self.upsert_prediction(**publication)
+            count += 1
+        return count
+
+    def _create_prediction_revision(self, record: dict[str, Any]) -> PredictionRevision:
+        """Создать или вернуть idempotent managed revision до обновления витрины."""
+        required = (
+            "refresh_run_id",
+            "bundle_id",
+            "model_identity",
+            "model_pool",
+            "feature_contract_id",
+        )
+        missing = [name for name in required if not record.get(name)]
+        if missing:
+            raise ValueError(f"Managed prediction revision lacks required provenance: {missing}")
+        match_id = str(record["match_id"])
+        tournament = str(record["tournament"])
+        market = str(record["market"])
+        market_spec = str(record["market_spec"])
+        source_namespace = record.get("source_namespace")
+        canonical_event_id = record.get("canonical_event_id")
+        from sports_forecast.service.db.models import CanonicalEvent
+
+        if not source_namespace:
+            query = self.session.query(CanonicalEvent).filter_by(
+                tournament=tournament, source_event_id=match_id
+            )
+            if canonical_event_id is not None:
+                query = query.filter_by(id=int(canonical_event_id))
+            events = query.all()
+            if len(events) != 1:
+                raise ValueError(
+                    "Managed prediction revision requires an unambiguous event namespace"
+                )
+            source_namespace = events[0].source
+            canonical_event_id = events[0].id
+        elif canonical_event_id is not None:
+            event = (
+                self.session.query(CanonicalEvent)
+                .filter_by(
+                    tournament=tournament,
+                    source=str(source_namespace),
+                    source_event_id=match_id,
+                    id=int(canonical_event_id),
+                )
+                .one_or_none()
+            )
+            if event is None:
+                raise ValueError(
+                    "Managed prediction canonical event reference does not match source key"
+                )
+        else:
+            event = (
+                self.session.query(CanonicalEvent)
+                .filter_by(
+                    tournament=tournament,
+                    source=str(source_namespace),
+                    source_event_id=match_id,
+                )
+                .one_or_none()
+            )
+            if event is not None:
+                canonical_event_id = event.id
+        probabilities = record["predictions"]
+        if not isinstance(probabilities, dict) or not probabilities:
+            raise ValueError("Managed prediction revision requires full probabilities payload")
+        payload = {
+            "run_id": str(record["refresh_run_id"]),
+            "tournament": tournament,
+            "source_namespace": str(source_namespace),
+            "source_event_id": match_id,
+            "market": market,
+            "market_spec": market_spec,
+            "outcomes": sorted(str(key) for key in probabilities),
+            "probabilities": probabilities,
+            "model_pool": str(record["model_pool"]),
+            "bundle_id": str(record["bundle_id"]),
+            "model_identity": str(record["model_identity"]),
+            "feature_contract_id": str(record["feature_contract_id"]),
+            "input_snapshot_ref": record.get("input_snapshot_ref")
+            or record.get("canonical_snapshot_id"),
+        }
+        canonical_payload = json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
+        payload_sha256 = hashlib.sha256(canonical_payload.encode("utf-8")).hexdigest()
+        existing = (
+            self.session.query(PredictionRevision)
+            .filter_by(
+                run_id=payload["run_id"],
+                tournament=tournament,
+                source_namespace=payload["source_namespace"],
+                source_event_id=match_id,
+                market=market,
+                market_spec=market_spec,
+            )
+            .one_or_none()
+        )
+        if existing is not None:
+            if existing.payload_sha256 != payload_sha256:
+                raise ValueError("Managed revision idempotency key reused with different payload")
+            return cast(PredictionRevision, existing)
+
+        revision = PredictionRevision(
+            revision_id=str(uuid4()),
+            run_id=payload["run_id"],
+            tournament=tournament,
+            source_namespace=payload["source_namespace"],
+            source_event_id=match_id,
+            canonical_event_id=int(canonical_event_id) if canonical_event_id is not None else None,
+            market=market,
+            market_spec=market_spec,
+            outcomes_json=json.dumps(payload["outcomes"], ensure_ascii=False),
+            probabilities_json=json.dumps(probabilities, sort_keys=True, ensure_ascii=False),
+            model_pool=payload["model_pool"],
+            bundle_id=payload["bundle_id"],
+            model_identity=payload["model_identity"],
+            feature_contract_id=payload["feature_contract_id"],
+            calculated_at=datetime.now(tz=UTC),
+            input_snapshot_ref=payload["input_snapshot_ref"],
+            payload_sha256=payload_sha256,
+        )
+        self.session.add(revision)
+        self.session.flush()
+        return revision
+
+    def get_revision(self, revision_id: str) -> PredictionRevision | None:
+        """Прочитать сохранённую immutable revision по ID."""
+        return cast(PredictionRevision | None, self.session.get(PredictionRevision, revision_id))
 
     def count_showcase(self, *, tournament: str, market: str, market_spec: str) -> int:
         """Вернуть число опубликованных строк одного serving-среза."""
@@ -647,6 +826,7 @@ class PredictionRepository:
         *,
         market: str | None = None,
         market_spec: str | None = None,
+        source_namespace: str | None = None,
     ) -> int:
         """Пометить устаревшие предсказания как stale.
 
@@ -668,6 +848,8 @@ class PredictionRepository:
             query = query.filter(Prediction.market == market)
         if market_spec is not None:
             query = query.filter(Prediction.market_spec == market_spec)
+        if source_namespace is not None:
+            query = query.filter(Prediction.source_namespace == source_namespace)
 
         result: int = query.update({"status": "stale"})
         return result
@@ -1497,6 +1679,10 @@ class ModelRegistryRepository:
             raise ValueError("model_identity не соответствует model_pool/market_spec")
         if not candidate_report_ref or not artifact_ref:
             raise ValueError("Promotion требует ссылки на report кандидата и артефакт")
+        self._lock_pair(model_pool, market_spec)
+        active = self.get_active(model_pool, market_spec, for_update=True)
+        if active is not None and active.is_managed:
+            raise ValueError("Legacy promotion не может заменить managed deployment")
         if self.get_by_identity(model_identity) is not None:
             raise ValueError("Immutable model_identity уже зарегистрирован")
         self.session.query(ModelDeployment).filter(
@@ -1516,21 +1702,85 @@ class ModelRegistryRepository:
         self.session.flush()
         return deployment
 
-    def get_active(self, model_pool: str, market_spec: str) -> ModelDeployment | None:
-        """Вернуть текущий production pointer пула или ``None``."""
-        return cast(
-            ModelDeployment | None,
-            self.session.query(ModelDeployment)
-            .filter(
-                ModelDeployment.model_pool == model_pool,
-                ModelDeployment.market_spec == market_spec,
-                ModelDeployment.is_active.is_(True),  # type: ignore[attr-defined]
+    def promote_managed(
+        self,
+        *,
+        model_pool: str,
+        market_spec: str,
+        model_identity: str,
+        candidate_report_ref: str,
+        artifact_ref: str,
+        bundle_id: str,
+        managed_artifact_location: str,
+    ) -> ModelDeployment:
+        """Атомарно активировать identity, привязанную к immutable bundle."""
+        if not model_identity.startswith(f"pool:{model_pool}:{market_spec}:"):
+            raise ValueError("model_identity не соответствует model_pool/market_spec")
+        if not all((candidate_report_ref, artifact_ref, bundle_id, managed_artifact_location)):
+            raise ValueError("Managed promotion требует bundle и artifact location")
+        self._lock_pair(model_pool, market_spec)
+        existing = self.get_by_identity(model_identity)
+        if existing is not None and (
+            existing.model_pool != model_pool or existing.market_spec != market_spec
+        ):
+            raise ValueError("model_identity уже зарегистрирован для другой пары")
+        if existing is not None and existing.is_managed:
+            raise ValueError("Managed model_identity уже привязан к immutable bundle")
+        self.session.query(ModelDeployment).filter(
+            ModelDeployment.model_pool == model_pool,
+            ModelDeployment.market_spec == market_spec,
+            ModelDeployment.is_active.is_(True),  # type: ignore[attr-defined]
+        ).update({"is_active": False})
+        if existing is not None:
+            # Единственное разрешённое изменение identity: явный bind legacy row
+            # к проверенному bundle во время activation.
+            existing.candidate_report_ref = candidate_report_ref
+            existing.artifact_ref = artifact_ref
+            existing.bundle_id = bundle_id
+            existing.managed_artifact_location = managed_artifact_location
+            existing.is_managed = True
+            existing.is_active = True
+            deployment = existing
+        else:
+            deployment = ModelDeployment(
+                model_pool=model_pool,
+                market_spec=market_spec,
+                model_identity=model_identity,
+                candidate_report_ref=candidate_report_ref,
+                artifact_ref=artifact_ref,
+                bundle_id=bundle_id,
+                managed_artifact_location=managed_artifact_location,
+                is_managed=True,
+                is_active=True,
             )
-            .one_or_none(),
+            self.session.add(deployment)
+        self.session.flush()
+        return deployment
+
+    def _lock_pair(self, model_pool: str, market_spec: str) -> None:
+        """Сериализовать pointer changes в PostgreSQL по managed-паре."""
+        if self.session.bind is not None and self.session.bind.dialect.name == "postgresql":
+            self.session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:pair_key))"),
+                {"pair_key": f"{model_pool}/{market_spec}"},
+            )
+
+    def get_active(
+        self, model_pool: str, market_spec: str, *, for_update: bool = False
+    ) -> ModelDeployment | None:
+        """Вернуть текущий production pointer пула или ``None``."""
+        query = self.session.query(ModelDeployment).filter(
+            ModelDeployment.model_pool == model_pool,
+            ModelDeployment.market_spec == market_spec,
+            ModelDeployment.is_active.is_(True),  # type: ignore[attr-defined]
         )
+        if for_update:
+            query = query.with_for_update()
+        return cast(ModelDeployment | None, query.one_or_none())
 
     def rollback(self, model_pool: str, market_spec: str, model_identity: str) -> ModelDeployment:
         """Явно вернуть pointer к ранее сохранённой версии без удаления записей."""
+        self._lock_pair(model_pool, market_spec)
         deployment = self.get_by_identity(model_identity)
         if (
             deployment is None
@@ -1538,6 +1788,47 @@ class ModelRegistryRepository:
             or deployment.market_spec != market_spec
         ):
             raise ValueError("Версия для rollback не найдена в указанном model pool")
+        if deployment.is_managed:
+            raise ValueError("Managed deployment требует проверенного managed rollback")
+        active = self.get_active(model_pool, market_spec, for_update=True)
+        if active is not None and active.is_managed:
+            raise ValueError("Legacy rollback не может заменить active managed deployment")
+        self.session.query(ModelDeployment).filter(
+            ModelDeployment.model_pool == model_pool,
+            ModelDeployment.market_spec == market_spec,
+            ModelDeployment.is_active.is_(True),  # type: ignore[attr-defined]
+        ).update({"is_active": False})
+        deployment.is_active = True
+        self.session.flush()
+        return deployment
+
+    def activate_verified_managed(
+        self,
+        *,
+        model_pool: str,
+        market_spec: str,
+        deployment_id: int,
+        model_identity: str,
+        bundle_id: str,
+    ) -> ModelDeployment:
+        """Активировать ранее зарегистрированный deployment после проверки bundle."""
+        self._lock_pair(model_pool, market_spec)
+        deployment = cast(
+            ModelDeployment | None,
+            self.session.query(ModelDeployment)
+            .filter(
+                ModelDeployment.id == deployment_id,
+                ModelDeployment.model_pool == model_pool,
+                ModelDeployment.market_spec == market_spec,
+                ModelDeployment.model_identity == model_identity,
+                ModelDeployment.bundle_id == bundle_id,
+                ModelDeployment.is_managed.is_(True),  # type: ignore[attr-defined]
+            )
+            .with_for_update()
+            .one_or_none(),
+        )
+        if deployment is None:
+            raise ValueError("Проверенный managed deployment изменился или не найден")
         self.session.query(ModelDeployment).filter(
             ModelDeployment.model_pool == model_pool,
             ModelDeployment.market_spec == market_spec,

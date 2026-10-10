@@ -31,6 +31,7 @@ class PredictionResponse(BaseModel):
 
     match_id: str = Field(..., description="Идентификатор матча")
     tournament: str = Field(..., description="Турнир")
+    source_namespace: str | None = Field(None, description="Пространство идентификаторов источника")
     market: str = Field(..., description="Тип рынка (winner, total)")
     market_spec: str = Field(..., description="Спецификация (winner, total_over)")
 

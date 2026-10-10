@@ -40,6 +40,25 @@ terminal status; UPDATE run/stage остаётся у `sf_refresh_writer`. Пр�
 в `calendar_coverages`, сохраняя окно предыдущего успеха, но делая его статус
 недоступным до следующей успешной проверки. Старую историю run/stage не удаляют.
 
+Revision `0022_managed_model_pointer` добавляет nullable bundle binding и
+partial unique index для active deployment одной пары. Старые строки получают
+`is_managed=false`, поэтому миграция не назначает им неизвестные bundle IDs.
+Проверка ограничения выполняется перед managed activation; production pointer
+этим TASK не переключался.
+
+Revision `0023_prediction_revisions` создаёт append-only историю managed
+публикаций. `predictions.current_revision_id` остаётся nullable: legacy строки
+без подтверждённого bundle не получают выдуманную revision. Новая revision,
+обновление текущей витрины и ссылка на неё записываются одной транзакцией.
+Таблица защищена от UPDATE/DELETE на уровне БД; историю нельзя чистить обычным
+retention витрины. Для исправления схемы используется новая forward migration.
+
+Revision `0024_prediction_source_namespace` добавляет nullable
+`predictions.source_namespace` и составной lookup index. Новые managed-публикации
+разделяют mutable showcase по namespace источника внутри турнира. Старые строки
+остаются с `NULL`; migration не угадывает их источник. Как и прочие schema
+изменения, исправление выполняется forward migration, без Alembic downgrade.
+
 ## Проверка и recovery
 
 Перед изменением или после прерванной операции узнайте состояние revision:
