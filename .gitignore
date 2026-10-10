@@ -65,6 +65,8 @@ multirun/
 data/source/*/odds/
 # The Odds API JSON cache (регенерируется клиентом; не коммитить)
 data/cache/the_odds_api/
+# Отдельный локальный журнал historical odds.
+/data/local/historical_odds.sqlite3
 /data/.schema_snapshots
 # Локальная master identity DB и секрет отдельного review UI
 /data/identity-review.secret
