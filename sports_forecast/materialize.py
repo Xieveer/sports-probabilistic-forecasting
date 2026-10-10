@@ -39,6 +39,7 @@ import yaml
 from omegaconf import DictConfig, OmegaConf
 from sqlalchemy.orm import Session
 
+from sports_forecast.deploy.model_bundle import BundleVerificationError, verify_model_bundle
 from sports_forecast.predict import (
     find_model_file,
     get_model_dir,
@@ -142,21 +143,29 @@ def _load_algorithm_config(
     return fallback
 
 
-def _resolve_model_provenance(
+def _resolve_verified_model_provenance(
     cfg: DictConfig, registry: ModelRegistryRepository
 ) -> tuple[str | None, str | None]:
-    """Вернуть provenance active pointer для pool-run либо legacy ``None``."""
+    """Сверить managed registry identity с проверенным runtime bundle."""
     model_pool = cfg.get("model_pool")
     if model_pool is None:
         return None, None
+    runtime_bundle = cfg.get("runtime_model_bundle")
+    app_version = cfg.get("runtime_model_bundle_app_version")
+    if not isinstance(runtime_bundle, str) or not runtime_bundle:
+        raise ValueError("Managed materialize требует verified model bundle")
+    if not isinstance(app_version, str) or not app_version:
+        raise ValueError("Managed materialize требует app version для проверки bundle")
+    bundle = verify_model_bundle(Path(runtime_bundle), app_version=app_version)
     pool_name = model_pool.get("name")
     if not isinstance(pool_name, str) or not pool_name:
         raise ValueError("model_pool.name обязателен для materialize")
-    market_spec = str(cfg.market_spec.name)
-    active = registry.get_active(pool_name, market_spec)
+    active = registry.get_active(pool_name, str(cfg.market_spec.name))
     if active is None:
         raise ValueError("Materialize model pool требует active production pointer")
-    return pool_name, active.model_identity
+    if bundle.model_identity != active.model_identity:
+        raise BundleVerificationError("bundle identity не совпадает с active registry")
+    return pool_name, bundle.model_identity
 
 
 def _long_row_participant_display_name(row: pd.Series) -> str:
@@ -297,6 +306,18 @@ def materialize_predictions(
     model_dir = get_model_dir(cfg, PROJECT_ROOT)
     algorithm_cfg = cfg.algorithm
 
+    # Фиксируем registry identity и проверяем байты до загрузки модели и input.
+    # Эта же identity переносится в публикацию без повторного чтения pointer.
+    try:
+        session_context = get_session() if session is None else nullcontext(session)
+        with session_context as db_session:
+            model_pool, immutable_model_version = _resolve_verified_model_provenance(
+                cfg, ModelRegistryRepository(db_session)
+            )
+    except (BundleVerificationError, ValueError) as exc:
+        logger.error("Managed model contract не прошёл проверку: %s", exc)
+        return False
+
     if version == "prod":
         promoted = _load_promoted_contract(cfg, PROJECT_ROOT)
         if promoted is None:
@@ -389,10 +410,6 @@ def materialize_predictions(
         session_context = get_session() if session is None else nullcontext(session)
         with session_context as db_session:
             repo = PredictionRepository(db_session)
-            model_pool, immutable_model_version = _resolve_model_provenance(
-                cfg, ModelRegistryRepository(db_session)
-            )
-
             records: list[dict[str, object]] = []
             for _, row in preds_df.iterrows():
                 records.append(

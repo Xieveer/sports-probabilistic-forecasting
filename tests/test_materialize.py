@@ -12,10 +12,11 @@ import pytest
 from omegaconf import OmegaConf
 from sqlalchemy import create_engine
 
+from sports_forecast.deploy.model_bundle import build_model_bundle
 from sports_forecast.features.features_build import process_tournament_new
 from sports_forecast.materialize import (
     _aggregate_long_predictions,
-    _resolve_model_provenance,
+    _resolve_verified_model_provenance,
     materialize_predictions,
 )
 from sports_forecast.service.db.engine import get_session, init_db, reset_engine
@@ -152,12 +153,25 @@ def test_aggregate_long_prefers_pl_short_name_en_over_pl() -> None:
     assert out.iloc[0]["away_player"] == "Away Star"
 
 
-def test_resolve_model_provenance_uses_active_pointer_for_explicit_pool() -> None:
-    """Pool materialize получает immutable identity только из active registry pointer."""
+def test_resolve_verified_model_provenance_matches_active_pointer(tmp_path: Path) -> None:
+    """Managed provenance берётся из bundle после совпадения с active registry."""
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "model.bin").write_bytes(b"model")
+    bundle = build_model_bundle(
+        source,
+        tmp_path / "bundles",
+        model_identity="pool:football_nationals_winner:winner:immutable",
+        app_version="1.2.15",
+        source_commit="abc",
+        release="test",
+    )
     cfg = OmegaConf.create(
         {
             "model_pool": {"name": "football_nationals_winner"},
             "market_spec": {"name": "winner"},
+            "runtime_model_bundle": str(bundle.path),
+            "runtime_model_bundle_app_version": "1.2.15",
         }
     )
     registry = MagicMock()
@@ -165,12 +179,97 @@ def test_resolve_model_provenance_uses_active_pointer_for_explicit_pool() -> Non
         model_identity="pool:football_nationals_winner:winner:immutable"
     )
 
-    provenance = _resolve_model_provenance(cfg, registry)
+    provenance = _resolve_verified_model_provenance(cfg, registry)
 
     assert provenance == (
         "football_nationals_winner",
         "pool:football_nationals_winner:winner:immutable",
     )
+
+
+@pytest.mark.parametrize(
+    "failure", ["identity", "missing_active", "missing_bundle", "corrupt", "app_version"]
+)
+@pytest.mark.parametrize("empty_input", [False, True])
+def test_managed_materialize_rejects_invalid_contract_before_model_load(
+    tmp_path: Path, monkeypatch, empty_input: bool, failure: str
+) -> None:
+    """Managed registry/bundle failures block inference and empty-input publication."""
+    reset_engine()
+    engine = create_engine("sqlite:///:memory:")
+    init_db(engine)
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "deploy.yaml").write_text(
+        "model:\n  algorithm: catboost\n  featureset: basic\n", encoding="utf-8"
+    )
+    (source / "model_prod.cbm").write_bytes(b"model")
+    bundle = build_model_bundle(
+        source,
+        tmp_path / "bundles",
+        model_identity="identity-b",
+        app_version="1.2.15",
+        source_commit="abc",
+        release="test",
+    )
+    if failure == "corrupt":
+        (bundle.path / "model_prod.cbm").write_bytes(b"tampered")
+    processed = tmp_path / "data" / "processed" / "uel_kz_1"
+    processed.mkdir(parents=True)
+    frame = (
+        pd.DataFrame()
+        if empty_input
+        else pd.DataFrame(
+            {
+                "id": ["new", "new"],
+                "side": ["h", "a"],
+                "datetime": ["2026-10-01"] * 2,
+                "f1": [1.0, 2.0],
+            }
+        )
+    )
+    frame.to_parquet(processed / "inference_long.parquet", index=False)
+    with get_session(engine=engine) as session:
+        PredictionRepository(session).upsert_prediction(
+            match_id="old",
+            tournament="uel_kz_1",
+            market="winner",
+            market_spec="winner",
+            predictions={"home_win": 0.6, "away_win": 0.4},
+            model_version="old",
+            algorithm="catboost",
+            featureset="basic",
+        )
+    cfg_data = _build_cfg()
+    cfg_data["model_pool"] = {"name": "pool"}
+    cfg_data["runtime_model_bundle"] = str(
+        tmp_path / "missing-bundle" if failure == "missing_bundle" else bundle.path
+    )
+    cfg_data["runtime_model_bundle_app_version"] = "2.0.0" if failure == "app_version" else "1.2.15"
+    monkeypatch.setattr("sports_forecast.materialize.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        "sports_forecast.materialize.find_model_file",
+        lambda *_a, **_k: bundle.path / "model_prod.cbm",
+    )
+    registered_identity = "identity-b" if failure == "missing_active" else "identity-a"
+    active = None if failure == "missing_active" else MagicMock(model_identity=registered_identity)
+    monkeypatch.setattr(
+        "sports_forecast.materialize.ModelRegistryRepository",
+        lambda _s: MagicMock(get_active=lambda *_a: active),
+    )
+    load_model = MagicMock()
+    monkeypatch.setattr("sports_forecast.materialize.load_model_from_path", load_model)
+    try:
+        with get_session(engine=engine) as session:
+            result = materialize_predictions(OmegaConf.create(cfg_data), session=session)
+        assert result is False
+        load_model.assert_not_called()
+        with get_session(engine=engine) as session:
+            rows = session.query(Prediction).all()
+            assert [(row.match_id, row.status) for row in rows] == [("old", "ok")]
+    finally:
+        reset_engine()
+        engine.dispose()
 
 
 def test_external_materialization_failure_rolls_back_stale_transition(

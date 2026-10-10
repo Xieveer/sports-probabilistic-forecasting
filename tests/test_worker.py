@@ -77,8 +77,11 @@ def test_successful_worker_stores_published_predictions_count(tmp_path: Path) ->
         patch("sports_forecast.worker.get_session", return_value=nullcontext(session)),
         patch("sports_forecast.worker.WorkerExecutionRepository", return_value=state),
         patch("sports_forecast.worker.PredictionRepository", return_value=predictions),
-        patch("sports_forecast.worker.load_current_model_bundle"),
-        patch("sports_forecast.worker.materialize_predictions", return_value=True),
+        patch(
+            "sports_forecast.worker.load_current_model_bundle",
+            return_value=MagicMock(path=tmp_path / "verified-bundle"),
+        ),
+        patch("sports_forecast.worker.materialize_predictions", return_value=True) as materialize,
     ):
         success = run_worker(
             cfg,
@@ -89,3 +92,6 @@ def test_successful_worker_stores_published_predictions_count(tmp_path: Path) ->
 
     assert success is True
     state.succeed.assert_called_once_with("daily-1", predictions_count=7)
+    passed_cfg = materialize.call_args.args[0]
+    assert passed_cfg.runtime_model_bundle == str(tmp_path / "verified-bundle")
+    assert passed_cfg.runtime_model_bundle_app_version == "1.0.0"

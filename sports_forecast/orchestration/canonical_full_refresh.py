@@ -101,7 +101,7 @@ def _canonical_rows(tournament: str) -> list[dict[str, Any]]:
     return snapshot
 
 
-def _runtime_cfg(cfg: DictConfig, root: Path, bundle_path: Path) -> DictConfig:
+def _runtime_cfg(cfg: DictConfig, root: Path, bundle_path: Path, *, app_version: str) -> DictConfig:
     """Изолировать временные rebuild paths от persistent processed artifacts."""
     runtime_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
     with open_dict(runtime_cfg):
@@ -110,6 +110,7 @@ def _runtime_cfg(cfg: DictConfig, root: Path, bundle_path: Path) -> DictConfig:
         runtime_cfg.paths.processed_dir = str(root / "processed")
         runtime_cfg.paths.predictions_dir = str(root / "predictions")
         runtime_cfg.runtime_model_bundle = str(bundle_path)
+        runtime_cfg.runtime_model_bundle_app_version = app_version
     return runtime_cfg
 
 
@@ -472,7 +473,7 @@ def run_full_refresh(
         )
         with tempfile.TemporaryDirectory(prefix=f"canonical-refresh-{tournament}-") as directory:
             root = Path(directory)
-            runtime_cfg = _runtime_cfg(cfg, root, bundle.path)
+            runtime_cfg = _runtime_cfg(cfg, root, bundle.path, app_version=app_version)
             with open_dict(runtime_cfg):
                 runtime_cfg.features = features_config
                 runtime_cfg.refresh_run_id = run_id

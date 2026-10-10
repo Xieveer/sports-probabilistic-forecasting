@@ -21,6 +21,7 @@ class ModelBundle:
 
     bundle_id: str
     path: Path
+    model_identity: str
 
 
 def _files(source: Path) -> list[dict[str, str]]:
@@ -124,7 +125,7 @@ def verify_model_bundle(path: Path, *, app_version: str) -> ModelBundle:
             or hashlib.sha256(candidate.read_bytes()).hexdigest() != checksum
         ):
             raise BundleVerificationError("checksum mismatch")
-    return ModelBundle(bundle_id=bundle_id, path=path)
+    return ModelBundle(bundle_id=bundle_id, path=path, model_identity=manifest["model_identity"])
 
 
 def _verify_model_bundle_integrity(path: Path) -> ModelBundle:

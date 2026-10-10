@@ -44,6 +44,7 @@ def run_worker(
 
     with open_dict(cfg):
         cfg.runtime_model_bundle = str(bundle.path)
+        cfg.runtime_model_bundle_app_version = app_version
     success = materialize_predictions(cfg, version="prod")
     with get_session() as session:
         state = WorkerExecutionRepository(session)
