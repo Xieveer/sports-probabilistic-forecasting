@@ -1,6 +1,6 @@
 # TASK-028-4 — Immutable prediction revisions
 
-> **Статус:** implementation complete, независимый review ожидается
+> **Статус:** done — независимый review без P0–P2
 > **Ветка:** `initiative/epic-028-production-model-contract`
 > **TASK:** [TASK-028-4](../../backlog/tasks/TASK-028-4-immutable-prediction-revisions.md)
 
@@ -52,7 +52,7 @@ API продолжает отдавать актуальную строку ви
 ## Проверки
 
 - `make lint` — passed.
-- `make test-unit` — 1502 passed, 15 deselected, 40 warnings.
+- `make test-unit` — 1506 passed, 15 deselected, 40 warnings после исправления namespace для непустой публикации.
 - `uv run pytest -q tests/test_prediction_revisions.py tests/test_prediction_publication.py tests/test_materialize.py` — 29 passed, 1 PostgreSQL-only test skipped, 3 warnings.
 - `SF_TEST_PREDICTION_REVISION_DATABASE_URL=<disposable-schema-url> uv run pytest -q tests/test_prediction_revisions.py -m integration` — 1 passed.
 - `uv run pytest -q tests/test_prediction_revisions.py tests/test_materialize.py -k 'same_event_id_from_two_sources or prediction_api_continues_to_return_current_showcase or aggregate_rejects_invalid_model_probabilities'` — 5 passed.
@@ -77,5 +77,14 @@ API продолжает отдавать актуальную строку ви
 - PostgreSQL integration использовал disposable schema; она удаляется после
   завершения проверки. Production DB и модели не изменялись.
 
-Следующий gate — независимый Reviewer, затем Product Owner синхронизирует статус
-EPIC-028 и выбирает следующий TASK.
+Следующий gate — TASK-028-5, локальный цикл двух алгоритмов.
+
+## Итоговое review
+
+2026-10-10: независимый Reviewer проверил `f5a97799f0c25c4785b9072589ed166ba1cb7f81`;
+P0–P2 findings нет. Адресно повторены 34 теста (1 PostgreSQL-only тест
+пропущен без отдельной БД). Предыдущие P2 по ключу источника и валидации
+вероятностей закрыты; пустая managed-публикация stale-метит только свой
+`source_namespace`, что проверено на двух источниках. PostgreSQL migration и
+rollback gate выполнены Developer на disposable schema; Reviewer этот gate
+лично не повторял. Следующий TASK — локальный цикл двух алгоритмов.

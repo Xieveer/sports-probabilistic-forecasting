@@ -1,6 +1,6 @@
 # TASK-028-4 — Неизменяемые версии опубликованного прогноза
 
-> **Статус:** in_review
+> **Статус:** done
 > **Владелец:** Developer
 > **Эпик:** [EPIC-028](../EPIC-028-production-model-contract.md)
 > **Требование:** [REQ-028](../../product/requirements/REQ-028-production-model-contract.md)
