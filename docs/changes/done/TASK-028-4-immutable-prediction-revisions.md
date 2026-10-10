@@ -25,6 +25,10 @@ source match ID разных турниров или source namespace больш
 nullable namespace и индекс; repository readers и API принимают namespace filter,
 а stale transition ограничен источником managed-публикации. Legacy publication
 сохраняет nullable `source_namespace` и `current_revision_id`.
+
+Пустой managed materialize теперь передаёт namespace в stale transition. Если
+namespace не задан, materialize завершает операцию ошибкой до изменения витрины;
+поэтому отсутствие входных событий источника A не закрывает строки источника B.
 Revision защищена от UPDATE/DELETE триггерами в PostgreSQL и SQLite migrations.
 API продолжает отдавать актуальную строку витрины; добавлен API regression test.
 
@@ -54,6 +58,8 @@ API продолжает отдавать актуальную строку ви
 - `uv run pytest -q tests/test_prediction_revisions.py tests/test_materialize.py -k 'same_event_id_from_two_sources or prediction_api_continues_to_return_current_showcase or aggregate_rejects_invalid_model_probabilities'` — 5 passed.
 - `DATABASE_URL=<disposable-schema-url> uv run alembic -c alembic.ini upgrade head` — успешно; `alembic current` и `alembic heads` показали один head `0024_prediction_source_namespace`.
 - `SF_TEST_PREDICTION_REVISION_DATABASE_URL=<disposable-schema-url> uv run pytest -q tests/test_prediction_revisions.py -m integration` — 1 passed на схеме с revision `0024`.
+- `uv run pytest -q tests/test_prediction_revisions.py -k 'empty_managed_publication_stales_only_its_source_namespace or empty_showcase_keeps_immutable_history'` — 2 passed; добавлен red regression для пустого managed input.
+- Повторный адресный набор `uv run pytest -q tests/test_prediction_revisions.py tests/test_prediction_publication.py tests/test_materialize.py` — 34 passed, 1 PostgreSQL-only test skipped; PostgreSQL integration на disposable-схеме после upgrade до `0024` — 1 passed.
 - `uv run ruff check` по затронутым исходникам, migration и tests — passed;
   `git diff --check` — passed.
 

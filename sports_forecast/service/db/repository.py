@@ -632,6 +632,7 @@ class PredictionRepository:
         tournament: str,
         market: str,
         market_spec: str,
+        source_namespace: str | None = None,
     ) -> int:
         """Атомарно заменить один срез витрины внутри внешней DB-транзакции.
 
@@ -639,7 +640,12 @@ class PredictionRepository:
         и уже записанные строки, сохранив прежнюю валидную витрину.
         """
         if not any(record.get("bundle_id") is not None for record in records):
-            self.mark_stale(tournament=tournament, market=market, market_spec=market_spec)
+            self.mark_stale(
+                tournament=tournament,
+                market=market,
+                market_spec=market_spec,
+                source_namespace=source_namespace,
+            )
             return self.bulk_upsert(records)
         count = 0
         prepared: list[dict[str, Any]] = []

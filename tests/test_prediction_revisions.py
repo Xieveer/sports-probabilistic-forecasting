@@ -124,6 +124,23 @@ def test_same_event_id_from_two_sources_has_distinct_showcase_rows(db_engine) ->
         ] == ["provider-a"]
 
 
+def test_empty_managed_publication_stales_only_its_source_namespace(db_engine) -> None:
+    with get_session(engine=db_engine) as session:
+        _publish(session, _record(source_namespace="provider-a"))
+        _publish(session, _record(source_namespace="provider-b"))
+    with get_session(engine=db_engine) as session:
+        PredictionRepository(session).publish_showcase(
+            [],
+            tournament="nhl",
+            market="winner",
+            market_spec="winner_withOT",
+            source_namespace="provider-a",
+        )
+    with get_session(engine=db_engine) as session:
+        rows = {row.source_namespace: row.status for row in session.query(Prediction).all()}
+        assert rows == {"provider-a": "stale", "provider-b": "ok"}
+
+
 def test_revision_creation_rolls_back_with_failed_showcase(db_engine, monkeypatch) -> None:
     with pytest.raises(RuntimeError), get_session(engine=db_engine) as session:
         repo = PredictionRepository(session)

@@ -362,6 +362,7 @@ def _publish_empty_showcase(
     tournament: str,
     market: str,
     market_spec: str,
+    source_namespace: str | None = None,
     model_pool: str | None = None,
     pin: PinnedModelContract | None = None,
 ) -> None:
@@ -369,8 +370,14 @@ def _publish_empty_showcase(
     session_context = get_session() if session is None else nullcontext(session)
     with session_context as db_session:
         _assert_pin_current(db_session, model_pool, market_spec, pin)
+        if pin is not None and not source_namespace:
+            raise ValueError("Managed empty publication requires source_namespace")
         PredictionRepository(db_session).publish_showcase(
-            [], tournament=tournament, market=market, market_spec=market_spec
+            [],
+            tournament=tournament,
+            market=market,
+            market_spec=market_spec,
+            source_namespace=source_namespace,
         )
 
 
@@ -492,6 +499,7 @@ def materialize_predictions(
                 tournament=tournament_name,
                 market=market_name,
                 market_spec=market_spec_name,
+                source_namespace=cfg.get("source_namespace"),
                 model_pool=model_pool,
                 pin=pinned_model,
             )
