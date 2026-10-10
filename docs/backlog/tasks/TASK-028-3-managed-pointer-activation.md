@@ -49,6 +49,15 @@ immutable bundle v2, а Worker, canonical refresh и прямой materialize п
 3. **Refactor:** убрать затронутые дубли чтения pointer, обновить runbooks
    model registry/materialization и migration notes; сохранить v1 legacy API.
 
+## Исправления после review
+
+- [x] Legacy `promote()` отклоняет попытку снять активный managed pointer;
+  общий legacy `rollback()` не переключает pointer на managed target.
+- [x] Managed rollback проверяет checksum/manifest и загрузку entrypoint до
+  переключения на ранее зарегистрированный bundle.
+- [x] Parquet пишется во временный файл и заменяет production файл только после
+  успешного DB publication gate; stale pin сохраняет предыдущий parquet.
+
 ## Затрагиваемые области и зависимости
 
 - Ownership Developer: `sports_forecast/service/db/models.py`,

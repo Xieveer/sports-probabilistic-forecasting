@@ -79,3 +79,21 @@ bundle. Перед публикацией он блокирует active registr
 
 Следующая роль: независимый Reviewer. После review исправить findings, затем
 Product Owner синхронизирует статус EPIC-028 и выполнит последующие release gates.
+
+## Исправления по повторному review
+
+- Managed rollback теперь отдельно проверяет зарегистрированный bundle v2,
+  checksum и успешную загрузку entrypoint; только затем под advisory lock
+  переключает указатель на точную проверенную запись.
+- Legacy `promote()` не может деактивировать active managed pointer. Legacy
+  `rollback()` также отказывает для managed target без managed verification.
+- Materialize сначала формирует временный parquet, проверяет pin и пишет DB
+  витрину, затем заменяет production parquet. Stale pin удаляет временный файл
+  и оставляет существующий parquet и DB витрину нетронутыми.
+
+Проверки после review:
+
+- `uv run pytest -q tests/test_managed_model_activation.py -k 'managed_rollback or legacy_promote'` — 2 passed.
+- `uv run pytest -q tests/test_materialize.py -k managed_materialize_rejects_pointer_changed` — 1 passed; дополнительно проверено сохранение parquet и отсутствие staging-файла.
+- `SF_TEST_MANAGED_MODEL_DATABASE_URL='postgresql+psycopg2://…?options=-csearch_path%3Depic028_review_fix_test' uv run pytest -q tests/test_managed_model_activation.py -m integration` — 1 passed на PostgreSQL 14.24 в выделенной схеме; конкурентный promotion после pin отклоняет stale publication.
+- `uv run pytest -q tests/test_model_registry.py tests/test_managed_model_activation.py -m 'not integration' tests/test_materialize.py tests/test_worker.py tests/test_canonical_full_refresh.py` — 49 passed, 1 deselected, 3 warnings.

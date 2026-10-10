@@ -15,6 +15,7 @@ from sports_forecast.deploy.managed_model import (
     activate_managed_model,
     deployment_matches_pin,
     resolve_active_model,
+    rollback_managed_model,
 )
 from sports_forecast.deploy.model_bundle import build_managed_model_bundle
 from sports_forecast.service.db.engine import get_session, init_db, reset_engine
@@ -149,6 +150,97 @@ def test_activation_does_not_change_pointer_when_loader_rejects_candidate(
                 app_version="1.2.15",
             )
         assert pin.bundle_id == first.bundle_id
+    finally:
+        engine.dispose()
+        reset_engine()
+
+
+def test_managed_rollback_verifies_and_restores_registered_bundle(tmp_path: Path) -> None:
+    """Managed rollback reloads a verified bundle before restoring its pointer."""
+    reset_engine()
+    engine = create_engine("sqlite:///:memory:")
+    init_db(engine)
+    first = _build_managed_bundle(tmp_path, identity="pool:nhl:winner_withOT:first")
+    second_source = tmp_path / "second-source"
+    second_source.mkdir()
+    (second_source / "model.bin").write_bytes(b"second")
+    second = build_managed_model_bundle(
+        second_source,
+        tmp_path / "bundles",
+        model_identity="pool:nhl:winner_withOT:second",
+        app_version="1.2.15",
+        model_pool="nhl",
+        market_spec="winner_withOT",
+        market_rules={"overtime": True, "shootout": True, "draw": False},
+        outcomes=["home_win", "away_win"],
+        feature_contract_id="features-v1",
+        features=[{"name": "f1", "type": "float"}],
+        transformations_version="v1",
+        algorithm="lgbm",
+        model_entrypoint="model.bin",
+    )
+    try:
+        with get_session(engine=engine) as session:
+            for bundle, report in ((first, "first"), (second, "second")):
+                activate_managed_model(
+                    session,
+                    bundle_path=bundle.path,
+                    bundle_root=tmp_path / "bundles",
+                    app_version="1.2.15",
+                    model_pool="nhl",
+                    market_spec="winner_withOT",
+                    candidate_report_ref=f"reports/{report}.json",
+                    feature_contract_id="features-v1",
+                    features=[{"name": "f1", "type": "float"}],
+                    load_model=lambda *_: object(),
+                )
+        with get_session(engine=engine) as session:
+            restored = rollback_managed_model(
+                session,
+                model_pool="nhl",
+                market_spec="winner_withOT",
+                model_identity=first.model_identity,
+                bundle_root=tmp_path / "bundles",
+                app_version="1.2.15",
+                load_model=lambda *_: object(),
+            )
+            assert restored.bundle_id == first.bundle_id
+        with get_session(engine=engine) as session:
+            active = ModelRegistryRepository(session).get_active("nhl", "winner_withOT")
+            assert active is not None and active.model_identity == first.model_identity
+    finally:
+        engine.dispose()
+        reset_engine()
+
+
+def test_legacy_promote_cannot_replace_active_managed_pointer(tmp_path: Path) -> None:
+    """Legacy promotion is rejected while its pair has a managed pointer."""
+    reset_engine()
+    engine = create_engine("sqlite:///:memory:")
+    init_db(engine)
+    try:
+        with get_session(engine=engine) as session:
+            registry = ModelRegistryRepository(session)
+            current = registry.promote_managed(
+                model_pool="nhl",
+                market_spec="winner_withOT",
+                model_identity="pool:nhl:winner_withOT:managed",
+                candidate_report_ref="reports/managed.json",
+                artifact_ref="sha256:managed",
+                bundle_id="sha256:managed",
+                managed_artifact_location="sha256:managed/model.bin",
+            )
+            with pytest.raises(ValueError, match="managed"):
+                registry.promote(
+                    model_pool="nhl",
+                    market_spec="winner_withOT",
+                    model_identity="pool:nhl:winner_withOT:legacy",
+                    candidate_report_ref="reports/legacy.json",
+                    artifact_ref="models/legacy",
+                )
+            with pytest.raises(ValueError, match="managed rollback"):
+                registry.rollback("nhl", "winner_withOT", current.model_identity)
+            assert registry.get_active("nhl", "winner_withOT").id == current.id
     finally:
         engine.dispose()
         reset_engine()

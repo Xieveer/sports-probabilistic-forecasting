@@ -32,6 +32,7 @@ import os
 from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 
 import hydra
 import numpy as np
@@ -365,6 +366,7 @@ def materialize_predictions(
     # Фиксируем registry identity и проверяем байты до загрузки модели и input.
     # Эта же identity переносится в публикацию без повторного чтения pointer.
     pinned_model: PinnedModelContract | None = None
+    staged_predictions_path: Path | None = None
     try:
         session_context = get_session() if session is None else nullcontext(session)
         with session_context as db_session:
@@ -482,14 +484,14 @@ def materialize_predictions(
         if preds_df.empty:
             raise ValueError("Непустой inference не дал агрегированных предсказаний")
 
-        # 7. Файловый результат готовится до смены DB-витрины. Если этот шаг
-        # не удался, прежние API predictions остаются нетронутыми.
+        # 7. Подготовить файл во временном пути. Production parquet меняется
+        # только после успешной проверки pin и записи DB-витрины.
         predictions_root = PROJECT_ROOT / cfg.paths.predictions_dir
         out_dir = predictions_root / tournament_name / market_spec_name
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / f"predictions_{version}.parquet"
-        preds_df.to_parquet(out_path, index=False)
-        logger.info("Parquet сохранён: %s", out_path)
+        staged_predictions_path = out_dir / f".{out_path.name}.{uuid4().hex}.tmp"
+        preds_df.to_parquet(staged_predictions_path, index=False)
 
         # 8. Запись в БД. Schema применяет отдельная migration command.
         session_context = get_session() if session is None else nullcontext(session)
@@ -535,10 +537,15 @@ def materialize_predictions(
 
             logger.info("Записано %d предсказаний в Prediction Store", count)
 
+        staged_predictions_path.replace(out_path)
+        logger.info("Parquet сохранён: %s", out_path)
+
         logger.info("Материализация для %s завершена успешно", tournament_name)
         return True
 
     except Exception:
+        if staged_predictions_path is not None:
+            staged_predictions_path.unlink(missing_ok=True)
         logger.exception("Ошибка материализации для %s", tournament_name)
         if session is not None:
             # Внешний владелец транзакции обязан получить ошибку, чтобы отозвать

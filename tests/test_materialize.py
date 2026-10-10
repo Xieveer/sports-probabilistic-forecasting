@@ -261,6 +261,12 @@ def test_managed_materialize_rejects_pointer_changed_during_inference(
     monkeypatch.setattr(
         "sports_forecast.materialize.get_session", lambda: get_session(engine=engine)
     )
+    output_path = (
+        tmp_path / "data" / "predictions" / "nhl" / "winner_withOT" / "predictions_prod.parquet"
+    )
+    output_path.parent.mkdir(parents=True)
+    preserved_file = pd.DataFrame({"match_id": ["still-current"], "marker": [42]})
+    preserved_file.to_parquet(output_path, index=False)
 
     class RacingModel:
         def predict_proba(self, _features: pd.DataFrame) -> np.ndarray:
@@ -281,6 +287,8 @@ def test_managed_materialize_rejects_pointer_changed_during_inference(
     )
     try:
         assert materialize_predictions(OmegaConf.create(cfg_data), version="prod") is False
+        pd.testing.assert_frame_equal(pd.read_parquet(output_path), preserved_file)
+        assert list(output_path.parent.glob(".*.tmp")) == []
         with get_session(engine=engine) as session:
             rows = session.query(Prediction).all()
         assert [(row.match_id, row.predictions_json, row.status) for row in rows] == [

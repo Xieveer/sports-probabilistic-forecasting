@@ -121,6 +121,39 @@ def activate_managed_model(
     )
 
 
+def rollback_managed_model(
+    session: Session,
+    *,
+    model_pool: str,
+    market_spec: str,
+    model_identity: str,
+    bundle_root: Path,
+    app_version: str,
+    load_model: Callable[[Path, str], object],
+) -> ModelDeployment:
+    """Проверить сохранённый bundle и загрузить его до возврата production pointer."""
+    repository = ModelRegistryRepository(session)
+    deployment = repository.get_by_identity(model_identity)
+    if (
+        deployment is None
+        or deployment.model_pool != model_pool
+        or deployment.market_spec != market_spec
+        or not deployment.is_managed
+    ):
+        raise BundleVerificationError("Managed deployment для rollback не найден")
+    pin = _verified_deployment_bundle(deployment, bundle_root, app_version)
+    loaded_model = load_model(pin.model_file, pin.bundle.algorithm)
+    if loaded_model is None:
+        raise BundleVerificationError("Model loader не вернул загруженную rollback-модель")
+    return repository.activate_verified_managed(
+        model_pool=model_pool,
+        market_spec=market_spec,
+        deployment_id=pin.deployment_id,
+        model_identity=pin.model_identity,
+        bundle_id=pin.bundle_id,
+    )
+
+
 def deployment_matches_pin(
     session: Session, model_pool: str, market_spec: str, pin: PinnedModelContract
 ) -> bool:

@@ -1498,6 +1498,9 @@ class ModelRegistryRepository:
         if not candidate_report_ref or not artifact_ref:
             raise ValueError("Promotion требует ссылки на report кандидата и артефакт")
         self._lock_pair(model_pool, market_spec)
+        active = self.get_active(model_pool, market_spec, for_update=True)
+        if active is not None and active.is_managed:
+            raise ValueError("Legacy promotion не может заменить managed deployment")
         if self.get_by_identity(model_identity) is not None:
             raise ValueError("Immutable model_identity уже зарегистрирован")
         self.session.query(ModelDeployment).filter(
@@ -1602,7 +1605,45 @@ class ModelRegistryRepository:
             or deployment.market_spec != market_spec
         ):
             raise ValueError("Версия для rollback не найдена в указанном model pool")
+        if deployment.is_managed:
+            raise ValueError("Managed deployment требует проверенного managed rollback")
         self._lock_pair(model_pool, market_spec)
+        self.session.query(ModelDeployment).filter(
+            ModelDeployment.model_pool == model_pool,
+            ModelDeployment.market_spec == market_spec,
+            ModelDeployment.is_active.is_(True),  # type: ignore[attr-defined]
+        ).update({"is_active": False})
+        deployment.is_active = True
+        self.session.flush()
+        return deployment
+
+    def activate_verified_managed(
+        self,
+        *,
+        model_pool: str,
+        market_spec: str,
+        deployment_id: int,
+        model_identity: str,
+        bundle_id: str,
+    ) -> ModelDeployment:
+        """Активировать ранее зарегистрированный deployment после проверки bundle."""
+        self._lock_pair(model_pool, market_spec)
+        deployment = cast(
+            ModelDeployment | None,
+            self.session.query(ModelDeployment)
+            .filter(
+                ModelDeployment.id == deployment_id,
+                ModelDeployment.model_pool == model_pool,
+                ModelDeployment.market_spec == market_spec,
+                ModelDeployment.model_identity == model_identity,
+                ModelDeployment.bundle_id == bundle_id,
+                ModelDeployment.is_managed.is_(True),  # type: ignore[attr-defined]
+            )
+            .with_for_update()
+            .one_or_none(),
+        )
+        if deployment is None:
+            raise ValueError("Проверенный managed deployment изменился или не найден")
         self.session.query(ModelDeployment).filter(
             ModelDeployment.model_pool == model_pool,
             ModelDeployment.market_spec == market_spec,

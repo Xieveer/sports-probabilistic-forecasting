@@ -1,6 +1,8 @@
 # Model registry: promotion и rollback
 
-Для legacy deployment `ModelRegistryRepository.promote()` сохраняет v1 путь.
+Для legacy deployment `ModelRegistryRepository.promote()` сохраняет v1 путь,
+пока active pointer пары не managed. После managed activation legacy promote
+отклоняется и не может снять managed pointer.
 Managed deployment активируется только через
 `sports_forecast.deploy.managed_model.activate_managed_model()`: до смены pointer
 проверяются v2 manifest, checksums, пара, feature contract, app version и фактическая
@@ -20,10 +22,11 @@ bundle и передают материализатору один pinned contra
 deployment и сравнивает её identity и bundle с pin; если указатель изменился,
 текущая витрина остаётся прежней.
 
-Rollback выполняется явным вызовом `rollback(model_pool, market_spec,
-model_identity)`. Он переключает pointer на уже сохранённую версию и не удаляет
-ни запись registry, ни файлы артефакта. Перед rollback следует проверить
-`candidate_report_ref` и `artifact_ref` выбранной версии.
+Legacy rollback выполняется явным вызовом `rollback(model_pool, market_spec,
+model_identity)` только для legacy deployment. Managed rollback выполняется через
+`rollback_managed_model()`: он повторно проверяет manifest/checksums и загружает
+точный entrypoint до переключения на уже зарегистрированную managed-версию. Ни
+один путь не удаляет записи registry или файлы артефакта.
 
 Для исторического NHL используется
 `conf/legacy/nhl-model-manifest.yaml`. `load_legacy_manifest()` читает его
