@@ -75,6 +75,7 @@ def run_worker(
         cfg.runtime_model_bundle = str(bundle_path)
         cfg.runtime_model_bundle_app_version = app_version
         cfg.runtime_model_bundle_root = str(runtime_root)
+        cfg.refresh_run_id = run_id
     success = materialize_predictions(cfg, version="prod")
     with get_session() as session:
         state = WorkerExecutionRepository(session)
