@@ -1,4 +1,4 @@
-# TASK-028-4 — Локальный цикл двух алгоритмов и rollback
+# TASK-028-5 — Локальный цикл двух алгоритмов и rollback
 
 > **Статус:** backlog
 > **Владелец:** Developer
@@ -29,6 +29,9 @@ materialize → DB → API` последовательно публикует NH
   актуальная витрина/API отражает последнюю активацию.
 - [ ] Повреждённый или несовместимый candidate, а также невалидный набор
   вероятностей не меняют active pointer или текущую публикацию.
+- [ ] Для `winner_withOT` до публикации проверены конечность, диапазон и
+  сумма вероятностей `home_win / away_win`; при нарушении витрина и revisions
+  остаются прежними.
 - [ ] Evidence содержит версии runtime, checksums и результаты теста без
   копирования model weights, внешних полных ответов или секретов в Git.
 
@@ -53,7 +56,7 @@ materialize → DB → API` последовательно публикует NH
   materialize, DB/API; при необходимости ограниченное исправление адаптеров
   `sports_forecast/predict.py` и `sports_forecast/training/models/`.
   Изменения иных модулей вернуть PO для проверки scope.
-- Вход: reviewed [TASK-028-3](TASK-028-3-immutable-prediction-revisions.md).
+- Вход: reviewed [TASK-028-4](TASK-028-4-immutable-prediction-revisions.md).
   Локальный staged bundle v1.2.12 лежит вне Git в репозитории Operations Agent;
   точный путь и digest — в EPIC. Его наличие не доказывает совместимость с
   runtime, выбранным для TASK. LightGBM является локальным fixture.
@@ -68,5 +71,5 @@ materialize → DB → API` последовательно публикует NH
 
 ## Handoff и отчёт
 
-- Отчёт выполнения: `docs/changes/done/TASK-028-4-two-algorithm-local-cycle.md`.
+- Отчёт выполнения: `docs/changes/done/TASK-028-5-two-algorithm-local-cycle.md`.
 - После независимого review Product Owner сверяет весь [REQ-028](../../product/requirements/REQ-028-production-model-contract.md), документацию, CI и PR gates.

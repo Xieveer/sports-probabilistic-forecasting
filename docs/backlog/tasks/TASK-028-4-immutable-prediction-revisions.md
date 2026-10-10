@@ -1,4 +1,4 @@
-# TASK-028-3 — Неизменяемые версии опубликованного прогноза
+# TASK-028-4 — Неизменяемые версии опубликованного прогноза
 
 > **Статус:** backlog
 > **Владелец:** Developer
@@ -54,7 +54,7 @@ EPIC-027 владеет наблюдениями коэффициентов: э�
   `sports_forecast/service/db/repository.py`, новая Alembic revision,
   `sports_forecast/materialize.py`, адресные DB/API tests и документация.
   Не изменять EPIC-027 schema и не выбирать odds as-of за него.
-- Вход: reviewed [TASK-028-2](TASK-028-2-managed-bundle-activation.md).
+- Вход: reviewed [TASK-028-3](TASK-028-3-managed-pointer-activation.md).
   PostgreSQL-проверка миграции обязательна; nullable поля и forward-fix
   сохраняют старую витрину и legacy rows.
 
@@ -69,6 +69,6 @@ EPIC-027 владеет наблюдениями коэффициентов: э�
 
 ## Handoff и отчёт
 
-- Отчёт выполнения: `docs/changes/done/TASK-028-3-immutable-prediction-revisions.md`.
-- Следующий TASK: [TASK-028-4](TASK-028-4-two-algorithm-local-cycle.md)
+- Отчёт выполнения: `docs/changes/done/TASK-028-4-immutable-prediction-revisions.md`.
+- Следующий TASK: [TASK-028-5](TASK-028-5-two-algorithm-local-cycle.md)
   после независимого review.
