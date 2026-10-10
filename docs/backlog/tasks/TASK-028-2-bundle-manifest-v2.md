@@ -1,6 +1,6 @@
 # TASK-028-2 — Проверяемый manifest v2 и legacy compatibility
 
-> **Статус:** backlog
+> **Статус:** done
 > **Владелец:** Developer
 > **Эпик:** [EPIC-028](../EPIC-028-production-model-contract.md)
 > **Требование:** [REQ-028](../../product/requirements/REQ-028-production-model-contract.md)
@@ -18,28 +18,30 @@ bundle. Для этого TASK достаточно локальной пров�
 
 ## Критерии приёмки
 
-- [ ] Content hash manifest v2 охватывает `model_pool`, `market_spec`, явные
+- [x] Content hash manifest v2 охватывает `model_pool`, `market_spec`, явные
   правила рынка и outcomes, `feature_contract_id`, описание порядка/типов
   признаков и версии преобразований, algorithm, точный относительный model
   entrypoint, app version и checksums файлов.
-- [ ] Verifier отвергает повреждённый файл, path traversal, пустой/неизвестный
+- [x] Verifier отвергает повреждённый файл, path traversal, пустой/неизвестный
   algorithm, неоднозначный model entrypoint, несовместимую app version,
   несоответствие `deploy.yaml`/`features.txt` и неверные правила/outcomes.
-- [ ] Для `winner_withOT` контракт явно задаёт овертайм и ровно два исхода
+- [x] Для `winner_withOT` контракт явно задаёт овертайм и ровно два исхода
   `home_win / away_win`; бинарные правила не применяются к рынку с ничьей.
-- [ ] Существующий manifest v1 verifier и legacy NHL loader проходят прежние
+- [x] Существующий manifest v1 verifier и legacy NHL loader проходят прежние
   тесты; manifest v1 не выдаётся за managed v2 и не получает придуманных полей.
 
 ## Red → green → refactor
 
-1. **Red:** unit-тесты строят v2 candidate и проверяют стабильный ID,
-   roundtrip, изменение любого нового поля, malformed path/algorithm/outcomes,
-   mismatch совместимых файлов и v1 regression.
-2. **Green:** добавить v2 builder/verifier и typed verified contract в
-   `sports_forecast/deploy/model_bundle.py`. Поддерживать оба schema version
-   только как явно различимые форматы.
-3. **Refactor:** вынести общий checksum код без изменения v1 hash/installer;
-   описать формат v2 и legacy-путь в `docs/operations/model-bundle.md`.
+1. **Red:** `uv run pytest -q tests/test_model_bundle.py -k 'manifest_v2'` завершился
+   ошибкой импорта отсутствующего `build_managed_model_bundle` — поведение v2
+   отсутствовало.
+2. **Green:** добавлены managed builder и typed `VerifiedModelBundle`; schema v2
+   проверяет контракт, хеш и файлы до возврата, а v1 API/hash остались прежними.
+   Адресные тесты покрыли roundtrip, влияние полей контракта и bytes на ID, malformed contract,
+   deploy.yaml/features.txt mismatch и повреждённую модель.
+3. **Refactor:** вынесена общая валидация managed-контракта до записи каталога,
+   предотвращающая сохранение заведомо некорректного кандидата; формат и legacy
+   путь описаны в `docs/operations/model-bundle.md`.
 
 ## Затрагиваемые области и зависимости
 
@@ -55,10 +57,10 @@ bundle. Для этого TASK достаточно локальной пров�
 
 ## Проверка
 
-- Red: новый `tests/test_model_bundle.py` test падает на отсутствии v2.
-- Green: `uv run pytest -q tests/test_model_bundle.py` и существующие
-  `tests/test_worker.py` — ожидается success; `make lint`, `make test-unit` и
-  независимый review после реализации.
+- Проверки: `uv run pytest -q tests/test_model_bundle.py tests/test_worker.py
+  tests/test_materialize.py` — 37 passed; `make lint` — All checks passed.
+- Независимый review остаётся следующим gate; полный `make test-unit` в этом
+  срезе не запускался.
 - Наблюдение: изменение market/outcomes/features меняет bundle ID или
   отклоняется verifier-ом; v1 NHL bundle загружается прежним способом.
 

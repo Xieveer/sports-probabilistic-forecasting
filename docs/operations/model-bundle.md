@@ -1,14 +1,28 @@
 # Immutable model bundle: promotion и rollback
 
 Production model bundle создаётся локально после ручного approval в Model
-Registry. Bundle содержит только файлы модели и `manifest.json`: immutable ID,
+Registry. Legacy `manifest.json` schema v1 сохраняет immutable ID,
 `model_identity`, checksum каждого файла, версию приложения, source commit и
 release. В состав не входят training data, secrets или MLflow state.
 
 `build_model_bundle()` создаёт content-addressed каталог. Повторное создание
 того же состава не меняет уже существующий bundle. Перед любой активацией
-`verify_model_bundle()` проверяет manifest, identity, compatibility и checksum.
-Проверка выполняется до записи `current` или `previous` symbolic pointer.
+`verify_model_bundle()` продолжает принимать schema v1 и дополнительно проверяет
+managed schema v2. V2 фиксирует `model_pool`, `market_spec`, правила ничьей и
+овертайма, упорядоченные outcomes, `feature_contract_id`, список признаков с
+типами, версию преобразований, алгоритм, относительный `model_entrypoint`,
+app version и checksums всех файлов. Все поля manifest, включая checksums,
+участвуют в `bundle_id`. Verifier блокирует неизвестный алгоритм, traversal,
+дублирующиеся/лишние/повреждённые файлы, несовпадающие outcomes, а также
+несогласованные `deploy.yaml` и `features.txt`, если эти совместимые файлы есть.
+
+Для рынка с ничьей контракт требует `home_win / draw / away_win`; без ничьей —
+`home_win / away_win`. Правила `draw` и `overtime` указываются явно.
+`build_managed_model_bundle()` создаёт schema v2 и возвращает
+`VerifiedModelBundle`; прежний `build_model_bundle()` и v1 hash остаются
+неизменными для legacy установщика. Проверка выполняется до записи `current` или
+`previous` symbolic pointer. V2 builder/verifier — локальный контракт TASK-028-2;
+DB activation и выбор managed bundle остаются за TASK-028-3.
 
 ## Явная активация
 

@@ -9,6 +9,9 @@ import shutil
 from argparse import ArgumentParser
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
+
+import yaml
 
 
 class BundleVerificationError(ValueError):
@@ -22,6 +25,22 @@ class ModelBundle:
     bundle_id: str
     path: Path
     model_identity: str
+
+
+@dataclass(frozen=True)
+class VerifiedModelBundle(ModelBundle):
+    """Проверенный managed-контракт модели из manifest v2."""
+
+    schema_version: int
+    model_pool: str
+    market_spec: str
+    market_rules: dict[str, object]
+    outcomes: tuple[str, ...]
+    feature_contract_id: str
+    features: tuple[dict[str, str], ...]
+    transformations_version: str
+    algorithm: str
+    model_entrypoint: str
 
 
 def _files(source: Path) -> list[dict[str, str]]:
@@ -75,7 +94,55 @@ def build_model_bundle(
     return verify_model_bundle(destination, app_version=app_version)
 
 
-def verify_model_bundle(path: Path, *, app_version: str) -> ModelBundle:
+def build_managed_model_bundle(
+    source: Path,
+    bundle_root: Path,
+    *,
+    model_identity: str,
+    app_version: str,
+    model_pool: str,
+    market_spec: str,
+    market_rules: dict[str, object],
+    outcomes: list[str],
+    feature_contract_id: str,
+    features: list[dict[str, str]],
+    transformations_version: str,
+    algorithm: str,
+    model_entrypoint: str,
+) -> VerifiedModelBundle:
+    """Собрать content-addressed managed bundle с manifest schema v2."""
+    contract: dict[str, object] = {
+        "schema_version": 2,
+        "model_identity": model_identity,
+        "app_version": app_version,
+        "model_pool": model_pool,
+        "market_spec": market_spec,
+        "market_rules": market_rules,
+        "outcomes": outcomes,
+        "feature_contract_id": feature_contract_id,
+        "features": features,
+        "transformations_version": transformations_version,
+        "algorithm": algorithm,
+        "model_entrypoint": model_entrypoint,
+        "files": _files(source),
+    }
+    _validate_managed_contract(contract)
+    bundle_id = _bundle_id(contract)
+    destination = bundle_root / bundle_id
+    if not destination.exists():
+        shutil.copytree(source, destination)
+        manifest = {"bundle_id": bundle_id, **contract}
+        (destination / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    verified = verify_model_bundle(destination, app_version=app_version)
+    if not isinstance(verified, VerifiedModelBundle):
+        raise BundleVerificationError("managed bundle не прошёл проверку schema v2")
+    return verified
+
+
+def verify_model_bundle(path: Path, *, app_version: str) -> ModelBundle | VerifiedModelBundle:
     """Проверить manifest, compatibility и checksum до использования bundle."""
     try:
         manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
@@ -83,6 +150,8 @@ def verify_model_bundle(path: Path, *, app_version: str) -> ModelBundle:
         raise BundleVerificationError("manifest недоступен") from exc
     if not isinstance(manifest, dict) or manifest.get("app_version") != app_version:
         raise BundleVerificationError("compatibility mismatch")
+    if manifest.get("schema_version") == 2:
+        return _verify_managed_model_bundle(path, manifest)
     bundle_id = manifest.get("bundle_id")
     files = manifest.get("files")
     required_text_fields = ("app_version", "model_identity", "source_commit", "release")
@@ -129,6 +198,180 @@ def verify_model_bundle(path: Path, *, app_version: str) -> ModelBundle:
         if actual_checksum != checksum:
             raise BundleVerificationError("checksum mismatch")
     return ModelBundle(bundle_id=bundle_id, path=path, model_identity=manifest["model_identity"])
+
+
+def _verify_managed_model_bundle(path: Path, manifest: dict[str, object]) -> VerifiedModelBundle:
+    """Проверить все поля managed-контракта и целостность файлов v2."""
+    _validate_managed_contract(manifest)
+    files = manifest["files"]
+    entrypoint = manifest["model_entrypoint"]
+    rules = manifest["market_rules"]
+    outcomes = manifest["outcomes"]
+    features = manifest["features"]
+    assert isinstance(files, list)
+    assert isinstance(entrypoint, str)
+    assert isinstance(rules, dict)
+    assert isinstance(outcomes, list)
+    assert isinstance(features, list)
+    bundle_id = manifest.get("bundle_id")
+    payload = {key: value for key, value in manifest.items() if key != "bundle_id"}
+    if not isinstance(bundle_id, str) or bundle_id != _bundle_id(payload) or path.name != bundle_id:
+        raise BundleVerificationError("bundle identity mismatch")
+    paths: set[str] = set()
+    for entry in files:
+        if not isinstance(entry, dict):
+            raise BundleVerificationError("manifest v2 files некорректен")
+        relative = entry.get("path")
+        checksum = entry.get("sha256")
+        if not isinstance(relative, str) or not isinstance(checksum, str):
+            raise BundleVerificationError("manifest v2 files некорректен")
+        relative_path = Path(relative)
+        candidate = path / relative_path
+        if (
+            relative_path.is_absolute()
+            or ".." in relative_path.parts
+            or "\\" in relative
+            or relative in paths
+        ):
+            raise BundleVerificationError("manifest v2 содержит небезопасный или повторный путь")
+        paths.add(relative)
+        try:
+            if not candidate.is_file() or not candidate.resolve().is_relative_to(path.resolve()):
+                raise BundleVerificationError("checksum mismatch")
+            actual = hashlib.sha256(candidate.read_bytes()).hexdigest()
+        except OSError as exc:
+            raise BundleVerificationError("файл bundle недоступен") from exc
+        if actual != checksum:
+            raise BundleVerificationError("checksum mismatch")
+    actual_paths = {
+        item.relative_to(path).as_posix()
+        for item in path.rglob("*")
+        if item.is_file() and item.name != "manifest.json"
+    }
+    if actual_paths != paths:
+        raise BundleVerificationError("набор файлов bundle не соответствует manifest v2")
+    _verify_compatibility_files(path, manifest)
+    return VerifiedModelBundle(
+        bundle_id=bundle_id,
+        path=path,
+        model_identity=cast(str, manifest["model_identity"]),
+        schema_version=2,
+        model_pool=cast(str, manifest["model_pool"]),
+        market_spec=cast(str, manifest["market_spec"]),
+        market_rules=dict(rules),
+        outcomes=tuple(outcomes),
+        feature_contract_id=cast(str, manifest["feature_contract_id"]),
+        features=tuple(dict(item) for item in features),
+        transformations_version=cast(str, manifest["transformations_version"]),
+        algorithm=cast(str, manifest["algorithm"]),
+        model_entrypoint=entrypoint,
+    )
+
+
+def _validate_managed_contract(manifest: dict[str, object]) -> None:
+    """Проверить структуру v2 до записи bundle и при чтении manifest."""
+    text_fields = (
+        "model_identity",
+        "app_version",
+        "model_pool",
+        "market_spec",
+        "feature_contract_id",
+        "transformations_version",
+        "algorithm",
+        "model_entrypoint",
+    )
+    for field in text_fields:
+        value = manifest.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise BundleVerificationError(
+                "manifest v2 содержит пустое обязательное поле, включая algorithm"
+            )
+    algorithm = manifest.get("algorithm")
+    if algorithm not in {"catboost", "catboost_reg", "lgbm", "lgbm_reg", "logreg"}:
+        raise BundleVerificationError("algorithm неизвестен")
+    outcomes = manifest.get("outcomes")
+    rules = manifest.get("market_rules")
+    features = manifest.get("features")
+    files = manifest.get("files")
+    entrypoint = manifest.get("model_entrypoint")
+    if (
+        not isinstance(rules, dict)
+        or not isinstance(rules.get("overtime"), bool)
+        or not isinstance(rules.get("draw"), bool)
+    ):
+        raise BundleVerificationError("market rules должны явно задавать overtime и draw")
+    expected_outcomes = (
+        ("home_win", "draw", "away_win") if rules["draw"] else ("home_win", "away_win")
+    )
+    if not isinstance(outcomes, list) or tuple(outcomes) != expected_outcomes:
+        raise BundleVerificationError("outcomes не соответствуют market rules")
+    if (
+        not isinstance(features, list)
+        or not features
+        or any(
+            not isinstance(item, dict)
+            or not isinstance(item.get("name"), str)
+            or not item["name"].strip()
+            or not isinstance(item.get("type"), str)
+            or not item["type"].strip()
+            for item in features
+        )
+    ):
+        raise BundleVerificationError("описание features некорректно")
+    if not isinstance(files, list):
+        raise BundleVerificationError("manifest v2 files некорректен")
+    paths: set[str] = set()
+    for entry in files:
+        if not isinstance(entry, dict):
+            raise BundleVerificationError("manifest v2 files некорректен")
+        relative = entry.get("path")
+        checksum = entry.get("sha256")
+        if not isinstance(relative, str) or not isinstance(checksum, str):
+            raise BundleVerificationError("manifest v2 files некорректен")
+        relative_path = Path(relative)
+        if (
+            relative_path.is_absolute()
+            or ".." in relative_path.parts
+            or "\\" in relative
+            or relative in paths
+        ):
+            raise BundleVerificationError("manifest v2 содержит небезопасный или повторный путь")
+        paths.add(relative)
+    model_path = Path(cast(str, entrypoint))
+    if model_path.is_absolute() or ".." in model_path.parts or entrypoint not in paths:
+        raise BundleVerificationError("model entrypoint должен указывать на один файл bundle")
+
+
+def _verify_compatibility_files(path: Path, manifest: dict[str, object]) -> None:
+    """Если legacy deploy.yaml/features.txt присутствуют, сверить их с v2."""
+    deploy_path = path / "deploy.yaml"
+    if deploy_path.is_file():
+        try:
+            deploy = yaml.safe_load(deploy_path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError) as exc:
+            raise BundleVerificationError("deploy.yaml недоступен или некорректен") from exc
+        if not isinstance(deploy, dict) or deploy.get("algorithm") != manifest["algorithm"]:
+            raise BundleVerificationError("deploy.yaml не соответствует manifest v2")
+        configured_entrypoint = deploy.get("model_entrypoint", deploy.get("model_path"))
+        if (
+            configured_entrypoint is not None
+            and configured_entrypoint != manifest["model_entrypoint"]
+        ):
+            raise BundleVerificationError("deploy.yaml не соответствует manifest v2")
+    features_path = path / "features.txt"
+    if features_path.is_file():
+        try:
+            listed = [
+                line.strip()
+                for line in features_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+        except OSError as exc:
+            raise BundleVerificationError("features.txt недоступен") from exc
+        features = cast(list[dict[str, str]], manifest["features"])
+        expected = [item["name"] for item in features]
+        if listed != expected:
+            raise BundleVerificationError("features.txt не соответствует manifest v2")
 
 
 def _verify_model_bundle_integrity(path: Path) -> ModelBundle:
