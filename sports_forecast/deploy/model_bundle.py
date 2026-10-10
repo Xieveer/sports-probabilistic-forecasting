@@ -120,10 +120,13 @@ def verify_model_bundle(path: Path, *, app_version: str) -> ModelBundle:
         ):
             raise BundleVerificationError("manifest некорректен")
         candidate = path / relative
-        if (
-            not candidate.is_file()
-            or hashlib.sha256(candidate.read_bytes()).hexdigest() != checksum
-        ):
+        try:
+            if not candidate.is_file():
+                raise BundleVerificationError("checksum mismatch")
+            actual_checksum = hashlib.sha256(candidate.read_bytes()).hexdigest()
+        except OSError as exc:
+            raise BundleVerificationError("файл bundle недоступен") from exc
+        if actual_checksum != checksum:
             raise BundleVerificationError("checksum mismatch")
     return ModelBundle(bundle_id=bundle_id, path=path, model_identity=manifest["model_identity"])
 

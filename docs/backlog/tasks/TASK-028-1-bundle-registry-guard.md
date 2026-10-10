@@ -35,12 +35,14 @@ verified bundle у managed production run блокирует публикаци�
 
 - Инициатива/ветка: EPIC-028, `initiative/epic-028-production-model-contract`.
 - Этап: реализация и адресные проверки завершены; следующий gate — независимый
-  review TASK-028-1.
+  повторный review TASK-028-1 после исправления finding P2 про I/O bundle.
 - Решение: managed materialize требует explicit app version и runtime bundle;
   legacy без `model_pool` проходит прежним путём. Подробности в
   [ADR-030](../../architecture/adr/ADR-030-production-model-contract.md).
 - Release intent: отсутствует; production pointer не меняется.
 - Evidence: отчёт [done](../../changes/done/TASK-028-1-bundle-registry-guard.md).
+- Последнее исправление: verifier нормализует I/O ошибки при проверке artifact;
+  Worker переводит run в failed через существующий bundle verification failure path.
 
 ## Red → green → refactor
 

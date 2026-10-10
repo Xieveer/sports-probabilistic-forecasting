@@ -8,7 +8,11 @@ from unittest.mock import MagicMock, patch
 
 from omegaconf import OmegaConf
 
-from sports_forecast.deploy.model_bundle import BundleVerificationError
+from sports_forecast.deploy.model_bundle import (
+    BundleVerificationError,
+    build_model_bundle,
+    install_model_bundle,
+)
 from sports_forecast.worker import run_worker
 
 
@@ -36,6 +40,51 @@ def test_worker_verifies_bundle_before_materialization(tmp_path: Path) -> None:
     assert success is False
     materialize.assert_not_called()
     state.fail.assert_called_once_with("daily-1", failure_code="bundle_verification_failed")
+
+
+def test_worker_records_failure_when_bundle_file_read_raises_os_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """I/O ошибка verifier завершает Worker как failed, не оставляя run started."""
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "model.bin").write_bytes(b"model")
+    bundle = build_model_bundle(
+        source,
+        tmp_path / "bundles",
+        model_identity="pool:x:winner:a",
+        app_version="1.0.0",
+        source_commit="a" * 40,
+        release="v1",
+    )
+    runtime_root = tmp_path / "runtime"
+    install_model_bundle(bundle.path, runtime_root, app_version="1.0.0")
+    original_read_bytes = Path.read_bytes
+
+    def fail_model_read(path: Path) -> bytes:
+        if path == bundle.path / "model.bin":
+            raise OSError("simulated read failure")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", fail_model_read)
+    session = MagicMock()
+    state = MagicMock()
+    state.start.return_value = True
+    with (
+        patch("sports_forecast.worker.get_session", return_value=nullcontext(session)),
+        patch("sports_forecast.worker.WorkerExecutionRepository", return_value=state),
+        patch("sports_forecast.worker.materialize_predictions") as materialize,
+    ):
+        success = run_worker(
+            OmegaConf.create({}),
+            run_id="io-failure",
+            runtime_root=runtime_root,
+            app_version="1.0.0",
+        )
+
+    assert success is False
+    materialize.assert_not_called()
+    state.fail.assert_called_once_with("io-failure", failure_code="bundle_verification_failed")
 
 
 def test_completed_run_is_not_materialized_twice(tmp_path: Path) -> None:

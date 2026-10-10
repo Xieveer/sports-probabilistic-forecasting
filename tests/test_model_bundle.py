@@ -131,6 +131,34 @@ def test_loader_rejects_tampered_active_bundle_without_replacing_pointer(tmp_pat
     assert (runtime / "current").resolve() == current_target
 
 
+def test_verifier_normalizes_artifact_read_io_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """I/O ошибка при чтении проверяемого файла становится ошибкой верификации."""
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "model.bin").write_bytes(b"model")
+    bundle = build_model_bundle(
+        source,
+        tmp_path / "bundles",
+        model_identity="pool:x:winner:a",
+        app_version="1",
+        source_commit="a" * 40,
+        release="v1",
+    )
+    original_read_bytes = Path.read_bytes
+
+    def fail_model_read(path: Path) -> bytes:
+        if path == bundle.path / "model.bin":
+            raise OSError("simulated read failure")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", fail_model_read)
+
+    with pytest.raises(BundleVerificationError, match="недоступен"):
+        verify_model_bundle(bundle.path, app_version="1")
+
+
 def test_install_rejects_incompatible_bundle_without_changing_current(tmp_path: Path) -> None:
     """Не совместимый с app bundle не меняет уже активный pointer."""
     source = tmp_path / "source"
