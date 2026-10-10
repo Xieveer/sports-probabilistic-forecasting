@@ -78,3 +78,57 @@ uv run python -m sports_forecast.data.providers.odds.backfill \
 поэтому запускать её следует небольшими диапазонами и наблюдать квоту API.
 Сначала рекомендуется прогон на одном дне и проверка Parquet store. Данные
 остаются локальными до отдельного verified archive sync по TASK-007-8.
+
+## Локальный provider history
+
+Offline импорт существующих historical response JSON в отдельный SQLite журнал и
+запрос цены к моменту `T` доступны без API key и сетевого клиента:
+
+```bash
+uv run python -m sports_forecast.data.providers.odds.historical_cli import \
+  --source data/cache/the_odds_api \
+  --database data/local/historical_odds.sqlite3
+uv run python -m sports_forecast.data.providers.odds.historical_cli query \
+  --database data/local/historical_odds.sqlite3 \
+  --registry-snapshot data/registry/current/package \
+  --event-id PROJECT_EVENT_UUID \
+  --at 2025-01-01T12:00:00Z
+uv run python -m sports_forecast.data.providers.odds.historical_cli coverage \
+  --database data/local/historical_odds.sqlite3 \
+  --registry-snapshot data/registry/current/package \
+  --from 2025-01-01T00:00:00Z \
+  --to 2025-02-01T00:00:00Z \
+  --at 2025-01-31T23:59:00Z
+```
+
+Импорт выбирает только `icehockey_nhl` / Pinnacle / `h2h` с двумя точными
+участниками и конечными decimal price > 1; подтверждённое правило рынка —
+`winner_withOT`, `home_win` / `away_win`, включая ОТ и буллиты. `observed_at`
+берётся только из envelope `timestamp`; более поздний `last_update` не переносит
+snapshot назад. Legacy cache не доказывает время локального получения:
+`retrieved_at` остаётся неизвестным, пока его не подтвердит отдельный receipt.
+`imported_at` показывает только время импорта. Запрос явно отвечает
+`provider_as_of` и не утверждает, что цена была локально известна к `T`.
+
+Команда `coverage` использует ожидаемые NHL события из переданного закреплённого
+registry snapshot по UTC kickoff окну `[from, to)`. `--at` задаёт общий provider
+момент `T` для всех событий. JSON отчёт выводит `covered`, `no_line`,
+`no_snapshot` и `mapping_error`; их сумма равна знаменателю ожидаемых событий.
+Для каждой строки указана причина. `unmapped_source_events` считает уникальные
+source IDs, которые не разрешились через pinned registry, отдельно от знаменателя.
+Поле `unmapped_source_event_reasons` группирует эти уникальные source IDs по
+причине resolver: `missing`, `mismatch`, `ambiguous` или `conflict`; сумма
+счётчиков равна `unmapped_source_events`.
+Отчёт также содержит количество и fingerprint импортированных файлов,
+импортные диагностические коды, конфликты фактов, receipts с неизвестным
+`retrieved_at` и receipts, полученные позже `T`. Импортные диагностики относятся
+к строкам событий/рынков; фатальный отказ импорта файла прерывает CLI-команду.
+При нулевом покрытии команда возвращает нулевой числитель и фактические причины,
+не используя текущую котировку как замену. Ни одна команда локальной истории не
+требует API key или сети.
+
+Перед query передайте полный проверенный pinned `ir1` пакет. Strict resolver
+использует source event ID, исходные названия участников и точный UTC kickoff;
+неподтверждённая или неоднозначная связь не возвращает project event price.
+SQLite journal, исходный cache и registry остаются локальными; не добавляйте
+cache responses или SQLite файл в Git.
