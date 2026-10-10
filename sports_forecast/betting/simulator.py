@@ -237,6 +237,7 @@ class BettingSimulator:
         *,
         return_event_trace: bool = False,
         coverage_rows_per_event: int = 1,
+        bet_eligible_mask: np.ndarray | pd.Series | None = None,
     ) -> BettingResult:
         """Симулировать ставки и вернуть полный набор метрик.
 
@@ -263,9 +264,16 @@ class BettingSimulator:
         y_true = np.asarray(y_true, dtype=float)
         y_pred_proba = np.asarray(y_pred_proba, dtype=float)
         odds = np.asarray(odds, dtype=float)
+        bet_eligible = (
+            np.ones(len(y_true), dtype=bool)
+            if bet_eligible_mask is None
+            else np.asarray(bet_eligible_mask, dtype=bool)
+        )
 
         if len(y_true) != len(y_pred_proba) or len(y_true) != len(odds):
             raise ValueError("y_true, y_pred_proba, odds должны быть одинаковой длины")
+        if len(bet_eligible) != len(y_true):
+            raise ValueError("bet_eligible_mask должен иметь ту же длину, что и массивы событий")
         if coverage_rows_per_event < 1:
             raise ValueError("coverage_rows_per_event должен быть >= 1")
 
@@ -297,7 +305,7 @@ class BettingSimulator:
             stake_used = 0.0
             profit_amt = 0.0
 
-            if edge > self.min_edge_threshold:
+            if bet_eligible[i] and edge > self.min_edge_threshold:
                 stake = self.calculate_stake(prob, odd, bankroll)
                 if stake > 0:
                     bet_mask[i] = True

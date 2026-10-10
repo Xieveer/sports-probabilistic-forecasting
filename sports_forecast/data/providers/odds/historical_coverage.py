@@ -11,6 +11,7 @@ from typing import Any
 
 from sports_forecast.data.providers.odds.historical import (
     HistoricalOddsConflictError,
+    HistoricalSelection,
     _utc,
     query_provider_as_of,
 )
@@ -48,6 +49,43 @@ class HistoricalCoverageReport:
     def to_dict(self) -> dict[str, Any]:
         """Преобразовать отчёт в JSON-совместимую структуру."""
         return asdict(self)
+
+
+def classify_provider_coverage(
+    *,
+    selection: HistoricalSelection | None = None,
+    selection_age_seconds: float | None = None,
+    has_selection: bool | None = None,
+    conflict: bool,
+    has_source: bool,
+    mapping_valid: bool | None,
+    statuses: set[str],
+    diagnostics: set[str],
+    max_age_seconds: float | None = None,
+) -> tuple[str, str]:
+    """Единая взаимно исключающая классификация coverage для заданного event T."""
+    if conflict:
+        return "conflict", "conflicting_snapshot"
+    selected = selection is not None if has_selection is None else has_selection
+    age = selection.age_seconds if selection is not None else selection_age_seconds
+    if selected:
+        if max_age_seconds is not None and age is not None and age > max_age_seconds:
+            return "stale_price", "snapshot_older_than_limit"
+        return "covered", "selected_snapshot"
+    if mapping_valid is False:
+        return "mapping_error", "source_event_not_confirmed"
+    if not has_source:
+        return "no_snapshot", "no_source_evidence"
+    if not mapping_valid:
+        return "mapping_error", "unresolved_or_conflicting_event_mapping"
+    invalid = next((item for item in sorted(diagnostics) if item.startswith("duplicate_")), None)
+    if "invalid_target_market" in statuses or invalid:
+        return "mapping_error", invalid or "invalid_source_market"
+    if "invalid_envelope_timestamp" in diagnostics:
+        return "no_snapshot", "invalid_envelope_timestamp"
+    if statuses and statuses <= {"no_pinnacle", "no_h2h"}:
+        return "no_line", "no_pinnacle" if "no_pinnacle" in statuses else "no_h2h"
+    return "no_snapshot", "no_snapshot_at_or_before_T"
 
 
 def _iso(value: datetime) -> str:
@@ -197,6 +235,7 @@ def build_coverage_report(
         }
         candidates = [row for row in source_events if row["source_event_id"] in source_ids]
         item: dict[str, Any] = {"project_event_id": event.id, "kickoff_utc": _iso(scheduled)}
+        conflict = False
         try:
             selection = query_provider_as_of(
                 Path(database_path),
@@ -206,9 +245,23 @@ def build_coverage_report(
             )
         except HistoricalOddsConflictError:
             selection = None
-            item["subreason"] = "conflicting_snapshot"
-            categories["mapping_error"].append(item)
-            continue
+            conflict = True
+        has_source = bool(candidates)
+        mapping_valid = has_source and not any(
+            str(row["source_event_id"]) in unresolved_ids
+            or resolved_by_event.get(str(row["source_event_id"]), set()) != {event.id}
+            for row in candidates
+        )
+        statuses = {str(row["target_market_status"]) for row in candidates}
+        diagnostics_for_event = {str(row["diagnostic_code"] or "") for row in candidates}
+        category, subreason = classify_provider_coverage(
+            selection=selection,
+            conflict=conflict,
+            has_source=has_source,
+            mapping_valid=mapping_valid if has_source else None,
+            statuses=statuses,
+            diagnostics=diagnostics_for_event,
+        )
         if selection is not None:
             item.update(
                 {
@@ -219,41 +272,8 @@ def build_coverage_report(
                     "late_retrieval": selection.late_retrieval,
                 }
             )
-            categories["covered"].append(item)
-            continue
-        if not candidates:
-            item["subreason"] = "no_source_evidence"
-            categories["no_snapshot"].append(item)
-            continue
-        if any(
-            str(row["source_event_id"]) in unresolved_ids
-            or resolved_by_event.get(str(row["source_event_id"]), set()) != {event.id}
-            for row in candidates
-        ):
-            item["subreason"] = "unresolved_or_conflicting_event_mapping"
-            categories["mapping_error"].append(item)
-            continue
-        statuses = {str(row["target_market_status"]) for row in candidates}
-        invalid = [
-            row
-            for row in candidates
-            if (
-                str(row["target_market_status"]) == "invalid_target_market"
-                or str(row["diagnostic_code"] or "").startswith("duplicate_")
-            )
-        ]
-        if invalid:
-            item["subreason"] = str(invalid[0]["diagnostic_code"] or "invalid_source_market")
-            categories["mapping_error"].append(item)
-        elif any(row["diagnostic_code"] == "invalid_envelope_timestamp" for row in candidates):
-            item["subreason"] = "invalid_envelope_timestamp"
-            categories["no_snapshot"].append(item)
-        elif statuses <= {"no_pinnacle", "no_h2h"}:
-            item["subreason"] = "no_pinnacle" if "no_pinnacle" in statuses else "no_h2h"
-            categories["no_line"].append(item)
-        else:
-            item["subreason"] = "no_snapshot_at_or_before_T"
-            categories["no_snapshot"].append(item)
+        item["subreason"] = subreason
+        categories["mapping_error" if category == "conflict" else category].append(item)
 
     unmapped = set(unmapped_reason_by_id)
     unmapped_reasons: dict[str, int] = {}

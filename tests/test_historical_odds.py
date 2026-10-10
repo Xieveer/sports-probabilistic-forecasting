@@ -15,6 +15,7 @@ from sports_forecast.data.providers.odds.historical import (
     import_historical_cache,
     list_imported_source_events,
     query_provider_as_of,
+    query_provider_as_of_many,
 )
 from sports_forecast.data.providers.odds.historical_coverage import build_coverage_report
 from sports_forecast.identity import EntityRegistry
@@ -157,6 +158,16 @@ def test_import_is_idempotent_and_query_selects_provider_snapshot(tmp_path: Path
     assert between.source_file_sha256
     assert between.age_seconds == 900
 
+    before_batch = database.read_bytes()
+    batch, conflicts = query_provider_as_of_many(
+        database,
+        reader,
+        {project_event_id: datetime(2025, 1, 1, 1, 0, tzinfo=UTC)},
+    )
+    assert conflicts == frozenset()
+    assert batch[project_event_id] == after
+    assert database.read_bytes() == before_batch
+
 
 def test_import_bounds_read_when_file_grows_after_descriptor_size_check(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -264,6 +275,13 @@ def test_conflicting_prices_at_one_provider_timestamp_are_not_selected(
             project_event_id=project_event_id,
             at=datetime(2025, 1, 1, 0, 1, tzinfo=UTC),
         )
+    selections, conflicts = query_provider_as_of_many(
+        database,
+        reader,
+        {project_event_id: datetime(2025, 1, 1, 0, 1, tzinfo=UTC)},
+    )
+    assert selections == {}
+    assert conflicts == frozenset({project_event_id})
 
 
 def test_unconfirmed_source_event_does_not_return_project_price(tmp_path: Path) -> None:

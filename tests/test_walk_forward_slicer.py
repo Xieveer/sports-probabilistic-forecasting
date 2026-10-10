@@ -96,3 +96,29 @@ def test_len_counts_non_empty_slices() -> None:
     init_end = pd.Timestamp("2024-01-15")
     s = WalkForwardSlicer(df, "datetime", "month", init_end)
     assert len(s) == 2
+
+
+def test_slicer_filters_train_rows_by_label_availability_and_eligibility() -> None:
+    df = pd.DataFrame(
+        {
+            "datetime": pd.to_datetime(["2024-09-24", "2024-09-25", "2024-10-10"]),
+            "label_available_at": pd.to_datetime(["2024-10-01", "2024-10-02", "2024-10-17"]),
+            "train_eligible": [True, True, False],
+            "event": ["boundary", "late", "test"],
+        }
+    )
+    step = next(
+        iter(
+            WalkForwardSlicer(
+                df,
+                "datetime",
+                "month",
+                pd.Timestamp("2024-09-30"),
+                label_available_at_col="label_available_at",
+                train_eligible_col="train_eligible",
+            )
+        )
+    )
+
+    assert df.loc[step[1], "event"].tolist() == ["boundary"]
+    assert df.loc[step[2], "event"].tolist() == ["test"]

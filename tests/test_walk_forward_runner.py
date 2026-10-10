@@ -87,3 +87,42 @@ def test_walk_forward_runner_three_month_steps() -> None:
     assert fit_lengths[-1] == len(combined)
     assert not out.cumulative_test_df.empty
     assert "logloss" in out.aggregate_ml_metrics
+
+
+def test_predict_only_runner_does_not_read_test_labels_or_refit_on_holdout() -> None:
+    combined = pd.DataFrame(
+        {
+            "datetime": pd.to_datetime(["2024-09-01", "2024-09-20", "2024-10-10"]),
+            "label_available_at": pd.to_datetime(["2024-09-08", "2024-10-02", "2024-10-17"]),
+            "train_eligible": [True, True, False],
+        }
+    )
+    features = pd.DataFrame({"f1": [0.0, 1.0, 0.5]})
+    target = pd.Series([0, 1, float("nan")])
+    fit_sizes: list[int] = []
+
+    def _factory(_params: dict[str, Any] | None) -> Any:
+        model = MagicMock()
+        model.fit.side_effect = lambda x, y: fit_sizes.append(len(x))
+        model.predict_proba.return_value = np.array([[0.4, 0.6]])
+        return model
+
+    out = WalkForwardRunner(_minimal_cfg(), create_model=_factory).run(
+        combined_df=combined,
+        features=features,
+        target=target,
+        feature_names=["f1"],
+        best_params=None,
+        init_train_end=pd.Timestamp("2024-09-30"),
+        time_col="datetime",
+        artifact_dir=Path("/tmp/wf_predict_only"),
+        label_available_at_col="label_available_at",
+        train_eligible_col="train_eligible",
+        prediction_only=True,
+    )
+
+    assert fit_sizes == [1]
+    assert out.per_step_metrics == []
+    assert out.aggregate_ml_metrics == {}
+    assert out.cumulative_test_df["row_index"].tolist() == [2]
+    assert "y_true" not in out.cumulative_test_df

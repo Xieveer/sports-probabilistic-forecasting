@@ -53,6 +53,7 @@ class BootstrapResult:
     metrics: dict[str, MetricBootstrapStats]
     n_resamples: int
     confidence_level: float
+    positive_roi_fraction: float | None = None
 
     def summary_dataframe(self) -> pd.DataFrame:
         """Return a long table: metric, mean, ci_lower, ci_upper, se, n_resamples."""
@@ -203,6 +204,7 @@ class BlockBootstrap:
                 metrics={},
                 n_resamples=self._n_resamples,
                 confidence_level=self._confidence_level,
+                positive_roi_fraction=None,
             )
 
         placed = self._df.loc[_placed_bets_mask(self._df)].reset_index(drop=True)
@@ -218,6 +220,7 @@ class BlockBootstrap:
                 metrics={},
                 n_resamples=self._n_resamples,
                 confidence_level=self._confidence_level,
+                positive_roi_fraction=None,
             )
 
         if n == 0:
@@ -226,6 +229,7 @@ class BlockBootstrap:
                 metrics={},
                 n_resamples=self._n_resamples,
                 confidence_level=self._confidence_level,
+                positive_roi_fraction=None,
             )
 
         stakes = pd.to_numeric(placed["stake"], errors="coerce").fillna(0.0).to_numpy(dtype=float)
@@ -273,4 +277,5 @@ class BlockBootstrap:
             metrics=metrics_out,
             n_resamples=self._n_resamples,
             confidence_level=self._confidence_level,
+            positive_roi_fraction=float(np.mean(replicate_matrix["roi"] > 0)),
         )
