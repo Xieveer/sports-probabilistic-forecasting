@@ -1,0 +1,17 @@
+# Локальный кандидат ENG1 из уже собранного CSV Smart Tables.
+name: premier_league
+provider:
+  type: file
+sport: football
+
+split_strategy:
+  enabled: true
+  method: column_based
+  split_column: competition_code
+  rules:
+    - condition: "equals('ENG1')"
+      output_tournament: premier_league
+      description: "Premier League"
+
+odds:
+  enabled: false

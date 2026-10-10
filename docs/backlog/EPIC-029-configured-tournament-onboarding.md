@@ -1,27 +1,27 @@
 # EPIC-029 — Подключение типового турнира конфигурацией
 
-> **Статус:** blocked — подготовка завершена; реализация ждёт решения об источнике и узких критериях
+> **Статус:** in_progress — кандидат и review готовы; PR/CI впереди
 > **Приоритет:** medium
 > **Владелец:** Product Owner
-> **Требование:** существующий [REQ-003](../product/requirements/REQ-003-scalable-multisport-platform.md); узкие критерии нового среза уточнить перед реализацией
-> **ADR:** по результатам выбора единого каталога запуска
+> **Требование:** [REQ-029](../product/requirements/REQ-029-premier-league-candidate.md), [REQ-003](../product/requirements/REQ-003-scalable-multisport-platform.md)
+> **ADR:** [ADR-030](../architecture/adr/ADR-030-local-candidate-cycle.md), [ADR-003](../architecture/adr/ADR-003-configured-multisport-portfolio.md)
 
 ## Память Product Owner
 
 - Инициатива: `EPIC-029`.
 - Ветка инициативы: `initiative/epic-029-configured-tournament-onboarding`; отдельный worktree `.worktrees/epic-029-configured-tournament-onboarding`.
-- Workflow / этап: `preparation / завершена`; код и конфигурация запуска не менялись, инженерный TASK не начинался.
+- Workflow / этап: `engineering / PR gate`; [TASK-029-1](tasks/TASK-029-1-premier-league-candidate.md) завершена, независимый review пройден; PR и terminal CI впереди.
 - Исходная цель: проверить на реальном вертикальном примере принцип «новый турнир поддерживаемого спорта — данные и конфигурация».
-- Критерии и DoD: сценарии ниже; узкие критерии для Premier League и пригодность регулярного получения будущих матчей подтвердить перед TASK.
+- Критерии и DoD: пользователь подтвердил [REQ-029](../product/requirements/REQ-029-premier-league-candidate.md): `ENG1` из локального CSV → отчёт кандидата, без регулярной выдачи. Тесты, независимый review, PR и зелёный CI обязательны для завершения.
 - Релиз: production-развёртывание не запрошено.
-- Выполнено: направление зафиксировано 2026-10-04; 2026-10-10 проверены каталог, текущий source-контракт и локальный набор клубного футбола. Независимый Reviewer проверил подготовительный коммит `290c4ce` без замечаний P0–P2: сверил каталог, пересчитал CSV и подтвердил ограничения источника. Дополнительный read-only GET ближайших матчей Smart Tables для `competition_id=13` завершился сетевым таймаутом; ответ upcoming не получен, контракт регулярного refresh не подтверждён. EPIC-003 не переоткрыт.
-- Решения: первый кандидат — Premier League (`ENG1`, Smart Tables `competition_id=13`), резерв — La Liga (`SPA1`, `competition_id=5`). Проверять принцип end-to-end, а не по числу конфигурационных файлов. Наличие локальной истории не означает готовность регулярной выдачи.
+- Выполнено: подготовительный review `290c4ce` без P0–P2; сетевой GET upcoming ранее завершился таймаутом. 2026-10-10 локальный кандидатный цикл обработал 4 138 матчей `ENG1`, обучил модель и создал [отчёт кандидата](../changes/candidates/premier_league-winner-225af497fb37.json). Raw/interim/processed validation и 128 целевых тестов прошли; полный suite остановлен на зависшем integration-тесте, подробности в [done](../changes/done/TASK-029-1-premier-league-candidate.md).
+- Решения: первый кандидат — Premier League (`ENG1`, Smart Tables `competition_id=13`); локальный файловый путь из каталога отделён от регулярных DVC/Airflow запусков по [ADR-030](../architecture/adr/ADR-030-local-candidate-cycle.md). Отчёт не меняет production pointer.
 - Evidence: [каталог соревнований](../cursor/source_data/smart-tables/competition_catalog.json), [source-контракт футбола](../cursor/source_data/football.md), [разведка JSON API Smart Tables](../cursor/source_data/smart_tables.md), `conf/source/football_top_leagues.yaml`, `data/source/football_top_leagues/source.csv`. Локальный CSV на 2026-10-10 содержит 4 138 завершённых матчей `ENG1` (2015-09-13—2026-09-06), у всех есть тройка `odd_home`/`odd_draw`/`odd_away`, у 4 121 заполнены голы, угловые и удары в створ обеих команд. Для `SPA1`: 4 185 завершённых матчей (2015-08-21—2026-09-11), тройка odds у всех, указанные поля статистики у 4 174. Это проверка структуры и непустоты локального файла, не оценка временной корректности odds или готовности модели.
 - Источник: существующий неофициальный JSON backend Smart Tables через HTTP API; WebSocket-контракт не подтверждён. Документированная альтернатива — [football-data.org](https://www.football-data.org/coverage), но его [API требует токен](https://www.football-data.org/documentation/quickstart) и отдельную проверку схемы/покрытия. Аккаунт, прокси, разбор HTML и права на регулярное использование источника — решения Product Owner; секреты не сохранять.
-- Артефакты: [долгосрочный план](index.md#долгосрочные-инициативы-платформы), [EPIC-003](EPIC-003-scalable-multisport-platform.md), [REQ-003](../product/requirements/REQ-003-scalable-multisport-platform.md).
-- Предыдущая роль: Reviewer — подготовительный review `290c4ce` и повторное review статуса/source timeout пройдены без P0–P2; `git diff --check` успешен.
-- Следующая роль: Product Owner — после отдельного решения пользователя об источнике и узких критериях Premier League проверить upcoming/refresh; затем передать Engineering.
-- Открытые вопросы / блокер: локальный CSV содержит только завершённые матчи; получение upcoming и регулярный refresh не подтверждены, последняя попытка GET завершилась таймаутом. EPIC-028 уже слит в `main`, техническая зависимость снята. Публичный контракт и production-лицензия Smart Tables не подтверждены; момент получения, букмекер и тип исторических odds неизвестны. Граница между research candidate и регулярной выдачей требует отдельного решения.
+- Артефакты: [TASK-029-1](tasks/TASK-029-1-premier-league-candidate.md), [REQ-029](../product/requirements/REQ-029-premier-league-candidate.md), [ADR-030](../architecture/adr/ADR-030-local-candidate-cycle.md), [отчёт кандидата](../changes/candidates/premier_league-winner-225af497fb37.json).
+- Предыдущая роль: Reviewer — после исправления двух P2 повторное review без P0–P2, 75 независимых целевых тестов зелёные.
+- Следующая роль: Reviewer — commit/evidence/push gate; затем Product Owner открывает PR и ждёт terminal CI.
+- Открытые вопросы / блокер: для candidate-среза блокера нет. Регулярный refresh не подтверждён и не входит в REQ-029; публичный контракт/production-лицензия Smart Tables, время и букмекер исторических odds неизвестны. Дальнейшая публикация требует отдельного решения владельца.
 - Research: не применяется.
 - Обновлено: 2026-10-10.
 
@@ -38,7 +38,7 @@
 
 ## Зависимости и следующий gate
 
-Требует [EPIC-026](EPIC-026-entity-registry.md) и [EPIC-028](EPIC-028-production-model-contract.md) для полного сценария; оба уже слиты в `main`. Можно использовать существующий [REQ-003](../product/requirements/REQ-003-scalable-multisport-platform.md). Турнир выбран и локальные данные проверены; перед TASK необходимо решить вопрос источника и подтвердить узкие критерии с владельцем.
+Зависимости [EPIC-026](EPIC-026-entity-registry.md) и [EPIC-028](EPIC-028-production-model-contract.md) уже слиты в `main`. Пользователь подтвердил ограниченный candidate-срез в [REQ-029](../product/requirements/REQ-029-premier-league-candidate.md); следующий gate — независимый review и terminal CI после PR.
 
 ## Риски и rollout
 
