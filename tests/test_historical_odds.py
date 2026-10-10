@@ -466,6 +466,7 @@ def test_coverage_zero_line_reports_no_snapshot_and_unmapped_source_event(
     }
     assert report.imported_files == 1
     assert report.unmapped_source_events == 1
+    assert report.unmapped_source_event_reasons == {"missing": 1}
 
 
 def test_coverage_separates_invalid_mapping_from_missing_snapshot(tmp_path: Path) -> None:
@@ -473,7 +474,7 @@ def test_coverage_separates_invalid_mapping_from_missing_snapshot(tmp_path: Path
     database = tmp_path / "history.sqlite3"
     source = _cache(tmp_path / "mis-mapped.json", "2025-01-01T12:00:00Z", 1.8, 2.1)
     payload = json.loads(source.read_text(encoding="utf-8"))
-    payload["data"][0]["home_team"] = "Different Home Team"
+    payload["data"][0]["home_team"] = "Buffalo Sabres"
     source.write_text(json.dumps(payload), encoding="utf-8")
     import_historical_cache((source,), database)
 
@@ -488,6 +489,8 @@ def test_coverage_separates_invalid_mapping_from_missing_snapshot(tmp_path: Path
     assert report.expected_events == 1
     assert report.mapping_error == 1
     assert report.categories["mapping_error"][0]["project_event_id"] == event_id
+    assert report.unmapped_source_events == 1
+    assert report.unmapped_source_event_reasons == {"mismatch": 1}
     assert report.no_snapshot == report.no_line == report.covered == 0
 
 

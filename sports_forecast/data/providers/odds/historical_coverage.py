@@ -42,6 +42,7 @@ class HistoricalCoverageReport:
     unknown_retrieval: int
     late_retrieval: int
     unmapped_source_events: int
+    unmapped_source_event_reasons: dict[str, int]
     categories: dict[str, list[dict[str, Any]]]
 
     def to_dict(self) -> dict[str, Any]:
@@ -51,6 +52,22 @@ class HistoricalCoverageReport:
 
 def _iso(value: datetime) -> str:
     return value.astimezone(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+def _unmapped_reason(status: str, reason: str) -> str:
+    """Свернуть resolver status/reason в устойчивый счётчик причины unmapped."""
+    if status == "ambiguous":
+        return "ambiguous"
+    if status == "conflict":
+        return "mismatch" if "противоречит" in reason else "conflict"
+    if reason in {
+        "Неполный source key",
+        "Tournament designation не подтверждён",
+        "Home/away team designation не подтверждены",
+        "Точное UTC время отсутствует",
+    }:
+        return "missing"
+    return "mismatch"
 
 
 def _load_import_facts(
@@ -157,12 +174,18 @@ def build_coverage_report(
     resolutions = RegistryEventResolver(registry_reader.snapshot.event_snapshot).resolve_many(refs)
     resolved_by_event: dict[str, set[str]] = {}
     unresolved_ids: set[str] = set()
+    unmapped_reason_by_id: dict[str, str] = {}
     for row, resolution in zip(source_events, resolutions, strict=True):
         source_id = str(row["source_event_id"])
         if resolution.status == "resolved" and resolution.project_event_id:
             resolved_by_event.setdefault(source_id, set()).add(resolution.project_event_id)
         else:
             unresolved_ids.add(source_id)
+            reason = _unmapped_reason(resolution.status, resolution.reason)
+            previous = unmapped_reason_by_id.get(source_id)
+            priority = {"missing": 0, "mismatch": 1, "ambiguous": 2, "conflict": 3}
+            if previous is None or priority[reason] > priority[previous]:
+                unmapped_reason_by_id[source_id] = reason
     conflicts = stored_conflicts
     for event, scheduled in expected:
         source_ids = {
@@ -232,11 +255,10 @@ def build_coverage_report(
             item["subreason"] = "no_snapshot_at_or_before_T"
             categories["no_snapshot"].append(item)
 
-    unmapped = {
-        str(row["source_event_id"])
-        for row, resolution in zip(source_events, resolutions, strict=True)
-        if resolution.status != "resolved"
-    }
+    unmapped = set(unmapped_reason_by_id)
+    unmapped_reasons: dict[str, int] = {}
+    for reason in unmapped_reason_by_id.values():
+        unmapped_reasons[reason] = unmapped_reasons.get(reason, 0) + 1
     _, unknown_retrieval, late_retrieval = _receipt_counts(Path(database_path), instant)
     fingerprint = hashlib.sha256(
         "\n".join(str(row["file_sha256"]) for row in files).encode("utf-8")
@@ -262,5 +284,6 @@ def build_coverage_report(
         unknown_retrieval=unknown_retrieval,
         late_retrieval=late_retrieval,
         unmapped_source_events=len(unmapped),
+        unmapped_source_event_reasons=dict(sorted(unmapped_reasons.items())),
         categories=categories,
     )

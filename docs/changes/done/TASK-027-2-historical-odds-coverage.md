@@ -12,7 +12,9 @@
 kickoff окну `[from, to)`. Новый локальный CLI `historical_cli coverage`
 принимает общий provider-as-of момент `T`, выводит числитель/знаменатель,
 fingerprint импортированного набора, ошибки/диагностики импорта, timestamp
-conflicts, unknown/late retrieval, unmapped source event count и пояснения строк.
+conflicts, unknown/late retrieval, unmapped source event count и распределение
+уникальных source IDs по resolver причинам `missing`, `mismatch`, `ambiguous`,
+`conflict`.
 Категории `covered`, `no_line`, `no_snapshot`, `mapping_error` взаимно
 исключаются; current OddsStore/API/бот не используются.
 
@@ -27,6 +29,8 @@ Import diagnostics детализированы кодами; фатальная
 - Red: `uv run pytest -q tests/test_historical_odds.py::test_coverage_counts_pinned_universe_and_reports_absent_line_separately` завершился ожидаемым `ModuleNotFoundError` отсутствующего `historical_coverage`.
 - Green: добавлены expected-universe aggregation и coverage CLI; новые сценарии включают `covered`, `no_line`, отсутствующий source evidence, snapshot позже `T`, invalid timestamp, mapping error, unmapped event, import diagnostics/conflict и нулевое покрытие.
 - Refactor: Ruff lint/format чистые; проверен минимальный JSON результат CLI на реальном pinned registry и локальных cache файлах.
+- Reviewer P2 red: тесты ожидали поля resolver-reason aggregation и упали из-за его отсутствия; также зафиксировали, что реальный pinned report считает 13 unmapped IDs без breakdown.
+- Reviewer P2 green: добавлено `unmapped_source_event_reasons`; unresolved source IDs классифицируются из `EventResolution.status` и `.reason`, один стабильный reason bucket выбирается на source ID. Focused regression подтверждает missing/mismatch раздельно.
 
 ## Реальные данные и acceptance
 
@@ -38,7 +42,8 @@ event `b42367c52f8c596d01199dd31258cc62`, CAR–BUF, kickoff
 0 diagnostics. Coverage для окна `[2023-11-07T00:00:00Z,
 2023-11-09T00:00:00Z)` к `2023-11-07T11:55:43Z`: **1/1 covered**, 0 `no_line`,
 0 `no_snapshot`, 0 `mapping_error`, 2 файла, 0 conflicts, 2 receipts с unknown
-retrieval, 13 unmapped source event IDs. Fingerprint набора:
+retrieval, 13 unmapped source event IDs: 12 `mismatch`, 1 `missing`.
+Пересчитанный fingerprint набора:
 `sha256:8f4673bbf009d8a1e30e05cdfe577d0d2e3c20d0377dbb99e6105e5ac8715c09`.
 
 Повторный import тех же файлов вставил 0 observations. Реальные query для
@@ -66,6 +71,7 @@ mapping не добавлять и итоговый real acceptance не объ�
 - `uv run pytest -q tests/test_historical_odds.py tests/test_registry_snapshot.py tests/test_event_identity.py tests/test_odds_store.py tests/test_odds_backfill.py tests/test_odds_client.py` — **104 passed**, 6 сторонних warnings.
 - `uv run ruff check sports_forecast/data/providers/odds/historical_coverage.py sports_forecast/data/providers/odds/historical_cli.py tests/test_historical_odds.py` — passed.
 - `uv run ruff format --check sports_forecast/data/providers/odds/historical_coverage.py sports_forecast/data/providers/odds/historical_cli.py tests/test_historical_odds.py` — passed.
+- `uv run pytest -q tests/test_historical_odds.py::test_coverage_zero_line_reports_no_snapshot_and_unmapped_source_event tests/test_historical_odds.py::test_coverage_separates_invalid_mapping_from_missing_snapshot` — **2 passed** после исправления P2; до исправления обе проверки завершились ожидаемо красным.
 - `uv run python -m sports_forecast.data.providers.odds.historical_cli --help` и `... coverage --help` — passed; команда использует только локальные SQLite/cache/registry и не делает network calls.
 - Реальный `import` двух cache files и `coverage` CLI выполнены на локальном registry package; результаты указаны выше. Исходный cache не изменён, raw responses/SQLite/evidence bundle в Git не добавлены.
 

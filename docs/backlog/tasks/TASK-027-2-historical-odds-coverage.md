@@ -76,7 +76,8 @@ events, import diagnostics, timestamp conflicts, нулевое покрытие
 Реальный acceptance прошёл для подтверждённого CAR–BUF: исходные два файла дали
 21 observation, без diagnostic failures; отчет по реальному окну содержит 1
 expected / 1 covered, 0 no_line / 0 no_snapshot / 0 mapping_error, 2 imported
-files, 0 conflicts, 2 unknown retrieval и 13 unmapped source event IDs.
+files, 0 conflicts, 2 unknown retrieval и 13 unmapped source event IDs:
+12 `mismatch` и 1 `missing` по resolver reason.
 Provider queries before/between/after вернули null / ранний / поздний snapshot;
 повторный import вставил 0 observations. Cache hashes совпали с TASK-027-1.
 

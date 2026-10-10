@@ -116,6 +116,9 @@ registry snapshot по UTC kickoff окну `[from, to)`. `--at` задаёт о
 `no_snapshot` и `mapping_error`; их сумма равна знаменателю ожидаемых событий.
 Для каждой строки указана причина. `unmapped_source_events` считает уникальные
 source IDs, которые не разрешились через pinned registry, отдельно от знаменателя.
+Поле `unmapped_source_event_reasons` группирует эти уникальные source IDs по
+причине resolver: `missing`, `mismatch`, `ambiguous` или `conflict`; сумма
+счётчиков равна `unmapped_source_events`.
 Отчёт также содержит количество и fingerprint импортированных файлов,
 импортные диагностические коды, конфликты фактов, receipts с неизвестным
 `retrieved_at` и receipts, полученные позже `T`. Импортные диагностики относятся
