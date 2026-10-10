@@ -13,10 +13,12 @@ MLOps-система промышленного уровня для вероят
 подключаться ML-инженером конфигурацией. Границы `sport`, `tournament`,
 `model_pool` и `market/spec` зафиксированы в
 [ADR-003](docs/architecture/adr/ADR-003-configured-multisport-portfolio.md).
-Первый шаг уже реализован — проверяемый каталог
-[`conf/portfolio/default.yaml`](conf/portfolio/default.yaml); он пока не заменяет
-статические DVC/Airflow списки. Их подключение запланировано отдельными задачами
-EPIC-003.
+Проверяемый каталог [`conf/portfolio/default.yaml`](conf/portfolio/default.yaml)
+задаёт также локальный цикл кандидата для совместимого файлового источника:
+`python -m sports_forecast.orchestration.candidate premier_league_winner`.
+Пример Premier League и ограничения исторических odds описаны в
+[руководстве](docs/cursor/context/HOW_TO_ADD_NEW_TOURNAMENT.md).
+Регулярные DVC/Airflow списки остаются отдельным контуром.
 
 ---
 

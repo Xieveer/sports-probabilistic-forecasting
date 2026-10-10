@@ -10,6 +10,9 @@ model_pools:
   football_nationals_winner:
     sport: football
     market_specs: [winner]
+  premier_league_winner:
+    sport: football
+    market_specs: [winner]
 
 tournaments:
   nhl:
@@ -30,6 +33,14 @@ tournaments:
     memberships:
       - model_pool: football_nationals_winner
         market_specs: [winner]
+  premier_league:
+    sport: football
+    source: premier_league
+    display_name: "Premier League"
+    competition_code: ENG1
+    memberships:
+      - model_pool: premier_league_winner
+        market_specs: [winner]
 
 deployment_profiles:
   nhl_winner_with_ot:
@@ -44,3 +55,11 @@ deployment_profiles:
     model_pool: football_nationals_winner
     market_spec: winner
     state: candidate
+  premier_league_winner:
+    tournament: premier_league
+    model_pool: premier_league_winner
+    market_spec: winner
+    state: candidate
+    candidate_algorithm: logreg
+    candidate_features: basic
+    candidate_bookmaker: smart_tables

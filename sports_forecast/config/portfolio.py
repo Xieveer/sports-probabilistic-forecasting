@@ -43,6 +43,8 @@ class PortfolioTournament:
     sport: str
     source: str
     memberships: tuple[PoolMembership, ...]
+    display_name: str | None = None
+    competition_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -56,6 +58,9 @@ class DeploymentProfile:
     state: str
     immutable_model_ref: str | None
     candidate_report_ref: str | None
+    candidate_algorithm: str | None = None
+    candidate_features: str | None = None
+    candidate_bookmaker: str | None = None
 
 
 @dataclass(frozen=True)
@@ -129,6 +134,16 @@ def _load_tournaments(raw: dict[str, Any]) -> dict[str, PortfolioTournament]:
             sport=_required_text(config, "sport", context),
             source=_required_text(config, "source", context),
             memberships=tuple(memberships),
+            display_name=(
+                _required_text(config, "display_name", context)
+                if "display_name" in config
+                else None
+            ),
+            competition_code=(
+                _required_text(config, "competition_code", context)
+                if "competition_code" in config
+                else None
+            ),
         )
     return tournaments
 
@@ -165,6 +180,21 @@ def _load_deployment_profiles(raw: dict[str, Any]) -> dict[str, DeploymentProfil
             state=state,
             immutable_model_ref=model_ref.strip() if isinstance(model_ref, str) else None,
             candidate_report_ref=report_ref.strip() if isinstance(report_ref, str) else None,
+            candidate_algorithm=(
+                _required_text(config, "candidate_algorithm", context)
+                if "candidate_algorithm" in config
+                else None
+            ),
+            candidate_features=(
+                _required_text(config, "candidate_features", context)
+                if "candidate_features" in config
+                else None
+            ),
+            candidate_bookmaker=(
+                _required_text(config, "candidate_bookmaker", context)
+                if "candidate_bookmaker" in config
+                else None
+            ),
         )
     return profiles
 
@@ -199,8 +229,8 @@ def _validate_catalog(catalog: PortfolioCatalog) -> None:
 
     deployed_targets: set[tuple[str, str]] = set()
     for profile in catalog.deployment_profiles.values():
-        tournament = catalog.tournaments.get(profile.tournament)
-        if tournament is None:
+        deployed_tournament = catalog.tournaments.get(profile.tournament)
+        if deployed_tournament is None:
             raise PortfolioConfigError(
                 f"deployment_profile {profile.name}: tournament {profile.tournament} не найден"
             )
@@ -212,7 +242,7 @@ def _validate_catalog(catalog: PortfolioCatalog) -> None:
         membership_exists = any(
             membership.model_pool == profile.model_pool
             and profile.market_spec in membership.market_specs
-            for membership in tournament.memberships
+            for membership in deployed_tournament.memberships
         )
         if not membership_exists:
             raise PortfolioConfigError(

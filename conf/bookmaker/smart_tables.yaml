@@ -1,0 +1,15 @@
+# Исследовательские odds из карточек Smart Tables; происхождение и время неизвестны.
+name: smart_tables
+description: "Smart Tables 1X2, только candidate backtest"
+market_keys:
+  winner_home: "1"
+  winner_away: "2"
+side_keys:
+  h: "1"
+  a: "2"
+synthetic_odds_raw:
+  winner_h2h:
+    key_to_column_candidates:
+      "1": [odd_home]
+      "x": [odd_draw]
+      "2": [odd_away]

@@ -13,8 +13,8 @@
 - `market/` — семейства рынков (winner, total)
 - `market_spec/` — спецификации (winner, winner_home, total_over, total_under)
 - `portfolio/` — версионируемый каталог связей `sport` → `tournament` →
-  `model_pool` → `market/spec` → deployment profile; на текущем этапе валидирует
-  контракт, но ещё не является runtime-источником DVC/Airflow (ADR-003)
+  `model_pool` → `market/spec` → deployment profile; управляет локальным
+  candidate-циклом, но ещё не является runtime-источником DVC/Airflow
 - `algorithm/` — алгоритмы (catboost, lgbm, logreg, stacking, dummy)
 - `features/` — наборы фичей (basic, advanced) + generators
 - `feature_selection/` — стратегии отбора фичей
@@ -57,6 +57,8 @@
 
 - `main.py` — унифицированный CLI (train, predict, promote)
 - `sports_forecast/train.py` — обучение (Hydra)
+- `sports_forecast/orchestration/candidate.py` — локальный цикл кандидата по
+  профилю каталога: ingest → clean → features → train → отчёт
 - `sports_forecast/predict.py` — инференс
 - `sports_forecast/materialize.py` — batch prediction → DB
 - `sports_forecast/data/ingest.py` — ingest pipeline
