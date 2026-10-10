@@ -10,16 +10,16 @@
 
 - Инициатива: `EPIC-028`.
 - Ветка инициативы: `initiative/epic-028-production-model-contract`; отдельный worktree `.worktrees/epic-028-production-model-contract`.
-- Workflow / этап: `engineering / review TASK-028-1`.
+- Workflow / этап: `engineering / TASK-028-1 reviewed; подготовка TASK-028-2`.
 - Исходная цель: production загружает выбранную проверенную модель без знания её алгоритма и сохраняет точную версию каждого прогноза.
 - Критерии и DoD: [REQ-028](../product/requirements/REQ-028-production-model-contract.md); пара legacy NHL CatBoost + локальная LightGBM на том же `winner_withOT` подтверждена. Затем ADR, red → green → refactor, независимый review, PR и окончательно зелёный CI.
 - Релиз: production-развёртывание не запрошено.
-- Выполнено: направление зафиксировано 2026-10-04; 2026-10-10 подтверждён REQ, принят ADR-030, TASK-028-1 реализован через red → green → refactor; 47 адресных тестов и commit hooks прошли. Независимое review открыто.
+- Выполнено: 2026-10-10 подтверждён REQ и принят ADR-030. [TASK-028-1](tasks/TASK-028-1-bundle-registry-guard.md) завершён на `3f4ea4b`; после исправления I/O finding повторное независимое review не выявило P0–P2. В [отчёте](../changes/done/TASK-028-1-bundle-registry-guard.md) зафиксированы 49 адресных тестов и scoped Ruff. Найден локальный NHL CatBoost payload: его SHA-256 совпадает с весами staged v1.2.12 bundle; operations runbook фиксирует проверку bundle в exact Worker image и установку на сервер.
 - Решения: [ADR-030](../architecture/adr/ADR-030-production-model-contract.md) принят Product Owner 2026-10-10: registry DB — единственный pointer managed-пары; legacy-файловый pointer остаётся явным отдельным профилем. Нынешний upsert не сохраняет историю версий.
-- Артефакты: [REQ-028](../product/requirements/REQ-028-production-model-contract.md), [ADR-030](../architecture/adr/ADR-030-production-model-contract.md), [TASK-028-1](tasks/TASK-028-1-bundle-registry-guard.md), [отчёт TASK-028-1](../changes/done/TASK-028-1-bundle-registry-guard.md), [долгосрочный план](index.md#долгосрочные-инициативы-платформы).
-- Предыдущая роль: Developer — TASK-028-1 и адресные проверки.
-- Следующая роль: Reviewer — независимая проверка TASK-028-1, включая прямой вызов materialize и пустой вход; затем Product Owner декомпозирует следующие срезы ADR-030.
-- Открытые вопросы / блокеры: одобренный NHL payload отсутствует в Git и нужен на изолированном контуре; общий schema gate с EPIC-027 для ссылок на prediction revisions и odds observations.
+- Артефакты: [REQ-028](../product/requirements/REQ-028-production-model-contract.md), [ADR-030](../architecture/adr/ADR-030-production-model-contract.md), [TASK-028-1](tasks/TASK-028-1-bundle-registry-guard.md), [отчёт TASK-028-1](../changes/done/TASK-028-1-bundle-registry-guard.md), [TASK-028-2](tasks/TASK-028-2-managed-bundle-activation.md), [TASK-028-3](tasks/TASK-028-3-immutable-prediction-revisions.md), [TASK-028-4](tasks/TASK-028-4-two-algorithm-local-cycle.md), [долгосрочный план](index.md#долгосрочные-инициативы-платформы). Operations evidence: `/home/xieveer/Документы/codex_projects/operations-agent/docs/changes/2026-09-30-v1.2.12-archive-network-rollout-plan.md`.
+- Предыдущая роль: Reviewer — повторная независимая проверка TASK-028-1 без P0–P2.
+- Следующая роль: Developer — TASK-028-2 через red → green → refactor; затем независимый Reviewer.
+- Открытые вопросы / блокеры: для TASK-028-3 согласовать Alembic head, namespace события и nullable связь с odds observation EPIC-027 до миграции; для TASK-028-4 проверить совместимость локального bundle v1.2.12 с выбранным runtime и установить точный feature/outcome contract по payload. Локальный staged bundle: `/home/xieveer/Документы/codex_projects/operations-agent/tmp/v1.2.12-model-stage/bundles/sha256:a94173608d42bc69363be243527c1bdd893e2eee81c98f6615c01232aed1f64a`. Не копировать веса в Git.
 - Research: не применяется.
 - Обновлено: 2026-10-10.
 
@@ -42,12 +42,14 @@
 сравнивает источники истины и закрепляет DB registry pointer для managed-пар,
 manifest v2 и append-only prediction revisions. Решение принято.
 
-Первый малый срез — [TASK-028-1](tasks/TASK-028-1-bundle-registry-guard.md):
-проверять совпадение verified bundle и registry до inference и публикации,
-включая empty input. Он не требует миграции и не закрывает весь REQ.
-После него Product Owner выделяет задачи на managed pointer/manifest v2,
-immutable revisions и сквозной двухалгоритмовый прогон с rollback.
-Схему revisions и odds observations согласовать с EPIC-027 до миграций.
+[TASK-028-1](tasks/TASK-028-1-bundle-registry-guard.md) закрыл первый guard, но
+не весь REQ. Следующий порядок: [TASK-028-2](tasks/TASK-028-2-managed-bundle-activation.md)
+— manifest v2, проверенная активация и один managed DB pointer;
+[TASK-028-3](tasks/TASK-028-3-immutable-prediction-revisions.md) — append-only
+revisions и атомарная витрина; [TASK-028-4](tasks/TASK-028-4-two-algorithm-local-cycle.md)
+— реальный локальный CatBoost → LightGBM → rollback. Каждый следующий TASK
+начинается после review предыдущего. Схему revisions и odds observations
+согласовать с EPIC-027 до миграции TASK-028-3.
 
 ## Риски и rollout
 
