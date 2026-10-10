@@ -2,6 +2,7 @@
 .idea/
 .vscode/
 .cursor/
+/.worktrees/
 
 # Python
 __pycache__/
