@@ -608,3 +608,99 @@ def query_provider_as_of(
         )
     finally:
         connection.close()
+
+
+def query_provider_as_of_many(
+    database_path: Path,
+    registry_reader: RegistrySnapshotReader,
+    decision_times: dict[str, datetime],
+) -> tuple[dict[str, HistoricalSelection], frozenset[str]]:
+    """Пакетно выбрать provider-as-of цены для UUID и индивидуального T.
+
+    Использует подтверждённые source keys именно переданного `ir1`, читает SQLite
+    только в режиме read-only и возвращает конфликт отдельно, без fallback назад.
+    """
+    instants = {key: _utc(value, field="T") for key, value in decision_times.items()}
+    source_to_event: dict[str, str] = {}
+    conflicting_ids: set[str] = set()
+    for event in registry_reader.snapshot.event_snapshot.events:
+        if event.id not in instants:
+            continue
+        for key in event.source_keys:
+            if key.source != "the_odds_api" or key.sport != "ice_hockey":
+                continue
+            previous = source_to_event.get(key.source_event_id)
+            if previous is not None and previous != event.id:
+                conflicting_ids.add(key.source_event_id)
+            source_to_event[key.source_event_id] = event.id
+    for source_id in conflicting_ids:
+        source_to_event.pop(source_id, None)
+
+    uri = f"{Path(database_path).resolve().as_uri()}?mode=ro"
+    connection = sqlite3.connect(uri, uri=True)
+    connection.row_factory = sqlite3.Row
+    try:
+        observations: list[sqlite3.Row] = []
+        source_ids = sorted(source_to_event)
+        for offset in range(0, len(source_ids), 800):
+            batch = source_ids[offset : offset + 800]
+            placeholders = ",".join("?" for _ in batch)
+            observations.extend(
+                connection.execute(
+                    f"SELECT * FROM historical_observations WHERE observed_at IS NOT NULL AND source_event_id IN ({placeholders})",
+                    batch,
+                ).fetchall()
+            )
+        eligible: dict[str, list[sqlite3.Row]] = {}
+        for row in observations:
+            event_id = source_to_event.get(str(row["source_event_id"]))
+            if event_id and _utc(row["observed_at"], field="observed_at") <= instants[event_id]:
+                eligible.setdefault(event_id, []).append(row)
+        selected: dict[str, HistoricalSelection] = {}
+        conflicts: set[str] = set()
+        for event_id, rows in eligible.items():
+            latest_at = max(row["observed_at"] for row in rows)
+            latest = [row for row in rows if row["observed_at"] == latest_at]
+            if len({row["observation_id"] for row in latest}) != 1:
+                conflicts.add(event_id)
+                continue
+            row = latest[0]
+            receipt = connection.execute(
+                """SELECT r.receipt_id, r.file_sha256, r.imported_at, r.retrieved_at FROM historical_receipts r
+                   JOIN historical_observation_receipts x USING(receipt_id)
+                   WHERE x.observation_id=? ORDER BY r.retrieved_at IS NULL, r.retrieved_at, r.imported_at LIMIT 1""",
+                (row["observation_id"],),
+            ).fetchone()
+            observed = _utc(row["observed_at"], field="observed_at")
+            retrieved = (
+                _utc(receipt["retrieved_at"], field="retrieved_at")
+                if receipt and receipt["retrieved_at"]
+                else None
+            )
+            selected[event_id] = HistoricalSelection(
+                observation_id=row["observation_id"],
+                project_event_id=event_id,
+                registry_snapshot_id=registry_reader.snapshot_id,
+                source=row["source"],
+                source_event_id=row["source_event_id"],
+                source_file_sha256=receipt["file_sha256"] if receipt else "",
+                receipt_id=receipt["receipt_id"] if receipt else "",
+                bookmaker=row["bookmaker"],
+                market_key=row["market_key"],
+                period=row["period"],
+                includes_overtime=bool(row["includes_overtime"]),
+                includes_shootout=bool(row["includes_shootout"]),
+                market_rules_version=row["market_rules_version"],
+                prices=json.loads(row["prices_json"]),
+                observed_at=observed,
+                age_seconds=(instants[event_id] - observed).total_seconds(),
+                retrieved_at=retrieved,
+                imported_at=_utc(receipt["imported_at"], field="imported_at")
+                if receipt
+                else observed,
+                retrieval_status="known" if retrieved else "unknown",
+                late_retrieval=(retrieved > instants[event_id]) if retrieved else None,
+            )
+        return selected, frozenset(conflicts)
+    finally:
+        connection.close()
