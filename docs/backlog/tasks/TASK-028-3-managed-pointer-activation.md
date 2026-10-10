@@ -1,6 +1,6 @@
 # TASK-028-3 — DB pointer и безопасная активация managed-модели
 
-> **Статус:** backlog
+> **Статус:** done
 > **Владелец:** Developer
 > **Эпик:** [EPIC-028](../EPIC-028-production-model-contract.md)
 > **Требование:** [REQ-028](../../product/requirements/REQ-028-production-model-contract.md)
@@ -20,21 +20,21 @@ immutable bundle v2, а Worker, canonical refresh и прямой materialize п
 
 ## Критерии приёмки
 
-- [ ] Аддитивная миграция хранит `bundle_id` и разрешённый immutable artifact
+- [x] Аддитивная миграция хранит `bundle_id` и разрешённый immutable artifact
   location у managed deployment. DB constraint/index запрещает две active
   записи одной пары и active managed-запись без bundle. Старые записи остаются
   без придуманного ID и требуют явного bind.
-- [ ] Активация проверяет checksum, v2 manifest, соответствие пары и признаков,
+- [x] Активация проверяет checksum, v2 manifest, соответствие пары и признаков,
   runtime и загрузку доверенного model entrypoint внутри bundle root до DB
   commit. Identity нельзя повторно привязать к другим байтам; ошибка оставляет
   прежний active pointer.
-- [ ] Все production managed entrypoints используют pinned deployment и bundle;
+- [x] Все production managed entrypoints используют pinned deployment и bundle;
   файловый `current` не выбирает managed-модель и не используется как fallback.
   Legacy-профиль сохраняет v1-путь.
-- [ ] Повторная проверка pinned identity и DB publication находятся в одной
+- [x] Повторная проверка pinned identity и DB publication находятся в одной
   короткой транзакции с совместимым протоколом блокировок promote/rollback.
   Promotion во время inference не публикует результат старой версии.
-- [ ] Текущие API/бот продолжают читать прежнюю валидную витрину при отказе
+- [x] Текущие API/бот продолжают читать прежнюю валидную витрину при отказе
   активации или publication race.
 
 ## Red → green → refactor
@@ -62,14 +62,41 @@ immutable bundle v2, а Worker, canonical refresh и прямой materialize п
 - Bundle root read-only для Worker; только локальная ручная activation
   операция меняет pointer. Rollback выбирает ранее проверенную identity.
 
-## Проверка
+## Red → green → refactor
 
-- Red: новый PostgreSQL concurrency test падает на публикации устаревшей
-  модели или на отсутствии DB constraint.
-- Green: `uv run pytest -q tests/test_model_bundle.py tests/test_model_registry.py tests/test_materialize.py tests/test_worker.py tests/test_canonical_full_refresh.py` и новый PostgreSQL concurrency test — ожидается success.
-- `make lint`, `make test-unit` и независимый review после реализации.
-- Наблюдение: active pointer и загруженный bundle совпадают; при race прежняя
-  витрина не меняется.
+- **Red — DB:** `uv run pytest -q tests/test_model_registry.py -k managed_deployment_requires`
+  упал ожидаемо: отсутствовал `promote_managed`. Тест затем проверил active pair
+  index, запрет active unbound deployment и one-time bind существующего legacy
+  identity.
+- **Green — activation/resolver:** `uv run pytest -q tests/test_managed_model_activation.py -m 'not integration'`
+  — 2 passed. Проверены bundle binding, точный entrypoint, загрузочный callback,
+  проверка feature contract и сохранение pointer при ошибке загрузки.
+- **Red → green — publication race:** временное удаление guard перед
+  `publish_showcase` дало ожидаемый failure:
+  `test_managed_materialize_rejects_pointer_changed_during_inference` вернул
+  `True` и изменил витрину. После возврата проверки active row тот же тест прошёл
+  и прежняя строка осталась нетронутой.
+- **Green — PostgreSQL concurrency:** `SF_TEST_MANAGED_MODEL_DATABASE_URL=… uv run pytest -q tests/test_managed_model_activation.py -m integration`
+  — 1 passed на PostgreSQL 15 в отдельной схеме `sf_task0283_ephemeral`.
+  Конкурирующая активация после pin приводит к несовпадению перед publish.
+- **Migration:** `DATABASE_URL=… uv run alembic upgrade head` завершилась на
+  `0022_managed_model_pointer`; `alembic current` и `alembic heads` показали
+  этот единственный head. Проверено на PostgreSQL в отдельной схеме
+  `sf_task0283_migration`.
+- **Релевантный suite:**
+  `uv run pytest -q tests/test_model_bundle.py tests/test_model_registry.py tests/test_managed_model_activation.py tests/test_materialize.py tests/test_worker.py tests/test_canonical_full_refresh.py`
+  — 64 passed, 1 integration test пропущен без URL (запущен отдельно и прошёл).
+- `make lint` — Ruff: All checks passed.
+- `make test-unit` — 1491 passed, 14 deselected, 40 warnings.
+
+## Handoff и отчёт
+
+- Отчёт выполнения: `docs/changes/done/TASK-028-3-managed-pointer-activation.md`.
+- Независимый review остаётся следующим gate. Production pointer, production
+  bundle и артефакты модели не менялись. Полный двухалгоритмовый прогон и
+  migration gate с EPIC-027 остаются последующими задачами.
+- Следующий TASK: [TASK-028-4](TASK-028-4-immutable-prediction-revisions.md)
+  после независимого review и schema gate с EPIC-027.
 
 ## Handoff и отчёт
 

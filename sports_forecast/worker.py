@@ -8,10 +8,15 @@ from pathlib import Path
 import hydra
 from omegaconf import DictConfig, open_dict
 
+from sports_forecast.deploy.managed_model import resolve_active_model
 from sports_forecast.deploy.model_bundle import BundleVerificationError, load_current_model_bundle
 from sports_forecast.materialize import materialize_predictions
 from sports_forecast.service.db.engine import get_session
-from sports_forecast.service.db.repository import PredictionRepository, WorkerExecutionRepository
+from sports_forecast.service.db.repository import (
+    ModelRegistryRepository,
+    PredictionRepository,
+    WorkerExecutionRepository,
+)
 from sports_forecast.utils.log_config import configure_logging, get_logger
 
 
@@ -33,7 +38,31 @@ def run_worker(
             return True
 
     try:
-        bundle = load_current_model_bundle(runtime_root, app_version=app_version)
+        model_pool_cfg = cfg.get("model_pool")
+        if model_pool_cfg is not None:
+            pool_name = model_pool_cfg.get("name")
+            market_spec = str(cfg.market_spec.name)
+            if not isinstance(pool_name, str) or not pool_name:
+                raise BundleVerificationError("model_pool.name обязателен")
+            with get_session() as session:
+                active = ModelRegistryRepository(session).get_active(pool_name, market_spec)
+                if active is None:
+                    raise BundleVerificationError("Для model pool нет active deployment")
+                if active.is_managed:
+                    pin = resolve_active_model(
+                        session,
+                        model_pool=pool_name,
+                        market_spec=market_spec,
+                        bundle_root=runtime_root,
+                        app_version=app_version,
+                    )
+                    bundle_path = pin.bundle.path
+                else:
+                    bundle_path = load_current_model_bundle(
+                        runtime_root, app_version=app_version
+                    ).path
+        else:
+            bundle_path = load_current_model_bundle(runtime_root, app_version=app_version).path
     except BundleVerificationError:
         logger.exception("Worker bundle verification завершилась ошибкой")
         with get_session() as session:
@@ -43,8 +72,9 @@ def run_worker(
         return False
 
     with open_dict(cfg):
-        cfg.runtime_model_bundle = str(bundle.path)
+        cfg.runtime_model_bundle = str(bundle_path)
         cfg.runtime_model_bundle_app_version = app_version
+        cfg.runtime_model_bundle_root = str(runtime_root)
     success = materialize_predictions(cfg, version="prod")
     with get_session() as session:
         state = WorkerExecutionRepository(session)

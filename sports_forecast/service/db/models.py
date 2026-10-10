@@ -156,11 +156,26 @@ class ModelDeployment(Base):
     model_identity: str = Column(String(192), nullable=False, unique=True)
     candidate_report_ref: str = Column(String(512), nullable=False)
     artifact_ref: str = Column(String(512), nullable=False)
+    bundle_id: str | None = Column(String(80), nullable=True)
+    managed_artifact_location: str | None = Column(String(512), nullable=True)
+    is_managed: bool = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     is_active: bool = Column(Boolean, nullable=False, default=False)
     promoted_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
 
     __table_args__ = (
         Index("ix_model_deployment_pool_spec_active", "model_pool", "market_spec", "is_active"),
+        Index(
+            "uq_model_deployment_active_pair",
+            "model_pool",
+            "market_spec",
+            unique=True,
+            postgresql_where=text("is_active = true"),
+            sqlite_where=text("is_active = 1"),
+        ),
+        CheckConstraint(
+            "is_managed = false OR (bundle_id IS NOT NULL AND managed_artifact_location IS NOT NULL)",
+            name="ck_model_deployment_managed_bundle_bound",
+        ),
     )
 
 

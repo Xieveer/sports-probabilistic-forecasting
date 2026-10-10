@@ -12,7 +12,7 @@ import pytest
 from omegaconf import OmegaConf
 from sqlalchemy import create_engine
 
-from sports_forecast.deploy.model_bundle import build_model_bundle
+from sports_forecast.deploy.model_bundle import build_managed_model_bundle, build_model_bundle
 from sports_forecast.features.features_build import process_tournament_new
 from sports_forecast.materialize import (
     _aggregate_long_predictions,
@@ -21,7 +21,7 @@ from sports_forecast.materialize import (
 )
 from sports_forecast.service.db.engine import get_session, init_db, reset_engine
 from sports_forecast.service.db.models import Prediction
-from sports_forecast.service.db.repository import PredictionRepository
+from sports_forecast.service.db.repository import ModelRegistryRepository, PredictionRepository
 
 
 def _build_cfg() -> dict:
@@ -176,7 +176,7 @@ def test_resolve_verified_model_provenance_matches_active_pointer(tmp_path: Path
     )
     registry = MagicMock()
     registry.get_active.return_value = MagicMock(
-        model_identity="pool:football_nationals_winner:winner:immutable"
+        model_identity="pool:football_nationals_winner:winner:immutable", is_managed=False
     )
 
     provenance = _resolve_verified_model_provenance(cfg, registry)
@@ -184,7 +184,111 @@ def test_resolve_verified_model_provenance_matches_active_pointer(tmp_path: Path
     assert provenance == (
         "football_nationals_winner",
         "pool:football_nationals_winner:winner:immutable",
+        None,
     )
+
+
+def test_managed_materialize_rejects_pointer_changed_during_inference(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Race после inference не меняет прежнюю валидную витрину."""
+    reset_engine()
+    engine = create_engine("sqlite:///:memory:")
+    init_db(engine)
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "model.bin").write_bytes(b"managed-model")
+    bundle = build_managed_model_bundle(
+        source,
+        tmp_path / "bundles",
+        model_identity="pool:nhl:winner_withOT:old",
+        app_version="1.2.15",
+        model_pool="nhl",
+        market_spec="winner_withOT",
+        market_rules={"overtime": True, "shootout": True, "draw": False},
+        outcomes=["home_win", "away_win"],
+        feature_contract_id="feature-contract-v1",
+        features=[{"name": "f1", "type": "float"}],
+        transformations_version="v1",
+        algorithm="lgbm",
+        model_entrypoint="model.bin",
+    )
+    with get_session(engine=engine) as session:
+        PredictionRepository(session).upsert_prediction(
+            match_id="old-match",
+            tournament="nhl",
+            market="winner_withOT",
+            market_spec="winner_withOT",
+            predictions={"home_win": 0.6, "away_win": 0.4},
+            model_version="previous",
+            algorithm="lgbm",
+            featureset="basic",
+        )
+        ModelRegistryRepository(session).promote_managed(
+            model_pool="nhl",
+            market_spec="winner_withOT",
+            model_identity=bundle.model_identity,
+            candidate_report_ref="reports/old.json",
+            artifact_ref=bundle.bundle_id,
+            bundle_id=bundle.bundle_id,
+            managed_artifact_location=f"{bundle.bundle_id}/model.bin",
+        )
+    processed = tmp_path / "data" / "processed" / "nhl"
+    processed.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "id": ["new-match", "new-match"],
+            "side": ["h", "a"],
+            "datetime": ["2026-10-10T12:00:00"] * 2,
+            "f1": [1.0, 2.0],
+        }
+    ).to_parquet(processed / "inference_long.parquet", index=False)
+    algorithm_dir = tmp_path / "conf" / "algorithm"
+    algorithm_dir.mkdir(parents=True)
+    (algorithm_dir / "lgbm.yaml").write_text("name: lgbm\n", encoding="utf-8")
+    cfg_data = _build_cfg()
+    cfg_data.update(
+        {
+            "tournament": {"name": "nhl"},
+            "market": {"name": "winner_withOT"},
+            "market_spec": {"name": "winner_withOT", "data_format": "long"},
+            "model_pool": {"name": "nhl"},
+            "runtime_model_bundle_app_version": "1.2.15",
+            "runtime_model_bundle_root": str(tmp_path / "bundles"),
+        }
+    )
+    monkeypatch.setattr("sports_forecast.materialize.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        "sports_forecast.materialize.get_session", lambda: get_session(engine=engine)
+    )
+
+    class RacingModel:
+        def predict_proba(self, _features: pd.DataFrame) -> np.ndarray:
+            with get_session(engine=engine) as session:
+                ModelRegistryRepository(session).promote_managed(
+                    model_pool="nhl",
+                    market_spec="winner_withOT",
+                    model_identity="pool:nhl:winner_withOT:new",
+                    candidate_report_ref="reports/new.json",
+                    artifact_ref="sha256:new",
+                    bundle_id="sha256:new",
+                    managed_artifact_location="sha256:new/model.bin",
+                )
+            return np.array([[0.2, 0.8], [0.7, 0.3]])
+
+    monkeypatch.setattr(
+        "sports_forecast.materialize.load_model_from_path", lambda *_: RacingModel()
+    )
+    try:
+        assert materialize_predictions(OmegaConf.create(cfg_data), version="prod") is False
+        with get_session(engine=engine) as session:
+            rows = session.query(Prediction).all()
+        assert [(row.match_id, row.predictions_json, row.status) for row in rows] == [
+            ("old-match", '{"home_win": 0.6, "away_win": 0.4}', "ok")
+        ]
+    finally:
+        reset_engine()
+        engine.dispose()
 
 
 @pytest.mark.parametrize(
@@ -252,7 +356,11 @@ def test_managed_materialize_rejects_invalid_contract_before_model_load(
         lambda *_a, **_k: bundle.path / "model_prod.cbm",
     )
     registered_identity = "identity-b" if failure == "missing_active" else "identity-a"
-    active = None if failure == "missing_active" else MagicMock(model_identity=registered_identity)
+    active = (
+        None
+        if failure == "missing_active"
+        else MagicMock(model_identity=registered_identity, is_managed=False)
+    )
     monkeypatch.setattr(
         "sports_forecast.materialize.ModelRegistryRepository",
         lambda _s: MagicMock(get_active=lambda *_a: active),

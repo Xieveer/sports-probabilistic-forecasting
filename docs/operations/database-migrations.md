@@ -40,6 +40,12 @@ terminal status; UPDATE run/stage остаётся у `sf_refresh_writer`. Пр�
 в `calendar_coverages`, сохраняя окно предыдущего успеха, но делая его статус
 недоступным до следующей успешной проверки. Старую историю run/stage не удаляют.
 
+Revision `0022_managed_model_pointer` добавляет nullable bundle binding и
+partial unique index для active deployment одной пары. Старые строки получают
+`is_managed=false`, поэтому миграция не назначает им неизвестные bundle IDs.
+Проверка ограничения выполняется перед managed activation; production pointer
+этим TASK не переключался.
+
 ## Проверка и recovery
 
 Перед изменением или после прерванной операции узнайте состояние revision:

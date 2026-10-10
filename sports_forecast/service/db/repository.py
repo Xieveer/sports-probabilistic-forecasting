@@ -24,7 +24,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import uuid4
 
-from sqlalchemy import and_, exists, func, insert, or_, select, update
+from sqlalchemy import and_, exists, func, insert, or_, select, text, update
 from sqlalchemy.engine import ScalarResult
 from sqlalchemy.orm import Session
 
@@ -1497,6 +1497,7 @@ class ModelRegistryRepository:
             raise ValueError("model_identity не соответствует model_pool/market_spec")
         if not candidate_report_ref or not artifact_ref:
             raise ValueError("Promotion требует ссылки на report кандидата и артефакт")
+        self._lock_pair(model_pool, market_spec)
         if self.get_by_identity(model_identity) is not None:
             raise ValueError("Immutable model_identity уже зарегистрирован")
         self.session.query(ModelDeployment).filter(
@@ -1516,18 +1517,81 @@ class ModelRegistryRepository:
         self.session.flush()
         return deployment
 
-    def get_active(self, model_pool: str, market_spec: str) -> ModelDeployment | None:
-        """Вернуть текущий production pointer пула или ``None``."""
-        return cast(
-            ModelDeployment | None,
-            self.session.query(ModelDeployment)
-            .filter(
-                ModelDeployment.model_pool == model_pool,
-                ModelDeployment.market_spec == market_spec,
-                ModelDeployment.is_active.is_(True),  # type: ignore[attr-defined]
+    def promote_managed(
+        self,
+        *,
+        model_pool: str,
+        market_spec: str,
+        model_identity: str,
+        candidate_report_ref: str,
+        artifact_ref: str,
+        bundle_id: str,
+        managed_artifact_location: str,
+    ) -> ModelDeployment:
+        """Атомарно активировать identity, привязанную к immutable bundle."""
+        if not model_identity.startswith(f"pool:{model_pool}:{market_spec}:"):
+            raise ValueError("model_identity не соответствует model_pool/market_spec")
+        if not all((candidate_report_ref, artifact_ref, bundle_id, managed_artifact_location)):
+            raise ValueError("Managed promotion требует bundle и artifact location")
+        self._lock_pair(model_pool, market_spec)
+        existing = self.get_by_identity(model_identity)
+        if existing is not None and (
+            existing.model_pool != model_pool or existing.market_spec != market_spec
+        ):
+            raise ValueError("model_identity уже зарегистрирован для другой пары")
+        if existing is not None and existing.is_managed:
+            raise ValueError("Managed model_identity уже привязан к immutable bundle")
+        self.session.query(ModelDeployment).filter(
+            ModelDeployment.model_pool == model_pool,
+            ModelDeployment.market_spec == market_spec,
+            ModelDeployment.is_active.is_(True),  # type: ignore[attr-defined]
+        ).update({"is_active": False})
+        if existing is not None:
+            # Единственное разрешённое изменение identity: явный bind legacy row
+            # к проверенному bundle во время activation.
+            existing.candidate_report_ref = candidate_report_ref
+            existing.artifact_ref = artifact_ref
+            existing.bundle_id = bundle_id
+            existing.managed_artifact_location = managed_artifact_location
+            existing.is_managed = True
+            existing.is_active = True
+            deployment = existing
+        else:
+            deployment = ModelDeployment(
+                model_pool=model_pool,
+                market_spec=market_spec,
+                model_identity=model_identity,
+                candidate_report_ref=candidate_report_ref,
+                artifact_ref=artifact_ref,
+                bundle_id=bundle_id,
+                managed_artifact_location=managed_artifact_location,
+                is_managed=True,
+                is_active=True,
             )
-            .one_or_none(),
+            self.session.add(deployment)
+        self.session.flush()
+        return deployment
+
+    def _lock_pair(self, model_pool: str, market_spec: str) -> None:
+        """Сериализовать pointer changes в PostgreSQL по managed-паре."""
+        if self.session.bind is not None and self.session.bind.dialect.name == "postgresql":
+            self.session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:pair_key))"),
+                {"pair_key": f"{model_pool}/{market_spec}"},
+            )
+
+    def get_active(
+        self, model_pool: str, market_spec: str, *, for_update: bool = False
+    ) -> ModelDeployment | None:
+        """Вернуть текущий production pointer пула или ``None``."""
+        query = self.session.query(ModelDeployment).filter(
+            ModelDeployment.model_pool == model_pool,
+            ModelDeployment.market_spec == market_spec,
+            ModelDeployment.is_active.is_(True),  # type: ignore[attr-defined]
         )
+        if for_update:
+            query = query.with_for_update()
+        return cast(ModelDeployment | None, query.one_or_none())
 
     def rollback(self, model_pool: str, market_spec: str, model_identity: str) -> ModelDeployment:
         """Явно вернуть pointer к ранее сохранённой версии без удаления записей."""
@@ -1538,6 +1602,7 @@ class ModelRegistryRepository:
             or deployment.market_spec != market_spec
         ):
             raise ValueError("Версия для rollback не найдена в указанном model pool")
+        self._lock_pair(model_pool, market_spec)
         self.session.query(ModelDeployment).filter(
             ModelDeployment.model_pool == model_pool,
             ModelDeployment.market_spec == market_spec,

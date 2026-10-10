@@ -144,3 +144,44 @@ def test_successful_worker_stores_published_predictions_count(tmp_path: Path) ->
     passed_cfg = materialize.call_args.args[0]
     assert passed_cfg.runtime_model_bundle == str(tmp_path / "verified-bundle")
     assert passed_cfg.runtime_model_bundle_app_version == "1.0.0"
+
+
+def test_managed_worker_resolves_database_pointer_without_current_fallback(
+    tmp_path: Path,
+) -> None:
+    """Managed Worker берёт bundle из DB pin и не читает файловый current."""
+    session = MagicMock()
+    state = MagicMock()
+    state.start.return_value = True
+    registry = MagicMock()
+    registry.get_active.return_value = MagicMock(is_managed=True)
+    pin = MagicMock(bundle=MagicMock(path=tmp_path / "sha256:managed"))
+    cfg = OmegaConf.create(
+        {
+            "tournament": {"name": "nhl"},
+            "market": {"name": "winner_withOT"},
+            "market_spec": {"name": "winner_withOT"},
+            "model_pool": {"name": "nhl"},
+        }
+    )
+    with (
+        patch("sports_forecast.worker.get_session", return_value=nullcontext(session)),
+        patch("sports_forecast.worker.WorkerExecutionRepository", return_value=state),
+        patch("sports_forecast.worker.ModelRegistryRepository", return_value=registry),
+        patch("sports_forecast.worker.resolve_active_model", return_value=pin),
+        patch("sports_forecast.worker.load_current_model_bundle") as load_current,
+        patch("sports_forecast.worker.PredictionRepository"),
+        patch("sports_forecast.worker.materialize_predictions", return_value=True) as materialize,
+    ):
+        success = run_worker(
+            cfg,
+            run_id="managed-run",
+            runtime_root=tmp_path,
+            app_version="1.2.15",
+        )
+
+    assert success is True
+    load_current.assert_not_called()
+    passed_cfg = materialize.call_args.args[0]
+    assert passed_cfg.runtime_model_bundle == str(tmp_path / "sha256:managed")
+    assert passed_cfg.runtime_model_bundle_root == str(tmp_path)

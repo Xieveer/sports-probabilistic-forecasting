@@ -31,7 +31,13 @@ from sports_forecast.deploy.canonical_bootstrap import (
     refresh_nhl_canonical_with_summary_from_csv,
 )
 from sports_forecast.deploy.canonical_snapshot import export_canonical_snapshot
-from sports_forecast.deploy.model_bundle import BundleVerificationError, load_current_model_bundle
+from sports_forecast.deploy.managed_model import resolve_active_model
+from sports_forecast.deploy.model_bundle import (
+    BundleVerificationError,
+    ModelBundle,
+    VerifiedModelBundle,
+    load_current_model_bundle,
+)
 from sports_forecast.deploy.source_state import export_nhl_source_state
 from sports_forecast.features.features_build import process_tournament_new
 from sports_forecast.identity.events import registry_event_reader_enabled
@@ -45,6 +51,7 @@ from sports_forecast.service.db.refresh_lock import RefreshLockRepository
 from sports_forecast.service.db.repository import (
     CalendarRepository,
     DataCycleRunRepository,
+    ModelRegistryRepository,
     PredictionRepository,
     WorkerExecutionRepository,
 )
@@ -459,9 +466,37 @@ def run_full_refresh(
                 return result
             _finish_cycle_stage(run_id, "quality", status="success")
         _start_cycle_stage(run_id, "predictions")
-        bundle = load_current_model_bundle(runtime_root, app_version=app_version)
+        model_pool_cfg = cfg.get("model_pool")
+        bundle: ModelBundle | VerifiedModelBundle
+        if model_pool_cfg is not None:
+            pool_name = model_pool_cfg.get("name")
+            if not isinstance(pool_name, str) or not pool_name:
+                raise BundleVerificationError("model_pool.name обязателен")
+            with get_session() as session:
+                active = ModelRegistryRepository(session).get_active(
+                    pool_name, str(cfg.market_spec.name)
+                )
+                if active is None:
+                    raise BundleVerificationError("Для model pool нет active deployment")
+                if active.is_managed:
+                    bundle = resolve_active_model(
+                        session,
+                        model_pool=pool_name,
+                        market_spec=str(cfg.market_spec.name),
+                        bundle_root=runtime_root,
+                        app_version=app_version,
+                    ).bundle
+                else:
+                    bundle = load_current_model_bundle(runtime_root, app_version=app_version)
+        else:
+            bundle = load_current_model_bundle(runtime_root, app_version=app_version)
         features_config = _load_bundle_features_config(
-            bundle.path, algorithm=str(cfg.algorithm.name)
+            bundle.path,
+            algorithm=(
+                bundle.algorithm
+                if isinstance(bundle, VerifiedModelBundle)
+                else str(cfg.algorithm.name)
+            ),
         )
         prepared_input = (
             load_prepared_input(run_id=run_id, archive_root=prepared_archive_root)
@@ -475,6 +510,7 @@ def run_full_refresh(
             root = Path(directory)
             runtime_cfg = _runtime_cfg(cfg, root, bundle.path, app_version=app_version)
             with open_dict(runtime_cfg):
+                runtime_cfg.runtime_model_bundle_root = str(runtime_root)
                 runtime_cfg.features = features_config
                 runtime_cfg.refresh_run_id = run_id
                 runtime_cfg.canonical_snapshot_id = (
