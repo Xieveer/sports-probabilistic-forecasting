@@ -1,6 +1,6 @@
 # TASK-029-1 — Кандидат Premier League
 
-> **Статус:** реализация и независимый review завершены; CI ожидается
+> **Статус:** реализация, независимый review и первоначальный CI PR #67 завершены
 > **Задача:** [TASK-029-1](../../backlog/tasks/TASK-029-1-premier-league-candidate.md)
 > **Требование:** [REQ-029](../../product/requirements/REQ-029-premier-league-candidate.md)
 > **Решение:** [ADR-030](../../architecture/adr/ADR-030-local-candidate-cycle.md)
@@ -57,6 +57,10 @@ trainer его не применял.
   для четырёх production-модулей — passed; `git diff --check` — passed.
 - `.venv/bin/sphinx-build -q -b html docs/source /tmp/epic029-docs` — exit 0;
   предупреждения об offline intersphinx и существующих docstrings.
+- На коммите `54e93b9` в [PR #67](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/67)
+  прошли GitHub Actions `lint-test (3.12)`, `Python dependencies` и
+  `Filesystem and secrets`; после фиксации этого результата изменена только
+  документация закрытия, для неё требуется повторный terminal CI.
 - Полный `.venv/bin/pytest -q` остановлен вручную после длительного ожидания
   на `tests/test_admin_control_api.py` (exit 130); полный suite не подтверждён.
   `uv run pytest` не стартовал из-за ограничений установленного snap `uv`,
