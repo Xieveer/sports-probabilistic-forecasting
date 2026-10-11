@@ -42,6 +42,8 @@ Reviewer проверил пять критериев REQ-033 на интегр�
 `UV_OFFLINE=1 make lint`, `make type-check`, `make ai-validate` — прошли;
 `UV_OFFLINE=1 make docs` — успешно, 1 предупреждение Sphinx;
 `git diff --check origin/main...HEAD` — чисто.
+Проверенный commit интегрированной ветки: `cdf9db5`
+(`Record EPIC-033 review readiness`).
 Остаточный риск: фактическую доставку Alloy и расследование известного failed run
 можно проверить только после deployment этого кода; отдельная production-версия
 не запрошена. PR и terminal CI ещё не выполнены.
