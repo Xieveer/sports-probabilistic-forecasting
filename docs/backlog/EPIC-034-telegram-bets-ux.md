@@ -10,12 +10,12 @@
 - Инициатива: `EPIC-034`; ветка `initiative/epic-034-telegram-bets-ux`, worktree `.worktrees/epic-034-telegram-bets-ux`.
 - Исходный запрос владельца: улучшить работу со ставками в Telegram-боте; выполнять параллельно с EPIC-026 без изменения текущего production-релиза. 2026-10-11 названы очистка сообщений после записи, Excel-шаблон и последующий перенос истории, универсальный `/bet_add` с указанием турнира и аналитикой по турнирам, примеры значений в подсказке `/bet_correct`.
 - Текущий baseline: [EPIC-031](EPIC-031-real-bets-ledger.md) уже выпустил ввод, добор, расчёт и исправление реальных ставок, отдельные карточки прогнозов и месячную сводку. Финансовые правила и хранение описаны в [REQ-031](../product/requirements/REQ-031-real-bets-ledger.md).
-- Этап: TASK-034-1/2/3 реализованы, прошли независимый review и terminal CI в [PR #79](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/79). Принят [ADR-034](../architecture/adr/ADR-034-manual-bet-market-rules.md). TASK-034-4 ждёт заполненного владельцем файла.
+- Этап: готовая часть TASK-034-1/2/3 прошла независимый review и terminal CI, интегрирована в `main` через [PR #79](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/79) 2026-10-11 (merge commit `6a2e9b5267a32915ac7d5c57bed3595cdfb9cb9d`). Принят [ADR-034](../architecture/adr/ADR-034-manual-bet-market-rules.md). TASK-034-4 заблокирован до получения заполненного владельцем файла.
 - Граница: текущие записи ставок, audit, ссылки на исходную версию прогноза и разделение реальных/симулированных ставок не менять без отдельного подтверждения. Автоматическое размещение ставок у букмекера в запрос не входит.
-- Предыдущая роль: Reviewer завершил review и commit gate; Product Owner открыл PR и дождался зелёного terminal CI.
-- Следующая роль: Product Owner завершает интеграцию PR после проверки актуальности CI. После получения файла Operations Agent готовит и проверяет серверный перенос.
-- Релиз: новая production-версия и deployment не запрошены; [PR #79](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/79) предназначен для интеграции готовой части в `main`.
-- CI evidence: [lint-test (3.12)](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38156613813/job/114520795468), [Filesystem and secrets](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38156613878/job/114520795483), [Python dependencies](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38156613878/job/114520795697) — `SUCCESS`.
+- Предыдущая роль: Product Owner завершил интеграцию готовой части после зелёного terminal CI.
+- Следующая роль: Operations Agent после получения заполненного файла готовит и проверяет серверный перенос TASK-034-4.
+- Релиз: готовая часть находится в `main`; production deployment не запрашивался и не выполнялся.
+- CI evidence для последнего HEAD PR: [lint-test (3.12)](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38156749962/job/114521193700), [Filesystem and secrets](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38156750023/job/114521194704), [Python dependencies](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38156750023/job/114521194924) — `SUCCESS`.
 - Открытые вопросы: сопоставление исторических матчей, ошибки и повторы в заполненном файле, правила серверного переноса; дополнительные рынки требуют отдельного решения. Подробности — в REQ-034 и TASK-034-4.
 - Обновлено: 2026-10-11.
 
