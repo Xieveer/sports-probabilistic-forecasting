@@ -1,6 +1,6 @@
 # TASK-014-2 — Полный каталог NHL Web API
 
-> **Статус:** in_progress
+> **Статус:** blocked
 > **Владелец:** data-researcher
 > **Эпик:** [EPIC-014](../EPIC-014-research-api-catalog.md)
 > **Требование:** [REQ-014](../../product/requirements/REQ-014-research-api-catalog.md)
@@ -47,16 +47,24 @@ surface API. Ingest и массовый сбор не меняются.
 18 observed endpoint patterns и 1 105 leaf-level field records. `catalog_scope` фиксирует
 границу как все scalar-поля 18 перечисленных patterns, а не неизвестный внутренний NHL surface.
 Для field records указаны JSON path, тип, units/domain, structured evidence, применение,
-temporal availability и leakage-risk; 176 временно неоднозначных UI/media полей остаются
-явно `unknown`, без разрешения использовать их как feature. Синхронный dictionary:
+temporal availability и leakage-risk; у 183 полей момент доступности остаётся
+`unknown`, без разрешения использовать их как предматчевую feature. Синхронный dictionary:
 `docs/research/nhl-web-api-catalog.md`.
 
-Перед закрытием: создать done-отчёт с фактически выполненными проверками и передать полный
-diff независимому reviewer; не менять статус до его чистого результата.
+Проверка 2026-10-11 исправила temporal-метки счёта, итогов и gamecenter; пять
+read-only NHL GET вернули HTTP 200 без сохранения payload. Поля
+`specialEvent.parentId`, `waiversSequence` и два `goalInGame` остались без
+подтверждённого смысла. По решению владельца смысл каждого поля обязателен
+для закрытия задачи; до появления доказательства статус `blocked`.
+
+Подготовленный diff проходит 54 целевых теста и Ruff; `make docs` собрал
+документацию с 1 предупреждением. Промежуточное независимое review
+исправлений не нашло P0–P2; до передачи результата в `main` нужен terminal CI.
+После снятия предметного блокера провести итоговое review и создать отчёт `done`.
 
 ## Handoff и отчёт
 
-- Отчёт выполнения: создаётся в `docs/changes/done/` после зелёных проверок.
+- Отчёт выполнения: создаётся в `docs/changes/done/` после подтверждения семантики и review.
 - Follow-up / findings: TASK-014-3 Smart Tables.
 - Review: требуется независимый review после реализации.
 - Commit/push: заполняет reviewer отдельным evidence-коммитом.

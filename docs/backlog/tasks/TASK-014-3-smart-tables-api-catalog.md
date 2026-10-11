@@ -1,6 +1,6 @@
 # TASK-014-3 — Полный каталог Smart Tables API
 
-> **Статус:** in_progress
+> **Статус:** blocked
 > **Владелец:** data-researcher
 > **Эпик:** [EPIC-014](../EPIC-014-research-api-catalog.md)
 > **Требование:** [REQ-014](../../product/requirements/REQ-014-research-api-catalog.md)
@@ -51,13 +51,24 @@ Ingest, массовый сбор и обход CAPTCHA/ACL не входят.
 извлечения путей и типов не сохранялся. Синхронный dictionary:
 `docs/research/smart-tables-football-api-catalog.md`.
 
-Следующий безопасный шаг — продолжать read-only schema capture только доступных методов,
-переводя endpoint в `observed` лишь после полного field-level inventory. Перед закрытием
-нужны done-отчёт, независимое review и отсутствие P0/P1/P2 findings.
+Сверка 2026-10-11 исправила расхождение `match-center-card`: наблюдены
+261 path/type records, у которых nullability неизвестна. Для 238 из них
+описана помеченная интерпретация по имени и локальной разведке; смысл 23
+полей match-center остаётся непрозрачным. У всех 261 полей match-center и
+одного поля `match-card` machine `usage=unknown` до подтверждения
+назначения и времени доступности. Read-only GET завершился тайм-аутом без ответа. По решению
+владельца смысл каждого поля обязателен для закрытия; до появления доступного
+доказательства статус `blocked`.
+
+Подготовленный diff проходит 54 целевых теста и Ruff; `make docs` собрал
+документацию с 1 предупреждением. Промежуточное независимое review после
+исправления P1/P2 не нашло новых блокирующих findings; до передачи результата
+в `main` нужен terminal CI. После снятия предметного блокера провести
+итоговое review и создать отчёт `done`.
 
 ## Handoff и отчёт
 
-- Отчёт выполнения: создаётся в `docs/changes/done/` после зелёных проверок.
+- Отчёт выполнения: создаётся в `docs/changes/done/` после подтверждения семантики и review.
 - Follow-up / findings: нет вне EPIC-014.
 - Review: требуется независимый review после реализации.
 - Commit/push: заполняет reviewer отдельным evidence-коммитом.

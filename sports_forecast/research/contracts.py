@@ -229,9 +229,9 @@ class ApiFieldRecord(BaseModel):
     entity: str = Field(min_length=1)
     json_path: str = Field(min_length=1)
     data_type: str = Field(min_length=1)
-    nullable: bool
+    nullable: bool | None
     description: str = Field(min_length=1)
-    key_role: Literal["primary", "foreign", "natural", "none"]
+    key_role: Literal["primary", "foreign", "natural", "none", "unknown"]
     usage: Literal["feature", "target", "label", "odds", "metadata", "unknown"]
     temporal_availability: Literal[
         "pre_event",
@@ -299,6 +299,15 @@ class DataSourceRecord(BaseModel):
     @model_validator(mode="after")
     def validate_complete_catalog(self) -> DataSourceRecord:
         """Не допустить выдачу summary-списков за полный контракт API."""
+        if self.catalog_schema_version > 2:
+            raise ValueError(
+                f"catalog_schema_version={self.catalog_schema_version} не поддерживается; поддерживаются версии 1 и 2"
+            )
+        if self.catalog_schema_version == 1:
+            if any(field.nullable is None for field in self.api_fields):
+                raise ValueError("catalog_schema_version=1 не поддерживает nullable=null")
+            if any(field.key_role == "unknown" for field in self.api_fields):
+                raise ValueError("catalog_schema_version=1 не поддерживает key_role=unknown")
         if self.catalog_completeness != "complete":
             return self
         if not self.api_endpoints:
