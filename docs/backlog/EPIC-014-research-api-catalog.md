@@ -45,9 +45,11 @@ ADR-014, все три TASK и отчёты `done`, контракт, обе к�
 тесты, границы ingest и release evidence. P0–P2 не обнаружены. Повторно
 прошли 54 целевых теста и `git diff --check`; количество endpoint/field records
 и `unknown` совпадает с отчётами. Неподтверждённая семантика и ограниченный
-доступ к источникам остаются явно записанными рисками. Окончательный CI
+доступ к источникам остаются явно записанными рисками. На окончательном HEAD
+`995766329ce2a0b0b20f3b9f3e1ac3f124384f02` все три проверки
 [PR #72](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/72)
-проверяется после push итогового diff.
+завершились успешно; PR слит в `main` 2026-10-11 коммитом
+`54c281d35bd47cc9e197f197035c59d4386039ba`.
 Проверенный итоговый diff зафиксирован коммитом
 `add9c4ed97d127f4753d6fa9e51405a657161d5c`.
 
@@ -71,18 +73,17 @@ ADR-014, все три TASK и отчёты `done`, контракт, обе к�
   [Smart Tables-карточка](../research/catalogs/smart-tables-football-api.json),
   [NHL-словарь](../research/nhl-web-api-catalog.md),
   [Smart Tables-словарь](../research/smart-tables-football-api-catalog.md).
-- Предыдущая роль: независимый Reviewer — итоговое review EPIC без P0–P2.
-  Следующая роль: Product Owner проверяет terminal CI, интегрирует PR и
-  закрывает временный worktree.
+- Предыдущая роль: независимый Reviewer — итоговое review EPIC без P0–P2;
+  Product Owner проверил terminal CI и интегрировал PR. Следующий шаг —
+  зафиксировать эту запись и удалить чистый временный worktree.
 - Проверки текущего diff: 54 теста двух затронутых suites прошли, Ruff и
   `git diff --check` прошли; `make docs` собрал документацию с 1 предупреждением.
   Reviewer gate для подготовленных исправлений пройден. Проверенный коммит
   `f262145e8e2f558b56d88681b00e2b7b0e11bcfe`, evidence-коммит
   `b2d33a876438f749ac1c98e214dd86a4a0c8fbc1`.
 - [PR #72](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/72)
-  готовится к merge по решению владельца. На HEAD `b2d33a8` 2026-10-11
-  завершились успешно `lint-test (3.12)`, `Python dependencies` и
-  `Filesystem and secrets`; для окончательного HEAD проверка повторяется.
+  слит в `main` после успешных `lint-test (3.12)`, `Python dependencies` и
+  `Filesystem and secrets` на окончательном HEAD. Merge commit: `54c281d35bd47cc9e197f197035c59d4386039ba`.
 - Ограничения: пять NHL GET 2026-10-11 вернули 200, но не проверяли всю схему;
   Smart Tables GET завершился тайм-аутом без ответа. Регулярный сбор или
   использование в модели требует отдельного решения и проверки доступа/as-of.
