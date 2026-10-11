@@ -59,6 +59,18 @@ Revision `0024_prediction_source_namespace` добавляет nullable
 остаются с `NULL`; migration не угадывает их источник. Как и прочие schema
 изменения, исправление выполняется forward migration, без Alembic downgrade.
 
+Revision `0025_real_bets_ledger` добавляет закрытые таблицы контекста Telegram
+карточки, фактических ставок и append-only истории исправлений. После Alembic
+обязателен шаг выдачи grants из `sports_forecast/deploy/database_roles.py`:
+`sf_control_api` получает только необходимые SELECT/INSERT и UPDATE текущей
+ставки, но не DELETE и не UPDATE audit/контекста. `sf_api_reader` не получает
+доступ к журналу. Без этих grants бот не сможет сохранять карточки и ставки.
+Перед применением на production убедитесь в успешной локальной миграции и
+финансовых API/бот тестах; для работы журнала задайте `BET_OWNER_USER_ID`
+равным Telegram ID владельца из `BOT_ADMIN_USER_IDS`. При пустом значении
+закрытый API отклоняет запросы журнала. Включение версии требует отдельного
+release gate.
+
 ## Проверка и recovery
 
 Перед изменением или после прерванной операции узнайте состояние revision:

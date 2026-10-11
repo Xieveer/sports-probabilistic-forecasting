@@ -99,6 +99,7 @@ def verify_contract(rendered_path: Path, *, model_runtime_root: Path) -> None:
             "SF_CONTROL_DATABASE_URL_FILE",
             "SF_CONTROL_API_KEY_FILE",
             "SF_CONTROL_ADMIN_IDS",
+            "SF_BETS_OWNER_ID",
             "SF_DATA_CYCLE_NOTIFICATION_ALIASES",
             "ODDS_API_KEY_FREE_FILE",
             "ODDS_API_KEY_20K_FILE",
@@ -113,6 +114,8 @@ def verify_contract(rendered_path: Path, *, model_runtime_root: Path) -> None:
         and api_env["ODDS_API_KEY_100K_FILE"] == "/run/secrets/odds_api_key_100k"
         and api_env["ODDS_API_KEY_FILE"] == "/run/secrets/odds_api_key"
         and bool(api_env["SF_CONTROL_ADMIN_IDS"])
+        and api_env["SF_BETS_OWNER_ID"]
+        == services["telegram-bot"]["environment"]["BOT_BETS_OWNER_ID"]
         and bool(api_env["SF_DATA_CYCLE_NOTIFICATION_ALIASES"]),
         "api: reader/control/odds credentials должны передаваться только secret files; admin и aliases обязательны",
     )

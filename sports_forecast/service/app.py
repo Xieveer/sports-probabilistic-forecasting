@@ -20,7 +20,7 @@ from fastapi import FastAPI
 from prometheus_client import make_asgi_app
 
 from sports_forecast.service.db.engine import get_engine
-from sports_forecast.service.routers import admin_control, calendar, health, predictions
+from sports_forecast.service.routers import admin_control, calendar, health, predictions, real_bets
 from sports_forecast.version import get_service_version
 
 
@@ -66,6 +66,7 @@ app = FastAPI(
 app.include_router(health.router)
 app.include_router(calendar.router)
 app.include_router(admin_control.router)
+app.include_router(real_bets.router)
 app.include_router(predictions.public_router)
 app.include_router(predictions.operations_router)
 

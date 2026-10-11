@@ -255,3 +255,17 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
         or "canonical_events TO sf_control_api" in statement
         for statement in control_grants
     )
+    for table in ("bet_card_contexts", "real_bets", "real_bet_audit"):
+        assert inspect(migrated_engine).has_table(table)
+        assert any(
+            table in statement and "TO sf_control_api" in statement for statement in control_grants
+        )
+        assert not any(
+            table in statement and "TO sf_api_reader" in statement for statement in RUNTIME_GRANTS
+        )
+    assert not any("DELETE" in statement for statement in control_grants)
+    assert not any(
+        "UPDATE" in statement
+        and ("bet_card_contexts" in statement or "real_bet_audit" in statement)
+        for statement in control_grants
+    )

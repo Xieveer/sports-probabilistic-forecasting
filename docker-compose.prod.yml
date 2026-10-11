@@ -45,6 +45,7 @@ services:
       SF_CONTROL_DATABASE_URL_FILE: /run/secrets/control_database_url
       SF_CONTROL_API_KEY_FILE: /run/secrets/control_api_key
       SF_CONTROL_ADMIN_IDS: ${BOT_ADMIN_USER_IDS:-}
+      SF_BETS_OWNER_ID: ${BET_OWNER_USER_ID:-}
       SF_DATA_CYCLE_NOTIFICATION_ALIASES: ${SF_DATA_CYCLE_NOTIFICATION_ALIASES:?set safe notification aliases}
       ODDS_API_KEY_FREE_FILE: /run/secrets/odds_api_key_free
       ODDS_API_KEY_20K_FILE: /run/secrets/odds_api_key_20k
@@ -104,6 +105,7 @@ services:
       BOT_TOKEN_FILE: /run/secrets/bot_token
       BOT_ALLOWED_USER_IDS: ${BOT_ALLOWED_USER_IDS:-}
       BOT_ADMIN_USER_IDS: ${BOT_ADMIN_USER_IDS:-}
+      BOT_BETS_OWNER_ID: ${BET_OWNER_USER_ID:-}
       BOT_API_BASE_URL: http://api:8000
       BOT_CONTROL_API_KEY_FILE: /run/secrets/control_api_key
       BOT_NOTIFICATION_DESTINATIONS_FILE: /run/secrets/bot_notification_destinations

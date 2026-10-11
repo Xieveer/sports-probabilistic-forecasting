@@ -17,6 +17,7 @@ SQLAlchemy ORM-модели для Prediction Store.
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
@@ -28,6 +29,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -188,6 +190,88 @@ class PredictionRevision(Base):
         ),
         Index("ix_prediction_revision_event", "tournament", "source_namespace", "source_event_id"),
     )
+
+
+class BetCardContext(Base):
+    """Неизменяемый снимок карточки, увиденной владельцем перед ставкой."""
+
+    __tablename__ = "bet_card_contexts"
+
+    context_id: str = Column(String(36), primary_key=True)
+    owner_user_id: str = Column(String(32), nullable=False, index=True)
+    tournament: str = Column(String(64), nullable=False)
+    source_namespace: str | None = Column(String(128), nullable=True)
+    source_event_id: str = Column(String(128), nullable=False)
+    market: str = Column(String(32), nullable=False)
+    market_spec: str = Column(String(64), nullable=False)
+    prediction_revision_id: str | None = Column(
+        ForeignKey("prediction_revisions.revision_id", ondelete="RESTRICT"), nullable=True
+    )
+    quote_observation_id: int | None = Column(BigInteger, nullable=True)
+    snapshot_json: str = Column(Text, nullable=False)
+    captured_at: datetime = Column(DateTime(), nullable=False)
+
+
+class RealBet(Base):
+    """Текущее состояние одной фактической одиночной ставки Winline."""
+
+    __tablename__ = "real_bets"
+
+    bet_id: str = Column(String(36), primary_key=True)
+    owner_user_id: str = Column(String(32), nullable=False, index=True)
+    create_request_id: str = Column(String(128), nullable=False, unique=True)
+    create_request_hash: str = Column(String(64), nullable=False)
+    context_id: str | None = Column(
+        ForeignKey("bet_card_contexts.context_id", ondelete="RESTRICT"), nullable=True
+    )
+    tournament: str = Column(String(64), nullable=False)
+    source_namespace: str | None = Column(String(128), nullable=True)
+    source_event_id: str = Column(String(128), nullable=False)
+    market_spec: str = Column(String(64), nullable=False)
+    outcome: str = Column(String(64), nullable=False)
+    bookmaker: str = Column(String(32), nullable=False)
+    funding: str = Column(String(16), nullable=False)
+    currency: str = Column(String(3), nullable=False)
+    stake: Decimal = Column(Numeric(14, 2), nullable=False)
+    decimal_odds: Decimal = Column(Numeric(10, 4), nullable=False)
+    placed_at: datetime = Column(DateTime(), nullable=False)
+    status: str = Column(String(16), nullable=False)
+    result: str | None = Column(String(16), nullable=True)
+    payout: Decimal | None = Column(Numeric(14, 2), nullable=True)
+    settled_at: datetime | None = Column(DateTime(), nullable=True)
+    revision: int = Column(Integer(), nullable=False, default=1)
+    created_at: datetime = Column(DateTime(), nullable=False)
+    updated_at: datetime = Column(DateTime(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("stake > 0", name="ck_real_bet_stake_positive"),
+        CheckConstraint("decimal_odds > 1", name="ck_real_bet_odds_positive"),
+        CheckConstraint("currency = 'RUB'", name="ck_real_bet_rub"),
+        CheckConstraint("funding IN ('cash', 'freebet')", name="ck_real_bet_funding"),
+        CheckConstraint("status IN ('open', 'settled', 'cancelled')", name="ck_real_bet_status"),
+        CheckConstraint(
+            "result IS NULL OR result IN ('win', 'loss', 'void')", name="ck_real_bet_result"
+        ),
+        Index("ix_real_bets_owner_settled", "owner_user_id", "settled_at"),
+    )
+
+
+class RealBetAudit(Base):
+    """Неизменяемая история создания, расчёта и исправлений ставки."""
+
+    __tablename__ = "real_bet_audit"
+
+    audit_id: str = Column(String(36), primary_key=True)
+    bet_id: str = Column(ForeignKey("real_bets.bet_id", ondelete="RESTRICT"), nullable=False)
+    owner_user_id: str = Column(String(32), nullable=False)
+    request_id: str = Column(String(128), nullable=False, unique=True)
+    request_hash: str = Column(String(64), nullable=False)
+    operation: str = Column(String(16), nullable=False)
+    before_json: str | None = Column(Text, nullable=True)
+    after_json: str = Column(Text, nullable=False)
+    created_at: datetime = Column(DateTime(), nullable=False)
+
+    __table_args__ = (Index("ix_real_bet_audit_bet", "bet_id", "created_at"),)
 
 
 class ModelDeployment(Base):

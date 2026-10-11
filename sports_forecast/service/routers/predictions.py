@@ -15,7 +15,7 @@ import json
 import time
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -23,6 +23,7 @@ from sports_forecast.service.db.engine import get_session
 from sports_forecast.service.db.models import Prediction
 from sports_forecast.service.db.repository import PredictionRepository
 from sports_forecast.service.live_odds_enrichment import batch_live_response_extras
+from sports_forecast.service.routers import calendar as calendar_router
 from sports_forecast.service.schemas import (
     ModelInfo,
     PredictionListResponse,
@@ -58,6 +59,7 @@ def _to_response(
         "away_player": pred.away_player,
         "match_datetime": pred.match_datetime,
         "predictions": predictions,
+        "current_revision_id": pred.current_revision_id,
         "model": ModelInfo(
             version=pred.model_version,
             algorithm=pred.algorithm,
@@ -206,6 +208,10 @@ def get_upcoming(
             "нужен горизонт дольше 48 ч."
         ),
     ),
+    period: Annotated[
+        calendar_router.CalendarPeriod | None,
+        Query(description="Букмекерский период 08:00–08:00 МСК; заменяет hours."),
+    ] = None,
     live_pinnacle: bool = Query(
         True,
         description=(
@@ -217,17 +223,24 @@ def get_upcoming(
     """Получить актуальные предсказания для предстоящих матчей.
 
     В выборку входят только записи со статусом ``ok``, непустым временем матча и
-    ``match_datetime`` в пределах указанного окна от текущего UTC.
+    ``match_datetime`` в пределах выбранного периода или прежнего окна ``hours``.
 
     Args:
         tournament: Название турнира (например ``nhl``, ``uel_kz_1``).
         market: Тип рынка.
         market_spec: Опциональный фильтр по спецификации (NHL OT — см. описание параметра).
         hours: Горизонт в часах (по умолчанию 48).
+        period: Букмекерский период, если указан.
 
     Returns:
         Список предсказаний.
     """
+    window_start: datetime | None = None
+    window_end: datetime | None = None
+    if period is not None:
+        window_start, window_end = calendar_router.calendar_window(
+            calendar_router.utc_now(), period
+        )
     with get_session() as session:
         repo = PredictionRepository(session)
         preds = repo.get_upcoming_predictions(
@@ -235,6 +248,8 @@ def get_upcoming(
             market=market,
             market_spec=market_spec,
             hours=hours,
+            window_start=window_start,
+            window_end=window_end,
         )
 
     extras_map = batch_live_response_extras(preds, live_pinnacle=live_pinnacle)
