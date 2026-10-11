@@ -683,10 +683,17 @@ class EntityRegistry:
         """Искать сущности каталога с ограниченными размером и страницей."""
         if not 1 <= limit <= 100 or not 0 <= offset <= 100_000 or len(query) > 100:
             raise ValueError("Недопустимые параметры поиска сущностей")
+        escaped_query = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped_query}%"
         with self._connect(write=False) as connection:
             rows = connection.execute(
-                "SELECT * FROM entities WHERE state='active' AND (? IS NULL OR kind=?) AND (?='' OR project_name LIKE ?) ORDER BY project_name,id LIMIT ? OFFSET ?",
-                (kind, kind, query, f"%{query}%", limit, offset),
+                "SELECT * FROM entities WHERE state='active' AND (? IS NULL OR kind=?) "
+                "AND (?='' OR project_name LIKE ? ESCAPE '\\' OR EXISTS ("
+                "SELECT 1 FROM designations WHERE designations.entity_id=entities.id "
+                "AND designations.kind=entities.kind AND designations.state='confirmed' "
+                "AND designations.raw_value LIKE ? ESCAPE '\\')) "
+                "ORDER BY project_name,id LIMIT ? OFFSET ?",
+                (kind, kind, query, pattern, pattern, limit, offset),
             ).fetchall()
         return [
             Entity(row["id"], row["kind"], row["sport"], row["project_name"], row["revision"])
