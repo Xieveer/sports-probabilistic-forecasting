@@ -43,7 +43,7 @@ revision ID. Закрытый API сохраняет точный payload кар
 
 - [REQ-031](../../product/requirements/REQ-031-real-bets-ledger.md), [ADR-031](../../architecture/adr/ADR-031-real-bets-ledger.md), README и [runbook миграций](../../operations/database-migrations.md) обновлены.
 - Независимый Reviewer нашёл race повторного create, отсутствие ручного матча и неверную owner границу; исправления повторно проверены, P0–P2 не найдены.
-- Commit/push: после финальных проверок инициативы.
+- Проверенный commit инициативы: `db0e4cb`.
 
 ## Остаточные риски
 

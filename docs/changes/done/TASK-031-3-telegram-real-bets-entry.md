@@ -40,7 +40,7 @@
 
 - README, [REQ-031](../../product/requirements/REQ-031-real-bets-ledger.md), [ADR-031](../../architecture/adr/ADR-031-real-bets-ledger.md) обновлены.
 - Независимый Reviewer проверил денежный диалог и owner access; P0–P2 после исправлений нет.
-- Commit/push: после финального gate инициативы.
+- Проверенный commit инициативы: `db0e4cb`.
 
 ## Остаточные риски
 

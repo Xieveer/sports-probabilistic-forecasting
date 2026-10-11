@@ -40,7 +40,7 @@ Edge, EV и рекомендация; отсутствие линии показ
 
 - Документация: [REQ-031](../../product/requirements/REQ-031-real-bets-ledger.md), [EPIC-031](../../backlog/EPIC-031-real-bets-ledger.md), README.
 - Review / security: независимый Reviewer; найденные P2 и P3 исправлены, повторное review без блокирующих findings.
-- Commit/push: ожидают завершения инициативы.
+- Проверенный commit инициативы: `db0e4cb`.
 - Follow-up: TASK-031-2 — журнал и закрытый API; кнопка записи ставки войдёт в TASK-031-3.
 
 ## Остаточные риски
