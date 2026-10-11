@@ -113,6 +113,7 @@ def test_partial_source_record_keeps_legacy_catalog_readable() -> None:
     record = DataSourceRecord.model_validate(_legacy_source())
 
     assert record.catalog_completeness == "partial"
+    assert record.catalog_schema_version == 1
 
 
 def test_complete_source_requires_endpoint_and_field_semantics() -> None:
@@ -127,6 +128,186 @@ def test_complete_source_links_field_to_endpoint_and_temporal_risk() -> None:
 
     assert record.api_fields[0].endpoint_id == record.api_endpoints[0].endpoint_id
     assert record.api_fields[0].evidence.as_of.isoformat() == "2026-08-25T12:00:00+00:00"
+
+
+def test_complete_source_allows_unknown_nullability_without_assuming_non_null() -> None:
+    """Неизвестная nullability сериализуется отдельно от подтверждённого false."""
+    source = _complete_source()
+    source["catalog_schema_version"] = 2
+    fields = source["api_fields"]
+    assert isinstance(fields, list)
+    fields[0]["nullable"] = None
+
+    record = DataSourceRecord.model_validate(source)
+
+    assert record.api_fields[0].nullable is None
+
+
+def test_complete_source_allows_unverified_key_role() -> None:
+    """Неизвестная связь поля с ключом не подменяется утверждением `none`."""
+    source = _complete_source()
+    source["catalog_schema_version"] = 2
+    fields = source["api_fields"]
+    assert isinstance(fields, list)
+    fields[0]["key_role"] = "unknown"
+
+    record = DataSourceRecord.model_validate(source)
+
+    assert record.api_fields[0].key_role == "unknown"
+
+
+def test_v1_rejects_v2_nullability_value() -> None:
+    """В схеме v1 nullable остаётся обязательным подтверждённым boolean."""
+    source = _complete_source()
+    fields = source["api_fields"]
+    assert isinstance(fields, list)
+    fields[0]["nullable"] = None
+
+    with pytest.raises(ValidationError, match="catalog_schema_version=1.*nullable=null"):
+        DataSourceRecord.model_validate(source)
+
+
+def test_nullable_remains_required_when_nullability_is_unknown() -> None:
+    """JSON null означает неизвестное значение; отсутствие свойства не допускается."""
+    source = _complete_source(catalog_schema_version=2)
+    fields = source["api_fields"]
+    assert isinstance(fields, list)
+    fields[0].pop("nullable")
+
+    with pytest.raises(ValidationError, match="Field required"):
+        DataSourceRecord.model_validate(source)
+
+
+def test_v1_rejects_v2_unknown_key_role() -> None:
+    """В v1 нельзя выдавать неизвестную роль ключа за допустимое значение схемы."""
+    source = _complete_source()
+    fields = source["api_fields"]
+    assert isinstance(fields, list)
+    fields[0]["key_role"] = "unknown"
+
+    with pytest.raises(ValidationError, match="catalog_schema_version=1.*key_role=unknown"):
+        DataSourceRecord.model_validate(source)
+
+
+def test_catalog_rejects_unsupported_schema_version() -> None:
+    """Новая версия требует обновления контракта до чтения её значений."""
+    with pytest.raises(ValidationError, match="catalog_schema_version=3 не поддерживается"):
+        DataSourceRecord.model_validate(_legacy_source(catalog_schema_version=3))
+
+
+def test_smart_tables_match_center_records_unknown_nullability() -> None:
+    """Paths/types-only snapshot не доказывает обязательность всех 261 leaf-полей."""
+    payload = json.loads(
+        (CATALOGS_DIRECTORY / "smart-tables-football-api.json").read_text(encoding="utf-8")
+    )
+    record = DataSourceRecord.model_validate(payload)
+    match_center_fields = [
+        field for field in record.api_fields if field.endpoint_id == "match-center-card"
+    ]
+    match_center_endpoint = next(
+        endpoint for endpoint in record.api_endpoints if endpoint.endpoint_id == "match-center-card"
+    )
+
+    assert len(match_center_fields) == 261
+    assert match_center_endpoint.schema_status == "observed"
+    assert all(field.nullable is None for field in match_center_fields)
+
+
+def test_smart_tables_match_center_path_type_only_fields_have_unknown_semantics() -> None:
+    """Paths/types-only evidence does not establish key role, usage or event timing."""
+    payload = json.loads(
+        (CATALOGS_DIRECTORY / "smart-tables-football-api.json").read_text(encoding="utf-8")
+    )
+    fields = [
+        field for field in payload["api_fields"] if field["endpoint_id"] == "match-center-card"
+    ]
+
+    assert len(fields) == 261
+    assert all(field["key_role"] == "unknown" for field in fields)
+    assert all(field["temporal_availability"] == "unknown" for field in fields)
+    assert all(field["usage"] == "unknown" for field in fields)
+
+
+def test_smart_tables_match_center_dictionary_shows_field_safety_metadata() -> None:
+    """Человеко-читаемая строка match-center содержит все ключевые safety-поля."""
+    payload = json.loads(
+        (CATALOGS_DIRECTORY / "smart-tables-football-api.json").read_text(encoding="utf-8")
+    )
+    dictionary = (CATALOGS_DIRECTORY.parent / "smart-tables-football-api-catalog.md").read_text(
+        encoding="utf-8"
+    )
+    section = dictionary.split("## Детальные leaf records: match-center", maxsplit=1)[1].split(
+        "\n## ", maxsplit=1
+    )[0]
+    rows = [line for line in section.splitlines() if line.startswith("| `match-center-")]
+    header = next(line for line in section.splitlines() if line.startswith("| `field_id`"))
+
+    assert "`nullable`" in header
+    assert "`key_role`" in header
+    assert "`temporal_availability`" in header
+    assert "`leakage_risk`" in header
+    assert len(rows) == 261
+    match_center_fields = {
+        field["field_id"]: field
+        for field in payload["api_fields"]
+        if field["endpoint_id"] == "match-center-card"
+    }
+    for row in rows:
+        cells = [cell.strip() for cell in row.split("|")]
+        field = match_center_fields[cells[1].strip("`")]
+        nullable = (
+            "null (неизвестно)" if field["nullable"] is None else str(field["nullable"]).lower()
+        )
+
+        assert cells[4].strip("`") == nullable
+        assert cells[5].strip("`") == field["key_role"]
+        assert cells[6].strip("`") == field["usage"]
+        assert cells[7].strip("`") == field["temporal_availability"]
+        assert cells[8] == field["leakage_risk"]
+        assert cells[9]
+
+
+def test_smart_tables_human_dictionary_indexes_every_observed_field() -> None:
+    """У каждого observed field есть человеко-читаемая строка со всеми safety-атрибутами."""
+    payload = json.loads(
+        (CATALOGS_DIRECTORY / "smart-tables-football-api.json").read_text(encoding="utf-8")
+    )
+    dictionary = (CATALOGS_DIRECTORY.parent / "smart-tables-football-api-catalog.md").read_text(
+        encoding="utf-8"
+    )
+    dictionary_field_ids = {
+        line.split("|", maxsplit=2)[1].strip().strip("`")
+        for line in dictionary.splitlines()
+        if line.startswith("| `") and len(line.split("|", maxsplit=2)) > 2
+    }
+
+    assert {field["field_id"] for field in payload["api_fields"]} <= dictionary_field_ids
+    assert "`key_role`" in dictionary
+    assert "`temporal_availability`" in dictionary
+    assert "`leakage_risk`" in dictionary
+
+
+def test_nhl_post_event_results_are_not_prematch_features() -> None:
+    """Счёт и исход матча NHL остаются live/post-event либо unknown."""
+    payload = json.loads((CATALOGS_DIRECTORY / "nhl-web-api.json").read_text(encoding="utf-8"))
+    result_paths = {
+        "homeTeam.score",
+        "awayTeam.score",
+        "gameOutcome.lastPeriodType",
+        "winningGoalie.playerId",
+    }
+    result_fields = [
+        field
+        for field in payload["api_fields"]
+        if field["endpoint_id"] in {"schedule-date", "score-date", "club-season"}
+        and any(field["json_path"].endswith(path) for path in result_paths)
+    ]
+
+    assert result_fields
+    assert all(
+        field["temporal_availability"] in {"live", "post_event", "unknown"}
+        for field in result_fields
+    )
 
 
 @pytest.mark.parametrize(
