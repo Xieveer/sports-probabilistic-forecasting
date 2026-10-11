@@ -1,6 +1,6 @@
 # EPIC-031 — Журнал реальных ставок и результатов
 
-> **Статус:** in_progress
+> **Статус:** done
 > **Приоритет:** medium
 > **Владелец:** Product Owner
 > **Требование:** [REQ-031](../product/requirements/REQ-031-real-bets-ledger.md) (`confirmed`)
@@ -10,15 +10,15 @@
 
 - Инициатива: `EPIC-031`.
 - Ветка инициативы: `initiative/epic-031-real-bets-ledger`, отдельный worktree `.worktrees/epic-031-real-bets-ledger`.
-- Workflow / этап: `engineering / финальные проверки и PR`.
+- Workflow / этап: `engineering / завершено в main`.
 - Исходная цель: видеть историю фактически сделанных ставок и проверяемую доходность отдельно от симуляции.
 - Критерии и DoD: подтверждены в [REQ-031](../product/requirements/REQ-031-real-bets-ledger.md). Валюта первого среза — RUB; финансовые показатели относятся к месяцу расчёта.
 - Релиз: production-развёртывание не запрошено.
-- Выполнено: 2026-10-10 владелец описал сценарий Pinnacle → Winline, доборы и фрибет. 2026-10-11 подтверждены REQ и критерии первого среза; TASK-031-1/2/3/4 реализованы, итоговый независимый review не нашёл P0–P2. `make test-unit`: 1615 passed; `make docs` и `make pre-commit`: успешно. Проверенный commit: `db0e4cb`; PR и окончательный CI ожидаются.
+- Выполнено: 2026-10-10 владелец описал сценарий Pinnacle → Winline, доборы и фрибет. 2026-10-11 подтверждены REQ и критерии первого среза; TASK-031-1/2/3/4 реализованы, итоговый независимый review не нашёл P0–P2. `make test-unit`: 1615 passed; `make docs` и `make pre-commit`: успешно. Проверенный commit: `db0e4cb`; [PR #70](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/70) прошёл три CI checks и слит в `main` коммитом `67ba108`.
 - Решения: каждое фактическое размещение — отдельная запись; фактическая цена Winline отличается от рекомендательной Pinnacle. При выигрыше фрибета номинал не возвращается, при void он сгорает. Валюта первого среза — RUB. Даты размещения и расчёта раздельны, месячные финансовые показатели считаются по дате расчёта. Ставка без prediction revision допустима с явной пометкой. Cash-out и экспрессы вне первого среза. Ввод из отдельной Telegram-карточки подтверждён. Общий денежный PnL включает фрибеты; ROI только для ставок собственными деньгами. Новые турниры нельзя автоматически включать в серверный цикл.
 - Артефакты: [REQ-031](../product/requirements/REQ-031-real-bets-ledger.md), [ADR-031](../architecture/adr/ADR-031-real-bets-ledger.md), [TASK-031-1](tasks/TASK-031-1-predict-cards-and-periods.md), [TASK-031-2](tasks/TASK-031-2-real-bets-store-and-api.md), [TASK-031-3](tasks/TASK-031-3-telegram-real-bets-entry.md), [TASK-031-4](tasks/TASK-031-4-monthly-real-bets-report.md).
-- Предыдущая роль: Product Owner — декомпозиция направления.
-- Следующая роль: Product Owner — PR и окончательный CI.
+- Предыдущая роль: Reviewer — полный review EPIC и evidence.
+- Следующая роль: нет; production-развёртывание возможно только по отдельному запросу.
 - Открытые вопросы: нет для первого ручного среза; API поддерживает пока один Data Cycle NHL, бот выбирает только реально поддерживаемые циклы.
 - Research: не применяется.
 - Обновлено: 2026-10-11.
