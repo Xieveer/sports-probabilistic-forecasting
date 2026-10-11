@@ -269,6 +269,25 @@ def test_release_gate_renders_and_validates_production_compose_contract() -> Non
     assert "verify_production_compose_contract.py" in command
 
 
+def test_tag_and_evidence_gates_render_all_registry_services() -> None:
+    """Release verifier должен видеть opt-in registry службы в обоих workflow."""
+    docker = yaml.safe_load((PROJECT_ROOT / ".github" / "workflows" / "docker.yml").read_text())
+    verify_step = next(
+        step
+        for step in docker["jobs"]["verify"]["steps"]
+        if step.get("name") == "Verify rendered production Compose contract"
+    )
+    assert verify_step["run"].count("--profile registry-sync --profile registry-feedback") == 2
+
+    evidence = yaml.safe_load(
+        (PROJECT_ROOT / ".github" / "workflows" / "release-evidence.yml").read_text()
+    )
+    commands = "\n".join(
+        step.get("run", "") for step in evidence["jobs"]["verify-evidence"]["steps"]
+    )
+    assert commands.count("--profile registry-sync --profile registry-feedback") == 2
+
+
 def test_worker_runtime_dependencies_are_explicit_and_visible_to_bare_python() -> None:
     """Runtime import не зависит от неявного выбора ``uv run`` окружения."""
     pyproject = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))

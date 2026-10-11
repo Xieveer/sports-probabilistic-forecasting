@@ -27,10 +27,20 @@ EXPECTED_SERVICE_IMAGES = {
     "source-acquirer": "worker",
     "worker": "worker",
     "archive-sync": "archive_sync",
+    "registry-sync": "archive_sync",
+    "registry-feedback": "archive_sync",
     "migrator": "api",
     "role-bootstrap": "postgres",
 }
-APPLICATION_SERVICES = {"api", "telegram-bot", "source-acquirer", "worker", "archive-sync"}
+APPLICATION_SERVICES = {
+    "api",
+    "telegram-bot",
+    "source-acquirer",
+    "worker",
+    "archive-sync",
+    "registry-sync",
+    "registry-feedback",
+}
 SHA256_REFERENCE = re.compile(r"^[a-z0-9.-]+(?:/[a-z0-9._-]+)*@sha256:[0-9a-f]{64}$")
 COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 EVIDENCE_TAG = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+-evidence\.[1-9][0-9]*$")

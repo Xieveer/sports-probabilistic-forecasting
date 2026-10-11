@@ -5,7 +5,7 @@
 - Инициатива: [EPIC-032](../backlog/EPIC-032-v1-3-0-release.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
 - Целевая среда: production VPS `ops-prod-01`; версия: `1.3.0`.
-- source_tag: `v1.3.0` — annotated tag на exact merge commit `main` после review и CI; пока не создан.
+- source_tag: `v1.3.0` — annotated tag на merge commit `80ddd0a`; его tag pipeline завершился ошибкой, поэтому этот кандидат не готов к выпуску. Следующая версия ожидает решения владельца.
 - evidence_tag: `v1.3.0-evidence.1` — после проверки immutable manifest; пока не создан.
 - Source commit, image digests, model bundle, CI и release evidence указываются здесь после их получения и до переключения сервера. Нельзя подставлять commit ветки или mutable image tag.
 
@@ -100,8 +100,10 @@ verification states, registry version/feedback и доставку уведом�
 
 ## Артефакт и откат
 
-После независимого review и terminal PR CI Reviewer ставит annotated
-`v1.3.0` на проверенный merge commit. Tag pipeline должен выполнить CI,
+Annotated `v1.3.0` уже поставлен на проверенный merge commit, но
+[tag pipeline](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38142671658)
+упал на Compose gate до build/push. Тег не перемещать; после исправления
+требуются новый PR, terminal CI, tag новой утверждённой версии. Tag pipeline должен выполнить CI,
 Security, first-rollout contract, публикацию linux/amd64 образов, scan и
 provenance. Immutable manifest и handoff проверить через
 `make verify-release-evidence` с `--handoff docs/operations/production-handoff.md`.
@@ -125,8 +127,10 @@ Operations Agent до GO. Если обратная совместимость �
    revision, deployed image digests и состояние расписания не подтверждены.
 4. SSH после первого чтения завершался тайм-аутом; ёмкость и свежесть backup
    не доказаны. Rollback target и время восстановления не определены.
-5. PR review/CI, annotated tag, tag pipeline, immutable images, scan,
-   provenance, модельный wrapper 1.3.0 и release evidence ещё не получены.
+5. PR #73 прошёл review/CI, annotated tag `v1.3.0` создан, но его tag pipeline
+   упал до сборки образов. Локальный wrapper 1.3.0 проверен; его загрузка в
+   exact Worker image, immutable images, scan, provenance и release evidence
+   ещё не получены. Исправление — [TASK-032-2](../backlog/tasks/TASK-032-2-release-compose-profiles.md).
 
 До закрытия этих пунктов статус остаётся `NO-GO`. `candidate` означает
 заполненный контракт проверки, а не разрешение на production switch.
