@@ -263,6 +263,27 @@ def test_production_compose_fixture_renders_all_first_rollout_profiles(tmp_path:
     verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
 
     config = yaml.safe_load(result.stdout)
+    candidate_producers = ("worker", "source-acquirer")
+    invalid_id_config = yaml.safe_load(result.stdout)
+    for name in (*candidate_producers, "registry-feedback"):
+        invalid_id_config["services"][name]["environment"]["SF_ENTITY_REGISTRY_INSTALLATION_ID"] = (
+            "not-a-uuid"
+        )
+    rendered.write_text(yaml.safe_dump(invalid_id_config), encoding="utf-8")
+    with pytest.raises(ValueError, match="candidate producer.*canonical UUID"):
+        verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
+
+    for name in candidate_producers:
+        assert (
+            config["services"][name]["environment"]["SF_ENTITY_REGISTRY_INSTALLATION_ID"]
+            == "e8608691-baf7-46fb-ae0e-594cb86f1fcf"
+        )
+        producer_config = yaml.safe_load(result.stdout)
+        del producer_config["services"][name]["environment"]["SF_ENTITY_REGISTRY_INSTALLATION_ID"]
+        rendered.write_text(yaml.safe_dump(producer_config), encoding="utf-8")
+        with pytest.raises(ValueError, match="candidate producer.*installation ID"):
+            verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
+
     for name in ("api", "worker", "source-acquirer", "telegram-bot"):
         assert config["services"][name]["environment"]["SF_REGISTRY_EVENT_READER_ENABLED"] == (
             "false"

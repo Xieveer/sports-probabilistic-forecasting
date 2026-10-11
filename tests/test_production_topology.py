@@ -288,6 +288,9 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
         "SF_DATA_CYCLE_RUN_ID": "${SF_DATA_CYCLE_RUN_ID:-untracked}",
         "SF_DATA_CYCLE_GENERATION": "${SF_DATA_CYCLE_GENERATION:-0}",
         "SF_DATA_CYCLE_OWNER_ID": "${SF_DATA_CYCLE_OWNER_ID:-untracked}",
+        "SF_ENTITY_REGISTRY_INSTALLATION_ID": (
+            "${SF_ENTITY_REGISTRY_INSTALLATION_ID:?set SF_ENTITY_REGISTRY_INSTALLATION_ID}"
+        ),
         "SF_MODEL_RUNTIME_ROOT": "/app/models",
         "SF_APP_VERSION": "${SF_APP_VERSION:?set SF_APP_VERSION}",
         "SF_CANONICAL_SOURCE_CSV": "/app/data/source/nhl/current.csv",
@@ -320,6 +323,9 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
         "SF_DATA_CYCLE_RUN_ID": "${SF_DATA_CYCLE_RUN_ID:-untracked}",
         "SF_DATA_CYCLE_GENERATION": "${SF_DATA_CYCLE_GENERATION:-0}",
         "SF_DATA_CYCLE_OWNER_ID": "${SF_DATA_CYCLE_OWNER_ID:-untracked}",
+        "SF_ENTITY_REGISTRY_INSTALLATION_ID": (
+            "${SF_ENTITY_REGISTRY_INSTALLATION_ID:?set SF_ENTITY_REGISTRY_INSTALLATION_ID}"
+        ),
         "SF_CANONICAL_SOURCE_SNAPSHOT": "/app/data/source/nhl/current.csv",
         "ODDS_API_KEY_FREE_FILE": "/run/secrets/odds_api_key_free",
         "ODDS_API_KEY_20K_FILE": "/run/secrets/odds_api_key_20k",
