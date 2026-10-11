@@ -18,7 +18,7 @@ from sports_forecast.utils.log_config import get_logger
 
 logger = get_logger(__name__)
 
-EntityKind = Literal["tournament", "team", "event", "player"]
+EntityKind = Literal["tournament", "team", "event", "player", "market", "outcome"]
 DesignationState = Literal["pending", "confirmed", "conflict", "rejected", "deferred", "superseded"]
 ResolutionStatus = Literal["resolved", "unresolved", "ambiguous", "conflict"]
 
@@ -36,6 +36,35 @@ class Entity:
     sport: str
     project_name: str
     revision: int
+
+
+@dataclass(frozen=True)
+class MarketRule:
+    """Проверенные правила рынка и допустимые проектные исходы."""
+
+    market_id: str
+    period: str
+    overtime: bool
+    shootout: bool
+    draw: bool
+    valid_outcome_ids: tuple[str, ...]
+    valid_outcome_keys: tuple[str, ...]
+    revision: int
+
+
+@dataclass(frozen=True)
+class MarketRuleAudit:
+    """Неизменяемая запись изменения правил рынка."""
+
+    id: str
+    market_id: str
+    actor: str
+    reason: str
+    prior_revision: int
+    revision: int
+    prior_rule_json: str | None
+    rule_json: str
+    decided_at: str
 
 
 @dataclass(frozen=True)
@@ -152,7 +181,7 @@ def _canonical_utc(value: str | None) -> str | None:
 class EntityRegistry:
     """Явно мигрируемый локальный registry на SQLite."""
 
-    schema_version = 11
+    schema_version = 12
 
     def __init__(self, path: Path) -> None:
         """Создать фасад для файла БД, не создавая файл и таблицы."""
@@ -215,6 +244,9 @@ class EntityRegistry:
                 version = 10
             if version == 10:
                 self._upgrade_v10(connection)
+                version = 11
+            if version == 11:
+                self._upgrade_v11(connection)
                 return
             if version != 0:
                 raise RegistryNotInitializedError(f"Неизвестная версия схемы registry: {version}")
@@ -229,7 +261,7 @@ class EntityRegistry:
                     revision INTEGER NOT NULL DEFAULT 1,
                     state TEXT NOT NULL DEFAULT 'active',
                     created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-                    CHECK(kind IN ('tournament','team','event','player'))
+                    CHECK(kind IN ('tournament','team','event','player','market','outcome'))
                 );
                 CREATE UNIQUE INDEX seeded_entity_identity ON entities(seed_key,seed_entity_key)
                     WHERE seed_key IS NOT NULL;
@@ -345,7 +377,26 @@ class EntityRegistry:
                     decided_at TEXT NOT NULL
                 );
                 CREATE INDEX event_relation_tournament ON event_relations(tournament_id,event_id);
-                PRAGMA user_version = 11;
+                CREATE TABLE market_rules (
+                    market_id TEXT PRIMARY KEY REFERENCES entities(id),
+                    period TEXT NOT NULL,
+                    overtime INTEGER NOT NULL CHECK(overtime IN (0,1)),
+                    shootout INTEGER NOT NULL CHECK(shootout IN (0,1)),
+                    draw INTEGER NOT NULL CHECK(draw IN (0,1)),
+                    valid_outcome_ids_json TEXT NOT NULL,
+                    valid_outcome_keys_json TEXT NOT NULL,
+                    revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0)
+                );
+                CREATE TABLE market_rule_audit (
+                    id TEXT PRIMARY KEY,
+                    market_id TEXT NOT NULL REFERENCES entities(id),
+                    actor TEXT NOT NULL, reason TEXT NOT NULL,
+                    prior_revision INTEGER NOT NULL, revision INTEGER NOT NULL,
+                    prior_rule_json TEXT, rule_json TEXT NOT NULL,
+                    decided_at TEXT NOT NULL
+                );
+                CREATE INDEX market_rule_audit_history ON market_rule_audit(market_id,revision,id);
+                PRAGMA user_version = 12;
                 COMMIT;
                 """
             )
@@ -566,6 +617,41 @@ class EntityRegistry:
             connection.rollback()
             raise
 
+    @staticmethod
+    def _upgrade_v11(connection: sqlite3.Connection) -> None:
+        """Добавить рынки/исходы и правила, сохранив все прежние foreign keys."""
+        connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            connection.execute(
+                "CREATE TABLE entities_v12 (id TEXT PRIMARY KEY, kind TEXT NOT NULL, sport TEXT NOT NULL, project_name TEXT NOT NULL, seed_key TEXT, seed_entity_key TEXT, revision INTEGER NOT NULL DEFAULT 1, state TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, CHECK(kind IN ('tournament','team','event','player','market','outcome')))"
+            )
+            connection.execute(
+                "INSERT INTO entities_v12 SELECT id,kind,sport,project_name,seed_key,seed_entity_key,revision,state,created_at,updated_at FROM entities"
+            )
+            connection.execute("DROP INDEX IF EXISTS seeded_entity_identity")
+            connection.execute("DROP TABLE entities")
+            connection.execute("ALTER TABLE entities_v12 RENAME TO entities")
+            connection.execute(
+                "CREATE UNIQUE INDEX seeded_entity_identity ON entities(seed_key,seed_entity_key) WHERE seed_key IS NOT NULL"
+            )
+            connection.execute(
+                "CREATE TABLE market_rules (market_id TEXT PRIMARY KEY REFERENCES entities(id),period TEXT NOT NULL,overtime INTEGER NOT NULL CHECK(overtime IN (0,1)),shootout INTEGER NOT NULL CHECK(shootout IN (0,1)),draw INTEGER NOT NULL CHECK(draw IN (0,1)),valid_outcome_ids_json TEXT NOT NULL,valid_outcome_keys_json TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0))"
+            )
+            connection.execute(
+                "CREATE TABLE market_rule_audit (id TEXT PRIMARY KEY,market_id TEXT NOT NULL REFERENCES entities(id),actor TEXT NOT NULL,reason TEXT NOT NULL,prior_revision INTEGER NOT NULL,revision INTEGER NOT NULL,prior_rule_json TEXT,rule_json TEXT NOT NULL,decided_at TEXT NOT NULL)"
+            )
+            connection.execute(
+                "CREATE INDEX market_rule_audit_history ON market_rule_audit(market_id,revision,id)"
+            )
+            connection.execute("PRAGMA user_version = 12")
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.execute("PRAGMA foreign_keys = ON")
+
     def candidate_feedback_cursor(self, installation_id: str) -> int:
         """Прочитать sequence последнего локально импортированного batch."""
         with self._connect(write=False) as connection:
@@ -657,6 +743,224 @@ class EntityRegistry:
                 (entity.id, kind, sport, entity.project_name, now, now),
             )
         return entity
+
+    @staticmethod
+    def _market_rule_json(
+        *,
+        period: str,
+        overtime: bool,
+        shootout: bool,
+        draw: bool,
+        valid_outcome_ids: tuple[str, ...],
+        valid_outcome_keys: dict[str, str],
+    ) -> str:
+        """Проверить и канонически сериализовать правила рынка."""
+        if period not in {"game", "regulation", "period"}:
+            raise ValueError("Период рынка должен быть game, regulation или period")
+        if any(type(flag) is not bool for flag in (overtime, shootout, draw)):
+            raise ValueError("Флаги overtime, shootout и draw должны быть bool")
+        if not valid_outcome_ids or len(valid_outcome_ids) > 10:
+            raise ValueError("Рынку нужен набор от 1 до 10 допустимых исходов")
+        if len(set(valid_outcome_ids)) != len(valid_outcome_ids):
+            raise ValueError("Допустимые исходы содержат повторный ID")
+        if any(not isinstance(item, str) or not item.strip() for item in valid_outcome_ids):
+            raise ValueError("ID исходов должны быть непустыми строками")
+        allowed_keys = {"home_win", "away_win", "draw"}
+        if (
+            not isinstance(valid_outcome_keys, dict)
+            or set(valid_outcome_keys) != set(valid_outcome_ids)
+            or any(key not in allowed_keys for key in valid_outcome_keys.values())
+            or len(set(valid_outcome_keys.values())) != len(valid_outcome_keys)
+            or (draw != ("draw" in valid_outcome_keys.values()))
+        ):
+            raise ValueError("Каждый исход должен иметь уникальный ключ home/away/draw")
+        return json.dumps(
+            {
+                "period": period,
+                "overtime": overtime,
+                "shootout": shootout,
+                "draw": draw,
+                "valid_outcome_ids": sorted(valid_outcome_ids),
+                "valid_outcome_keys": {
+                    key: valid_outcome_keys[key] for key in sorted(valid_outcome_keys)
+                },
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    def set_market_rule(
+        self,
+        market_id: str,
+        *,
+        period: str,
+        overtime: bool,
+        shootout: bool,
+        draw: bool,
+        valid_outcome_ids: tuple[str, ...],
+        valid_outcome_keys: dict[str, str],
+        actor: str,
+        reason: str,
+        expected_revision: int | None = None,
+    ) -> MarketRule:
+        """Создать или аудируемо изменить правила рынка с optimistic revision."""
+        if not actor.strip() or not reason.strip():
+            raise ValueError("Автор и основание изменения правил обязательны")
+        rule_json = self._market_rule_json(
+            period=period,
+            overtime=overtime,
+            shootout=shootout,
+            draw=draw,
+            valid_outcome_ids=valid_outcome_ids,
+            valid_outcome_keys=valid_outcome_keys,
+        )
+        rule = json.loads(rule_json)
+        with self._connect() as connection:
+            market = connection.execute(
+                "SELECT kind,sport FROM entities WHERE id=? AND state='active'", (market_id,)
+            ).fetchone()
+            if market is None or market["kind"] != "market":
+                raise ValueError("Правило должно ссылаться на активную сущность market")
+            for outcome_id in rule["valid_outcome_ids"]:
+                outcome = connection.execute(
+                    "SELECT kind,state,sport FROM entities WHERE id=?", (outcome_id,)
+                ).fetchone()
+                if (
+                    outcome is None
+                    or outcome["kind"] != "outcome"
+                    or outcome["state"] != "active"
+                    or outcome["sport"] != market["sport"]
+                ):
+                    raise ValueError("Допустимый исход должен быть активной сущностью outcome")
+            current = connection.execute(
+                "SELECT * FROM market_rules WHERE market_id=?", (market_id,)
+            ).fetchone()
+            prior_mappings: dict[str, set[str]] = {}
+            current_rows = connection.execute(
+                "SELECT valid_outcome_keys_json FROM market_rules"
+            ).fetchall()
+            for current_row in current_rows:
+                for outcome_id, key in json.loads(current_row["valid_outcome_keys_json"]).items():
+                    prior_mappings.setdefault(outcome_id, set()).add(key)
+            audit_rows = connection.execute("SELECT rule_json FROM market_rule_audit").fetchall()
+            for audit_row in audit_rows:
+                for outcome_id, key in json.loads(audit_row["rule_json"])[
+                    "valid_outcome_keys"
+                ].items():
+                    prior_mappings.setdefault(outcome_id, set()).add(key)
+            if any(
+                outcome_id in prior_mappings and prior_mappings[outcome_id] != {outcome_key}
+                for outcome_id, outcome_key in rule["valid_outcome_keys"].items()
+            ):
+                raise ValueError(
+                    "Нельзя менять semantic key уже привязанного outcome UUID; создайте новый ID"
+                )
+            if current is None:
+                if expected_revision not in (None, 0):
+                    raise ValueError("revision правил рынка устарела")
+                revision = 1
+                prior_revision = 0
+                prior_rule_json = None
+                connection.execute(
+                    "INSERT INTO market_rules VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        market_id,
+                        period,
+                        int(overtime),
+                        int(shootout),
+                        int(draw),
+                        json.dumps(rule["valid_outcome_ids"], separators=(",", ":")),
+                        json.dumps(rule["valid_outcome_keys"], separators=(",", ":")),
+                        revision,
+                    ),
+                )
+            else:
+                if expected_revision is None or current["revision"] != expected_revision:
+                    raise ValueError("revision правил рынка устарела")
+                prior_revision = int(current["revision"])
+                revision = prior_revision + 1
+                prior_rule_json = self._market_rule_json(
+                    period=current["period"],
+                    overtime=bool(current["overtime"]),
+                    shootout=bool(current["shootout"]),
+                    draw=bool(current["draw"]),
+                    valid_outcome_ids=tuple(json.loads(current["valid_outcome_ids_json"])),
+                    valid_outcome_keys=json.loads(current["valid_outcome_keys_json"]),
+                )
+                connection.execute(
+                    "UPDATE market_rules SET period=?,overtime=?,shootout=?,draw=?,valid_outcome_ids_json=?,valid_outcome_keys_json=?,revision=? WHERE market_id=?",
+                    (
+                        period,
+                        int(overtime),
+                        int(shootout),
+                        int(draw),
+                        json.dumps(rule["valid_outcome_ids"], separators=(",", ":")),
+                        json.dumps(rule["valid_outcome_keys"], separators=(",", ":")),
+                        revision,
+                        market_id,
+                    ),
+                )
+            now = _timestamp()
+            connection.execute(
+                "INSERT INTO market_rule_audit VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    str(uuid.uuid4()),
+                    market_id,
+                    actor,
+                    reason,
+                    prior_revision,
+                    revision,
+                    prior_rule_json,
+                    rule_json,
+                    now,
+                ),
+            )
+        return self.get_market_rule(market_id)
+
+    def get_market_rule(self, market_id: str) -> MarketRule:
+        """Получить текущие типизированные правила рынка."""
+        with self._connect(write=False) as connection:
+            row = connection.execute(
+                "SELECT * FROM market_rules WHERE market_id=?", (market_id,)
+            ).fetchone()
+        if row is None:
+            raise KeyError(market_id)
+        return MarketRule(
+            market_id,
+            row["period"],
+            bool(row["overtime"]),
+            bool(row["shootout"]),
+            bool(row["draw"]),
+            tuple(json.loads(row["valid_outcome_ids_json"])),
+            tuple(
+                json.loads(row["valid_outcome_keys_json"])[outcome_id]
+                for outcome_id in json.loads(row["valid_outcome_ids_json"])
+            ),
+            int(row["revision"]),
+        )
+
+    def list_market_rule_audit(self, market_id: str) -> list[MarketRuleAudit]:
+        """Вернуть неизменяемую историю изменений правил рынка."""
+        with self._connect(write=False) as connection:
+            rows = connection.execute(
+                "SELECT * FROM market_rule_audit WHERE market_id=? ORDER BY revision,id",
+                (market_id,),
+            ).fetchall()
+        return [
+            MarketRuleAudit(
+                row["id"],
+                row["market_id"],
+                row["actor"],
+                row["reason"],
+                int(row["prior_revision"]),
+                int(row["revision"]),
+                row["prior_rule_json"],
+                row["rule_json"],
+                row["decided_at"],
+            )
+            for row in rows
+        ]
 
     def get_entity(self, entity_id: str) -> Entity:
         """Получить сущность по project UUID."""

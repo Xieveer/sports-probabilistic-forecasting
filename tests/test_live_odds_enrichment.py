@@ -228,7 +228,17 @@ def test_live_registry_mode_needs_confirmed_quote_event(monkeypatch: pytest.Monk
         }
     )
     resolved: dict[str, str | None] = {"quote": None}
-    canonical = SimpleNamespace(id=9, sport="ice_hockey")
+    market_rule_ok = {"value": True}
+    canonical = SimpleNamespace(
+        id=9,
+        sport="ice_hockey",
+        tournament="nhl",
+        source="nhl_api",
+        source_event_id="m99",
+        scheduled_at=datetime(2026, 1, 10, tzinfo=UTC),
+        home_participant="TOR",
+        away_participant="BOS",
+    )
 
     class FakeSession:
         def scalars(self, _query):
@@ -239,15 +249,43 @@ def test_live_registry_mode_needs_confirmed_quote_event(monkeypatch: pytest.Monk
         yield FakeSession()
 
     class FakeReader:
-        event_snapshot = SimpleNamespace(
-            resolve=lambda _ref: SimpleNamespace(
-                status="resolved" if resolved["quote"] else "unresolved",
-                project_event_id=resolved["quote"],
+        def resolve_designation(self, *, source, kind, raw_value, **_kwargs):
+            if source == "nhl_api":
+                values = {
+                    ("tournament", "nhl"): "league-1",
+                    ("team", "TOR"): "home-1",
+                    ("team", "BOS"): "away-1",
+                }
+            elif resolved["quote"]:
+                values = {
+                    ("tournament", "icehockey_nhl"): "league-1",
+                    ("team", "TOR"): "home-1",
+                    ("team", "BOS"): "away-1",
+                }
+            else:
+                values = {}
+            entity_id = values.get((kind, raw_value))
+            return SimpleNamespace(
+                status="resolved" if entity_id else "unresolved", entity_id=entity_id
             )
-        )
 
-        def get_event_mapping(self, _event_id, _session):
-            return SimpleNamespace(status="resolved", project_event_id="project-1")
+        def resolve_market(self, **_kwargs):
+            return SimpleNamespace(
+                status="resolved" if resolved["quote"] else "unresolved",
+                entity_id="market-id" if resolved["quote"] else None,
+            )
+
+        def get_market_rule(self, _market_id):
+            return SimpleNamespace(
+                period="game",
+                overtime=market_rule_ok["value"],
+                shootout=True,
+                draw=False,
+                valid_outcome_keys=("home_win", "away_win"),
+            )
+
+        def get_entity(self, _entity_id):
+            return SimpleNamespace(project_name="winner_withOT")
 
     monkeypatch.setattr(live_odds_enrichment, "registry_event_reader_enabled", lambda: True)
     monkeypatch.setattr(live_odds_enrichment, "get_session", fake_session)
@@ -259,3 +297,5 @@ def test_live_registry_mode_needs_confirmed_quote_event(monkeypatch: pytest.Monk
     assert live_odds_enrichment._fetch_quotes_map([p])["m99"] is None
     resolved["quote"] = "project-1"
     assert live_odds_enrichment._fetch_quotes_map([p])["m99"] is not None
+    market_rule_ok["value"] = False
+    assert live_odds_enrichment._fetch_quotes_map([p])["m99"] is None

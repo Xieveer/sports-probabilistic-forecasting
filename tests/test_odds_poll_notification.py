@@ -307,7 +307,7 @@ def test_direct_h2h_adapter_makes_one_batch_request(monkeypatch) -> None:
     ]
 
 
-def test_direct_h2h_adapter_passes_pinned_registry_linkage(monkeypatch) -> None:
+def test_direct_h2h_adapter_passes_derived_registry_identity(monkeypatch) -> None:
     """Notification adapter не обходится без strict matcher при активном registry."""
     import sports_forecast.orchestration.live_odds_adapter as subject
 
@@ -322,7 +322,11 @@ def test_direct_h2h_adapter_passes_pinned_registry_linkage(monkeypatch) -> None:
 
     monkeypatch.setattr(subject, "registry_event_reader_enabled", lambda: True)
     monkeypatch.setattr(subject, "load_bookmaker_config", lambda _name: object())
-    monkeypatch.setattr(subject, "pinned_live_quote_matching", lambda *_a, **_kw: ({}, resolver))
+    monkeypatch.setattr(
+        subject,
+        "pinned_live_quote_matching",
+        lambda *_a, **_kw: ({}, resolver, lambda _event, _name: None, []),
+    )
 
     def fake_fetch(_refs, **kwargs):
         seen.update(kwargs)
@@ -336,8 +340,9 @@ def test_direct_h2h_adapter_passes_pinned_registry_linkage(monkeypatch) -> None:
         bookmaker_key="pinnacle",
         team_registry="unknown",
     )
-    assert seen["project_event_ids"] == {}
-    assert seen["quote_project_event_resolver"] is resolver
+    assert seen["calendar_identity_by_match"] == {}
+    assert seen["calendar_window_candidates"] == []
+    assert seen["provider_event_identity_resolver"] is resolver
 
 
 def test_profile_adapter_runtime_contract_is_tournament_neutral(monkeypatch) -> None:

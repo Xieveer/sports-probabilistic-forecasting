@@ -325,7 +325,7 @@ def create_review_app(queue: ReviewQueueService, *, secret_path: Path, actor: st
         session = _decode(secret, request.cookies.get(COOKIE, ""))
         if session is None:
             return RedirectResponse("/login", status_code=303)
-        if kind not in {"", "team", "tournament", "event", "player"}:
+        if kind not in {"", "team", "tournament", "event", "player", "market", "outcome"}:
             return Response("Недопустимый тип сущности", status_code=400)
         page_size = 50
         page_offset = min(max(offset, 0), 100_000)
@@ -363,7 +363,7 @@ def create_review_app(queue: ReviewQueueService, *, secret_path: Path, actor: st
                 + ">"
                 + value
                 + "</option>"
-                for value in ("team", "tournament", "event", "player")
+                for value in ("team", "tournament", "event", "player", "market", "outcome")
             )
             + "</select></label><button>Найти</button></form><ul>"
             + rows
@@ -395,6 +395,113 @@ def create_review_app(queue: ReviewQueueService, *, secret_path: Path, actor: st
         except KeyError:
             return Response("Сущность не найдена", status_code=404)
         csrf = html.escape(str(session["csrf"]), quote=True)
+        market_section = ""
+        if entity.kind == "market":
+            try:
+                rule = queue.registry.get_market_rule(entity_id)
+            except KeyError:
+                rule = None
+            audits = queue.registry.list_market_rule_audit(entity_id)
+            audit_rows = (
+                "".join(
+                    "<li>revision "
+                    + str(item.revision)
+                    + " · "
+                    + html.escape(item.actor)
+                    + " · "
+                    + html.escape(item.reason)
+                    + " · было: "
+                    + html.escape(item.prior_rule_json or "новое правило")
+                    + " · стало: "
+                    + html.escape(item.rule_json)
+                    + "</li>"
+                    for item in audits
+                )
+                or "<li>История пока пуста.</li>"
+            )
+            if rule is None:
+                market_section = "<h2>Правила рынка</h2><p>Правила не заданы.</p>"
+            else:
+                outcome_keys = dict(
+                    zip(rule.valid_outcome_ids, rule.valid_outcome_keys, strict=True)
+                )
+                outcome_options = "".join(
+                    "<label><input type='checkbox' name='valid_outcome_ids' value='"
+                    + html.escape(outcome.id, quote=True)
+                    + "'"
+                    + (" checked" if outcome.id in outcome_keys else "")
+                    + ">"
+                    + html.escape(outcome.project_name)
+                    + " <select name='outcome_key_"
+                    + html.escape(outcome.id, quote=True)
+                    + "'>"
+                    + "".join(
+                        "<option value='"
+                        + key
+                        + "'"
+                        + (" selected" if outcome_keys.get(outcome.id) == key else "")
+                        + ">"
+                        + key
+                        + "</option>"
+                        for key in ("home_win", "away_win", "draw")
+                    )
+                    + "</select></label>"
+                    for outcome in queue.registry.list_entities(kind="outcome")
+                    if outcome.sport == entity.sport
+                )
+                market_section = (
+                    "<h2>Правила рынка</h2><p>Период: "
+                    + html.escape(rule.period)
+                    + " · ОТ: "
+                    + str(rule.overtime)
+                    + " · буллиты: "
+                    + str(rule.shootout)
+                    + " · ничья: "
+                    + str(rule.draw)
+                    + " · revision: "
+                    + str(rule.revision)
+                    + "</p><form method='post' action='/registry/"
+                    + html.escape(entity.id, quote=True)
+                    + "/market-rule'>"
+                    "<input type='hidden' name='csrf' value='"
+                    + csrf
+                    + "'><input type='hidden' name='revision' value='"
+                    + str(rule.revision)
+                    + "'><label>Период <select name='period'>"
+                    + "".join(
+                        "<option value='"
+                        + value
+                        + "'"
+                        + (" selected" if rule.period == value else "")
+                        + ">"
+                        + value
+                        + "</option>"
+                        for value in ("game", "regulation", "period")
+                    )
+                    + "</select></label>"
+                    + "".join(
+                        "<label>"
+                        + label
+                        + " <select name='"
+                        + field
+                        + "'><option value='0'"
+                        + (" selected" if not current else "")
+                        + ">нет</option><option value='1'"
+                        + (" selected" if current else "")
+                        + ">да</option></select></label>"
+                        for field, label, current in (
+                            ("overtime", "Овертайм", rule.overtime),
+                            ("shootout", "Буллиты", rule.shootout),
+                            ("draw", "Ничья", rule.draw),
+                        )
+                    )
+                    + "<fieldset><legend>Допустимые исходы и их семантика</legend>"
+                    + outcome_options
+                    + "</fieldset><label>Основание <input name='reason' required maxlength='500'></label><button>Сохранить правила</button></form>"
+                    + "<h3>История правил</h3><ul>"
+                    + audit_rows
+                    + "</ul>"
+                )
         rows = (
             "".join(
                 "<article><h2>"
@@ -452,6 +559,7 @@ def create_review_app(queue: ReviewQueueService, *, secret_path: Path, actor: st
             + "<label>Основание <input name='reason' required maxlength='500'></label><button>Переименовать</button></form>"
             + "<h2>Обозначения источников</h2>"
             + rows
+            + market_section
         )
         return HTMLResponse(body)
 
@@ -511,6 +619,33 @@ def create_review_app(queue: ReviewQueueService, *, secret_path: Path, actor: st
         except (KeyError, ValueError):
             return Response("Изменение не применено: перечитайте каталог", status_code=409)
         return RedirectResponse("/registry", status_code=303)
+
+    @app.post("/registry/{market_id}/market-rule")
+    async def update_market_rule(request: Request, market_id: str) -> Response:
+        form, error = await owner_post(request, 8192)
+        if error:
+            return error
+        assert form is not None
+        try:
+            outcome_ids = tuple(form.get("valid_outcome_ids", []))
+            outcome_keys = {
+                outcome_id: form[f"outcome_key_{outcome_id}"][0] for outcome_id in outcome_ids
+            }
+            queue.registry.set_market_rule(
+                market_id,
+                period=form["period"][0],
+                overtime=form["overtime"][0] == "1",
+                shootout=form["shootout"][0] == "1",
+                draw=form["draw"][0] == "1",
+                valid_outcome_ids=outcome_ids,
+                valid_outcome_keys=outcome_keys,
+                actor=actor,
+                reason=form["reason"][0],
+                expected_revision=int(form["revision"][0]),
+            )
+        except (KeyError, ValueError):
+            return Response("Правила не сохранены: перечитайте каталог", status_code=409)
+        return RedirectResponse("/registry/" + market_id, status_code=303)
 
     @app.get("/review/candidates/{candidate_id}/history", response_class=HTMLResponse)
     def candidate_history(request: Request, candidate_id: str, offset: int = 0) -> Response:

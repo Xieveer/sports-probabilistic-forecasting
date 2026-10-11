@@ -21,18 +21,25 @@ from sports_forecast.identity.events import (
     EventIdentitySnapshot,
     RegistryEventResolver,
 )
-from sports_forecast.identity.registry import Entity, EntityRegistry, Resolution, _canonical_utc
+from sports_forecast.identity.registry import (
+    Entity,
+    EntityRegistry,
+    MarketRule,
+    Resolution,
+    _canonical_utc,
+)
 
 
-SNAPSHOT_FORMAT_VERSION = 1
-SNAPSHOT_POLICY_VERSION = "strict-v1"
-_SNAPSHOT_FILES = (
+SNAPSHOT_FORMAT_VERSION = 2
+_SNAPSHOT_FILES_V1 = (
     "entities.jsonl",
     "designations.jsonl",
     "decisions.jsonl",
     "events.jsonl",
     "memberships.jsonl",
 )
+SNAPSHOT_POLICY_VERSION = "strict-v1"
+_SNAPSHOT_FILES = (*_SNAPSHOT_FILES_V1, "market_rules.jsonl")
 
 
 @dataclass(frozen=True)
@@ -93,6 +100,7 @@ def _registry_records(connection: sqlite3.Connection) -> dict[str, list[dict[str
     for table, key in (
         ("entity_audit", "id"),
         ("event_relation_audit", "id"),
+        ("market_rule_audit", "id"),
         ("imports", "seed_key"),
     ):
         decisions.extend(
@@ -175,6 +183,7 @@ def _registry_records(connection: sqlite3.Connection) -> dict[str, list[dict[str
             )
     events = _read_table(connection, "event_relations", "event_id")
     memberships = _read_table(connection, "memberships", "id")
+    market_rules = _read_table(connection, "market_rules", "market_id")
     return {
         "entities.jsonl": entities,
         "designations.jsonl": sorted(
@@ -190,6 +199,7 @@ def _registry_records(connection: sqlite3.Connection) -> dict[str, list[dict[str
         ),
         "events.jsonl": events,
         "memberships.jsonl": memberships,
+        "market_rules.jsonl": market_rules,
     }
 
 
@@ -206,12 +216,16 @@ def _encode_records(records: list[dict[str, Any]], limits: SnapshotLimits) -> by
 
 
 def _validate_registry_records(records: dict[str, tuple[dict[str, Any], ...]]) -> None:
+    schema_version = int(records["_meta"][0]["registry_schema_version"])
+    entity_kinds = {"tournament", "team", "event", "player"}
+    if schema_version >= 12:
+        entity_kinds.update({"market", "outcome"})
     entities = {str(row["id"]): row for row in records["entities.jsonl"]}
     if len(entities) != len(records["entities.jsonl"]):
         raise ValueError("Snapshot содержит повторные UUID сущностей")
     for entity_id, entity in entities.items():
         _validate_uuid(entity_id, "entity")
-        if entity.get("kind") not in {"tournament", "team", "event", "player"}:
+        if entity.get("kind") not in entity_kinds:
             raise ValueError("Snapshot содержит неподдерживаемый тип сущности")
     designation_rows = [
         row for row in records["designations.jsonl"] if row.get("record_type") == "designation"
@@ -226,7 +240,7 @@ def _validate_registry_records(records: dict[str, tuple[dict[str, Any], ...]]) -
             if designation_id not in designation_ids:
                 raise ValueError("Snapshot содержит неполный набор designation IDs")
             kind = item.get("kind")
-            if kind not in {"tournament", "team", "event", "player"}:
+            if kind not in entity_kinds:
                 raise ValueError("Designation содержит неподдерживаемый тип сущности")
             target = item.get("entity_id")
             if target is not None and target not in entities:
@@ -282,6 +296,19 @@ def _validate_registry_records(records: dict[str, tuple[dict[str, Any], ...]]) -
             if item.get("event_id") not in entities:
                 raise ValueError("Event relation audit ссылается на отсутствующую сущность")
             _validate_uuid(str(item.get("id", "")), "event audit")
+        elif record_type == "market_rule_audit":
+            if item.get("market_id") not in entities:
+                raise ValueError("Market rule audit ссылается на отсутствующий market")
+            _validate_uuid(str(item.get("id", "")), "market rule audit")
+            if (
+                not isinstance(item.get("actor"), str)
+                or not item["actor"].strip()
+                or not isinstance(item.get("reason"), str)
+                or not item["reason"].strip()
+                or not isinstance(item.get("revision"), int)
+                or item["revision"] < 1
+            ):
+                raise ValueError("Market rule audit содержит неверные поля")
         elif record_type == "imports":
             if not item.get("seed_key") or not isinstance(item.get("content_hash"), str):
                 raise ValueError("Seed import provenance имеет неверную форму")
@@ -356,12 +383,12 @@ def _validate_registry_records(records: dict[str, tuple[dict[str, Any], ...]]) -
             raise ValueError("Candidate evidence не ссылается обратно на decision")
     for evidence in evidence_records.values():
         for decision_id in evidence["decision_ids"]:
-            decision = decision_records.get(str(decision_id))
+            linked_decision: dict[str, Any] | None = decision_records.get(str(decision_id))
             if (
-                decision is None
-                or decision.get("evidence_candidate_id") != evidence["candidate_id"]
-                or decision.get("evidence_revision") != evidence["revision"]
-                or decision.get("designation_id") != evidence["designation_id"]
+                linked_decision is None
+                or linked_decision.get("evidence_candidate_id") != evidence["candidate_id"]
+                or linked_decision.get("evidence_revision") != evidence["revision"]
+                or linked_decision.get("designation_id") != evidence["designation_id"]
             ):
                 raise ValueError("Candidate evidence ссылается на несвязанный decision")
     for event in records["events.jsonl"]:
@@ -391,6 +418,51 @@ def _validate_registry_records(records: dict[str, tuple[dict[str, Any], ...]]) -
         ):
             raise ValueError("Membership ссылается на сущность неверного типа")
         _validate_interval(item.get("valid_from"), item.get("valid_until"))
+    market_rules = records.get("market_rules.jsonl", ())
+    rule_market_ids: set[str] = set()
+    for rule in market_rules:
+        market_id = str(rule.get("market_id", ""))
+        market = entities.get(market_id)
+        if market is None or market.get("kind") != "market" or market_id in rule_market_ids:
+            raise ValueError("Market rule ссылается на отсутствующую или повторную сущность market")
+        rule_market_ids.add(market_id)
+        if rule.get("period") not in {"game", "regulation", "period"}:
+            raise ValueError("Market rule содержит неподдерживаемый период")
+        if any(
+            type(rule.get(name)) is not int or rule[name] not in {0, 1}
+            for name in ("overtime", "shootout", "draw")
+        ):
+            raise ValueError("Market rule содержит неверный boolean flag")
+        try:
+            outcome_ids = json.loads(str(rule["valid_outcome_ids_json"]))
+            outcome_keys = json.loads(str(rule["valid_outcome_keys_json"]))
+        except (KeyError, json.JSONDecodeError) as exc:
+            raise ValueError("Market rule содержит неверный набор исходов") from exc
+        if (
+            not isinstance(outcome_ids, list)
+            or not outcome_ids
+            or len(outcome_ids) > 10
+            or len(outcome_ids) != len(set(outcome_ids))
+            or any(entities.get(str(item), {}).get("kind") != "outcome" for item in outcome_ids)
+            or not isinstance(outcome_keys, dict)
+            or set(outcome_keys) != set(outcome_ids)
+            or any(key not in {"home_win", "away_win", "draw"} for key in outcome_keys.values())
+            or len(set(outcome_keys.values())) != len(outcome_keys)
+            or (bool(rule["draw"]) != ("draw" in outcome_keys.values()))
+            or not isinstance(rule.get("revision"), int)
+            or rule["revision"] < 1
+        ):
+            raise ValueError("Market rule содержит неверный набор исходов")
+    for item in records.get("decisions.jsonl", ()):
+        if item.get("record_type") == "market_rule_audit":
+            market_id = str(item.get("market_id", ""))
+            if (
+                market_id not in rule_market_ids
+                or not isinstance(item.get("rule_json"), str)
+                or not isinstance(item.get("reason"), str)
+                or not isinstance(item.get("actor"), str)
+            ):
+                raise ValueError("Market rule audit содержит неверную связь")
 
 
 def _validate_uuid(value: str, field: str) -> None:
@@ -602,9 +674,6 @@ def verify_registry_snapshot(
         or manifest_path.is_symlink()
     ):
         raise ValueError("Registry snapshot не содержит обычный manifest.json")
-    allowed_names = {*_SNAPSHOT_FILES, "manifest.json"}
-    if {item.name for item in path.iterdir()} != allowed_names:
-        raise ValueError("Snapshot содержит отсутствующий или неизвестный файл")
     manifest_max_bytes = min(limits.max_line_bytes * 4, limits.max_total_bytes)
     if manifest_path.stat().st_size > manifest_max_bytes:
         raise ValueError("Manifest превышает допустимый размер")
@@ -623,22 +692,32 @@ def verify_registry_snapshot(
     snapshot_id = manifest.get("snapshot_id")
     identity_manifest = {key: value for key, value in manifest.items() if key != "snapshot_id"}
     digest = hashlib.sha256(_canonical_json(identity_manifest)).hexdigest()
+    format_version = manifest.get("format_version")
+    schema_version = manifest.get("registry_schema_version")
+    expected_files: tuple[str, ...]
+    if format_version == 1 and schema_version == 11:
+        expected_files = _SNAPSHOT_FILES_V1
+    elif format_version == 2 and schema_version == 12:
+        expected_files = _SNAPSHOT_FILES
+    else:
+        expected_files = ()
+    if {item.name for item in path.iterdir()} != {*expected_files, "manifest.json"}:
+        raise ValueError("Snapshot содержит отсутствующий или неизвестный файл")
     if (
         manifest.get("format") != "sports-forecast-entity-registry"
-        or manifest.get("format_version") != SNAPSHOT_FORMAT_VERSION
-        or manifest.get("registry_schema_version") != EntityRegistry.schema_version
+        or not expected_files
         or manifest.get("normalization_version") != NORMALIZATION_VERSION
         or manifest.get("policy_version") != SNAPSHOT_POLICY_VERSION
         or snapshot_id != f"ir1:{digest}"
         or not isinstance(manifest.get("files"), dict)
-        or set(manifest["files"]) != set(_SNAPSHOT_FILES)
+        or set(manifest["files"]) != set(expected_files)
     ):
         raise ValueError("Manifest snapshot ID или schema/policy version не поддерживается")
     records: dict[str, tuple[dict[str, Any], ...]] = {}
     total_bytes = len(manifest_bytes)
     if total_bytes > limits.max_total_bytes:
         raise ValueError("Полный размер снимка превышает допустимый предел")
-    for name in _SNAPSHOT_FILES:
+    for name in expected_files:
         file_path = path / name
         expected = manifest["files"][name]
         if not isinstance(expected, dict) or not file_path.is_file() or file_path.is_symlink():
@@ -673,9 +752,11 @@ def verify_registry_snapshot(
         ):
             raise ValueError("Hash/count/size JSONL не совпадает с manifest")
         records[name] = tuple(payload_records)
+    if format_version == 1:
+        records["market_rules.jsonl"] = ()
     records_with_meta = {
         **records,
-        "_meta": ({"registry_schema_version": EntityRegistry.schema_version},),
+        "_meta": ({"registry_schema_version": schema_version},),
     }
     _validate_registry_records(records_with_meta)
     event_snapshot = _build_event_snapshot(records_with_meta)
@@ -841,3 +922,51 @@ class RegistrySnapshotReader:
     def resolve_event(self, ref: CanonicalEventRef):
         """Разрешить событие исключительно по pinned offline projection."""
         return self._resolver.resolve(ref)
+
+    def resolve_market(
+        self,
+        *,
+        source: str,
+        sport: str,
+        tournament_id: str,
+        bookmaker: str,
+        raw_market_key: str,
+        at: str | None = None,
+    ) -> Resolution:
+        """Разрешить рынок в точном турнире и scope букмекера."""
+        return self.resolve_designation(
+            source=source,
+            kind="market",
+            scope={"sport": sport, "tournament": tournament_id, "bookmaker": bookmaker},
+            value_kind="name",
+            raw_value=raw_market_key,
+            at=at,
+        )
+
+    def get_market_rule(self, market_id: str) -> MarketRule:
+        """Вернуть правила рынка из pinned snapshot; старый v1 snapshot не выдумывает их."""
+        if int(self.snapshot.manifest["registry_schema_version"]) < 12:
+            raise KeyError(market_id)
+        row = next(
+            (
+                item
+                for item in self.snapshot.records.get("market_rules.jsonl", ())
+                if item.get("market_id") == market_id
+            ),
+            None,
+        )
+        if row is None:
+            raise KeyError(market_id)
+        return MarketRule(
+            market_id,
+            str(row["period"]),
+            bool(row["overtime"]),
+            bool(row["shootout"]),
+            bool(row["draw"]),
+            tuple(json.loads(str(row["valid_outcome_ids_json"]))),
+            tuple(
+                json.loads(str(row["valid_outcome_keys_json"]))[outcome_id]
+                for outcome_id in json.loads(str(row["valid_outcome_ids_json"]))
+            ),
+            int(row["revision"]),
+        )

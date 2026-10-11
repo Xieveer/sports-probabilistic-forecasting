@@ -1,10 +1,10 @@
 # ADR-035 — Словари registry и вычисляемое сопоставление матчей
 
-> **Статус:** proposed
+> **Статус:** accepted
 > **Дата:** 2026-10-11
 > **Связанное требование:** [REQ-026](../../product/requirements/REQ-026-entity-registry.md)
 > **Инициатива:** [EPIC-026](../../backlog/EPIC-026-entity-registry.md)
-> **Заменяет после принятия:** части [ADR-029](ADR-029-local-entity-registry-and-snapshots.md), требующие проектных событий в owner registry и event mappings для использования котировок; доставка снимков и локальное владение сохраняются.
+> **Заменяет:** части [ADR-029](ADR-029-local-entity-registry-and-snapshots.md), требующие проектных событий в owner registry и event mappings для использования котировок; доставка снимков и локальное владение сохраняются.
 
 ## Контекст и критерии выбора
 

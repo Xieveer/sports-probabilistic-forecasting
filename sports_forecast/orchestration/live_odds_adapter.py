@@ -15,6 +15,7 @@ from sports_forecast.data.providers.odds.live_nhl_pinnacle import (
 from sports_forecast.data.providers.odds.team_name_registry import (
     load_nhl_team_name_registry,
 )
+from sports_forecast.identity.derived_event_matching import DerivedEventCandidate
 from sports_forecast.identity.events import registry_event_reader_enabled
 from sports_forecast.orchestration.notification_state import QuoteSnapshot
 from sports_forecast.service.db.models import Prediction
@@ -69,20 +70,27 @@ def fetch_odds_api_h2h_snapshots(
     registry_loader = TEAM_NAME_REGISTRY_LOADERS.get(team_registry)
     strict_reader = registry_event_reader_enabled()
     registry = registry_loader(strict_mode=strict_reader) if registry_loader is not None else None
-    project_ids: Mapping[str, str] | None = None
-    quote_resolver: Callable[[PinnacleH2HQuote], str | None] | None = None
+    calendar_candidates: Mapping[str, DerivedEventCandidate] | None = None
+    provider_resolver: Callable[[dict[str, object]], DerivedEventCandidate] | None = None
+    outcome_resolver: Callable[[dict[str, object], str], str | None] | None = None
+    calendar_window_candidates: Sequence[DerivedEventCandidate] | None = None
     if strict_reader:
-        project_ids, quote_resolver = pinned_live_quote_matching(
-            predictions, sport_key=sport_key, source=bookmaker_config
-        )
+        (
+            calendar_candidates,
+            provider_resolver,
+            outcome_resolver,
+            calendar_window_candidates,
+        ) = pinned_live_quote_matching(predictions, sport_key=sport_key, source=bookmaker_config)
     quotes = fetch_nhl_pinnacle_quotes_for_refs(
         refs,
         book_cfg=book_cfg,
         team_registry=registry,
         sport_key=sport_key,
         bookmaker_key=bookmaker_key,
-        project_event_ids=project_ids,
-        quote_project_event_resolver=quote_resolver,
+        calendar_identity_by_match=calendar_candidates,
+        calendar_window_candidates=calendar_window_candidates,
+        provider_event_identity_resolver=provider_resolver,
+        provider_outcome_team_resolver=outcome_resolver,
     )
     return [
         _snapshot_from_quote(ref.match_id, ref.commence_utc, quotes.get(ref.match_id))

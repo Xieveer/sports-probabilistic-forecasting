@@ -338,6 +338,7 @@ class _OddsProvider:
 
 def test_owner_decision_republished_snapshot_unlocks_odds(tmp_path: Path, monkeypatch) -> None:
     """Server outbox → local decision → новый ir1 → подтверждённая линия."""
+    from sports_forecast.identity.nhl_market_seed import seed_nhl_pinnacle_market
     from sports_forecast.orchestration import future_odds
 
     installation_id = "11111111-1111-4111-8111-111111111111"
@@ -354,6 +355,7 @@ def test_owner_decision_republished_snapshot_unlocks_odds(tmp_path: Path, monkey
     registry = EntityRegistry(tmp_path / "local.sqlite3")
     registry.initialize()
     tournament = registry.create_entity("tournament", "NHL", sport="ice_hockey")
+    seed_nhl_pinnacle_market(registry, tournament_id=tournament.id)
     home = registry.create_entity("team", "North", sport="ice_hockey")
     away = registry.create_entity("team", "South", sport="ice_hockey")
     project_event = registry.create_entity("event", "North vs South", sport="ice_hockey")
@@ -367,11 +369,19 @@ def test_owner_decision_republished_snapshot_unlocks_odds(tmp_path: Path, monkey
         raw_value="nhl",
         state="confirmed",
     )
+    registry.add_designation(
+        entity_id=tournament.id,
+        source="the_odds_api",
+        kind="tournament",
+        scope={"sport": "ice_hockey"},
+        value_kind="external_id",
+        raw_value="icehockey_nhl",
+        state="confirmed",
+    )
     for source, entity, raw in (
         ("nhl_web_api", home, "NTH"),
         ("nhl_web_api", away, "STH"),
         ("the_odds_api", home, "North Stars"),
-        ("the_odds_api", away, "South Stars"),
     ):
         registry.add_designation(
             entity_id=entity.id,
@@ -452,7 +462,7 @@ def test_owner_decision_republished_snapshot_unlocks_odds(tmp_path: Path, monkey
         )
         assert imported.imported_candidates == 1
         candidate = ReviewQueueService(registry).list_candidates(source="the_odds_api")[0]
-        assert candidate.kind == "tournament"
+        assert candidate.kind == "team"
         ReviewQueueService(registry).decide_batch(
             [
                 CandidateDecision(
@@ -460,7 +470,7 @@ def test_owner_decision_republished_snapshot_unlocks_odds(tmp_path: Path, monkey
                     expected_revision=candidate.revision,
                     expected_designation_revision=candidate.designation_revision,
                     action="confirm",
-                    entity_id=tournament.id,
+                    entity_id=away.id,
                     reason="Проверено владельцем",
                 )
             ],

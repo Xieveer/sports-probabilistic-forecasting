@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
@@ -16,6 +17,7 @@ from sports_forecast.data.providers.odds.live_nhl_pinnacle import (
     map_match_refs_to_pinnacle_quotes,
     parse_pinnacle_h2h_quotes_from_payload,
 )
+from sports_forecast.identity.derived_event_matching import DerivedEventCandidate
 
 
 def _sample_payload() -> list[dict[str, object]]:
@@ -61,6 +63,15 @@ def test_parse_pinnacle_skips_empty_bookmaker() -> None:
     assert quotes[0].decimal_away == pytest.approx(2.05)
 
 
+def test_parse_pinnacle_rejects_draw_and_non_two_way_h2h() -> None:
+    payload = _sample_payload()[0]
+    bookmaker = payload["bookmakers"][0]  # type: ignore[index]
+    outcomes = bookmaker["markets"][0]["outcomes"]
+    outcomes.append({"name": "Draw", "price": 4.0})
+
+    assert parse_pinnacle_h2h_quotes_from_payload([payload], bookmaker_key="pinnacle") == []
+
+
 def test_map_override_wins() -> None:
     quotes = parse_pinnacle_h2h_quotes_from_payload(
         _sample_payload(),
@@ -84,15 +95,26 @@ def test_map_override_wins() -> None:
     assert out["999"].odds_api_event_id == "evt_tor_bos"
 
 
-def test_strict_map_requires_same_project_event_and_ignores_override() -> None:
-    """Legacy override и имена не дают line без подтверждённой общей связи."""
+def test_derived_map_uses_confirmed_team_identity_without_event_link() -> None:
+    """Строгий путь требует подтверждённые команды, но не постоянную связь матча."""
     quotes = parse_pinnacle_h2h_quotes_from_payload(_sample_payload(), bookmaker_key="pinnacle")
     refs = [NHLLiveMatchRef("m1", "TOR", "BOS", datetime(2026, 1, 10, tzinfo=UTC))]
     unresolved = map_match_refs_to_pinnacle_quotes(
         refs,
         quotes,
-        quote_project_event_ids={},
-        project_event_ids={"m1": "project-1"},
+        calendar_identity_by_match={
+            "m1": DerivedEventCandidate(
+                "m1", "league-1", "home-1", "away-1", datetime(2026, 1, 10, tzinfo=UTC)
+            )
+        },
+        quote_identity_resolver=lambda quote: DerivedEventCandidate(
+            quote.odds_api_event_id,
+            None,
+            None,
+            None,
+            quote.commence_utc,
+            "unconfirmed_provider_team",
+        ),
         event_id_to_match_id={"evt_tor_bos": "m1"},
     )
     assert unresolved["m1"] is None
@@ -100,8 +122,18 @@ def test_strict_map_requires_same_project_event_and_ignores_override() -> None:
     resolved = map_match_refs_to_pinnacle_quotes(
         refs,
         quotes,
-        quote_project_event_ids={"evt_tor_bos": "project-1"},
-        project_event_ids={"m1": "project-1"},
+        calendar_identity_by_match={
+            "m1": DerivedEventCandidate(
+                "m1", "league-1", "home-1", "away-1", datetime(2026, 1, 10, 0, 10, tzinfo=UTC)
+            )
+        },
+        quote_identity_resolver=lambda quote: DerivedEventCandidate(
+            quote.odds_api_event_id,
+            "league-1",
+            "home-1",
+            "away-1",
+            quote.commence_utc,
+        ),
         event_id_to_match_id={"evt_tor_bos": "m1"},
     )
     assert resolved["m1"] is not None
@@ -217,7 +249,7 @@ def test_fetch_with_injected_client_no_network() -> None:
     assert call_kw[1].get("use_cache") is False
 
 
-def test_fetch_strict_resolves_quote_after_payload_and_rejects_unknown() -> None:
+def test_fetch_strict_resolves_quote_from_aliases_and_rejects_unknown() -> None:
     cfg = OmegaConf.create(
         {
             "bookmaker": {
@@ -234,15 +266,120 @@ def test_fetch_strict_resolves_quote_after_payload_and_rejects_unknown() -> None
         refs,
         book_cfg=cfg,
         client=client,
-        project_event_ids={"m1": "project-1"},
-        quote_project_event_resolver=lambda _quote: None,
+        calendar_identity_by_match={
+            "m1": DerivedEventCandidate(
+                "m1", "league-1", "home-1", "away-1", datetime(2026, 1, 10, tzinfo=UTC)
+            )
+        },
+        quote_identity_resolver=lambda quote: DerivedEventCandidate(
+            quote.odds_api_event_id,
+            None,
+            None,
+            None,
+            quote.commence_utc,
+            "unconfirmed_provider_team",
+        ),
     )
     assert unknown["m1"] is None
     confirmed = fetch_nhl_pinnacle_quotes_for_refs(
         refs,
         book_cfg=cfg,
         client=client,
-        project_event_ids={"m1": "project-1"},
-        quote_project_event_resolver=lambda _quote: "project-1",
+        calendar_identity_by_match={
+            "m1": DerivedEventCandidate(
+                "m1", "league-1", "home-1", "away-1", datetime(2026, 1, 10, tzinfo=UTC)
+            )
+        },
+        quote_identity_resolver=lambda quote: DerivedEventCandidate(
+            quote.odds_api_event_id, "league-1", "home-1", "away-1", quote.commence_utc
+        ),
     )
     assert confirmed["m1"] is not None
+
+
+def test_fetch_collapses_identical_duplicate_event_and_rejects_conflicting_duplicate() -> None:
+    cfg = OmegaConf.create(
+        {
+            "bookmaker": {
+                "sport_keys": {"nhl": "icehockey_nhl"},
+                "bookmakers": {"primary": "pinnacle"},
+            }
+        }
+    )
+    event = _sample_payload()[0]
+    calendar = DerivedEventCandidate(
+        "calendar-1", "nhl", "home", "away", datetime(2026, 1, 10, tzinfo=UTC)
+    )
+    ref = NHLLiveMatchRef("m1", "TOR", "BOS", datetime(2026, 1, 10, tzinfo=UTC))
+
+    def run(payload):
+        client = MagicMock()
+        client.fetch_odds_for_sport.return_value = payload
+        return fetch_nhl_pinnacle_quotes_for_refs(
+            [ref],
+            book_cfg=cfg,
+            client=client,
+            calendar_identity_by_match={"m1": calendar},
+            calendar_window_candidates=[calendar],
+            provider_event_identity_resolver=lambda item: DerivedEventCandidate(
+                str(item.get("id")), "nhl", "home", "away", datetime(2026, 1, 10, tzinfo=UTC)
+            ),
+        )["m1"]
+
+    assert run([deepcopy(event), deepcopy(event)]) is not None
+    conflicting = deepcopy(event)
+    conflicting["home_team"] = "Different team"
+    assert run([deepcopy(event), conflicting]) is None
+
+
+def test_strict_quote_accepts_confirmed_outcome_aliases_different_from_event_names() -> None:
+    cfg = OmegaConf.create(
+        {
+            "bookmaker": {
+                "sport_keys": {"nhl": "icehockey_nhl"},
+                "bookmakers": {"primary": "pinnacle"},
+            }
+        }
+    )
+    event = {
+        "id": "evt-alias",
+        "home_team": "Toronto Display Name",
+        "away_team": "Boston Display Name",
+        "commence_time": "2026-01-10T00:00:00Z",
+        "bookmakers": [
+            {
+                "key": "pinnacle",
+                "markets": [
+                    {
+                        "key": "h2h",
+                        "outcomes": [
+                            {"name": "BOS Alias", "price": 2.4},
+                            {"name": "TOR Alias", "price": 1.7},
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    client = MagicMock()
+    client.fetch_odds_for_sport.return_value = [event]
+    calendar = DerivedEventCandidate(
+        "calendar-1", "nhl", "home-id", "away-id", datetime(2026, 1, 10, tzinfo=UTC)
+    )
+    result = fetch_nhl_pinnacle_quotes_for_refs(
+        [NHLLiveMatchRef("m1", "TOR", "BOS", datetime(2026, 1, 10, tzinfo=UTC))],
+        book_cfg=cfg,
+        client=client,
+        calendar_identity_by_match={"m1": calendar},
+        calendar_window_candidates=[calendar],
+        provider_event_identity_resolver=lambda _event: DerivedEventCandidate(
+            "evt-alias", "nhl", "home-id", "away-id", datetime(2026, 1, 10, tzinfo=UTC)
+        ),
+        provider_outcome_team_resolver=lambda _event, name: {
+            "TOR Alias": "home-id",
+            "BOS Alias": "away-id",
+        }.get(name),
+    )
+    assert result["m1"] is not None
+    assert result["m1"].decimal_home == pytest.approx(1.7)
+    assert result["m1"].decimal_away == pytest.approx(2.4)

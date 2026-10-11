@@ -27,11 +27,18 @@ uv run python -c 'from pathlib import Path; from sports_forecast.identity import
 Для просмотра текущего registry и работы с очередью используйте loopback review UI.
 Каталог открывает подтверждённые сущности и обозначения независимо от состояния
 очереди; изменение имени или подтверждённой связи требует основания и свежей
-ревизии формы. Новый проверенный snapshot нужно экспортировать и опубликовать
-отдельно. Файл
+ревизии формы. Фильтры `market` и `outcome` показывают словари рынка и исходов.
+Карточка рынка показывает aliases с областью действия, действующее правило и
+историю изменений. Владелец может изменить период, учёт ОТ/буллитов/ничьей и
+допустимые исходы с ключами `home_win`, `away_win`, `draw`; форма требует
+основание, CSRF-токен и актуальную ревизию. Правка master сама по себе не
+переключает установленный пакет: новый snapshot нужно экспортировать и
+опубликовать отдельно. Файл
 `conf/bookmaker/team_name_registry/nhl.yaml` остаётся исходным seed и резервом
 compatibility-режима. При включённом strict event reader odds-потребители не
-открывают этот файл: связь берётся из подтверждённого registry. Выключенный
+открывают этот файл: участники и рынок разрешаются через подтверждённые
+словари, а матч выбирается из календаря с проверкой времени и уникальности.
+Выключенный
 reader сохраняет старый путь для обратимого возврата на прежний выпуск; не
 редактируйте YAML после импорта seed.
 
@@ -51,11 +58,101 @@ snapshot. Новые обозначения в master не считаются о
 включайте strict reader до сверки и контрольного цикла NHL; для rollback
 используйте прежний проверенный выпуск вместе с его snapshot и YAML seed.
 
-## Подтверждённые события NHL
+## Переход master на схему 12 и рынок NHL/Pinnacle
+
+Работайте из checkout, где находится действующий owner master
+`data/registry/master.sqlite3`. Игнорируемый Git каталог `data/registry/`
+у каждого worktree свой; пустую БД соседнего worktree нельзя считать master.
+Остановите локальный review UI на время миграции. Сначала сделайте
+консистентную копию через SQLite backup API и проверьте её; `cp` открытой БД
+не подходит. Имя backup должно быть новым при каждом запуске:
+
+```bash
+uv run python - <<'PY'
+from datetime import UTC, datetime
+from pathlib import Path
+import sqlite3
+
+source = Path('data/registry/master.sqlite3')
+if not source.is_file():
+    raise SystemExit('Owner master отсутствует в этом checkout')
+root = Path('data/registry/backups')
+root.mkdir(parents=True, exist_ok=True)
+backup = root / f'pre-schema12-{datetime.now(UTC):%Y%m%dT%H%M%S%f}.sqlite3'
+if backup.exists():
+    raise SystemExit('Backup уже существует')
+with sqlite3.connect(source) as origin, sqlite3.connect(backup) as target:
+    origin.backup(target)
+    if target.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
+        raise SystemExit('Backup не прошёл integrity_check')
+backup.chmod(0o600)
+print(backup)
+PY
+```
+
+После независимого review кода схемы 12 примените миграцию и идемпотентный
+seed. ID NHL берётся из **действующей подтверждённой** tournament entity,
+а не из фиксированной строки или ID события. Seed ограничен `ice_hockey`,
+этим турниром и `bookmaker=pinnacle`; `the_odds_api:h2h` означает
+`winner_withOT` за полный матч с ОТ и буллитами, исходы `home_win` и
+`away_win` без ничьей. Он не перезаписывает решение владельца:
+
+```bash
+uv run python - <<'PY'
+from pathlib import Path
+from sports_forecast.identity import EntityRegistry
+from sports_forecast.identity.nhl_market_seed import seed_nhl_pinnacle_market
+from sports_forecast.identity.snapshot import (
+    export_registry_snapshot,
+    install_registry_snapshot,
+    verify_registry_snapshot,
+)
+
+root = Path('data/registry')
+registry = EntityRegistry(root / 'master.sqlite3')
+registry.initialize()
+tournaments = [
+    item for item in registry.list_entities(kind='tournament')
+    if item.project_name == 'NHL' and item.sport == 'ice_hockey'
+]
+if len(tournaments) != 1:
+    raise SystemExit('Требуется ровно один подтверждённый турнир NHL')
+market_id = seed_nhl_pinnacle_market(registry, tournament_id=tournaments[0].id)
+rule = registry.get_market_rule(market_id)
+if (rule.period, rule.overtime, rule.shootout, rule.draw) != ('game', True, True, False):
+    raise SystemExit('Правило NHL/Pinnacle не соответствует принятому контракту')
+if set(rule.valid_outcome_keys) != {'home_win', 'away_win'}:
+    raise SystemExit('Правило NHL/Pinnacle требует ровно два исхода без ничьей')
+snapshot = export_registry_snapshot(registry, root / 'snapshots')
+verified = verify_registry_snapshot(snapshot.path)
+if (verified.manifest['format_version'], verified.manifest['registry_schema_version']) != (2, 12):
+    raise SystemExit('Ожидался snapshot format 2 / schema 12')
+install_registry_snapshot(snapshot.path, root / 'current/package')
+print(snapshot.snapshot_id)
+PY
+uv run python -m sports_forecast.identity.nhl_parity \
+  --yaml conf/bookmaker/team_name_registry/nhl.yaml \
+  --master data/registry/master.sqlite3 \
+  --snapshot data/registry/current/package
+```
+
+Сохраните ID и проверенный пакет для публикации. Формат v2 добавляет
+`market_rules.jsonl`, сохраняя старые event rows; ID пакета по-прежнему имеет
+префикс `ir1:`. Читатель нового выпуска принимает v1/schema 11 и
+v2/schema 12. Старый production `registry-sync` v1.3.1 формат v2 не принимает:
+порядок публикации и отката указан в
+[runbook](entity-registry-publication.md). Обычные NHL матчи теперь
+сопоставляются по словарям и календарю; seed не создаёт постоянные связи
+The Odds API event ID с каждым матчем.
+
+## Исторические связи событий NHL
 
 Официальный NHL schedule можно импортировать для одного семидневного окна,
 если обозначения турнира и обеих команд уже подтверждены, время матча задано
-точно в UTC и в registry нет противоречивой связи. Перед применением создайте
+точно в UTC и в registry нет противоречивой связи. Этот путь сохраняется для
+истории и старого reader; он не является условием присоединения котировок в
+новом matcher. Показанная дата `2026-10-11` — пример прежнего выпуска, для
+нового запуска выберите актуальный anchor. Перед применением создайте
 консистентную копию master с помощью SQLite backup API; не копируйте открытый
 файл обычной командой `cp`:
 

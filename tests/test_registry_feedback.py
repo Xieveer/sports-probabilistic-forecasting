@@ -262,6 +262,10 @@ def test_local_registry_v9_migrates_candidate_cursor_table(tmp_path: Path) -> No
     registry = EntityRegistry(tmp_path / "registry.sqlite3")
     registry.initialize()
     with registry._connect() as connection:
+        # Версию 9 нельзя моделировать только сменой user_version: эти таблицы
+        # появились в schema 12 и в подлинной базе v9 отсутствуют.
+        connection.execute("DROP TABLE market_rule_audit")
+        connection.execute("DROP TABLE market_rules")
         connection.execute("DROP TABLE candidate_feedback_import_batches")
         connection.execute("DROP TABLE candidate_feedback_cursors")
         connection.execute("ALTER TABLE review_candidates DROP COLUMN observation_count")
