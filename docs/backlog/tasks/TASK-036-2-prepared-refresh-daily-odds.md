@@ -2,7 +2,7 @@
 
 > **Статус:** done — локальная реализация и целевые тесты пройдены; независимый review и production gate ожидаются
 > **Владелец:** Developer
-> **Эпик:** [EPIC-036](../EPIC-036-v1-3-3-registry-rollout.md)
+> **Эпик:** [EPIC-036](../EPIC-036-registry-rollout.md)
 
 ## Дефект
 

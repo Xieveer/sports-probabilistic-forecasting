@@ -86,6 +86,18 @@ def test_registry_sync_and_feedback_are_explicitly_isolated_profiles() -> None:
     assert "registry_feedback_database_url" not in worker["secrets"]  # type: ignore[operator]
 
 
+def test_registry_event_reader_switch_is_available_to_runtime_consumers() -> None:
+    """Strict reader может быть включён отдельно в API, Worker, acquisition и bot."""
+    compose = _load_yaml("docker-compose.prod.yml")
+    services = cast(dict[str, dict[str, object]], compose["services"])
+
+    for name in ("api", "worker", "source-acquirer", "telegram-bot"):
+        environment = cast(dict[str, object], services[name]["environment"])
+        assert environment["SF_REGISTRY_EVENT_READER_ENABLED"] == (
+            "${SF_REGISTRY_EVENT_READER_ENABLED:-false}"
+        )
+
+
 def test_scheduler_compose_config_is_independent_of_systemd_environment() -> None:
     """Профиль NHL полностью задаёт Compose interpolation даже в env -i."""
     docker = shutil.which("docker")
@@ -237,6 +249,7 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
         "DATABASE_URL_FILE": "/run/secrets/api_database_url",
         "SF_CONTROL_DATABASE_URL_FILE": "/run/secrets/control_database_url",
         "SF_CONTROL_API_KEY_FILE": "/run/secrets/control_api_key",
+        "SF_REGISTRY_EVENT_READER_ENABLED": "${SF_REGISTRY_EVENT_READER_ENABLED:-false}",
         "SF_CONTROL_ADMIN_IDS": "${BOT_ADMIN_USER_IDS:-}",
         "SF_BETS_OWNER_ID": "${BET_OWNER_USER_ID:-}",
         "SF_DATA_CYCLE_NOTIFICATION_ALIASES": (
@@ -267,6 +280,7 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     assert bot_environment["BOT_BETS_OWNER_ID"] == "${BET_OWNER_USER_ID:-}"
     assert worker["environment"] == {
         "DATABASE_URL_FILE": "/run/secrets/worker_database_url",
+        "SF_REGISTRY_EVENT_READER_ENABLED": "${SF_REGISTRY_EVENT_READER_ENABLED:-false}",
         "SF_WORKER_RUN_ID": "${SF_WORKER_RUN_ID:?set a scheduler-generated id}",
         "SF_DATA_CYCLE_NOTIFICATION_ALIASES": (
             "${SF_DATA_CYCLE_NOTIFICATION_ALIASES:?set safe notification aliases}"
@@ -302,6 +316,7 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     }.issubset(set(cast(list[str], worker["secrets"])))
     assert source_acquirer["environment"] == {
         "DATABASE_URL_FILE": "/run/secrets/worker_database_url",
+        "SF_REGISTRY_EVENT_READER_ENABLED": "${SF_REGISTRY_EVENT_READER_ENABLED:-false}",
         "SF_DATA_CYCLE_RUN_ID": "${SF_DATA_CYCLE_RUN_ID:-untracked}",
         "SF_DATA_CYCLE_GENERATION": "${SF_DATA_CYCLE_GENERATION:-0}",
         "SF_DATA_CYCLE_OWNER_ID": "${SF_DATA_CYCLE_OWNER_ID:-untracked}",
@@ -689,6 +704,7 @@ def test_scheduler_profile_provides_every_production_compose_input() -> None:
         "SF_REGISTRY_FEEDBACK_DATABASE_URL_FILE",
         "SF_CONTROL_API_KEY_FILE",
         "SF_DATA_CYCLE_DISPATCHER_ID",
+        "SF_REGISTRY_EVENT_READER_ENABLED",
         "BOT_ADMIN_USER_IDS",
         "BET_OWNER_USER_ID",
         "SF_BOT_TOKEN_FILE",

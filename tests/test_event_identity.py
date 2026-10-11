@@ -919,10 +919,43 @@ def test_applying_changed_registry_content_under_same_snapshot_id_is_rejected(
     engine.dispose()
 
 
-def test_event_reader_compatibility_switch_is_off_by_default(tmp_path: Path) -> None:
+def test_event_reader_switch_uses_file_when_environment_is_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from sports_forecast.identity.events import registry_event_reader_enabled
 
     config = tmp_path / "identity_event.yaml"
     config.write_text("registry_event_reader_enabled: false\n", encoding="utf-8")
+    monkeypatch.delenv("SF_REGISTRY_EVENT_READER_ENABLED", raising=False)
 
     assert registry_event_reader_enabled(config) is False
+
+
+@pytest.mark.parametrize(("value", "expected"), [("true", True), ("false", False)])
+def test_event_reader_switch_environment_overrides_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    value: str,
+    expected: bool,
+) -> None:
+    from sports_forecast.identity.events import registry_event_reader_enabled
+
+    config = tmp_path / "identity_event.yaml"
+    config.write_text("registry_event_reader_enabled: false\n", encoding="utf-8")
+    monkeypatch.setenv("SF_REGISTRY_EVENT_READER_ENABLED", value)
+
+    assert registry_event_reader_enabled(config) is expected
+
+
+@pytest.mark.parametrize("value", ["", "yes", "1", "enabled", " true "])
+def test_event_reader_switch_rejects_invalid_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    from sports_forecast.identity.events import registry_event_reader_enabled
+
+    config = tmp_path / "identity_event.yaml"
+    config.write_text("registry_event_reader_enabled: false\n", encoding="utf-8")
+    monkeypatch.setenv("SF_REGISTRY_EVENT_READER_ENABLED", value)
+
+    with pytest.raises(ValueError, match="SF_REGISTRY_EVENT_READER_ENABLED"):
+        registry_event_reader_enabled(config)

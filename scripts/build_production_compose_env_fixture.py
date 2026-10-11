@@ -72,6 +72,7 @@ def build_fixture(
         "SF_DATA_CYCLE_OWNER_ID": "abcdef0123456789abcdef0123456789",
         "SF_DATA_CYCLE_GENERATION": "1",
         "SF_APP_VERSION": app_version,
+        "SF_REGISTRY_EVENT_READER_ENABLED": "false",
         "SF_MODEL_RUNTIME_ROOT": str(root / "runtime_models"),
         "SF_CANONICAL_SOURCE_ROOT": str(root / "source" / "nhl"),
         "SF_OPERATIONAL_ARCHIVE_ROOT": str(root / "archive"),

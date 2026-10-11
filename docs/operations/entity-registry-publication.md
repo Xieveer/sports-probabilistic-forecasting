@@ -104,6 +104,37 @@ sequence; не предполагайте её номер без повторн�
 После server sync сверяйте pinned указатель read-only запросом к
 `active_registry_installation` и код выхода `registry-sync.service`.
 
+Начиная с v1.3.4, production Compose передаёт
+`SF_REGISTRY_EVENT_READER_ENABLED` в API, Telegram bot, source-acquirer и
+Worker. На текущем VPS единственный актуальный Compose profile —
+`/etc/sports-forecast/refresh/nhl.env`: из него запускаются API/бот и
+systemd Data Cycle с одноразовыми Worker/source-acquirer. Файл
+`/etc/sports-forecast/runtime.env` устарел и не проходит полный Compose
+render; не используйте его для релиза. На staged запуске задайте `false`;
+после успешного v2 sync, market rule и smoke — `true`. Перед каждым switch
+из каталога `/opt/sports-forecast` проверьте rendered Compose для
+ожидаемого значения (`false` на stage, `true` при включении):
+
+```bash
+set -euo pipefail
+expected=true
+docker compose --env-file /etc/sports-forecast/refresh/nhl.env \
+  -f docker-compose.prod.yml --profile worker --profile source-acquisition \
+  config --format json \
+  | jq --exit-status --arg expected "$expected" \
+    '[.services.api, .services["telegram-bot"], .services["source-acquirer"], .services.worker]
+     | all(.[]; .environment.SF_REGISTRY_EVENT_READER_ENABLED == $expected)' \
+    >/dev/null
+```
+
+Проверка не выводит rendered Compose: он содержит secret paths и другую
+конфигурацию. После изменения пересоздайте API/бот и запустите новый
+одноразовый цикл Worker/source-acquirer. Значения принимаются только как
+явные `true`/`false`; неверное значение вызывает ошибку при чтении.
+Для rollback сначала верните `false` в актуальный profile, проверьте Compose
+render и пересоздайте API/бот, затем публикуйте verified v1 snapshot как
+новую sequence и возвращайте v1.3.1.
+
 Для отката **сначала** новым publisher опубликуйте этот сохранённый verified
 v1 snapshot как новую publication с ещё большей sequence, выполните sync
 новым бинарником и убедитесь, что PostgreSQL pinned на v1. Лишь затем
@@ -175,7 +206,7 @@ PostgreSQL grants, первую публикацию, sync, zero-work feedback �
 После `role-bootstrap` и `migrator` одноразовый sync запускается так:
 
 ```bash
-docker compose --env-file /etc/sf/production.env -f docker-compose.prod.yml \
+docker compose --env-file /etc/sports-forecast/refresh/nhl.env -f docker-compose.prod.yml \
   --profile registry-sync run --rm registry-sync
 ```
 
@@ -213,7 +244,7 @@ files. Одноразовый профиль запускает `publish`; дл�
 команду, сохранив тот же профиль, identity и лимит:
 
 ```bash
-docker compose --env-file /etc/sf/production.env -f docker-compose.prod.yml \
+docker compose --env-file /etc/sports-forecast/refresh/nhl.env -f docker-compose.prod.yml \
   --profile registry-feedback run --rm registry-feedback \
   /app/.venv/bin/python -m sports_forecast.deploy.registry_feedback_publish_cli collect-acks --max-batches 100
 ```
