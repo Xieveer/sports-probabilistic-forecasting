@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock
 
+import pytest
 from aiogram.types import CallbackQuery, Chat, Message, User
 
 from sports_forecast.bot.middleware import AllowedUsersMiddleware
@@ -31,6 +32,19 @@ def test_allowed_users_middleware_blocks() -> None:
         handler.assert_not_called()
 
     asyncio.run(_run())
+
+
+def test_rejected_user_id_is_absent_from_logs(caplog: pytest.LogCaptureFixture) -> None:
+    """Отказ виден оператору без полного Telegram user_id."""
+
+    async def _run() -> None:
+        await AllowedUsersMiddleware({1})(AsyncMock(), _msg(987654321), {})
+
+    with caplog.at_level("WARNING"):
+        asyncio.run(_run())
+
+    assert "отклонён" in caplog.text
+    assert "987654321" not in caplog.text
 
 
 def _cbq(uid: int) -> CallbackQuery:
