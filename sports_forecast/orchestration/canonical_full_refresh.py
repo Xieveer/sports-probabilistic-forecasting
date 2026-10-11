@@ -57,6 +57,7 @@ from sports_forecast.service.db.repository import (
 )
 from sports_forecast.service.event_readiness import evaluate_event_readiness
 from sports_forecast.service.readiness_policy import load_readiness_policy
+from sports_forecast.service.registry_readiness import pinned_participant_resolver
 from sports_forecast.utils.log_config import get_logger
 from sports_forecast.validation.canonical_freshness import validate_prediction_result_freshness
 
@@ -290,9 +291,8 @@ def _readiness_counts(
     if selected is None:
         return {}
     events, policy = selected
-    registry_snapshot_id = (
-        pin_installed_registry(session).snapshot_id if registry_event_reader_enabled() else None
-    )
+    installed_reader = pin_installed_registry(session) if registry_event_reader_enabled() else None
+    registry_snapshot_id = installed_reader.snapshot_id if installed_reader is not None else None
     predictions, odds, attempts = CalendarRepository(session).get_readiness_data(
         events, registry_snapshot_id=registry_snapshot_id
     )
@@ -314,6 +314,11 @@ def _readiness_counts(
             at,
             attempts.get(event.id, []),
             odds_enabled,
+            participant_resolver=(
+                pinned_participant_resolver(installed_reader, session, event)
+                if installed_reader is not None
+                else None
+            ),
         )
         prediction_state = readiness["prediction_readiness"]["status"]
         odds_state = readiness["odds_readiness"]["status"]

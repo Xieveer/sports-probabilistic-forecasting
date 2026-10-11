@@ -119,10 +119,12 @@ grants: локальный publisher — условные `GetObject`/`PutObject
 только `GetObject` на эти ключи. `DeleteObject` не нужен. Старые
 `operational-archive/` grants и 90-дневный lifecycle не должны захватить этот
 prefix. На 2026-10-09 live endpoint probe, IAM grants и lifecycle текущего
-bucket проверены; четыре пары ключей выпущены в защищённые локальные файлы,
-но серверные credentials на VPS не доставлены. PostgreSQL grants, server
-sync/feedback и расписание остаются эксплуатационными gates. До этих gates
-production registry mode не включать.
+bucket проверены. Релиз v1.3.1 подтвердил доставку выделенных server credentials,
+PostgreSQL grants, первую публикацию, sync, zero-work feedback и плановые ticks;
+см. [EPIC-026](../backlog/EPIC-026-entity-registry.md). Strict reader остаётся
+выключенным до проверки покрытия NHL горизонта, непустого кандидатного цикла и
+отката в релизное окно по
+[TASK-026-10](../backlog/tasks/TASK-026-10-strict-reader-rollout.md).
 
 Контейнерные one-shot команды используют явные Compose профили
 `registry-sync` и `registry-feedback`. Их DB URL и Object Storage credentials

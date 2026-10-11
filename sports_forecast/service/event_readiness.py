@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -12,6 +12,7 @@ from sports_forecast.data.providers.odds.team_name_registry import (
     load_nhl_team_name_registry,
     normalize_team_key,
 )
+from sports_forecast.identity.events import registry_event_reader_enabled
 from sports_forecast.service.db.models import (
     CanonicalEvent,
     OddsAcquisitionAttempt,
@@ -32,6 +33,7 @@ def evaluate_event_readiness(
     now: datetime,
     odds_attempts: Sequence[OddsAcquisitionAttempt] = (),
     odds_enabled: bool = True,
+    participant_resolver: Callable[[str], str | None] | None = None,
 ) -> dict[str, Any]:
     """Вычислить состояния по persisted timestamps, не выводя сбои из отсутствия строк."""
     reference = _utc(now)
@@ -111,7 +113,7 @@ def evaluate_event_readiness(
     }
     identity_changed = any(
         (item.market, item.market_spec) in required_prediction_keys
-        and _prediction_event_identity_changed(event, item)
+        and _prediction_event_identity_changed(event, item, participant_resolver)
         for item in predictions
     )
     calendar_status = "current" if event.status == "scheduled" else event.status
@@ -147,7 +149,11 @@ def evaluate_event_readiness(
     }
 
 
-def _prediction_event_identity_changed(event: CanonicalEvent, prediction: Prediction) -> bool:
+def _prediction_event_identity_changed(
+    event: CanonicalEvent,
+    prediction: Prediction,
+    participant_resolver: Callable[[str], str | None] | None,
+) -> bool:
     """Распознать перенос или замену участников без сравнения чужих snapshot IDs."""
     if prediction.match_datetime is not None and _utc(prediction.match_datetime) != _utc(
         event.scheduled_at
@@ -156,21 +162,32 @@ def _prediction_event_identity_changed(event: CanonicalEvent, prediction: Predic
     if (
         prediction.home_player
         and event.home_participant
-        and _participant_key(event.tournament, prediction.home_player)
-        != _participant_key(event.tournament, event.home_participant)
+        and _participant_key(event.tournament, prediction.home_player, participant_resolver)
+        != _participant_key(event.tournament, event.home_participant, participant_resolver)
     ):
         return True
     if prediction.away_player and event.away_participant:
-        return _participant_key(event.tournament, prediction.away_player) != _participant_key(
-            event.tournament, event.away_participant
-        )
+        return _participant_key(
+            event.tournament, prediction.away_player, participant_resolver
+        ) != _participant_key(event.tournament, event.away_participant, participant_resolver)
     return False
 
 
-def _participant_key(tournament: str, participant: str) -> str:
-    registry: TeamNameRegistry = (
-        load_nhl_team_name_registry() if tournament == "nhl" else TeamNameRegistry()
-    )
+def _participant_key(
+    tournament: str,
+    participant: str,
+    resolver: Callable[[str], str | None] | None = None,
+) -> str:
+    if resolver is not None:
+        project_id = resolver(participant)
+        return (
+            f"project:{project_id}"
+            if project_id
+            else f"unresolved:{normalize_team_key(participant)}"
+        )
+    registry: TeamNameRegistry = TeamNameRegistry()
+    if tournament == "nhl":
+        registry = load_nhl_team_name_registry(strict_mode=registry_event_reader_enabled())
     return registry.resolve(participant) or normalize_team_key(participant)
 
 

@@ -24,15 +24,32 @@ uv run python -c 'from pathlib import Path; from sports_forecast.identity import
 зависит от `data/registry/current/` и конфигурации, поэтому другая выбранная
 версия или изменение package bytes инвалидирует ingest, clean и features.
 
-Для работы с локальной очередью используйте loopback review UI:
+Для просмотра текущего registry и работы с очередью используйте loopback review UI.
+Каталог открывает подтверждённые сущности и обозначения независимо от состояния
+очереди; изменение имени или подтверждённой связи требует основания и свежей
+ревизии формы. Новый проверенный snapshot нужно экспортировать и опубликовать
+отдельно. Файл
+`conf/bookmaker/team_name_registry/nhl.yaml` остаётся исходным seed и резервом
+compatibility-режима. При включённом strict event reader odds-потребители не
+открывают этот файл: связь берётся из подтверждённого registry. Выключенный
+reader сохраняет старый путь для обратимого возврата на прежний выпуск; не
+редактируйте YAML после импорта seed.
 
-Сейчас этот интерфейс показывает очередь кандидатов. Просмотр и исправление
-всех уже подтверждённых связей через веб ещё не реализованы и входят в
-[REQ-026 #12](../product/requirements/REQ-026-entity-registry.md). Пустая
-очередь не доказывает полноту registry. Файл
-`conf/bookmaker/team_name_registry/nhl.yaml` используется как исходный legacy
-seed и остаётся в старом runtime пути до проверки паритета и отключения этого
-пути по REQ-026 #13.
+Перед локальным переключением выполните read-only сверку YAML → master →
+проверенный snapshot:
+
+```bash
+uv run python -m sports_forecast.identity.nhl_parity \
+  --yaml conf/bookmaker/team_name_registry/nhl.yaml \
+  --master data/registry/master.sqlite3 \
+  --snapshot data/registry/current/package
+```
+
+Команда завершится с кодом 1 и перечислит расхождения, если известные aliases
+отсутствуют, не подтверждены, указывают на разные project ID или не вошли в
+snapshot. Новые обозначения в master не считаются ошибкой автоматически. Не
+включайте strict reader до сверки и контрольного цикла NHL; для rollback
+используйте прежний проверенный выпуск вместе с его snapshot и YAML seed.
 
 Создайте локальный секрет и запустите UI на loopback:
 

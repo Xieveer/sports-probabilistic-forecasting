@@ -104,6 +104,22 @@ def test_pending_designation_requires_audited_owner_confirmation(tmp_path: Path)
     )
 
 
+def test_registry_lists_designations_for_entity(tmp_path: Path) -> None:
+    registry = make_registry(tmp_path)
+    team = registry.create_entity("team", "Team One", sport="hockey")
+    designation = registry.add_designation(
+        entity_id=team.id,
+        source="feed_a",
+        kind="team",
+        scope={"sport": "hockey"},
+        value_kind="name",
+        raw_value="Team One",
+        state="confirmed",
+    )
+
+    assert registry.list_entity_designations(team.id) == [designation]
+
+
 def test_overlapping_confirmed_designation_becomes_conflict_and_is_explicitly_resolved(
     tmp_path: Path,
 ) -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import sqlite3
 import subprocess
+from html import unescape
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ from sports_forecast.identity.review_service import (
     NewProjectEntity,
     ReviewQueueService,
 )
+from sports_forecast.identity.snapshot import export_registry_snapshot, verify_registry_snapshot
 
 
 def make_registry(tmp_path: Path) -> EntityRegistry:
@@ -599,6 +601,151 @@ def test_review_http_get_is_read_only_and_production_app_has_no_review_routes(
     from sports_forecast.service.app import app
 
     assert not any(getattr(route, "path", "").startswith("/review") for route in app.routes)
+
+
+def test_registry_catalog_is_available_when_candidate_queue_is_empty_and_edits_are_audited(
+    tmp_path: Path,
+) -> None:
+    registry = make_registry(tmp_path)
+    first = registry.create_entity("team", "Original <Team>", sport="hockey")
+    for index in range(101):
+        registry.create_entity("team", f"Middle Team {index:03}", sport="hockey")
+    late_target = registry.create_entity("team", "Zulu Target", sport="hockey")
+    designation = registry.add_designation(
+        entity_id=first.id,
+        source="feed",
+        kind="team",
+        scope={"league": "x"},
+        value_kind="name",
+        raw_value="Source <Name>",
+        state="confirmed",
+    )
+    secret_path = tmp_path / "review.secret"
+    secret_path.write_text("a-long-random-owner-secret-for-tests", encoding="utf-8")
+    secret_path.chmod(0o600)
+    client = TestClient(
+        create_review_app(ReviewQueueService(registry), secret_path=secret_path, actor="owner"),
+        base_url="http://127.0.0.1:8765",
+    )
+    client.post(
+        "/login",
+        data={"secret": "a-long-random-owner-secret-for-tests"},
+        headers={"Origin": "http://127.0.0.1:8765"},
+        follow_redirects=False,
+    )
+    catalog = client.get("/registry", params={"q": "Original"})
+    assert "Original &lt;Team&gt;" in catalog.text
+    assert "<script>" not in catalog.text
+    detail = client.get(f"/registry/{first.id}")
+    assert "Source &lt;Name&gt;" in detail.text
+    assert "name='revision' value='1'" in detail.text
+    assert "name='entity_id'" in detail.text
+    assert "<select name='entity_id'" not in detail.text
+    old_artifact = export_registry_snapshot(registry, tmp_path / "snapshots")
+    old_snapshot = verify_registry_snapshot(old_artifact.path)
+    old_manifest_bytes = (old_artifact.path / "manifest.json").read_bytes()
+    csrf = re.search(r"name='csrf' value='([^']+)'", detail.text)
+    assert csrf is not None
+
+    renamed = client.post(
+        f"/registry/{first.id}/rename",
+        data={
+            "csrf": csrf.group(1),
+            "revision": "1",
+            "project_name": "Renamed Team",
+            "reason": "Исправлено владельцем",
+        },
+        headers={"Origin": "http://127.0.0.1:8765"},
+        follow_redirects=False,
+    )
+    assert renamed.status_code == 303
+    assert registry.get_entity(first.id).project_name == "Renamed Team"
+    assert registry.list_entity_audit(first.id)[0].reason == "Исправлено владельцем"
+    stale = client.post(
+        f"/registry/{first.id}/rename",
+        data={
+            "csrf": csrf.group(1),
+            "revision": "1",
+            "project_name": "Stale",
+            "reason": "Старая форма",
+        },
+        headers={"Origin": "http://127.0.0.1:8765"},
+        follow_redirects=False,
+    )
+    assert stale.status_code == 409
+
+    fresh_detail = client.get(f"/registry/{first.id}").text
+    fresh_csrf = re.search(r"name='csrf' value='([^']+)'", fresh_detail)
+    assert fresh_csrf is not None
+    moved = client.post(
+        f"/registry/designations/{designation.id}/reassign",
+        data={
+            "csrf": fresh_csrf.group(1),
+            "revision": str(designation.revision),
+            "entity_id": late_target.id,
+            "reason": "Проверена принадлежность",
+        },
+        headers={"Origin": "http://127.0.0.1:8765"},
+        follow_redirects=False,
+    )
+    assert moved.status_code == 303
+    assert registry.get_designation(designation.id).entity_id == late_target.id
+    decision = registry.list_decisions(designation.id)[0]
+    assert decision.reason == "Проверена принадлежность"
+    assert decision.prior_revision == designation.revision
+
+    new_artifact = export_registry_snapshot(registry, tmp_path / "snapshots")
+    new_snapshot = verify_registry_snapshot(new_artifact.path)
+    assert new_snapshot.snapshot_id != old_snapshot.snapshot_id
+    old_entity_record = next(
+        record for record in old_snapshot.records["entities.jsonl"] if record["id"] == first.id
+    )
+    new_entity_record = next(
+        record for record in new_snapshot.records["entities.jsonl"] if record["id"] == first.id
+    )
+    old_designation_record = next(
+        record
+        for record in old_snapshot.records["designations.jsonl"]
+        if record["id"] == designation.id
+    )
+    new_designation_record = next(
+        record
+        for record in new_snapshot.records["designations.jsonl"]
+        if record["id"] == designation.id
+    )
+    assert old_entity_record["project_name"] == "Original <Team>"
+    assert new_entity_record["project_name"] == "Renamed Team"
+    assert old_designation_record["entity_id"] == first.id
+    assert new_designation_record["entity_id"] == late_target.id
+    assert (old_artifact.path / "manifest.json").read_bytes() == old_manifest_bytes
+    assert verify_registry_snapshot(old_artifact.path).snapshot_id == old_snapshot.snapshot_id
+
+
+def test_registry_pagination_url_encodes_ampersand_and_fragment_characters(tmp_path: Path) -> None:
+    registry = make_registry(tmp_path)
+    query = "A&#B"
+    for index in range(51):
+        registry.create_entity("team", f"Team {query} {index:02}", sport="hockey")
+    secret_path = tmp_path / "review.secret"
+    secret_path.write_text("a-long-random-owner-secret-for-tests", encoding="utf-8")
+    secret_path.chmod(0o600)
+    client = TestClient(
+        create_review_app(ReviewQueueService(registry), secret_path=secret_path, actor="owner"),
+        base_url="http://127.0.0.1:8765",
+    )
+    client.post(
+        "/login",
+        data={"secret": "a-long-random-owner-secret-for-tests"},
+        headers={"Origin": "http://127.0.0.1:8765"},
+        follow_redirects=False,
+    )
+
+    first_page = client.get("/registry", params={"q": query})
+    next_link = re.search(r"href='([^']+offset=50)'", first_page.text)
+    assert next_link is not None
+    assert "q=A%26%23B" in next_link.group(1)
+    second_page = client.get(unescape(next_link.group(1)))
+    assert "Team A&amp;#B 50" in second_page.text
 
 
 def test_post_bodies_are_rejected_before_form_parsing_when_oversized(tmp_path: Path) -> None:
