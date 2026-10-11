@@ -97,11 +97,12 @@ NHL/Pinnacle `h2h → winner_withOT` и реальное присоединен�
 reader должен сначала безопасно прочитать действующий v1 snapshot, затем v2.
 Другие runtime timers и старые immutable objects сохраняются до GO.
 
-На 2026-10-11 production active publication имеет sequence `2`, snapshot
-`ir1:e0070e397775a9227300d3edb061b20a15744f5317ccd7e56752e6ab67e196ce`
-формата v1/schema 11. Следующая успешная публикация получает возрастающую
-sequence; не предполагайте её номер без повторного чтения `current.json`.
-После server sync сверяйте pinned указатель read-only запросом к
+На 2026-10-11 после staged v1.3.4 active publication имеет sequence `3`,
+snapshot `ir1:71897173e0ee72bb60f9038cc8570770b351d866a3f994e63ba26bf5bcfe03e2`
+формата v2/schema 12. Предыдущая verified v1 publication с sequence `2`
+сохранена для возврата. Следующая публикация получает возрастающую sequence;
+не предполагайте её номер без повторного чтения `current.json`. После server
+sync сверяйте pinned указатель read-only запросом к
 `active_registry_installation` и код выхода `registry-sync.service`.
 
 Начиная с v1.3.4, production Compose передаёт
@@ -124,6 +125,23 @@ docker compose --env-file /etc/sports-forecast/refresh/nhl.env \
   | jq --exit-status --arg expected "$expected" \
     '[.services.api, .services["telegram-bot"], .services["source-acquirer"], .services.worker]
      | all(.[]; .environment.SF_REGISTRY_EVENT_READER_ENABLED == $expected)' \
+    >/dev/null
+```
+
+Для v1.3.5 также проверьте, что Worker и source-acquirer получают
+одинаковый `SF_ENTITY_REGISTRY_INSTALLATION_ID` из этого profile: именно эти
+процессы создают записи кандидатов при неизвестных обозначениях. Значение
+должно быть UUID и совпадать с установленным registry. Проверка выполняется
+через rendered Compose с подавлением полного вывода:
+
+```bash
+expected_id=$(sed -n 's/^SF_ENTITY_REGISTRY_INSTALLATION_ID=//p' /etc/sports-forecast/refresh/nhl.env)
+docker compose --env-file /etc/sports-forecast/refresh/nhl.env \
+  -f docker-compose.prod.yml --profile worker --profile source-acquisition \
+  config --format json \
+  | jq --exit-status --arg expected "$expected_id" \
+    '(.services.worker.environment.SF_ENTITY_REGISTRY_INSTALLATION_ID == $expected)
+     and (.services["source-acquirer"].environment.SF_ENTITY_REGISTRY_INSTALLATION_ID == $expected)' \
     >/dev/null
 ```
 

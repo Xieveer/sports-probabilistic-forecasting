@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from argparse import ArgumentParser
 from pathlib import Path
+from uuid import UUID
 
 import yaml
 
@@ -19,6 +20,7 @@ APPLICATION_SERVICES = {
     "registry-feedback",
 }
 REGISTRY_EVENT_READER_SERVICES = ("api", "worker", "source-acquirer", "telegram-bot")
+CANDIDATE_PRODUCER_SERVICES = ("worker", "source-acquirer")
 EXPECTED_SERVICES = APPLICATION_SERVICES | {"db", "migrator", "role-bootstrap"}
 FORBIDDEN_SERVICES = {"caddy", "mlflow", "prometheus", "grafana", "airflow", "dvc", "node-exporter"}
 
@@ -26,6 +28,16 @@ FORBIDDEN_SERVICES = {"caddy", "mlflow", "prometheus", "grafana", "airflow", "dv
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise ValueError(message)
+
+
+def _is_canonical_uuid(value: object) -> bool:
+    """Проверить формат UUID, который принимает runtime registry feedback."""
+    if not isinstance(value, str):
+        return False
+    try:
+        return str(UUID(value)) == value
+    except ValueError:
+        return False
 
 
 def _memory_mib(value: object) -> int:
@@ -205,6 +217,19 @@ def verify_contract(rendered_path: Path, *, model_runtime_root: Path) -> None:
         and registry_feedback.get("command", [None, None, None])[2]
         == "sports_forecast.deploy.registry_feedback_publish_cli",
         "registry-feedback: отдельный opt-in profile и собственный DB URL обязательны",
+    )
+    installation_id = registry_feedback.get("environment", {}).get(
+        "SF_ENTITY_REGISTRY_INSTALLATION_ID"
+    )
+    _require(
+        _is_canonical_uuid(installation_id)
+        and all(
+            isinstance(services[name].get("environment"), dict)
+            and services[name]["environment"].get("SF_ENTITY_REGISTRY_INSTALLATION_ID")
+            == installation_id
+            for name in CANDIDATE_PRODUCER_SERVICES
+        ),
+        "candidate producer worker/source-acquirer: общий installation ID должен быть canonical UUID",
     )
     for name, expected_secrets in (
         (

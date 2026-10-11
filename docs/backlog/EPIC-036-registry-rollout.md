@@ -1,6 +1,6 @@
 # EPIC-036 — Выпуск с рабочим NHL registry
 
-> **Статус:** in_progress — v1.3.3 NO-GO, исправление и gates v1.3.4
+> **Статус:** cancelled — v1.3.4 NO-GO на strict Data Cycle; продолжение в EPIC-037
 > **Приоритет:** critical
 > **Владелец:** Product Owner
 > **Ветка:** `initiative/epic-036-v1-3-3-release`
@@ -133,3 +133,7 @@ production Compose. Docker run `38177105034` отменён. Следующий 
 backup переключение запрещено; после switch применяется проверенный rollback.
 Финальные факты записываются в
 [production handoff](../operations/production-handoff.md).
+
+## Итог production gate v1.3.4
+
+Source, CI/Security, образы и model wrapper проверены. На VPS установлен v2 snapshot, API/бот при strict reader показали 50 NHL прогнозов и четыре реальные двухсторонние линии Pinnacle. Полный strict Data Cycle `0070c85e-90a2-4656-b14e-608d6745e312` остановился на календаре с `RegistryFeedbackError: SF_ENTITY_REGISTRY_INSTALLATION_ID не задан`. После NO-GO strict выключен, API/бот здоровы, таймеры остановлены. Исправление и повторный релиз ведёт [EPIC-037](EPIC-037-v1-3-5-registry-cycle.md).
