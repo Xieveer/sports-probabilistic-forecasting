@@ -25,6 +25,8 @@ PRODUCTION_SERVICES = {
     "source-acquirer",
     "worker",
     "archive-sync",
+    "registry-sync",
+    "registry-feedback",
     "migrator",
     "role-bootstrap",
 }
@@ -52,6 +54,36 @@ def test_production_compose_contains_only_serving_services() -> None:
     assert "SF_API_DOMAIN" not in (PROJECT_ROOT / "docker-compose.prod.yml").read_text(
         encoding="utf-8"
     )
+
+
+def test_registry_sync_and_feedback_are_explicitly_isolated_profiles() -> None:
+    """Registry commands use their own DB/Object Storage credentials and remain opt-in."""
+    compose = _load_yaml("docker-compose.prod.yml")
+    services = cast(dict[str, dict[str, object]], compose["services"])
+    api = cast(dict[str, object], services["api"])
+    worker = cast(dict[str, object], services["worker"])
+    registry_sync = cast(dict[str, object], services["registry-sync"])
+    registry_feedback = cast(dict[str, object], services["registry-feedback"])
+
+    assert registry_sync["profiles"] == ["registry-sync"]
+    assert registry_feedback["profiles"] == ["registry-feedback"]
+    for service in (registry_sync, registry_feedback):
+        assert service["cap_drop"] == ["ALL"]
+        assert service["security_opt"] == ["no-new-privileges:true"]
+        assert service["user"] == "10001:10001"
+        assert service["read_only"] is True
+    assert registry_sync["environment"]["DATABASE_URL_FILE"] == (  # type: ignore[index]
+        "/run/secrets/registry_sync_database_url"
+    )
+    assert registry_feedback["environment"]["DATABASE_URL_FILE"] == (  # type: ignore[index]
+        "/run/secrets/registry_feedback_database_url"
+    )
+    assert "registry_sync_database_url" in registry_sync["secrets"]  # type: ignore[operator]
+    assert "registry_feedback_database_url" in registry_feedback["secrets"]  # type: ignore[operator]
+    assert "registry_sync_object_storage_secret_key" in registry_sync["secrets"]  # type: ignore[operator]
+    assert "registry_feedback_object_storage_secret_key" in registry_feedback["secrets"]  # type: ignore[operator]
+    assert "registry_sync_database_url" not in api["secrets"]  # type: ignore[operator]
+    assert "registry_feedback_database_url" not in worker["secrets"]  # type: ignore[operator]
 
 
 def test_scheduler_compose_config_is_independent_of_systemd_environment() -> None:
@@ -647,8 +679,12 @@ def test_scheduler_profile_provides_every_production_compose_input() -> None:
         "SF_WORKER_DB_PASSWORD_FILE",
         "SF_MIGRATOR_DB_PASSWORD_FILE",
         "SF_CONTROL_API_DB_PASSWORD_FILE",
+        "SF_REGISTRY_SYNC_DB_PASSWORD_FILE",
+        "SF_REGISTRY_FEEDBACK_DB_PASSWORD_FILE",
         "SF_MIGRATOR_DATABASE_URL_FILE",
         "SF_CONTROL_DATABASE_URL_FILE",
+        "SF_REGISTRY_SYNC_DATABASE_URL_FILE",
+        "SF_REGISTRY_FEEDBACK_DATABASE_URL_FILE",
         "SF_CONTROL_API_KEY_FILE",
         "SF_DATA_CYCLE_DISPATCHER_ID",
         "BOT_ADMIN_USER_IDS",
@@ -660,6 +696,12 @@ def test_scheduler_profile_provides_every_production_compose_input() -> None:
         "ODDS_API_KEY_FILE",
         "SF_ARCHIVE_SYNC_IMAGE",
         "SF_ARCHIVE_SYNC_STATE_ROOT",
+        "SF_REGISTRY_SYNC_DOWNLOAD_ROOT",
+        "SF_ENTITY_REGISTRY_INSTALLATION_ID",
+        "SF_REGISTRY_SYNC_OBJECT_STORAGE_ACCESS_KEY_ID_FILE",
+        "SF_REGISTRY_SYNC_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE",
+        "SF_REGISTRY_FEEDBACK_SERVER_ACCESS_KEY_ID_FILE",
+        "SF_REGISTRY_FEEDBACK_SERVER_SECRET_ACCESS_KEY_FILE",
         "SF_OBJECT_STORAGE_ENDPOINT",
         "SF_OBJECT_STORAGE_BUCKET",
         "SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE",

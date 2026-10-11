@@ -63,6 +63,10 @@ def test_production_compose_fixture_supplies_control_and_notification_requiremen
     required_values = {
         "SF_CONTROL_API_DB_PASSWORD_FILE",
         "SF_CONTROL_DATABASE_URL_FILE",
+        "SF_REGISTRY_SYNC_DB_PASSWORD_FILE",
+        "SF_REGISTRY_SYNC_DATABASE_URL_FILE",
+        "SF_REGISTRY_FEEDBACK_DB_PASSWORD_FILE",
+        "SF_REGISTRY_FEEDBACK_DATABASE_URL_FILE",
         "SF_CONTROL_API_KEY_FILE",
         "SF_DATA_CYCLE_NOTIFICATION_ALIASES",
         "BOT_ADMIN_USER_IDS",
@@ -82,6 +86,21 @@ def test_production_compose_fixture_supplies_control_and_notification_requiremen
     assert Path(values["SF_CONTROL_DATABASE_URL_FILE"]).read_text(encoding="utf-8") == (
         "postgresql://sf_control_api:fixture-control-api-password@db:5432/sports_forecast"
     )
+    assert Path(values["SF_REGISTRY_SYNC_DATABASE_URL_FILE"]).read_text(encoding="utf-8") == (
+        "postgresql://sf_registry_sync:fixture-registry-sync-password@db:5432/sports_forecast"
+    )
+    assert Path(values["SF_REGISTRY_FEEDBACK_DATABASE_URL_FILE"]).read_text(encoding="utf-8") == (
+        "postgresql://sf_registry_feedback:fixture-registry-feedback-password@db:5432/sports_forecast"
+    )
+    for key in (
+        "SF_REGISTRY_SYNC_DB_PASSWORD_FILE",
+        "SF_REGISTRY_FEEDBACK_DB_PASSWORD_FILE",
+        "SF_REGISTRY_SYNC_OBJECT_STORAGE_ACCESS_KEY_ID_FILE",
+        "SF_REGISTRY_SYNC_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE",
+        "SF_REGISTRY_FEEDBACK_SERVER_ACCESS_KEY_ID_FILE",
+        "SF_REGISTRY_FEEDBACK_SERVER_SECRET_ACCESS_KEY_FILE",
+    ):
+        assert Path(values[key]).is_file()
     assert Path(values["SF_CONTROL_API_KEY_FILE"]).read_text(encoding="utf-8") == (
         "fixture-control-api-key"
     )
@@ -223,6 +242,10 @@ def test_production_compose_fixture_renders_all_first_rollout_profiles(tmp_path:
             "source-acquisition",
             "--profile",
             "scheduler",
+            "--profile",
+            "registry-sync",
+            "--profile",
+            "registry-feedback",
             "config",
         ],
         cwd=PROJECT_ROOT,
@@ -343,9 +366,30 @@ def test_database_identities_are_file_backed_and_migration_is_explicit() -> None
     assert services["migrator"]["environment"] == {
         "DATABASE_URL_FILE": "/run/secrets/migrator_database_url"
     }
+    assert services["registry-sync"]["command"][-3:] == [
+        "--download-root",
+        "/app/registry-downloads",
+    ] or services["registry-sync"]["command"][-2:] == [
+        "--download-root",
+        "/app/registry-downloads",
+    ]
+    assert services["registry-feedback"]["command"][-3:] == [
+        "--max-batches",
+        "10",
+    ] or services["registry-feedback"]["command"][-2:] == [
+        "--max-batches",
+        "10",
+    ]
+    assert services["registry-sync"]["profiles"] == ["registry-sync"]
+    assert services["registry-feedback"]["profiles"] == ["registry-feedback"]
     assert "sf_api_reader" in (PROJECT_ROOT / "deploy/postgres/init-roles.sh").read_text(
         encoding="utf-8"
     )
+    bootstrap = (PROJECT_ROOT / "deploy/postgres/init-roles.sh").read_text(encoding="utf-8")
+    assert "CREATE ROLE sf_registry_sync LOGIN" in bootstrap
+    assert "CREATE ROLE sf_registry_feedback LOGIN" in bootstrap
+    assert "SF_REGISTRY_SYNC_DB_PASSWORD_FILE" in bootstrap
+    assert "SF_REGISTRY_FEEDBACK_DB_PASSWORD_FILE" in bootstrap
     grants = (PROJECT_ROOT / "sports_forecast/deploy/database_roles.py").read_text(encoding="utf-8")
     assert "GRANT SELECT ON TABLE predictions, tournament_publication_states," in grants
     assert "GRANT SELECT ON ALL TABLES IN SCHEMA public TO sf_api_reader" not in grants
@@ -369,7 +413,7 @@ def test_database_identities_are_file_backed_and_migration_is_explicit() -> None
     ):
         assert table in worker_grant
     assert (
-        "REVOKE ALL ON TABLE alembic_version FROM sf_api_reader, sf_control_api, sf_refresh_writer"
+        "REVOKE ALL ON TABLE alembic_version FROM sf_api_reader, sf_control_api, sf_refresh_writer, sf_registry_sync, sf_registry_feedback"
         in grants
     )
     assert "GRANT SELECT ON TABLE data_cycle_notification_outbox TO sf_control_api" in grants
@@ -457,7 +501,13 @@ def test_first_rollout_runner_and_tag_gate_are_checked_in() -> None:
     assert "JOIN data_cycle_runs" in runner_source
     assert "compose, endpoint=s3_host_endpoint, values=values" in runner_source
     assert "sports_forecast.deploy.archive_sync_cli" in runner_source
-    assert 'if role_contract != "t|t|t|t|f|f":' in runner_source
+    assert 'if role_contract != "t|t|t|t|f|f|t|f":' in runner_source
+    assert (
+        'if registry_role_contract != "t|t|t|t|t|t|t|t|t|f|t|t|t|t|f|t|f|t|f|t|t|f|f":'
+        in runner_source
+    )
+    assert "sf_registry_sync" in runner_source
+    assert "sf_registry_feedback" in runner_source
     assert runner_source.index('evidence["health"]["api_ready"] = "ok"') < runner_source.index(
         "_smoke_calendar_endpoints(compose)"
     )
@@ -490,6 +540,8 @@ def test_first_rollout_api_reader_probe_executes_calendar_stage_join(monkeypatch
         values={
             "SF_API_DATABASE_URL_FILE": "/tmp/api-url",
             "SF_WORKER_DATABASE_URL_FILE": "/tmp/worker-url",
+            "SF_REGISTRY_SYNC_DATABASE_URL_FILE": "/tmp/registry-sync-url",
+            "SF_REGISTRY_FEEDBACK_DATABASE_URL_FILE": "/tmp/registry-feedback-url",
         },
         postgres_image="postgres:fixture",
     )
@@ -501,6 +553,12 @@ def test_first_rollout_api_reader_probe_executes_calendar_stage_join(monkeypatch
         ["sh", "-n", "-c", api_probe_command], capture_output=True, text=True, check=False
     )
     assert syntax.returncode == 0, syntax.stderr
+    assert len(commands) == 4
+    for command in commands[1:]:
+        syntax = subprocess.run(
+            ["sh", "-n", "-c", command[-1]], capture_output=True, text=True, check=False
+        )
+        assert syntax.returncode == 0, syntax.stderr
 
 
 def test_first_rollout_smokes_calendar_periods_without_logging_payloads(monkeypatch) -> None:

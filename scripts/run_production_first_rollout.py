@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -757,7 +758,13 @@ def _probe_runtime_identities(
         "tournament_publication_states s WHERE s.tournament = p.tournament); "
         "SELECT count(*) FROM data_cycle_stage_results AS stage "
         "JOIN data_cycle_runs AS run ON run.run_id = stage.run_id "
-        "WHERE run.tournament = 'nhl' AND stage.stage = 'data_odds'"
+        "WHERE run.tournament = 'nhl' AND stage.stage = 'data_odds'; "
+        "SELECT count(*) FROM registry_identity_snapshots; "
+        "SELECT count(*) FROM registry_snapshot_records; "
+        "SELECT count(*) FROM registry_event_resolver_projections; "
+        "SELECT count(*) FROM registry_publications; "
+        "SELECT count(*) FROM active_registry_installation; "
+        "SELECT count(*) FROM registry_canonical_event_mappings"
         '"'
     )
     worker_probe = (
@@ -769,12 +776,72 @@ def _probe_runtime_identities(
         "SELECT count(*) FROM model_deployments; SELECT count(*) FROM refresh_locks; "
         "SELECT count(*) FROM canonical_events; SELECT count(*) FROM canonical_event_revisions; "
         "SELECT count(*) FROM refresh_watermarks; SELECT count(*) FROM bootstrap_imports; "
+        "SELECT count(*) FROM registry_identity_snapshots; SELECT count(*) FROM registry_snapshot_records; "
+        "SELECT count(*) FROM registry_event_resolver_projections; SELECT count(*) FROM registry_publications; "
+        "SELECT count(*) FROM active_registry_installation; SELECT count(*) FROM registry_installation_locks; "
+        "SELECT count(*) FROM registry_canonical_event_mappings; "
+        "UPDATE registry_installation_locks SET lock_version=lock_version WHERE id=1; "
+        "INSERT INTO registry_canonical_event_mappings (snapshot_id,canonical_event_id,status,reason,policy_version) "
+        "SELECT 'ir1:grant-probe',1,'unresolved','probe','probe' WHERE false; "
+        "INSERT INTO prediction_revisions (revision_id,run_id,tournament,source_namespace,source_event_id,market,market_spec,outcomes_json,probabilities_json,model_pool,bundle_id,model_identity,feature_contract_id,calculated_at,payload_sha256) "
+        "SELECT 'grant-probe','grant-probe','nhl','probe','probe','winner','two_way_v1','{}','{}','probe','probe','probe','probe',now(),repeat('0',64) WHERE false; "
+        "INSERT INTO registry_candidate_outbox (installation_id,idempotency_key,payload_json) "
+        "SELECT 'e8608691-baf7-46fb-ae0e-594cb86f1fcf','grant-probe','{}' WHERE false; "
         "INSERT INTO worker_executions (run_id, status) VALUES ('grant-probe', 'running'); "
         "INSERT INTO refresh_locks (tournament, run_id) VALUES ('grant-probe', 'grant-probe'); ROLLBACK;\""
+    )
+    registry_sync_sql = (
+        "BEGIN; SELECT count(*) FROM canonical_events; "
+        "SELECT count(*) FROM registry_identity_snapshots; "
+        "SELECT count(*) FROM registry_snapshot_records; "
+        "SELECT count(*) FROM registry_event_resolver_projections; "
+        "SELECT count(*) FROM registry_publications; "
+        "SELECT count(*) FROM active_registry_installation; "
+        "SELECT count(*) FROM registry_installation_locks; "
+        "SELECT count(*) FROM registry_canonical_event_mappings; "
+        "UPDATE registry_installation_locks SET lock_version=lock_version WHERE id=1; "
+        "INSERT INTO registry_identity_snapshots (snapshot_id,snapshot_kind,projection_sha256,projection_schema_version,policy_version,normalization_version,projection_json,manifest_json) "
+        "SELECT 'ir1:grant-probe','registry_manifest',repeat('0',64),1,'probe','probe','{}','{}' WHERE false; "
+        "INSERT INTO registry_snapshot_records (snapshot_id,file_name,record_key,payload_json) "
+        "SELECT 'ir1:grant-probe','events.jsonl','probe','{}' WHERE false; "
+        "INSERT INTO registry_event_resolver_projections (snapshot_id,event_snapshot_id,projection_sha256,projection_json) "
+        "SELECT 'ir1:grant-probe','ev1:grant-probe',repeat('0',64),'{}' WHERE false; "
+        "INSERT INTO registry_publications (publication_sequence,publication_id,snapshot_id,published_at,actor) "
+        "SELECT 1,'grant-probe','ir1:grant-probe',now(),'probe' WHERE false; "
+        "INSERT INTO registry_canonical_event_mappings (snapshot_id,canonical_event_id,status,reason,policy_version) "
+        "SELECT 'ir1:grant-probe',1,'unresolved','probe','probe' WHERE false; "
+        "INSERT INTO active_registry_installation (id,publication_sequence,publication_id,snapshot_id) "
+        "SELECT 1,1,'grant-probe','ir1:grant-probe' WHERE false; "
+        "UPDATE active_registry_installation SET publication_sequence=publication_sequence, "
+        "publication_id=publication_id, snapshot_id=snapshot_id WHERE id=-1; ROLLBACK;"
+    )
+    registry_sync_probe = (
+        'export PGPASSWORD="$(cat /run/secrets/database_url | '
+        "sed -E 's#.*://[^:]+:([^@]+)@.*#\\1#')\"; "
+        "psql -h db -U sf_registry_sync -d sports_forecast -v ON_ERROR_STOP=1 -c "
+        + shlex.quote(registry_sync_sql)
+    )
+    registry_feedback_sql = (
+        "BEGIN; SELECT count(*) FROM registry_candidate_outbox; "
+        "SELECT count(*) FROM registry_candidate_batch_sequences; "
+        "UPDATE registry_candidate_outbox SET status=status,batch_id=batch_id,attempts=attempts,"
+        "last_error_code=last_error_code,published_at=published_at,acknowledged_at=acknowledged_at WHERE false; "
+        "INSERT INTO registry_candidate_batch_sequences (installation_id,last_sequence) "
+        "SELECT 'e8608691-baf7-46fb-ae0e-594cb86f1fcf',0 WHERE false ON CONFLICT DO NOTHING; "
+        "UPDATE registry_candidate_batch_sequences SET last_sequence=last_sequence WHERE false; "
+        "ROLLBACK;"
+    )
+    registry_feedback_probe = (
+        'export PGPASSWORD="$(cat /run/secrets/database_url | '
+        "sed -E 's#.*://[^:]+:([^@]+)@.*#\\1#')\"; "
+        "psql -h db -U sf_registry_feedback -d sports_forecast -v ON_ERROR_STOP=1 -c "
+        + shlex.quote(registry_feedback_sql)
     )
     for secret_key, command in (
         ("SF_API_DATABASE_URL_FILE", api_probe),
         ("SF_WORKER_DATABASE_URL_FILE", worker_probe),
+        ("SF_REGISTRY_SYNC_DATABASE_URL_FILE", registry_sync_probe),
+        ("SF_REGISTRY_FEEDBACK_DATABASE_URL_FILE", registry_feedback_probe),
     ):
         _run_one_shot_checked(
             [
@@ -867,6 +934,10 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
                     "source-acquisition",
                     "--profile",
                     "scheduler",
+                    "--profile",
+                    "registry-sync",
+                    "--profile",
+                    "registry-feedback",
                     "config",
                 ]
             ).stdout,
@@ -1052,13 +1123,59 @@ def run_first_rollout(*, env_file: Path, evidence_path: Path, app_version: str) 
                     "has_column_privilege('sf_api_reader', 'public.data_cycle_runs', 'run_id', 'SELECT'), "
                     "has_column_privilege('sf_api_reader', 'public.data_cycle_runs', 'tournament', 'SELECT'), "
                     "has_table_privilege('sf_api_reader', 'public.alembic_version', 'SELECT'), "
-                    "has_table_privilege('sf_refresh_writer', 'public.alembic_version', 'SELECT')",
+                    "has_table_privilege('sf_refresh_writer', 'public.alembic_version', 'SELECT'), "
+                    "has_table_privilege('sf_api_reader', 'public.registry_identity_snapshots', 'SELECT'), "
+                    "has_table_privilege('sf_api_reader', 'public.registry_identity_snapshots', 'INSERT')",
                 ],
                 timeout=180,
             ).stdout.strip()
-            if role_contract != "t|t|t|t|f|f":
+            if role_contract != "t|t|t|t|f|f|t|f":
                 raise RuntimeError("DB catalog grants не соответствуют reader/writer deny contract")
             evidence["health"]["database_role_catalog"] = "ok"
+            registry_role_contract = _run(
+                [
+                    *compose,
+                    "exec",
+                    "-T",
+                    "db",
+                    "psql",
+                    "-U",
+                    "sf_user",
+                    "-d",
+                    "sports_forecast",
+                    "-tA",
+                    "-F",
+                    "|",
+                    "-c",
+                    "SELECT has_table_privilege('sf_registry_sync', 'public.canonical_events', 'SELECT'), "
+                    "has_table_privilege('sf_registry_sync', 'public.registry_identity_snapshots', 'INSERT'), "
+                    "has_table_privilege('sf_registry_sync', 'public.registry_snapshot_records', 'INSERT'), "
+                    "has_table_privilege('sf_registry_sync', 'public.registry_event_resolver_projections', 'INSERT'), "
+                    "has_table_privilege('sf_registry_sync', 'public.registry_publications', 'INSERT'), "
+                    "has_table_privilege('sf_registry_sync', 'public.registry_canonical_event_mappings', 'INSERT'), "
+                    "has_table_privilege('sf_registry_sync', 'public.active_registry_installation', 'INSERT'), "
+                    "has_column_privilege('sf_registry_sync', 'public.active_registry_installation', 'snapshot_id', 'UPDATE'), "
+                    "has_column_privilege('sf_registry_sync', 'public.registry_installation_locks', 'lock_version', 'UPDATE'), "
+                    "has_table_privilege('sf_registry_sync', 'public.registry_candidate_outbox', 'SELECT'), "
+                    "has_table_privilege('sf_registry_feedback', 'public.registry_candidate_outbox', 'SELECT'), "
+                    "has_table_privilege('sf_registry_feedback', 'public.registry_candidate_batch_sequences', 'INSERT'), "
+                    "has_column_privilege('sf_registry_feedback', 'public.registry_candidate_outbox', 'status', 'UPDATE'), "
+                    "has_column_privilege('sf_registry_feedback', 'public.registry_candidate_batch_sequences', 'last_sequence', 'UPDATE'), "
+                    "has_table_privilege('sf_registry_feedback', 'public.canonical_events', 'SELECT'), "
+                    "has_table_privilege('sf_api_reader', 'public.registry_identity_snapshots', 'SELECT'), "
+                    "has_table_privilege('sf_api_reader', 'public.registry_identity_snapshots', 'INSERT'), "
+                    "has_table_privilege('sf_refresh_writer', 'public.registry_canonical_event_mappings', 'INSERT'), "
+                    "has_table_privilege('sf_refresh_writer', 'public.registry_publications', 'INSERT'), "
+                    "has_table_privilege('sf_refresh_writer', 'public.registry_candidate_outbox', 'INSERT'), "
+                    "has_sequence_privilege('sf_refresh_writer', 'public.registry_candidate_outbox_id_seq', 'USAGE'), "
+                    "has_table_privilege('sf_registry_feedback', 'public.registry_candidate_outbox', 'INSERT'), "
+                    "has_column_privilege('sf_refresh_writer', 'public.registry_candidate_outbox', 'status', 'UPDATE')",
+                ],
+                timeout=180,
+            ).stdout.strip()
+            if registry_role_contract != "t|t|t|t|t|t|t|t|t|f|t|t|t|t|f|t|f|t|f|t|t|f|f":
+                raise RuntimeError("DB catalog grants не соответствуют registry role boundary")
+            evidence["health"]["registry_role_catalog"] = "ok"
             _probe_runtime_identities(
                 project_name=project_name,
                 values=values,
