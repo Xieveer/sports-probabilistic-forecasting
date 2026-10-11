@@ -10,7 +10,7 @@
 
 - Инициатива: `EPIC-026`.
 - Ветка инициативы: `initiative/epic-026-entity-registry`.
-- Workflow / этап: v1.3.2 получил NO-GO на реальном preflight. [TASK-026-12](tasks/TASK-026-12-market-outcome-dictionaries.md) и [TASK-026-13](tasks/TASK-026-13-derived-nhl-event-matching.md) реализованы локально и прошли независимые TASK review; до PR нужны полное EPIC review и окончательная сверка документации. [TASK-026-9](tasks/TASK-026-9-legacy-yaml-cutover.md) и [TASK-026-10](tasks/TASK-026-10-strict-reader-rollout.md) ждут исправленного runtime и повторных release gates [EPIC-036](EPIC-036-v1-3-3-registry-rollout.md).
+- Workflow / этап: v1.3.2 получил NO-GO на реальном preflight. [TASK-026-12](tasks/TASK-026-12-market-outcome-dictionaries.md) и [TASK-026-13](tasks/TASK-026-13-derived-nhl-event-matching.md) прошли независимые TASK review и итоговое EPIC review; следующий gate — PR и terminal CI. [TASK-026-9](tasks/TASK-026-9-legacy-yaml-cutover.md) и [TASK-026-10](tasks/TASK-026-10-strict-reader-rollout.md) ждут повторных production release gates [EPIC-036](EPIC-036-v1-3-3-registry-rollout.md).
 - Исходная цель: проектные ID и имена турниров, команд, рынков и исходов отделены от названий и ID источников; процесс применим к сотням турниров, локальный registry обслуживает загрузку истории и обучение.
 - Критерии и DoD: подтверждённые критерии 1–15 в [REQ-026](../product/requirements/REQ-026-entity-registry.md), затем TASK review, полное EPIC review и terminal CI.
 - Релиз: production работает на v1.3.1; snapshot `ir1:e0070e397775a9227300d3edb061b20a15744f5317ccd7e56752e6ab67e196ce` опубликован и установлен, 51/51 NHL events разрешены при preflight. v1.3.2 получил NO-GO в [EPIC-035](EPIC-035-v1-3-2-registry-rollout.md): strict reader теряет шесть живых котировок, ORM запись кандидата не имеет SELECT для `RETURNING`. Strict reader выключен; legacy путь работает. После исправления контракта нужны review, CI и повторный полный gate.
@@ -19,10 +19,29 @@
 - Артефакты: [REQ-026](../product/requirements/REQ-026-entity-registry.md), [ADR-029](../architecture/adr/ADR-029-local-entity-registry-and-snapshots.md), [TASK-026-5](tasks/TASK-026-5-registry-publication.md), [локальный отчёт TASK-026-5](../changes/done/TASK-026-5-registry-publication.md), [runbook публикации](../operations/entity-registry-publication.md), [TASK-026-6](tasks/TASK-026-6-registry-candidate-feedback.md), [отчёт TASK-026-6](../changes/done/TASK-026-6-registry-candidate-feedback.md), [TASK-026-7](tasks/TASK-026-7-security-dependency-remediation.md), [отчёт TASK-026-7](../changes/done/TASK-026-7-security-dependency-remediation.md), [PR #61](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/61), [ADR-026 календаря](../architecture/adr/ADR-026-calendar-and-data-cycle-control.md), [долгосрочный план](index.md#долгосрочные-инициативы-платформы), [EPIC-003](EPIC-003-scalable-multisport-platform.md), [EPIC-025](EPIC-025-bot-schedule-readiness.md). Эксплуатационные evidence и схема доступов: `operations-agent/docs/changes/2026-10-09-epic026-object-storage-access.md` и `operations-agent/docs/runbooks/sports-forecast-epic026-object-storage.md` в отдельном репозитории.
 - Текущие артефакты: [TASK-026-12](tasks/TASK-026-12-market-outcome-dictionaries.md), [отчёт TASK-026-12](../changes/done/TASK-026-12-market-outcome-dictionaries.md), [TASK-026-13](tasks/TASK-026-13-derived-nhl-event-matching.md), [отчёт TASK-026-13](../changes/done/TASK-026-13-derived-nhl-event-matching.md), [локальный runbook](../operations/identity-registry-local.md), обновлённый [runbook публикации](../operations/entity-registry-publication.md).
 - Предыдущая роль: Developer завершил TASK-026-12/13; независимые Reviewer закрыли P1/P2 findings. Полный unit: 1706 passed; Ruff и проектный mypy gate passed. На копии master schema 11 миграция 11→12, идемпотентный NHL/Pinnacle seed и snapshot v2 прошли проверку целостности.
-- Следующая роль: Reviewer — полное EPIC review и commit gate; Product Owner — PR/terminal CI; Operations Agent — release gates EPIC-036 и production strict switch.
+- Предыдущая роль: Reviewer завершил полное EPIC review и commit gate; проверенный diff — `3686ddd11e12ba7e93867b63d36b21ae8e36ede2`.
+- Следующая роль: Product Owner — PR/terminal CI; Operations Agent — release gates EPIC-036 и production strict switch.
 - Открытые вопросы: owner master и опубликованный snapshot содержат 51 событие по прежнему контракту; паритет 100 legacy team aliases сохранён. Publication/sync прошли на v1, но реальный forecast cycle в strict режиме и непустой цикл кандидата с решением владельца не прошли. v2 нельзя публиковать через старый v1.3.1 sync; новый sync и совместимый rollback нужны в release window. В строгом режиме legacy merge historical odds в `source.csv` отключён до проверенного локального materialization по подтверждённым связям.
 - Research: не применяется.
 - Обновлено: 2026-10-12.
+
+### Итоговое review кода EPIC-026
+
+Проверенный commit: `3686ddd11e12ba7e93867b63d36b21ae8e36ede2`.
+Проверены требования REQ-026 и ADR-035, migration schema 11→12, market/outcome
+словарь, v1/v2 snapshot и публикация, локальный UI с CSRF/revision,
+вычисляемое сопоставление live/future/OddsStore, границы уникальности,
+кандидатная очередь, provenance, rollback runbook и тесты. Первичные P2 по
+live outcome aliases и отсутствующей очереди неизвестных рынков исправлены
+автором; повторная проверка не выявила P0–P2.
+
+После исправлений выполнены полный unit (`1706 passed`, 17 deselected),
+`UV_OFFLINE=1 make lint`, `UV_OFFLINE=1 make type-check`, targeted tests
+(`58 passed`) и полный `pre-commit run --all-files`; все завершились успешно.
+Форматирование после полного unit было проверено отдельно targeted tests,
+mypy и hooks. Остаточный gate — terminal CI и реальный production NHL
+forecast/odds + непустой candidate цикл EPIC-036. Historical OddsStore V3
+не содержит provider event ID; проекция не синтезирует его.
 
 ### Уточнение владельца от 2026-10-11
 
