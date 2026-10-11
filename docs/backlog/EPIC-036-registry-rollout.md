@@ -71,9 +71,10 @@ production Compose. Docker run `38177105034` отменён. Следующий 
 1. Словари рынков/исходов доступны локально и в установленном snapshot;
    NHL/Pinnacle `h2h` означает полный матч с ОТ/буллитами, два исхода без
    ничьей. Старый snapshot читается новой версией до публикации нового.
-   Runtime strict switch одинаков в `/etc/sf/production.env` и отдельном
-   systemd profile `/etc/sports-forecast/refresh/nhl.env`; оба rendered
-   Compose проверены до включения и при rollback.
+   Runtime strict switch задан в подтверждённом на VPS Compose profile
+   `/etc/sports-forecast/refresh/nhl.env` и одинаков для API, бота,
+   source-acquirer и Worker; rendered Compose проверен до включения и
+   при rollback.
 2. Один алгоритм для live, future и materialization связывает шесть
    контрольных +10 минут котировок с правильными матчами без owner event
    links. При двух подходящих матчах, двух source event IDs, неизвестной
@@ -112,10 +113,11 @@ production Compose. Docker run `38177105034` отменён. Следующий 
 
 - Проверенный source+docs commit:
   `98d9cf3e0d0f248b9c6b217827d6cb5b18b9a0b7`.
-- Первое review выявило P1: systemd Data Cycle использовал отдельный
-  `nhl.env`, поэтому переключение только `production.env` оставляло Worker
-  в legacy режиме. После red/green исправления оба профиля и два Compose
-  render gate описаны в runbook; независимый re-review P0–P2 не выявил.
+- Первое review выявило P1: в шаблоне systemd Data Cycle отсутствовал switch.
+  Read-only VPS preflight подтвердил, что API/бот, Data Cycle и sync фактически
+  используют один `/etc/sports-forecast/refresh/nhl.env`; иной старый путь
+  `/etc/sf/production.env` на VPS отсутствует. После red/green исправления
+  profile и Compose render gate описаны в runbook; re-review P0–P2 не выявил.
 - Reviewer повторил 97 целевых тестов, Ruff и `git diff --check`; перед
   первым коммитом pre-commit hooks, включая Ruff и mypy, прошли. Автором
   заявлены 1715 unit passed, lint/type-check/pre-commit/docs/AI validation/

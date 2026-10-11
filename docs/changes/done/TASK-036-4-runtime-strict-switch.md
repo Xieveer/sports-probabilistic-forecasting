@@ -6,8 +6,9 @@
 `SF_REGISTRY_EVENT_READER_ENABLED=true|false` и отклоняет другие значения.
 При отсутствии переменной прежний YAML определяет значение. Production
 Compose передаёт один флаг в API, Telegram bot, source-acquirer и Worker;
-значение по умолчанию `false`. Системный профиль `nhl.env` и долгоживущий
-`production.env` должны задавать его отдельно. Release Compose verifier требует допустимое
+значение по умолчанию `false`. На VPS API/бот и systemd Data Cycle используют
+один актуальный `nhl.env`; его значение проверяется перед switch. Release
+Compose verifier требует допустимое
 значение и равенство между четырьмя процессами. `.env.example` и runbook
 описывают staged switch и rollback. Версия приложения и lock — 1.3.4.
 
@@ -44,11 +45,12 @@ merge под новым immutable tag. Локальная правка не ме
 
 ## Независимый review и повторный цикл
 
-Первое review выявило P1: systemd Data Cycle читает отдельный `nhl.env`,
-который не содержал switch, поэтому запланированный Worker оставался бы на
-`false` после включения API/бота. В повторном цикле флаг добавлен в
+Первое review выявило P1: systemd Data Cycle читает `nhl.env`, шаблон
+которого не содержал switch. Read-only VPS preflight затем подтвердил,
+что этот же профиль используют API/бот, а прежний путь `production.env`
+отсутствует. В повторном цикле флаг добавлен в
 `refresh-profile.env.example`, тест проверяет его наличие, runbook требует
-двухфайловый switch и два rendered Compose gate. Red тест
+проверки актуального rendered Compose. Red тест
 `test_scheduler_profile_provides_every_production_compose_input` падал из-за
 отсутствующего ключа; после правки три targeted теста прошли. Независимый
 re-review текущего diff: P1 закрыт, новых P0–P2 нет; reviewer повторил 97

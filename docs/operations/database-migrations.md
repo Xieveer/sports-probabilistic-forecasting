@@ -19,9 +19,9 @@ Schema PostgreSQL изменяет только Alembic. API и Worker не вы
    Alembic от `sf_migrator` и выдаёт grants. URL передаются только secrets.
 
    ```bash
-  docker compose --env-file /etc/sf/production.env -f docker-compose.prod.yml \
+  docker compose --env-file /etc/sports-forecast/refresh/nhl.env -f docker-compose.prod.yml \
     --profile migration run --rm role-bootstrap
-  docker compose --env-file /etc/sf/production.env -f docker-compose.prod.yml \
+  docker compose --env-file /etc/sports-forecast/refresh/nhl.env -f docker-compose.prod.yml \
     --profile migration run --rm migrator
    ```
 
@@ -95,7 +95,7 @@ Worker либо эквивалентный SQL внутри откатываем
 Перед изменением или после прерванной операции узнайте состояние revision:
 
 ```bash
-docker compose --env-file /etc/sf/production.env -f docker-compose.prod.yml \
+docker compose --env-file /etc/sports-forecast/refresh/nhl.env -f docker-compose.prod.yml \
   --profile migration run --rm migrator /app/.venv/bin/alembic -c /app/alembic.ini current
 ```
 

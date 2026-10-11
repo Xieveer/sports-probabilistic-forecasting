@@ -47,16 +47,15 @@ SQLite backup с SHA-256
 выполнить только после подготовки нового sync image и временной остановки
 старого sync timer. Новый reader должен принять установленный v1, затем v2.
 Strict reader включать после проверки словарей и реальной линии.
-На staged запуске `SF_REGISTRY_EVENT_READER_ENABLED=false` в обоих
-`/etc/sf/production.env` (API/бот) и
-`/etc/sports-forecast/refresh/nhl.env` (systemd Data Cycle). После
-установленного v2 snapshot и успешного smoke переключить оба файла на
-`true`, проверить **два** rendered Compose и пересоздать API/бот;
-одноразовые Worker/source-acquirer используют обновлённый systemd profile
+На staged запуске `SF_REGISTRY_EVENT_READER_ENABLED=false` в актуальном
+`/etc/sports-forecast/refresh/nhl.env`, который используется API/ботом и
+systemd Data Cycle. После установленного v2 snapshot и успешного smoke
+переключить его на `true`, проверить rendered Compose и пересоздать API/бот;
+одноразовые Worker/source-acquirer используют обновлённый profile
 при следующем запуске. Некорректное значение вызывает ошибку при чтении
-switch. Для rollback сначала вернуть `false` в оба файла и пересоздать
+switch. Для rollback сначала вернуть `false` в этот файл и пересоздать
 API/бот, затем восстановить v1 snapshot как новую publication и прежние
-образы. Проверка двух файлов описана в
+образы. Проверка profile описана в
 [runbook публикации](entity-registry-publication.md#переход-v1--v2).
 
 `SF_APP_VERSION=1.3.4`, package, source tag, Compose и новый immutable model

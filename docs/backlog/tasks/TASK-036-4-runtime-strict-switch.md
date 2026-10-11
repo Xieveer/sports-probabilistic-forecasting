@@ -22,8 +22,9 @@
 - Production Compose передаёт один и тот же флаг во все процессы, которые
   разрешают события: API, Telegram bot, source-acquirer и Worker. По умолчанию
   флаг выключен, чтобы установить новый образ и snapshot до strict switch.
-  Значение явно указано и сверяется в двух production profiles:
-  `/etc/sf/production.env` и `/etc/sports-forecast/refresh/nhl.env`.
+  На VPS значение явно указано и сверяется в актуальном production Compose
+  profile `/etc/sports-forecast/refresh/nhl.env`, используемом всеми четырьмя
+  процессами.
 - Тесты проверяют обе ветки, неверный ввод и rendered Compose. Сначала
   фиксируется падающий тест, затем минимальная правка и зелёная проверка.
 - Production процедура включает switch только после server sync v2 и smoke;
