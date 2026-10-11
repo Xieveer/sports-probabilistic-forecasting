@@ -6,6 +6,8 @@ from sports_forecast.identity.registry import (
     Entity,
     EntityAudit,
     EntityRegistry,
+    MarketRule,
+    MarketRuleAudit,
     RegistryNotInitializedError,
     Resolution,
 )
@@ -17,6 +19,8 @@ __all__ = [
     "Entity",
     "EntityAudit",
     "EntityRegistry",
+    "MarketRule",
+    "MarketRuleAudit",
     "RegistryNotInitializedError",
     "Resolution",
 ]

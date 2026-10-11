@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from sports_forecast.data.providers.odds.team_name_registry import TeamNameRegistry
+from sports_forecast.identity.derived_event_matching import DerivedEventCandidate
 from sports_forecast.identity.registry import Resolution
 from sports_forecast.service import odds_projection
 from sports_forecast.service.app import app
@@ -48,6 +49,7 @@ def _event(event_id: int, scheduled_at: datetime) -> SimpleNamespace:
     return SimpleNamespace(
         id=event_id,
         tournament="nhl",
+        source="nhl_api",
         scheduled_at=scheduled_at,
         home_participant="NYR",
         away_participant="PIT",
@@ -105,10 +107,13 @@ def test_strict_odds_link_waits_for_confirmed_bookmaker_aliases() -> None:
         odds,
         [WINNER_COLUMNS],
         registry,
-        registry_project_events={1: ("event-uuid", "league-uuid", "home-uuid", "away-uuid")},
-        confirmed_bookmaker_teams={
-            ("league-uuid", "NEWYORKRANGERS", scheduled): "home-uuid",
+        calendar_candidates={
+            1: DerivedEventCandidate("1", "league-uuid", "home-uuid", "away-uuid", scheduled)
         },
+        provider_candidate_resolver=lambda row: DerivedEventCandidate(
+            "", "league-uuid", "home-uuid", None, scheduled
+        ),
+        market_supported=lambda _row, _market: True,
     )
     assert strict == []
 
@@ -117,11 +122,17 @@ def test_strict_odds_link_waits_for_confirmed_bookmaker_aliases() -> None:
         odds,
         [WINNER_COLUMNS],
         registry,
-        registry_project_events={1: ("event-uuid", "league-uuid", "home-uuid", "away-uuid")},
-        confirmed_bookmaker_teams={
-            ("league-uuid", "NEWYORKRANGERS", scheduled): "home-uuid",
-            ("league-uuid", "PITTSBURGH PENGUINS", scheduled): "away-uuid",
+        calendar_candidates={
+            1: DerivedEventCandidate("1", "league-uuid", "home-uuid", "away-uuid", scheduled)
         },
+        provider_candidate_resolver=lambda row: DerivedEventCandidate(
+            "",
+            "league-uuid",
+            "home-uuid",
+            "away-uuid" if row.get("away_team_norm") == "PITTSBURGH PENGUINS" else None,
+            scheduled,
+        ),
+        market_supported=lambda _row, _market: True,
     )
     assert len(confirmed) == 1
     assert confirmed[0].canonical_event_id == 1
@@ -147,11 +158,13 @@ def test_strict_odds_link_uses_same_contract_for_football() -> None:
         pd.DataFrame([row]),
         [WINNER_COLUMNS],
         TeamNameRegistry(),
-        registry_project_events={11: ("match-uuid", "league-uuid", "ars-uuid", "che-uuid")},
-        confirmed_bookmaker_teams={
-            ("league-uuid", "Arsenal", scheduled): "ars-uuid",
-            ("league-uuid", "Chelsea", scheduled): "che-uuid",
+        calendar_candidates={
+            11: DerivedEventCandidate("11", "league-uuid", "ars-uuid", "che-uuid", scheduled)
         },
+        provider_candidate_resolver=lambda _row: DerivedEventCandidate(
+            "", "league-uuid", "ars-uuid", "che-uuid", scheduled
+        ),
+        market_supported=lambda _row, _market: True,
     )
     assert [item.canonical_event_id for item in linked] == [11]
 
@@ -165,26 +178,46 @@ def test_odds_sync_pins_registry_and_does_not_use_legacy_aliases(monkeypatch) ->
         {"NYR": "NYR", "PIT": "PIT"},
         {"NEWYORKRANGERS": "NYR", "PITTSBURGHPENGUINS": "PIT"},
     )
-    project = SimpleNamespace(
-        id="event-uuid",
-        sport="ice_hockey",
-        tournament_id="league-uuid",
-        home_team_id="home-uuid",
-        away_team_id="away-uuid",
-    )
     confirmed = {"NEWYORKRANGERS": "home-uuid"}
+    market_resolved = {"value": True}
     monkeypatch.setenv("SF_ENTITY_REGISTRY_INSTALLATION_ID", "11111111-1111-4111-8111-111111111111")
 
     class FakeReader:
         snapshot_id = "ir1:" + "a" * 64
-        event_snapshot = SimpleNamespace(event_snapshot=SimpleNamespace(events=(project,)))
 
-        def get_event_mapping(self, event_id, session):
-            return SimpleNamespace(status="resolved", project_event_id="event-uuid")
-
-        def resolve_designation(self, *, raw_value, **kwargs):
-            value = confirmed.get(raw_value)
+        def resolve_designation(self, *, source, kind, raw_value, **kwargs):
+            if source == "nhl_api":
+                known = {
+                    ("tournament", "nhl"): "league-uuid",
+                    ("team", "NYR"): "home-uuid",
+                    ("team", "PIT"): "away-uuid",
+                }
+            else:
+                known = {
+                    ("tournament", "icehockey_nhl"): "league-uuid",
+                    ("team", "NEWYORKRANGERS"): "home-uuid",
+                    ("team", "PITTSBURGH PENGUINS"): confirmed.get("PITTSBURGH PENGUINS"),
+                }
+            value = known.get((kind, raw_value))
             return Resolution("resolved" if value else "unresolved", value, "fixture")
+
+        def resolve_market(self, **kwargs):
+            if market_resolved["value"]:
+                return Resolution("resolved", "market-uuid", "fixture")
+            return Resolution("unresolved", None, "fixture")
+
+        def get_market_rule(self, _market_id):
+            return SimpleNamespace(
+                period="game",
+                overtime=True,
+                shootout=True,
+                draw=False,
+                valid_outcome_ids=("home", "away"),
+                valid_outcome_keys=("home_win", "away_win"),
+            )
+
+        def get_entity(self, _entity_id):
+            return SimpleNamespace(project_name="winner_withOT")
 
     monkeypatch.setattr(odds_projection, "registry_event_reader_enabled", lambda: True)
     monkeypatch.setattr(odds_projection, "pin_installed_registry", lambda _session: FakeReader())
@@ -211,6 +244,11 @@ def test_odds_sync_pins_registry_and_does_not_use_legacy_aliases(monkeypatch) ->
         assert '"raw_value":"PITTSBURGH PENGUINS"' in candidates[0].payload_json
         confirmed["PITTSBURGH PENGUINS"] = "away-uuid"
         assert sync_odds_store_observations(session, "nhl", frame, policy, registry) == 1
+        market_resolved["value"] = False
+        assert sync_odds_store_observations(session, "nhl", frame, policy, registry) == 0
+        candidates = session.scalars(select(RegistryCandidateOutbox)).all()
+        assert len(candidates) == 2
+        assert any('"kind":"market"' in item.payload_json for item in candidates)
     engine.dispose()
 
 

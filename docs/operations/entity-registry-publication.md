@@ -49,6 +49,15 @@ uv run python -m sports_forecast.deploy.registry_publish_cli publish \
   data/registry/snapshots/<sha256>
 ```
 
+Для нового NHL/Pinnacle рынка сначала завершите локальную миграцию owner
+master и seed по [инструкции](identity-registry-local.md), затем проверьте
+`manifest.json`: `format_version=2`, `registry_schema_version=12`, в списке
+файлов есть `market_rules.jsonl`. Название Object Storage prefix остаётся
+`entity-registry/v1`, а ID пакета — `ir1:<sha256>`: версия формата явно
+зафиксирована внутри manifest. Старые проверенные пакеты имеют format v1 /
+schema 11 и остаются доступными. Публикация не является миграцией master
+SQLite и не меняет установленный PostgreSQL snapshot сама по себе.
+
 Publisher проверяет пакет локально, условно создаёт content-addressed объекты,
 читает их обратно и сравнивает bytes с локальным пакетом, затем создаёт
 immutable publication record. Только после этих шагов он условно меняет
@@ -73,6 +82,35 @@ Current pointer содержит эти идентификаторы без audi
 Endpoint без подтверждённых conditional writes закрывает публикацию ошибкой.
 
 ## Серверная установка
+
+### Переход v1 → v2
+
+Перед публикацией v2 убедитесь, что новый sync image с поддержкой обоих
+форматов установлен и проверен в release gate. Production `registry-sync`
+v1.3.1 принимает только v1/schema 11. Если опубликовать v2 при работающем
+старом пятиминутном timer, следующие sync ticks будут завершаться ошибкой.
+В контролируемом окне временно остановите старый sync timer, сохраните его
+состояние для восстановления, подготовьте новый бинарник и только затем
+публикуйте verified v2 package. До переключения strict reader подтвердите
+server sync, active publication sequence/snapshot ID, market rule
+NHL/Pinnacle `h2h → winner_withOT` и реальное присоединение линии. Новый
+reader должен сначала безопасно прочитать действующий v1 snapshot, затем v2.
+Другие runtime timers и старые immutable objects сохраняются до GO.
+
+На 2026-10-11 production active publication имеет sequence `2`, snapshot
+`ir1:e0070e397775a9227300d3edb061b20a15744f5317ccd7e56752e6ab67e196ce`
+формата v1/schema 11. Следующая успешная публикация получает возрастающую
+sequence; не предполагайте её номер без повторного чтения `current.json`.
+После server sync сверяйте pinned указатель read-only запросом к
+`active_registry_installation` и код выхода `registry-sync.service`.
+
+Для отката **сначала** новым publisher опубликуйте этот сохранённый verified
+v1 snapshot как новую publication с ещё большей sequence, выполните sync
+новым бинарником и убедитесь, что PostgreSQL pinned на v1. Лишь затем
+возвращайте v1.3.1 source/images и старый sync timer. Уменьшать sequence,
+переписывать `current.json` вручную, удалять v2 package или его publication
+нельзя. Возврат старого приложения без возврата v1 snapshot оставит его sync
+несовместимым с v2.
 
 Отдельному sync-процессу задайте read-only Object Storage account через те же
 имена переменных или `_FILE`, а PostgreSQL URL — через `DATABASE_URL_FILE`.
@@ -202,7 +240,9 @@ uv run python -m sports_forecast.deploy.registry_feedback_cli \
 Команда проверяет формат/порядок batch, переносит кандидатов и cursor в одной
 локальной транзакции, затем публикует ack. После сбоя повторите команду: уже
 принятые batches не продублируют задания. Ack подтверждает только доставку,
-решение о связи остаётся за владельцем в локальной веб-очереди. После решения
+решение по словарному обозначению остаётся за владельцем в локальной
+веб-очереди. Неоднозначный матч сам по себе не создаёт постоянную owner-связь
+по event ID; проверьте обозначения и календарные данные. После решения
 экспортируйте и опубликуйте новый полный snapshot обычной командой publisher,
 затем запустите server sync. До установки новой версии неизвестные odds не
 прикрепляются к событию. Очередь, cursor и audit входят в backup локальной БД.
@@ -210,5 +250,6 @@ uv run python -m sports_forecast.deploy.registry_feedback_cli \
 Строгий reader включается только после установки проверенного снимка и
 подтверждения обратной доставки. В нём старый merge коэффициентов в
 `source.csv` пропускается: для обучения на historical odds нужен отдельный
-проверенный materialization по подтверждённым проектным связям. Старый режим
+проверенный materialization по словарям и сохранённому результату
+сопоставления. Старый режим
 остаётся включённым в `conf/identity_event.yaml` до эксплуатационного gate.

@@ -23,7 +23,7 @@ def enqueue_unknown_designation(
     reader: InstalledRegistryReader,
     *,
     source: str,
-    kind: Literal["tournament", "team", "event", "player"],
+    kind: Literal["tournament", "team", "event", "player", "market"],
     scope: dict[str, str],
     value_kind: Literal["name", "external_id"],
     raw_value: str,

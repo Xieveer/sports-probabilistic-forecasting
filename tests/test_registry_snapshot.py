@@ -92,10 +92,14 @@ def test_snapshot_export_is_content_deterministic_and_contains_full_records(
         "decisions.jsonl",
         "events.jsonl",
         "memberships.jsonl",
+        "market_rules.jsonl",
     }
     assert all(
-        entry["sha256"] and entry["bytes"] > 0 and entry["count"] >= 0
-        for entry in verified.manifest["files"].values()
+        entry["sha256"]
+        and entry["bytes"] >= 0
+        and entry["count"] >= 0
+        and (entry["bytes"] > 0 or name == "market_rules.jsonl")
+        for name, entry in verified.manifest["files"].items()
     )
     event_records = [
         json.loads(line)

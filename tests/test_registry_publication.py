@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -109,6 +110,27 @@ def _snapshot(tmp_path: Path, name: str, entity_name: str = "") -> Path:
     return export_registry_snapshot(registry, tmp_path / name).path
 
 
+def _legacy_v1_snapshot(tmp_path: Path) -> Path:
+    source = _snapshot(tmp_path, "legacy-source", "Legacy tournament")
+    target = tmp_path / "legacy-v1"
+    shutil.copytree(source, target)
+    (target / "market_rules.jsonl").unlink()
+    manifest = json.loads((target / "manifest.json").read_bytes())
+    manifest["format_version"] = 1
+    manifest["registry_schema_version"] = 11
+    manifest["files"].pop("market_rules.jsonl")
+    identity = {key: value for key, value in manifest.items() if key != "snapshot_id"}
+    digest = hashlib.sha256(
+        json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    manifest["snapshot_id"] = f"ir1:{digest}"
+    (target / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    return target
+
+
 def _publisher(tmp_path: Path, storage: _FakeStorage) -> RegistryPublisher:
     return RegistryPublisher(
         storage,
@@ -137,7 +159,32 @@ def test_publish_verifies_every_remote_snapshot_file_before_current(tmp_path: Pa
         "decisions.jsonl",
         "events.jsonl",
         "memberships.jsonl",
+        "market_rules.jsonl",
     }
+
+
+def test_v1_and_v2_publications_can_be_downloaded_for_rollback(tmp_path: Path) -> None:
+    storage = _FakeStorage()
+    publisher = _publisher(tmp_path, storage)
+    current_v2 = publisher.publish(_snapshot(tmp_path, "v2", "Current tournament"))
+    previous_v1 = publisher.publish(_legacy_v1_snapshot(tmp_path))
+
+    assert previous_v1.sequence == current_v2.sequence + 1
+    assert previous_v1.snapshot_id != current_v2.snapshot_id
+    v1_package = download_publication_snapshot(
+        storage,
+        prefix="entity-registry/v1",
+        publication_id=previous_v1.publication_id,
+        destination=tmp_path / "download-v1",
+    )
+    v2_package = download_publication_snapshot(
+        storage,
+        prefix="entity-registry/v1",
+        publication_id=current_v2.publication_id,
+        destination=tmp_path / "download-v2",
+    )
+    assert json.loads((v1_package / "manifest.json").read_bytes())["format_version"] == 1
+    assert json.loads((v2_package / "manifest.json").read_bytes())["format_version"] == 2
 
 
 def test_publication_actor_matches_server_installation_contract(tmp_path: Path) -> None:

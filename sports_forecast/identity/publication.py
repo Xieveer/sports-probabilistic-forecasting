@@ -20,14 +20,6 @@ from sports_forecast.identity.snapshot import SnapshotLimits, verify_registry_sn
 
 _HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _ACTOR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$")
-_SNAPSHOT_FILES = (
-    "manifest.json",
-    "entities.jsonl",
-    "designations.jsonl",
-    "decisions.jsonl",
-    "events.jsonl",
-    "memberships.jsonl",
-)
 
 
 class PublicationError(RuntimeError):
@@ -164,7 +156,25 @@ def _validate_remote_manifest(
     identity = {key: value for key, value in manifest.items() if key != "snapshot_id"}
     digest = hashlib.sha256(_canonical_json(identity).removesuffix(b"\n")).hexdigest()
     files = manifest.get("files")
-    expected_files = set(_SNAPSHOT_FILES) - {"manifest.json"}
+    if manifest.get("format_version") == 1 and manifest.get("registry_schema_version") == 11:
+        expected_files = {
+            "entities.jsonl",
+            "designations.jsonl",
+            "decisions.jsonl",
+            "events.jsonl",
+            "memberships.jsonl",
+        }
+    elif manifest.get("format_version") == 2 and manifest.get("registry_schema_version") == 12:
+        expected_files = {
+            "entities.jsonl",
+            "designations.jsonl",
+            "decisions.jsonl",
+            "events.jsonl",
+            "memberships.jsonl",
+            "market_rules.jsonl",
+        }
+    else:
+        expected_files = set()
     if (
         digest != record.snapshot_sha256
         or not isinstance(files, dict)
@@ -376,8 +386,15 @@ def download_publication_snapshot(
         raise PublicationError("Локальный package path не должен быть symlink")
     if package.exists():
         try:
-            cached_bytes = sum((package / filename).stat().st_size for filename in _SNAPSHOT_FILES)
-        except OSError as exc:
+            cached_manifest_body = (package / "manifest.json").read_bytes()
+            cached_manifest = _validate_remote_manifest(
+                cached_manifest_body, record, SnapshotLimits().max_total_bytes
+            )
+            cached_files = tuple(cached_manifest["files"])
+            cached_bytes = (package / "manifest.json").stat().st_size + sum(
+                (package / filename).stat().st_size for filename in cached_files
+            )
+        except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
             raise PublicationError("Локальный cached package неполон") from exc
         if cached_bytes > max_bytes:
             raise PublicationError("Cached snapshot превышает заданный download byte limit")
@@ -395,9 +412,7 @@ def download_publication_snapshot(
         manifest = _validate_remote_manifest(manifest_body, record, max_bytes)
         (temporary / "manifest.json").write_bytes(manifest_body)
         downloaded_bytes = len(manifest_body)
-        for filename in _SNAPSHOT_FILES:
-            if filename == "manifest.json":
-                continue
+        for filename in manifest["files"]:
             key = _object_key(normalized_prefix, "snapshots", record.snapshot_sha256, filename)
             descriptor = manifest["files"][filename]
             remaining = max_bytes - downloaded_bytes
@@ -729,7 +744,15 @@ class RegistryPublisher:
             tempfile.mkdtemp(prefix=".registry-intent-verify-", dir=self._pending_path.parent)
         )
         try:
-            for filename in _SNAPSHOT_FILES:
+            manifest_key = _object_key(
+                self._prefix, "snapshots", record.snapshot_sha256, "manifest.json"
+            )
+            manifest_body = self._storage.get(manifest_key).body
+            manifest = _validate_remote_manifest(
+                manifest_body, record, SnapshotLimits().max_total_bytes
+            )
+            (temporary / "manifest.json").write_bytes(manifest_body)
+            for filename in manifest["files"]:
                 key = _object_key(self._prefix, "snapshots", record.snapshot_sha256, filename)
                 (temporary / filename).write_bytes(self._storage.get(key).body)
             verified = verify_registry_snapshot(temporary)
@@ -757,7 +780,7 @@ class RegistryPublisher:
             raise PublicationError("Локальный snapshot ID не является SHA-256")
         if manifest.get("snapshot_id") != snapshot_id:
             raise PublicationError("Snapshot manifest изменился после локальной проверки")
-        for filename in _SNAPSHOT_FILES:
+        for filename in ("manifest.json", *manifest["files"]):
             body = (snapshot_path / filename).read_bytes()
             if filename == "manifest.json":
                 valid = body == _canonical_json(manifest)

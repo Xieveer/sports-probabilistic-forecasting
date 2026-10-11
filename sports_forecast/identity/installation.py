@@ -26,7 +26,13 @@ from sports_forecast.identity.events import (
     _parse_utc,
     _validate_snapshot,
 )
-from sports_forecast.identity.registry import Entity, EntityKind, EntityRegistry, Resolution
+from sports_forecast.identity.registry import (
+    Entity,
+    EntityKind,
+    EntityRegistry,
+    MarketRule,
+    Resolution,
+)
 from sports_forecast.identity.snapshot import (
     SNAPSHOT_FORMAT_VERSION,
     RegistrySnapshotReader,
@@ -54,6 +60,7 @@ _RECORD_FILES = (
     "decisions.jsonl",
     "events.jsonl",
     "memberships.jsonl",
+    "market_rules.jsonl",
 )
 _HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _PROJECT_ACTOR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$")
@@ -87,6 +94,7 @@ def _record_key(file_name: str, row: dict[str, Any]) -> str:
         "decisions.jsonl": ("id", "seed_key"),
         "events.jsonl": ("event_id",),
         "memberships.jsonl": ("id",),
+        "market_rules.jsonl": ("market_id",),
     }
     fields = key_fields.get(file_name)
     if fields is None:
@@ -159,6 +167,10 @@ def _verify_installed_snapshot(
         )
         encoded = b"".join(_canonical_json(item) + b"\n" for item in restored[file_name])
         expected = manifest.get("files", {}).get(file_name)
+        if expected is None:
+            if restored[file_name]:
+                raise ValueError("Installed v1 registry содержит market rules без manifest")
+            continue
         if (
             not isinstance(expected, dict)
             or hashlib.sha256(encoded).hexdigest() != expected.get("sha256")
@@ -166,18 +178,28 @@ def _verify_installed_snapshot(
             or len(restored[file_name]) != expected.get("count")
         ):
             raise ValueError("Установленные registry records не соответствуют manifest")
-    if set(manifest.get("files", {})) != set(_RECORD_FILES):
+    format_version = manifest.get("format_version")
+    schema_version = manifest.get("registry_schema_version")
+    if format_version == 1 and schema_version == 11:
+        expected_files = set(_RECORD_FILES) - {"market_rules.jsonl"}
+    elif format_version == 2 and schema_version == 12:
+        expected_files = set(_RECORD_FILES)
+    else:
+        raise ValueError("Installed registry manifest имеет неподдерживаемую версию")
+    if set(manifest.get("files", {})) != expected_files:
         raise ValueError("Installed registry manifest имеет неизвестный набор файлов")
+    if "market_rules.jsonl" not in expected_files and restored["market_rules.jsonl"]:
+        raise ValueError("v1 registry snapshot неожиданно содержит market rules")
     identity_manifest = {key: value for key, value in manifest.items() if key != "snapshot_id"}
     digest = hashlib.sha256(_canonical_json(identity_manifest)).hexdigest()
     if (
         manifest.get("format") != "sports-forecast-entity-registry"
-        or manifest.get("registry_schema_version") != EntityRegistry.schema_version
+        or manifest.get("registry_schema_version") not in {11, EntityRegistry.schema_version}
         or manifest.get("snapshot_id") != header.snapshot_id
         or header.snapshot_id != f"ir1:{digest}"
         or header.projection_sha256 != digest
-        or manifest.get("format_version") != SNAPSHOT_FORMAT_VERSION
-        or header.projection_schema_version != SNAPSHOT_FORMAT_VERSION
+        or manifest.get("format_version") not in {1, SNAPSHOT_FORMAT_VERSION}
+        or header.projection_schema_version != manifest.get("format_version")
         or header.projection_json
         != _canonical_json(
             {
@@ -339,6 +361,30 @@ class InstalledRegistryReader:
             raw_value=raw_value,
             at=at,
         )
+
+    def resolve_market(
+        self,
+        *,
+        source: str,
+        sport: str,
+        tournament_id: str,
+        bookmaker: str,
+        raw_market_key: str,
+        at: str | None = None,
+    ) -> Resolution:
+        """Разрешить источник рынка строго в tournament/bookmaker scope."""
+        return self._entity_reader.resolve_market(
+            source=source,
+            sport=sport,
+            tournament_id=tournament_id,
+            bookmaker=bookmaker,
+            raw_market_key=raw_market_key,
+            at=at,
+        )
+
+    def get_market_rule(self, market_id: str) -> MarketRule:
+        """Прочитать правила рынка из закреплённого полного snapshot."""
+        return self._entity_reader.get_market_rule(market_id)
 
     def get_event_mapping(self, canonical_event_id: int, session: Session) -> EventRegistryMapping:
         """Получить bridge и проверить актуальную canonical revision перед runtime use."""

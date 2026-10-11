@@ -181,7 +181,7 @@ def test_live_adapter_passes_strict_mode_to_registry_loader(
     monkeypatch.setattr(
         live_odds_adapter,
         "pinned_live_quote_matching",
-        lambda *_args, **_kwargs: ({}, lambda _quote: None),
+        lambda *_args, **_kwargs: ({}, lambda _event: None, lambda _event, _name: None, []),
     )
     monkeypatch.setattr(
         live_odds_adapter,

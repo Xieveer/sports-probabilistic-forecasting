@@ -642,7 +642,7 @@ def test_initialize_upgrades_version_two_schema(tmp_path: Path) -> None:
     registry.initialize()
 
     with sqlite3.connect(path) as migrated:
-        assert migrated.execute("PRAGMA user_version").fetchone()[0] == 11
+        assert migrated.execute("PRAGMA user_version").fetchone()[0] == 12
         assert "review_candidates" in {
             row[0] for row in migrated.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }

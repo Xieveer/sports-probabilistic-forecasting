@@ -10,13 +10,14 @@ false``), чтобы витрина и digest получали актуальн�
 
 Сопоставление ``match_id`` витрины (NHL ``id`` из processed) с событиями API:
 
-1. Явные пары ``live_inference.event_id_to_match_id`` (ключ — ``id`` события в JSON).
-2. Иначе — по каноническим ключам команд (:class:`~sports_forecast.data.providers.odds.team_name_registry.TeamNameRegistry`)
-   и опционально по близости ``commence_time`` (порог ``commence_tolerance_minutes``).
+В строгом режиме команды и турнир разрешаются словарями источников, затем матч
+выбирается по сторонам и времени. Для legacy режима сохранено прежнее сопоставление.
 """
 
 from __future__ import annotations
 
+import json
+import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -35,6 +36,10 @@ from sports_forecast.data.providers.odds.enrichment import (
 from sports_forecast.data.providers.odds.team_name_registry import (
     TeamNameRegistry,
     normalize_team_key,
+)
+from sports_forecast.identity.derived_event_matching import (
+    DerivedEventCandidate,
+    match_derived_events,
 )
 from sports_forecast.utils.log_config import get_logger
 
@@ -102,8 +107,29 @@ def extract_pinnacle_h2h_quote(
     bm = _find_bookmaker(ev, bookmaker_key)
     if bm is None:
         return None
+    markets = [
+        item
+        for item in bm.get("markets") or []
+        if isinstance(item, dict) and str(item.get("key")) == "h2h"
+    ]
+    if len(markets) != 1:
+        return None
+    outcomes = markets[0].get("outcomes")
+    if not isinstance(outcomes, list) or len(outcomes) != 2:
+        return None
+    expected_names = {
+        _team_merge_key(home_name, team_registry),
+        _team_merge_key(away_name, team_registry),
+    }
+    actual_names = {
+        _team_merge_key(str(item.get("name") or ""), team_registry)
+        for item in outcomes
+        if isinstance(item, dict)
+    }
+    if len(expected_names) != 2 or actual_names != expected_names:
+        return None
     hh, aa, _dd = _h2h_prices(bm, home_name, away_name, team_registry=team_registry)
-    if hh is None and aa is None:
+    if hh is None or aa is None or hh <= 1.0 or aa <= 1.0:
         return None
     return PinnacleH2HQuote(
         odds_api_event_id=eid,
@@ -131,6 +157,58 @@ def parse_pinnacle_h2h_quotes_from_payload(
     return out
 
 
+def _extract_registry_resolved_quote(
+    event: dict[str, Any],
+    *,
+    bookmaker_key: str,
+    home_team_id: str,
+    away_team_id: str,
+    resolve_team_id: Callable[[dict[str, Any], str], str | None],
+) -> PinnacleH2HQuote | None:
+    """Разобрать two-way quote по подтверждённым provider team aliases."""
+    event_id = str(event.get("id") or "").strip()
+    home_name = str(event.get("home_team") or "").strip()
+    away_name = str(event.get("away_team") or "").strip()
+    bookmaker = _find_bookmaker(event, bookmaker_key)
+    if not event_id or not home_name or not away_name or bookmaker is None:
+        return None
+    markets = [
+        market
+        for market in bookmaker.get("markets") or []
+        if isinstance(market, dict) and market.get("key") == "h2h"
+    ]
+    if len(markets) != 1:
+        return None
+    outcomes = markets[0].get("outcomes")
+    if not isinstance(outcomes, list) or len(outcomes) != 2:
+        return None
+    prices_by_team: dict[str, float] = {}
+    for outcome in outcomes:
+        if not isinstance(outcome, dict):
+            return None
+        outcome_name = str(outcome.get("name") or "").strip()
+        team_id = resolve_team_id(event, outcome_name)
+        try:
+            price = float(outcome.get("price"))
+        except (TypeError, ValueError):
+            return None
+        if team_id not in {home_team_id, away_team_id} or not math.isfinite(price) or price <= 1.0:
+            return None
+        if team_id in prices_by_team:
+            return None
+        prices_by_team[team_id] = price
+    if set(prices_by_team) != {home_team_id, away_team_id}:
+        return None
+    return PinnacleH2HQuote(
+        odds_api_event_id=event_id,
+        home_team=home_name,
+        away_team=away_name,
+        commence_utc=_parse_commence_utc(event.get("commence_time")),
+        decimal_home=prices_by_team[home_team_id],
+        decimal_away=prices_by_team[away_team_id],
+    )
+
+
 def _commence_delta_minutes(a: datetime | None, b: datetime | None) -> float | None:
     if a is None or b is None:
         return None
@@ -144,36 +222,54 @@ def map_match_refs_to_pinnacle_quotes(
     team_registry: TeamNameRegistry | None = None,
     commence_tolerance_minutes: int = 360,
     event_id_to_match_id: Mapping[str, str] | None = None,
-    project_event_ids: Mapping[str, str] | None = None,
-    quote_project_event_ids: Mapping[str, str] | None = None,
+    calendar_identity_by_match: Mapping[str, DerivedEventCandidate] | None = None,
+    calendar_window_candidates: Sequence[DerivedEventCandidate] | None = None,
+    provider_window_candidates: Sequence[DerivedEventCandidate] | None = None,
+    quote_identity_resolver: Callable[[PinnacleH2HQuote], DerivedEventCandidate] | None = None,
 ) -> dict[str, PinnacleH2HQuote | None]:
     """Сопоставить ``match_id`` из витрины с котировками (overrides → fuzzy по командам/времени)."""
     out: dict[str, PinnacleH2HQuote | None] = {r.match_id: None for r in refs}
-    if (project_event_ids is None) != (quote_project_event_ids is None):
-        raise ValueError("Strict live odds matching требует обе registry projection")
-    if project_event_ids is not None and quote_project_event_ids is not None:
-        refs_by_project: dict[str, list[NHLLiveMatchRef]] = {}
-        quotes_by_project: dict[str, list[PinnacleH2HQuote]] = {}
+    has_provider_identity = (
+        quote_identity_resolver is not None or provider_window_candidates is not None
+    )
+    if (calendar_identity_by_match is None) != (not has_provider_identity):
+        raise ValueError("Derived live matching требует обе коллекции подтверждённых обозначений")
+    if calendar_identity_by_match is not None and (
+        quote_identity_resolver is not None or provider_window_candidates is not None
+    ):
+        refs_by_candidate_key = {
+            calendar_identity_by_match[ref.match_id].key: ref.match_id
+            for ref in refs
+            if ref.match_id in calendar_identity_by_match
+        }
+        calendar_candidates = list(calendar_window_candidates or ())
+        known_keys = {candidate.key for candidate in calendar_candidates}
+        calendar_candidates.extend(
+            candidate
+            for candidate in calendar_identity_by_match.values()
+            if candidate.key not in known_keys
+        )
+        provider_candidates = list(provider_window_candidates or ())
+        if not provider_candidates and quote_identity_resolver is not None:
+            provider_candidates = [quote_identity_resolver(quote) for quote in quotes]
+        result = match_derived_events(calendar_candidates, provider_candidates)
+        quote_by_id = {quote.odds_api_event_id: quote for quote in quotes}
+        for provider_id, calendar_key in result.provider_to_calendar.items():
+            match_id = refs_by_candidate_key.get(calendar_key)
+            if match_id in out and provider_id in quote_by_id:
+                out[match_id] = quote_by_id[provider_id]
+        for provider_id, reason in result.provider_reasons.items():
+            logger.debug(
+                "live odds: event match unresolved provider_event_id=%s reason=%s",
+                provider_id,
+                reason,
+            )
         for ref in refs:
-            project_id = project_event_ids.get(ref.match_id)
-            if project_id is not None:
-                refs_by_project.setdefault(project_id, []).append(ref)
-        for quote in quotes:
-            project_id = quote_project_event_ids.get(quote.odds_api_event_id)
-            if project_id is not None:
-                quotes_by_project.setdefault(project_id, []).append(quote)
-        for project_id, project_refs in refs_by_project.items():
-            project_quotes = quotes_by_project.get(project_id, [])
-            if len(project_refs) != 1 or len(project_quotes) != 1:
-                continue
-            ref, quote = project_refs[0], project_quotes[0]
-            if (
-                ref.commence_utc is not None
-                and quote.commence_utc is not None
-                and ref.commence_utc != quote.commence_utc
-            ):
-                continue
-            out[ref.match_id] = quote
+            if ref.match_id not in calendar_identity_by_match:
+                logger.debug(
+                    "live odds: event match unresolved match_id=%s reason=unconfirmed_calendar_designation",
+                    ref.match_id,
+                )
         return out
     quotes_by_id = {q.odds_api_event_id: q for q in quotes}
     used_quote_ids: set[str] = set()
@@ -260,9 +356,12 @@ def fetch_nhl_pinnacle_quotes_for_refs(
     client: OddsApiClient | None = None,
     sport_key: str | None = None,
     bookmaker_key: str | None = None,
-    project_event_ids: Mapping[str, str] | None = None,
-    quote_project_event_ids: Mapping[str, str] | None = None,
-    quote_project_event_resolver: Callable[[PinnacleH2HQuote], str | None] | None = None,
+    calendar_identity_by_match: Mapping[str, DerivedEventCandidate] | None = None,
+    calendar_window_candidates: Sequence[DerivedEventCandidate] | None = None,
+    provider_event_identity_resolver: Callable[[dict[str, Any]], DerivedEventCandidate]
+    | None = None,
+    quote_identity_resolver: Callable[[PinnacleH2HQuote], DerivedEventCandidate] | None = None,
+    provider_outcome_team_resolver: Callable[[dict[str, Any], str], str | None] | None = None,
 ) -> dict[str, PinnacleH2HQuote | None]:
     """Один запрос odds NHL + сопоставление со списком матчей витрины.
 
@@ -309,25 +408,72 @@ def fetch_nhl_pinnacle_quotes_for_refs(
         markets=["h2h"],
         use_cache=use_disk_cache,
     )
-    quotes = parse_pinnacle_h2h_quotes_from_payload(
-        payload,
-        bookmaker_key=resolved_bookmaker_key,
-        team_registry=team_registry,
-    )
-    if project_event_ids is not None and quote_project_event_resolver is not None:
-        quote_project_event_ids = {
-            quote.odds_api_event_id: project_id
-            for quote in quotes
-            if (project_id := quote_project_event_resolver(quote)) is not None
+    source_events = unwrap_odds_payload(payload)
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for event in source_events:
+        provider_id = str(event.get("id") or "").strip()
+        if provider_id:
+            grouped.setdefault(provider_id, []).append(event)
+    unique_events: dict[str, dict[str, Any]] = {}
+    for provider_id, rows in grouped.items():
+        usable = [
+            row
+            for row in rows
+            if _parse_commence_utc(row.get("commence_time")) is not None
+            and str(row.get("home_team") or "").strip()
+            and str(row.get("away_team") or "").strip()
+        ]
+        distinct = {json.dumps(row, sort_keys=True, separators=(",", ":")): row for row in usable}
+        if len(distinct) == 1:
+            unique_events[provider_id] = next(iter(distinct.values()))
+        elif len(distinct) > 1:
+            logger.debug(
+                "live odds: provider event rejected provider_event_id=%s reason=conflicting_duplicate_source_event_id",
+                provider_id,
+            )
+
+    provider_candidates_by_id: dict[str, DerivedEventCandidate] = {}
+    if provider_event_identity_resolver is not None:
+        provider_candidates_by_id = {
+            provider_id: provider_event_identity_resolver(event)
+            for provider_id, event in unique_events.items()
         }
+    if provider_event_identity_resolver is not None and provider_outcome_team_resolver is not None:
+        quotes = []
+        for provider_id, event in unique_events.items():
+            candidate = provider_candidates_by_id[provider_id]
+            if candidate.unresolved_reason is not None:
+                continue
+            quote = _extract_registry_resolved_quote(
+                event,
+                bookmaker_key=resolved_bookmaker_key,
+                home_team_id=candidate.home_team_id or "",
+                away_team_id=candidate.away_team_id or "",
+                resolve_team_id=provider_outcome_team_resolver,
+            )
+            if quote is not None:
+                quotes.append(quote)
+    else:
+        quotes = parse_pinnacle_h2h_quotes_from_payload(
+            payload,
+            bookmaker_key=resolved_bookmaker_key,
+            team_registry=team_registry,
+        )
+    quotes = [quote for quote in quotes if quote.odds_api_event_id in unique_events]
     return map_match_refs_to_pinnacle_quotes(
         refs,
         quotes,
         team_registry=team_registry,
         commence_tolerance_minutes=tol,
         event_id_to_match_id=overrides,
-        project_event_ids=project_event_ids,
-        quote_project_event_ids=quote_project_event_ids,
+        calendar_identity_by_match=calendar_identity_by_match,
+        calendar_window_candidates=calendar_window_candidates,
+        provider_window_candidates=(
+            list(provider_candidates_by_id.values())
+            if provider_event_identity_resolver is not None
+            else None
+        ),
+        quote_identity_resolver=quote_identity_resolver,
     )
 
 
