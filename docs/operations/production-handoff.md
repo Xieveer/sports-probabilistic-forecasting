@@ -1,12 +1,12 @@
-# Передача сервиса в эксплуатацию: v1.3.0 candidate
+# Передача сервиса в эксплуатацию: v1.3.1 candidate
 
 - Статус подготовки: `candidate`
 - Решение на 2026-10-11: `NO-GO`; открытые условия перечислены ниже.
 - Инициатива: [EPIC-032](../backlog/EPIC-032-v1-3-0-release.md).
 - Владелец решения о rollout: пользователь; исполнитель: Operations Agent.
-- Целевая среда: production VPS `ops-prod-01`; версия: `1.3.0`.
-- source_tag: `v1.3.0` — annotated tag на merge commit `80ddd0a`; его tag pipeline завершился ошибкой, поэтому этот кандидат не готов к выпуску. Следующая версия ожидает решения владельца.
-- evidence_tag: `v1.3.0-evidence.1` — после проверки immutable manifest; пока не создан.
+- Целевая среда: production VPS `ops-prod-01`; версия: `1.3.1`.
+- source_tag: `v1.3.1` — будет создан на проверенном merge commit после terminal PR CI.
+- evidence_tag: `v1.3.1-evidence.1` — после проверки immutable manifest; пока не создан.
 - Source commit, image digests, model bundle, CI и release evidence указываются здесь после их получения и до переключения сервера. Нельзя подставлять commit ветки или mutable image tag.
 
 ## Идентификация и ответственность
@@ -28,7 +28,7 @@ EPIC-026 остаётся `blocked`: его серверный
 ## Runtime и конфигурация
 
 Production использует только `IMAGE@sha256:DIGEST`, ограниченные роли PostgreSQL,
-Compose secret mounts через `*_FILE` paths и прежние ограничения ресурсов. `SF_APP_VERSION=1.3.0`
+Compose secret mounts через `*_FILE` paths и прежние ограничения ресурсов. `SF_APP_VERSION=1.3.1`
 должна совпадать с package, source tag, модельным bundle и `/health`.
 `BET_OWNER_USER_ID` должен быть непустым Telegram ID владельца из
 `BOT_ADMIN_USER_IDS`; API и бот должны получить одно значение. Проверять
@@ -37,10 +37,10 @@ Compose secret mounts через `*_FILE` paths и прежние огранич
 production модель — legacy CatBoost v1, без managed promotion. Проверенные
 локальные артефакты прежнего wrapper имеют те же SHA-256 трёх payload-файлов,
 что документированы для v1.2.15. После merge собрать из них новый immutable
-wrapper через `build_model_bundle(..., app_version="1.3.0",
-source_commit=<exact merge SHA>, release="v1.3.0")`; проверить checksums,
+wrapper через `build_model_bundle(..., app_version="1.3.1",
+source_commit=<exact merge SHA>, release="v1.3.1")`; проверить checksums,
 загрузку CatBoost и 489 признаков локально и внутри exact Worker image без
-сети. Старый wrapper v1.2.15 несовместим со строгой проверкой версии 1.3.0.
+сети. Старые wrappers v1.2.15 и 1.3.0 несовместимы со строгой проверкой версии 1.3.1.
 
 До GO отдельно проверить доступы серверного registry sync/feedback, выдачу
 точечных grants, доставку отдельных Object Storage credentials, расписание и
@@ -64,7 +64,7 @@ Data Cycle не должен дублировать outbox, snapshot или ст
 один ограниченный ручной NHL Data Cycle до terminal `success`, remote verified
 архивы до публикации, свежие прогнозы в API и полезные карточки в боте.
 Выполнить `make acceptance-check` с защищёнными runtime inputs и версией
-`1.3.0`. Расписание включать только после успешного ручного цикла;
+`1.3.1`. Расписание включать только после успешного ручного цикла;
 legacy timer оставить выключенным. При любой ошибке остановить rollout,
 не запускать повторный цикл вслепую и зафиксировать run/stage/failure code.
 
@@ -102,8 +102,9 @@ verification states, registry version/feedback и доставку уведом�
 
 Annotated `v1.3.0` уже поставлен на проверенный merge commit, но
 [tag pipeline](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38142671658)
-упал на Compose gate до build/push. Тег не перемещать; после исправления
-требуются новый PR, terminal CI, tag новой утверждённой версии. Tag pipeline должен выполнить CI,
+упал на Compose gate до build/push. Тег не перемещать; владелец утвердил
+`v1.3.1` для исправленного кандидата. Требуются terminal CI и новый annotated
+tag. Tag pipeline должен выполнить CI,
 Security, first-rollout contract, публикацию linux/amd64 образов, scan и
 provenance. Immutable manifest и handoff проверить через
 `make verify-release-evidence` с `--handoff docs/operations/production-handoff.md`.
@@ -128,9 +129,10 @@ Operations Agent до GO. Если обратная совместимость �
 4. SSH после первого чтения завершался тайм-аутом; ёмкость и свежесть backup
    не доказаны. Rollback target и время восстановления не определены.
 5. PR #73 прошёл review/CI, annotated tag `v1.3.0` создан, но его tag pipeline
-   упал до сборки образов. Локальный wrapper 1.3.0 проверен; его загрузка в
-   exact Worker image, immutable images, scan, provenance и release evidence
-   ещё не получены. Исправление — [TASK-032-2](../backlog/tasks/TASK-032-2-release-compose-profiles.md).
+   упал до сборки образов. Локальный wrapper 1.3.0 проверен как кандидат
+   неудавшегося тега; wrapper 1.3.1 с exact новым source commit, его загрузка
+   в Worker image, immutable images, scan, provenance и release evidence ещё
+   не получены. Исправление — [TASK-032-2](../backlog/tasks/TASK-032-2-release-compose-profiles.md).
 
 До закрытия этих пунктов статус остаётся `NO-GO`. `candidate` означает
 заполненный контракт проверки, а не разрешение на production switch.
