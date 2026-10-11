@@ -5,8 +5,9 @@
 - Инициатива: [EPIC-036](../backlog/EPIC-036-registry-rollout.md), словари [EPIC-026](../backlog/EPIC-026-entity-registry.md).
 - Владелец решения о выпуске: пользователь; исполнитель rollout: Operations Agent.
 - Среда: production VPS `ops-prod-01`; планируемая версия: `1.3.4`.
-- source_tag: `v1.3.4` — планируемый новый immutable annotated tag.
-- source_commit: будет закреплён после review, merge и terminal CI.
+- source_tag: `v1.3.4` — immutable annotated tag, remote object
+  `7a1164e4a25f8dc9f84f88503e0ec314f30e8af8`.
+- source_commit: `56755be800636a4ae03f3b7b0f2efd90909698a6`.
 - evidence_tag: `v1.3.4-evidence.1` — планируемый отдельный tag после проверки immutable образов.
 - Текущий production: exact `v1.3.1`, source commit `757d3af338bb2bb36304cb3e81c0f2c93a0834e5`, strict reader выключен.
 - Предыдущие кандидаты `v1.3.2` и `v1.3.3` получили NO-GO. Последний
@@ -27,9 +28,22 @@
 `INSERT ... RETURNING`, пропуска `data_odds` после подготовленного архива и
 минутного лимита dispatcher. Кандидат v1.3.4 дополнительно делает strict reader
 переключаемым через явный production environment flag. Новый review,
-terminal CI/security, tag pipeline и серверные gates ещё не завершены.
+terminal CI/security и tag pipeline прошли на exact merge commit; серверные
+gates ещё не завершены.
 Решение GO возможно только по
 фактическим критериям [EPIC-036](../backlog/EPIC-036-registry-rollout.md).
+
+## Immutable release evidence
+
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38178379473
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38178379569
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38178525879
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38178525879/job/114586984122
+- postgres: `postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94`.
+- api: `ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:fb62c9dcfb55268a34c3be8e411032b7f8c1daa1a5decb07cd20901453f8d59f` — published, linux/amd64, scan passed, provenance attested.
+- worker: `ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:92ef3fd32f9dd8d9817917ab24fe0b2d504c69db532e687993f3e849c3751ab4` — published, linux/amd64, scan passed, provenance attested.
+- telegram_bot: `ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:e18ddcf5d674710c779d4b92bf7b2f709706b2fbbde30b5cb1b9b0e972b3d432` — published, linux/amd64, scan passed, provenance attested.
+- archive_sync: `ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:64914b489b10f504f21e0701d61827a3e5d9b2f69db1248e216c72561518b20e` — published, linux/amd64, scan passed, provenance attested.
 
 ## Runtime и конфигурация
 
@@ -59,13 +73,15 @@ API/бот, затем восстановить v1 snapshot как новую pu
 [runbook публикации](entity-registry-publication.md#переход-v1--v2).
 
 `SF_APP_VERSION=1.3.4`, package, source tag, Compose и новый immutable model
-wrapper должны совпасть. Локальный bundle v1.3.3
-`sha256:c6e4416118aac60449b4d2b7e72177cb3b4a34032b29d22f6164398e29fab6e9`
+wrapper должны совпасть. Новый локальный bundle
+`sha256:6ca7e2d6fefb0f64f892aba73a4a44e9b23c3e9e0ea5557c0196ea534ed77271`
 с manifest SHA-256
-`b8a0aa7cdbf78cb0155e312f000770f11ec2e82ec39dc802799418f73172ee99`
-подтвердил сохранение трёх approved payload SHA-256 и 489 признаков, но
-несовместим с `app_version=1.3.4`. Новый wrapper требуется собрать и проверить
-на точном Worker image под UID `10001`.
+`c9af7d540e1851072d6021c33407e7b6ae4e8f7ca47c5bfb80543c161e964e42`
+подтвердил `app_version=1.3.4`, source commit и сохранение трёх approved
+payload SHA-256. Независимый Reviewer подтвердил CatBoost и точный порядок
+489 признаков. Тот же wrapper проверен в exact опубликованном Worker image
+под UID/GID `10001:10001`, read-only root/model mount, без сети, с
+`cap-drop ALL` и `no-new-privileges`.
 Compose secrets передаются как `*_FILE` paths; server sync и feedback получают
 отдельные DB/Object Storage credentials. Обычные API, Worker и бот не получают
 Object Storage credentials.
@@ -122,13 +138,13 @@ smoke, timer heartbeat, disk/RAM, restart/OOM и итог GO/NO-GO. Секрет
 
 ## Артефакт и откат
 
-Новый source tag `v1.3.4` ставить только на прошедший review и terminal CI
-merge commit. После успешного tag pipeline внести exact пять image refs в
-`deploy/release-manifest.json` отдельного evidence commit, обновить handoff и
-ссылки `CI`, `Security`, `Docker`, `first-rollout`, затем проверить
-release-evidence gate (`--handoff docs/operations/production-handoff.md`) и
-model wrapper в exact Worker image. До этого ни один
-v1.3.2/v1.3.3 digests не считать образами кандидата v1.3.4.
+Source tag `v1.3.4` закреплён на проверенном merge commit; tag pipeline
+опубликовал exact пять image refs выше. Эти refs записаны в отдельный
+`deploy/release-manifest.json` evidence commit. До серверного switch
+release-evidence gate (`--handoff docs/operations/production-handoff.md`)
+должен завершиться успешно; model wrapper в exact Worker image прошёл
+локальный gate. Ни один
+v1.3.2/v1.3.3 digest не является образом кандидата v1.3.4.
 
 Точка отката — exact `v1.3.1` source
 `757d3af338bb2bb36304cb3e81c0f2c93a0834e5`, API image
@@ -148,11 +164,8 @@ model bundle `sha256:956edb47e9737516ce8a29ed42a6cea08af6522fed1b9510a614201c20d
 
 ## Нерешённые вопросы
 
-1. Завершить EPIC-026 и исправления EPIC-036, независимый review, terminal
-   CI/security и `make production-check`.
-2. Зафиксировать source commit/tag `v1.3.4`, пять image digests, provenance,
-   новый model wrapper и успешный release-evidence gate.
-3. Подтвердить backup/restore, совместимость v1→v2, реальный candidate feedback,
+1. Завершить release-evidence gate.
+2. Подтвердить на VPS grants, совместимость v1→v2, реальный candidate feedback,
    NHL odds/forecast/bot smoke и 20 минутных ticks на production.
 
 До закрытия всех пунктов deployment и strict switch остаются `NO-GO`.

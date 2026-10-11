@@ -58,12 +58,23 @@ production Compose. Docker run `38177105034` отменён. Следующий 
 - Свежий production DB backup от 2026-10-11 21:36 UTC прошёл off-host
   readback и isolated restore. Сервер остаётся на v1.3.1, strict выключен;
   v2 snapshot не опубликован.
+- v1.3.4 source tag закреплён на merge commit
+  `56755be800636a4ae03f3b7b0f2efd90909698a6` после terminal
+  [CI](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38178379473)
+  и [Security](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38178379569).
+  [Docker tag pipeline](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38178525879)
+  прошёл first-rollout, публикацию четырёх exact образов, scans/provenance.
+  Независимо проверен локальный model bundle v1.3.4
+  `sha256:6ca7e2d6fefb0f64f892aba73a4a44e9b23c3e9e0ea5557c0196ea534ed77271`;
+  payload weights не менялись. Exact Worker image с этим bundle прошёл
+  локальный UID 10001/read-only/network none/489 features gate. Release
+  evidence и VPS switch ещё ожидаются.
 - Следующая роль: Developer → независимый Reviewer → terminal CI/tag pipeline;
   Operations Agent повторит model/server gates на новом exact образе.
 - Предыдущая роль: Product Owner зафиксировал NO-GO v1.3.2 и контракт
   корректировки; локальный grant fix проверен на disposable PostgreSQL.
-- Блокеры: TASK-036-4, новый source/image/model evidence, проверенный
-  feedback цикл и серверный forecast/odds/bot smoke.
+- Блокеры: release-evidence gate, проверенный feedback цикл и серверный
+  forecast/odds/bot smoke.
 - Обновлено: 2026-10-12.
 
 ## Критерии GO
