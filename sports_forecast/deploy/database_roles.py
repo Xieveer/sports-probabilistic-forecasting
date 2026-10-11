@@ -29,6 +29,7 @@ RUNTIME_GRANTS = (
     "GRANT INSERT ON TABLE registry_canonical_event_mappings TO sf_refresh_writer",
     "GRANT UPDATE (lock_version) ON TABLE registry_installation_locks TO sf_refresh_writer",
     "GRANT INSERT ON TABLE registry_candidate_outbox TO sf_refresh_writer",
+    "GRANT SELECT (id, attempts, created_at) ON TABLE registry_candidate_outbox TO sf_refresh_writer",
     "GRANT USAGE, SELECT ON SEQUENCE registry_candidate_outbox_id_seq TO sf_refresh_writer",
     "GRANT SELECT, INSERT ON TABLE prediction_revisions TO sf_refresh_writer",
     "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE predictions, tournament_publication_states, worker_executions, model_deployments, refresh_locks, canonical_events, canonical_event_revisions, calendar_coverages, refresh_watermarks, bootstrap_imports, odds_observations, odds_acquisition_attempts, data_cycle_runs, data_cycle_stage_results TO sf_refresh_writer",

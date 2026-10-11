@@ -83,6 +83,13 @@ runtime event bridge и candidate capture. `sf_api_reader` получает то
 изолированном восстановлении production-подобной БД. Успех Alembic под owner
 не доказывает доступ runtime ролей.
 
+После выявленного на реальном gate дефекта candidate capture повторное
+применение runtime grants должно дать `sf_refresh_writer` также `SELECT` только
+на `registry_candidate_outbox.id`, `attempts`, `created_at`: ORM выполняет
+`INSERT ... RETURNING` этих колонок. Проверяйте именно ORM `flush()` под ролью
+Worker либо эквивалентный SQL внутри откатываемой транзакции. Проверка одного
+права `INSERT` не обнаруживает этот дефект.
+
 ## Проверка и recovery
 
 Перед изменением или после прерванной операции узнайте состояние revision:

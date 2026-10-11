@@ -1,10 +1,20 @@
 # EPIC-035 — Выпуск v1.3.2 с работающим NHL registry
 
-> **Статус:** in_progress — source/image gates завершены; evidence и серверные gates ожидаются
+> **Статус:** cancelled — source/image gates выполнены, production rollout получил NO-GO и заменён EPIC-036
 > **Приоритет:** critical
 > **Владелец:** Product Owner
 
 ## Память Product Owner
+
+Реальный preflight 2026-10-11 остановил выпуск: strict reader теряет шесть
+живых Pinnacle котировок из-за сдвига времени +10 минут, а ORM запись
+кандидата под `sf_refresh_writer` откатывается с `InsufficientPrivilege`.
+Snapshot опубликован и установлен; 51/51 NHL событий разрешены. Production
+остаётся на v1.3.1 со strict reader off. Неизменяемый тег v1.3.2 и образы
+остаются release evidence, но на сервер не устанавливаются. Исправляющий
+выпуск ведётся в [EPIC-036](EPIC-036-v1-3-3-registry-rollout.md). Ниже
+сохранён план прежнего кандидата как история, он не является текущей командой
+на rollout.
 
 - Инициатива: `EPIC-035`; ветка `initiative/epic-035-v1-3-2-release`, worktree `.worktrees/epic-035-v1-3-2-release`.
 - Решение владельца: выпустить следующую production-версию после завершения новых эпиков, проверить [EPIC-026](EPIC-026-entity-registry.md) и оставить строгий registry в работе. Legacy-код и YAML сохранить для явного отката; удалить позднее отдельным изменением.
