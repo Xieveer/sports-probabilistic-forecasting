@@ -38,3 +38,9 @@
 На production повторить migration/grants из проверенного образа и непустой
 цикл кандидат → решение владельца → publication/sync. До него EPIC-036 и
 EPIC-026 остаются открытыми.
+
+## Независимый review
+
+Reviewer повторно проверил полный diff TASK-036-1 и связанные изменения
+EPIC-035/036, runbook и backlog: блокирующих findings нет. Проверенный
+commit: `1e6675db67cddf5ae473a1d2aa0c35e59480985a`.
