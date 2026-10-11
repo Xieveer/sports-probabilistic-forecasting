@@ -549,6 +549,10 @@ def test_first_rollout_api_reader_probe_executes_calendar_stage_join(monkeypatch
     api_probe_command = commands[0][-1]
     assert "JOIN data_cycle_runs AS run ON run.run_id = stage.run_id" in api_probe_command
     assert "WHERE run.tournament = 'nhl' AND stage.stage = 'data_odds'" in api_probe_command
+    worker_probe_command = commands[1][-1]
+    assert "registry_candidate_outbox" in worker_probe_command
+    assert "VALUES ('e8608691-baf7-46fb-ae0e-594cb86f1fcf'" in worker_probe_command
+    assert "RETURNING id, attempts, created_at" in worker_probe_command
     syntax = subprocess.run(
         ["sh", "-n", "-c", api_probe_command], capture_output=True, text=True, check=False
     )

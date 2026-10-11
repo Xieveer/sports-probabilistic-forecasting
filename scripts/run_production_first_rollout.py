@@ -786,7 +786,9 @@ def _probe_runtime_identities(
         "INSERT INTO prediction_revisions (revision_id,run_id,tournament,source_namespace,source_event_id,market,market_spec,outcomes_json,probabilities_json,model_pool,bundle_id,model_identity,feature_contract_id,calculated_at,payload_sha256) "
         "SELECT 'grant-probe','grant-probe','nhl','probe','probe','winner','two_way_v1','{}','{}','probe','probe','probe','probe',now(),repeat('0',64) WHERE false; "
         "INSERT INTO registry_candidate_outbox (installation_id,idempotency_key,payload_json) "
-        "SELECT 'e8608691-baf7-46fb-ae0e-594cb86f1fcf','grant-probe','{}' WHERE false; "
+        "VALUES ('e8608691-baf7-46fb-ae0e-594cb86f1fcf',"
+        "'grant-probe-' || txid_current()::text,'{}') "
+        "RETURNING id, attempts, created_at; "
         "INSERT INTO worker_executions (run_id, status) VALUES ('grant-probe', 'running'); "
         "INSERT INTO refresh_locks (tournament, run_id) VALUES ('grant-probe', 'grant-probe'); ROLLBACK;\""
     )

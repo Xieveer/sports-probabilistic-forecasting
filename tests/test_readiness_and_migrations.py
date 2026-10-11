@@ -290,6 +290,10 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
         for statement in worker_grants
     )
     assert "GRANT INSERT ON TABLE registry_candidate_outbox TO sf_refresh_writer" in worker_grants
+    assert (
+        "GRANT SELECT (id, attempts, created_at) ON TABLE registry_candidate_outbox "
+        "TO sf_refresh_writer" in worker_grants
+    )
     assert not any(
         any(table in statement for table in registry_read_tables[:6])
         and "INSERT" in statement

@@ -6,6 +6,9 @@ import os
 
 import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
+
+from sports_forecast.service.db.models import RegistryCandidateOutbox
 
 
 ROLE_URLS = {
@@ -43,6 +46,11 @@ def test_registry_roles_have_only_their_runtime_capabilities() -> None:
             ("table", "prediction_revisions", "SELECT"): True,
             ("table", "prediction_revisions", "INSERT"): True,
             ("table", "registry_candidate_outbox", "INSERT"): True,
+            ("table", "registry_candidate_outbox", "SELECT"): False,
+            ("column", "registry_candidate_outbox.id", "SELECT"): True,
+            ("column", "registry_candidate_outbox.attempts", "SELECT"): True,
+            ("column", "registry_candidate_outbox.created_at", "SELECT"): True,
+            ("column", "registry_candidate_outbox.payload_json", "SELECT"): False,
             ("table", "registry_publications", "INSERT"): False,
             ("column", "active_registry_installation.snapshot_id", "UPDATE"): False,
         },
@@ -74,3 +82,28 @@ def test_registry_roles_have_only_their_runtime_capabilities() -> None:
                     )
         finally:
             engine.dispose()
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    not os.environ.get("SF_TEST_REFRESH_WRITER_DATABASE_URL"),
+    reason="Нужен disposable PostgreSQL с ролью sf_refresh_writer и runtime grants",
+)
+def test_refresh_writer_can_enqueue_candidate_with_orm_returning() -> None:
+    """Проверить фактический INSERT/RETURNING ORM под production ролью Worker."""
+    engine = create_engine(os.environ["SF_TEST_REFRESH_WRITER_DATABASE_URL"])
+    try:
+        with Session(engine) as session:
+            assert session.execute(text("SELECT current_user")).scalar_one() == "sf_refresh_writer"
+            session.add(
+                RegistryCandidateOutbox(
+                    installation_id="e8608691-baf7-46fb-ae0e-594cb86f1fcf",
+                    idempotency_key="grant-probe",
+                    payload_json="{}",
+                    status="pending",
+                )
+            )
+            session.flush()
+            session.rollback()
+    finally:
+        engine.dispose()
