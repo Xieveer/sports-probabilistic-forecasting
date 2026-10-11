@@ -3,8 +3,7 @@ Description=Dispatch due Sports Forecast Data Cycle runs
 After=docker.service network-online.target
 Wants=network-online.target
 Requires=docker.service
-StartLimitIntervalSec=15min
-StartLimitBurst=5
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot

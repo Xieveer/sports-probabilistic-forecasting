@@ -62,6 +62,10 @@ Docker volume. До запуска Worker Operations убеждается, чт�
    template. Business schedule хранится в БД: `10:00 Europe/Moscow`, интервал
    `24h` по умолчанию; допустимые интервалы `4, 6, 8, 12, 24` часов. До
    измерения runtime не уменьшать production default `24h`.
+   Минутный timer не должен упираться в rate limit service: у dispatcher
+   `StartLimitIntervalSec=0`. Частоту задаёт timer, а повторный due-slot
+   ограничивают БД и active-run gate. При ошибке самого запуска systemd
+   фиксирует неуспешный unit, и следующий tick остаётся доступен для проверки.
 4. На rollout выключить прежний
    `sports-forecast-canonical-refresh@nhl.timer`, затем включить новый
    `sports-forecast-data-cycle-dispatcher.timer`. Оба systemd service entry
@@ -95,3 +99,15 @@ schema не удаляются.
 `bash -n deploy/systemd/run-canonical-refresh.sh` и `systemd-analyze verify`
 всех трёх новых unit templates. Фактическое включение и daily-run остаются
 production release gates.
+
+Для v1.3.3 после установки unit и `systemctl daemon-reload` Operations Agent
+проверяет `systemctl show sports-forecast-data-cycle-dispatcher.service -p
+StartLimitIntervalUSec -p StartLimitBurst -p Result` и сбрасывает прежний
+`start-limit-hit` через `systemctl reset-failed` до включения timer. Затем
+наблюдает 20 последовательных минутных срабатываний: в journal у service
+видны 20 отдельных успешных invocation, timer остаётся `active`, нет
+`start-limit-hit`, а `data_cycle_dispatcher_state.heartbeat_at` продвигается
+и не старше трёх минут. Между стартами не должно быть пропущенного минутного
+слота; если service исполняется дольше минуты, проверяется отсутствие
+пропуска после его завершения. Любой пропуск или stale heartbeat — NO-GO
+для релиза, даже если контейнеры и API healthy.
