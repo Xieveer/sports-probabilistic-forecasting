@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from sports_forecast.deploy import canonical_bootstrap
 from sports_forecast.deploy.canonical_bootstrap import (
     _event_from_nhl_row,
     build_nhl_bootstrap_bundle,
@@ -68,6 +69,24 @@ def test_nhl_calendar_statuses_are_normalized(
         }
     )
     assert event["status"] == expected
+
+
+def test_registry_alias_feedback_window_covers_operational_calendar_horizon() -> None:
+    """Feedback принимает события от суток назад до 30 дней вперёд в UTC."""
+    now = datetime(2026, 10, 12, 12, tzinfo=UTC)
+
+    assert canonical_bootstrap._within_registry_feedback_window(
+        datetime(2026, 10, 11, 12, tzinfo=UTC), now
+    )
+    assert canonical_bootstrap._within_registry_feedback_window(
+        datetime(2026, 11, 11, 12, tzinfo=UTC), now
+    )
+    assert not canonical_bootstrap._within_registry_feedback_window(
+        datetime(2026, 10, 11, 11, 59, tzinfo=UTC), now
+    )
+    assert not canonical_bootstrap._within_registry_feedback_window(
+        datetime(2026, 11, 11, 12, 1, tzinfo=UTC), now
+    )
 
 
 def test_verified_nhl_bootstrap_imports_canonical_history_once(tmp_path: Path) -> None:

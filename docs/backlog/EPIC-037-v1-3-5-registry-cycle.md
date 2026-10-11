@@ -1,6 +1,6 @@
 # EPIC-037 — Исправляющий выпуск v1.3.5 для полного NHL Data Cycle
 
-> **Статус:** in_progress — production gate v1.3.4 получил NO-GO
+> **Статус:** cancelled — v1.3.5 NO-GO из-за массового feedback; продолжение в EPIC-038
 > **Приоритет:** critical
 > **Владелец:** Product Owner
 > **Ветка:** `initiative/epic-037-v1-3-5-release`
@@ -16,10 +16,10 @@
 
 - В v1.3.4 source tag, terminal CI/Security, Docker provenance, модельный wrapper и release evidence прошли проверки. На VPS установлен v2 snapshot `ir1:71897173e0ee72bb60f9038cc8570770b351d866a3f994e63ba26bf5bcfe03e2`, publication sequence 3; API/bot выдавали 50 NHL прогнозов, из них четыре с реальной двухсторонней линией Pinnacle при strict reader.
 - Контрольный strict Data Cycle `0070c85e-90a2-4656-b14e-608d6745e312` завершился `source_fetch_failed`: `RegistryFeedbackError: SF_ENTITY_REGISTRY_INSTALLATION_ID не задан`. Переменная передавалась только `registry-feedback`; Worker, где выполнялась запись неизвестного обозначения, её не получил. Прогнозный/odds этапы того цикла не запускались. Это NO-GO v1.3.4.
-- На VPS strict reader атомарно возвращён в `false`, API/bot пересозданы и здоровы; v2 snapshot и четыре действующие линии сохранены. Три таймера остановлены для контролируемой проверки. Ведётся fallback Data Cycle `370d1466-354a-4577-99c8-1cdf23c205e3`.
+- На VPS strict reader атомарно возвращён в `false`, API/bot пересозданы и здоровы; v2 snapshot и четыре действующие линии сохранены. Три таймера остановлены для контролируемой проверки. Fallback Data Cycle `370d1466-354a-4577-99c8-1cdf23c205e3` завершился `partial_success` из-за неполного покрытия odds; календарь, архив, прогнозы и публикация прошли.
 - Production DB backup `pre-v1.3.4-20261011T222118844681145.dump` (SHA-256 `bc4014b954f029b49242d9e4bba87b2b2c94a67ca8f871a142309c62701efb83`) прошёл off-host readback и isolated restore. Миграций в исправлении нет.
-- Следующая роль: Developer [TASK-037-1](tasks/TASK-037-1-candidate-producer-installation-id.md) → независимый Reviewer → terminal CI/Security → exact tag/image/model evidence → Operations Agent.
-- Блокеры: исправление Compose, полные release gates и успешный реальный strict Data Cycle с feedback, odds, прогнозом, линией, ботом и устойчивыми таймерами.
+- Следующая роль: независимый Reviewer проверяет release evidence → Operations Agent выполняет exact image/model/серверные gates. TASK-037-1 done; независимый review P0–P2 clear; PR #92 объединён в exact merge `e630a7c929720cd1585b2af825c43dacff444f85`; postmerge CI `38181374573`, Security `38181374570`, annotated tag `v1.3.5` и Docker `38181489680` успешны. Wrapper `sha256:2262cbb4f439ee65f3a8efd811b250f9b41e5c74f8d7562d304435b46d61bde0` прошёл exact Worker image gate под UID10001, read-only/network-none, 489 признаков.
+- Блокеры: release-evidence gate и успешный реальный strict Data Cycle с feedback, odds, прогнозом, линией, ботом и устойчивыми таймерами. Fallback strict=false run `370d1466-354a-4577-99c8-1cdf23c205e3` завершился partial_success по покрытию: calendar/quality/archive/predictions/publication success, 219 прогнозов, 4 свежие котировки.
 - Обновлено: 2026-10-12.
 
 ## Проверяемые критерии
@@ -41,3 +41,7 @@
 - Reviewer запустил 72 целевых production contract/topology/version tests (passed) и `git diff --check` (passed). Product Owner сообщил о 1715 passed unit tests, успешных lint/type/docs/AI/production-check/pre-commit и offline lock check; эти gates не заменяют terminal CI и серверный Data Cycle.
 - Локальный `UV_OFFLINE=1 make security` остановился на bootstrap `pip-audit` (`Failed to upgrade pip`); аудит зависимостей не выполнялся. Terminal Security CI остаётся обязательным gate.
 - Остаточный риск: код ещё не прошёл terminal CI/Security, immutable image/model evidence и полный strict NHL Data Cycle на VPS. До них статус выпуска остаётся `NO-GO`.
+
+## Итог production gate v1.3.5
+
+Strict NHL Data Cycle `95169bca-160d-4a84-9f1f-58ecb10c8319` прошёл календарь, quality, archive, odds, predictions и publication; три реальные Pinnacle линии и 219 опубликованных прогнозов подтверждены. Но calendar записал 22 656 pending candidates из исторического `source.csv`, в основном 21 963 ненужных event-ID owner-связей. Feedback publication и timers оставлены остановленными; strict возвращается в false. Исправление и выпуск ведёт [EPIC-038](EPIC-038-v1-3-6-candidate-scope.md).
