@@ -12,7 +12,18 @@
 
 `catalog_completeness="complete"` — обязательный результат глубокой API-разведки. Такая
 карточка не проходит validation без `api_endpoints` и `api_fields`; каждое поле обязано
-ссылаться на существующий endpoint. Версия структуры задаётся `catalog_schema_version`.
+ссылаться на существующий endpoint. Версия структуры задаётся `catalog_schema_version`:
+
+- версия 1 сохраняет прежние typed values: `nullable` — boolean, `key_role` — `primary`,
+  `foreign`, `natural` или `none`;
+- версия 2 добавляет `nullable: null` и `key_role: "unknown"` для неизвестных свойств;
+- версии выше 2 отклоняются до обновления валидатора; legacy `partial` без новых значений
+  остаётся читаемым как версия 1.
+
+`nullable: null` — явно неизвестная nullability и отличается от отсутствующего поля:
+свойство `nullable` остаётся обязательным в обеих версиях. `key_role="none"` означает,
+что роль оценена и поле не является ключом; `key_role="unknown"` означает, что роль не
+установлена.
 
 ## Карточка источника
 
@@ -47,8 +58,8 @@ read-only проверки или ссылку на сохранённое оп�
 | Поле | Смысл для scientist |
 |---|---|
 | `field_id`, `endpoint_id`, `entity`, `json_path` | Откуда извлекается значение и к какой сущности относится |
-| `data_type`, `nullable`, `description` | Физический тип, допустимость пропуска и предметный смысл |
-| `key_role` | `primary`, `foreign`, `natural` или `none` |
+| `data_type`, `nullable`, `description` | Физический тип, подтверждённая допустимость пропуска (`true`/`false`) либо `null`, если она неизвестна, и предметный смысл |
+| `key_role` | `primary`, `foreign`, `natural`, `none`; в версии 2 также `unknown` |
 | `usage` | `feature`, `target`, `label`, `odds`, `metadata` или `unknown` |
 | `temporal_availability` | `pre_event`, `pre_event_if_timestamp_checked`, `live`, `post_event` или `unknown` |
 | `leakage_risk`, `evidence` | Условие безопасного применения и основание описания |
@@ -67,3 +78,16 @@ read-only проверки или ссылку на сохранённое оп�
 
 Data Researcher документирует только разрешённые публичные наблюдения. Cookies, credentials,
 HAR, полные HTTP-ответы и способы обхода ограничений в каталог не попадают.
+
+## Что дают изученные источники
+
+Сводка описывает семейства данных в сохранённых каталогах. Наличие endpoint не
+гарантирует историю, полноту сезона или доступность каждого поля в каждом ответе.
+
+| Источник | Наблюдаемые семейства данных | Кандидаты для предматчевого исследования | Результаты и ограничения |
+|---|---|---|---|
+| NHL Web API | Расписание, standings, составы, командная и player статистика, boxscore и play-by-play | Расписание, standings и составы требуют сохранённого снимка с временем до матча; пометка `pre_event_if_timestamp_checked` требует проверки as-of | Счёт, исходы, boxscore и play-by-play относятся к live/post-event. Текущие ответы не восстанавливают, что было известно до матча. |
+| Smart Tables football API | Матчи и турниры, match statistics и charts, 1X2 и отдельные stat odds | Идентификаторы, kickoff и турнирные признаки описаны для match card/list; odds пригодны только при подтверждённом предматчевом timestamp | Счёт и статистика после матча — labels/targets. Все 261 поля `match-center-card` основаны только на paths/types: nullability, key role, usage и temporal availability остаются неизвестны. Не использовать их как features, labels или targets без отдельного evidence. |
+
+В обеих карточках временной статус относится к конкретному полю и endpoint. Исследование
+должно сохранять время получения и отсекать данные, опубликованные после своего cutoff.
