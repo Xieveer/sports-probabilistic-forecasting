@@ -84,6 +84,8 @@ ADR-014, все три TASK и отчёты `done`, контракт, обе к�
 - [PR #72](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/72)
   слит в `main` после успешных `lint-test (3.12)`, `Python dependencies` и
   `Filesystem and secrets` на окончательном HEAD. Merge commit: `54c281d35bd47cc9e197f197035c59d4386039ba`.
+- Проверенный closure diff зафиксирован коммитом
+  `137178872309c5ed161d75a02da49a060d3b990b`.
 - Ограничения: пять NHL GET 2026-10-11 вернули 200, но не проверяли всю схему;
   Smart Tables GET завершился тайм-аутом без ответа. Регулярный сбор или
   использование в модели требует отдельного решения и проверки доступа/as-of.
