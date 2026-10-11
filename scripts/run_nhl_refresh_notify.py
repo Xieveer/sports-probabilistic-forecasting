@@ -156,6 +156,15 @@ def _run_post_refresh_digest(
     )
 
 
+def _log_digest_result(proc: subprocess.CompletedProcess[str]) -> None:
+    """Записать исход digest без копирования дочернего вывода в логи."""
+    logger.info(
+        "post_refresh_digest завершён: code=%d stderr_present=%s",
+        proc.returncode,
+        bool(proc.stderr),
+    )
+
+
 def _run_refresh(project_dir: Path) -> None:
     cmd = [
         sys.executable,
@@ -359,8 +368,7 @@ def main() -> int:
 
     if args.skip_telegram:
         proc = _run_post_refresh_digest(project_root=PROJECT_ROOT, dry_run=True)
-        if proc.stderr:
-            logger.info("post_refresh_digest stderr: %s", proc.stderr.strip())
+        _log_digest_result(proc)
         print(header_text, end="")
         sys.stdout.write(proc.stdout)
         digest_rc = int(proc.returncode)
@@ -373,16 +381,12 @@ def main() -> int:
         )
         print(header_text, end="")
         proc = _run_post_refresh_digest(project_root=PROJECT_ROOT, dry_run=True)
-        if proc.stderr:
-            logger.info("post_refresh_digest stderr: %s", proc.stderr.strip())
+        _log_digest_result(proc)
         sys.stdout.write(proc.stdout)
         return 1
 
     proc = _run_post_refresh_digest(project_root=PROJECT_ROOT, dry_run=False)
-    if proc.stdout:
-        logger.info("post_refresh_digest stdout: %s", proc.stdout.strip()[:2000])
-    if proc.stderr:
-        logger.info("post_refresh_digest stderr: %s", proc.stderr.strip())
+    _log_digest_result(proc)
     return int(proc.returncode)
 
 

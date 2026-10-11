@@ -241,6 +241,22 @@ class TestSimulate:
         with pytest.raises(ValueError, match="одинаковой длины"):
             flat_simulator.simulate(y_true, y_pred, odds)
 
+    def test_explicit_bet_eligibility_preserves_calculated_edge(
+        self, flat_simulator: BettingSimulator
+    ) -> None:
+        """Внешняя market selection может запретить ставку, сохранив исходный edge trace."""
+        result = flat_simulator.simulate(
+            np.array([1]),
+            np.array([0.8]),
+            np.array([2.0]),
+            return_event_trace=True,
+            bet_eligible_mask=np.array([False]),
+        )
+        assert result.n_bets == 0
+        assert result.event_trace is not None
+        assert result.event_trace.loc[0, "edge"] == pytest.approx(0.3)
+        assert not bool(result.event_trace.loc[0, "bet_placed"])
+
     def test_coverage_long_format_divisor(self, flat_simulator: BettingSimulator) -> None:
         """Long-format: при 4 строках и 2 ставках row-coverage=0.5; event-coverage≈1.0 при делителе 2."""
         y_true = np.array([1, 0, 1, 0])

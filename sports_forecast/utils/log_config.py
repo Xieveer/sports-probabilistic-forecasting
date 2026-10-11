@@ -47,8 +47,9 @@ Example:
 
 Note:
     Система логирования инициализируется автоматически при первом вызове
-    :func:`get_logger`. Для изменения настроек по умолчанию вызовите
-    :func:`configure_logging` явно перед использованием логгеров.
+    :func:`get_logger`. Для изменения направления вывода вызовите
+    :func:`configure_logging` до первого логгера. Уровень можно обновить
+    повторным вызовом.
 
 See Also:
     * :mod:`logging` - стандартная библиотека Python для логирования
@@ -149,9 +150,9 @@ def configure_logging(
         * Все логгеры в проекте наследуют эти настройки
         * Файл логов создается в кодировке UTF-8
 
-    Warning:
-        Вызов :func:`configure_logging` после создания логгеров не изменит
-        их настройки. Вызывайте эту функцию в начале программы.
+    Note:
+        Повторный вызов обновляет уровень корневого логгера, но не пересоздаёт
+        обработчики и не меняет направление вывода.
 
     See Also:
         * :func:`get_logger` - получение настроенного логгера
@@ -159,6 +160,7 @@ def configure_logging(
     """
     global _LOG_CONFIGURED
     if _LOG_CONFIGURED:
+        logging.getLogger().setLevel(getattr(logging, level.upper(), logging.INFO))
         return
 
     handlers: list[logging.Handler] = []

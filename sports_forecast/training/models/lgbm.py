@@ -230,6 +230,8 @@ class LGBMModel(BaseSingleModel):
 
         booster = lgb.Booster(model_file=str(path))
         self.model_._Booster = booster
+        # Обёртка sklearn в LightGBM 4.6 проверяет это поле в __sklearn_is_fitted__.
+        self.model_.fitted_ = True
         self.is_fitted_ = True
 
         logger.info("LightGBM модель '%s' загружена из: %s", self.name, path)

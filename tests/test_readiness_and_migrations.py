@@ -10,7 +10,11 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect
 
-from sports_forecast.deploy.database_roles import RUNTIME_GRANTS
+from sports_forecast.deploy.database_roles import (
+    REGISTRY_FEEDBACK_GRANTS,
+    REGISTRY_SYNC_GRANTS,
+    RUNTIME_GRANTS,
+)
 from sports_forecast.service import app as app_module
 from sports_forecast.service.db import engine as engine_module
 from sports_forecast.service.db.models import Base
@@ -187,6 +191,11 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
             "data_cycle_stage_results",
         )
     )
+    assert any(
+        statement.startswith("GRANT SELECT ON TABLE registry_identity_snapshots")
+        and "registry_canonical_event_mappings TO sf_api_reader" in statement
+        for statement in RUNTIME_GRANTS
+    )
     assert (
         "GRANT SELECT (run_id, tournament) ON TABLE data_cycle_runs TO sf_api_reader"
         in RUNTIME_GRANTS
@@ -245,6 +254,79 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
         "TO sf_refresh_writer" in statement
         for statement in RUNTIME_GRANTS
     )
+    worker_grants = [
+        statement for statement in RUNTIME_GRANTS if "TO sf_refresh_writer" in statement
+    ]
+    assert any(
+        "GRANT SELECT, INSERT ON TABLE prediction_revisions TO sf_refresh_writer" in statement
+        for statement in worker_grants
+    )
+    assert any(
+        "GRANT USAGE, SELECT ON SEQUENCE registry_candidate_outbox_id_seq "
+        "TO sf_refresh_writer" in statement
+        for statement in worker_grants
+    )
+    registry_read_tables = (
+        "registry_identity_snapshots",
+        "registry_snapshot_records",
+        "registry_event_resolver_projections",
+        "registry_publications",
+        "active_registry_installation",
+        "registry_installation_locks",
+        "registry_canonical_event_mappings",
+    )
+    assert any(
+        all(table in statement for table in registry_read_tables)
+        and statement.startswith("GRANT SELECT ON TABLE")
+        for statement in worker_grants
+    )
+    assert (
+        "GRANT INSERT ON TABLE registry_canonical_event_mappings TO sf_refresh_writer"
+        in worker_grants
+    )
+    assert any(
+        "GRANT UPDATE (lock_version) ON TABLE registry_installation_locks "
+        "TO sf_refresh_writer" in statement
+        for statement in worker_grants
+    )
+    assert "GRANT INSERT ON TABLE registry_candidate_outbox TO sf_refresh_writer" in worker_grants
+    assert not any(
+        any(table in statement for table in registry_read_tables[:6])
+        and "INSERT" in statement
+        and "TO sf_refresh_writer" in statement
+        for statement in worker_grants
+    )
+    sync_grants = [
+        statement for statement in REGISTRY_SYNC_GRANTS if "TO sf_registry_sync" in statement
+    ]
+    feedback_grants = [
+        statement
+        for statement in REGISTRY_FEEDBACK_GRANTS
+        if "TO sf_registry_feedback" in statement
+    ]
+    assert any(
+        "GRANT SELECT ON TABLE canonical_events, registry_identity_snapshots, "
+        "registry_snapshot_records, registry_event_resolver_projections, registry_publications, "
+        "active_registry_installation, registry_installation_locks, registry_canonical_event_mappings "
+        "TO sf_registry_sync" in statement
+        for statement in sync_grants
+    )
+    assert any(
+        "GRANT INSERT ON TABLE registry_identity_snapshots, registry_snapshot_records, "
+        "registry_event_resolver_projections, registry_publications, registry_canonical_event_mappings, "
+        "active_registry_installation TO sf_registry_sync" in statement
+        for statement in sync_grants
+    )
+    assert any(
+        "GRANT SELECT ON TABLE registry_candidate_outbox, registry_candidate_batch_sequences "
+        "TO sf_registry_feedback" in statement
+        for statement in feedback_grants
+    )
+    assert all(
+        not any(table in statement for table in registry_read_tables)
+        and not any(table in statement for table in ("canonical_events", "prediction_revisions"))
+        for statement in feedback_grants
+    )
     assert not any("UPDATE (executor_stalled_at)" in statement for statement in control_grants)
     assert not any(
         "INSERT ON TABLE data_cycle_runs, data_cycle_stage_results" in statement
@@ -253,5 +335,19 @@ def test_migration_command_creates_schema_and_is_idempotent(tmp_path: Path) -> N
     assert not any(
         "predictions TO sf_control_api" in statement
         or "canonical_events TO sf_control_api" in statement
+        for statement in control_grants
+    )
+    for table in ("bet_card_contexts", "real_bets", "real_bet_audit"):
+        assert inspect(migrated_engine).has_table(table)
+        assert any(
+            table in statement and "TO sf_control_api" in statement for statement in control_grants
+        )
+        assert not any(
+            table in statement and "TO sf_api_reader" in statement for statement in RUNTIME_GRANTS
+        )
+    assert not any("DELETE" in statement for statement in control_grants)
+    assert not any(
+        "UPDATE" in statement
+        and ("bet_card_contexts" in statement or "real_bet_audit" in statement)
         for statement in control_grants
     )

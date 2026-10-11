@@ -177,8 +177,12 @@ def validate_raw(
     """
     from sports_forecast.validation.schemas import RawSchema
 
+    # Smart Tables хранит source ID как match_id до маппинга на clean.
+    schema_frame = (
+        df.rename(columns={"match_id": "id"}) if "id" not in df and "match_id" in df else df
+    )
     return validate_dataframe(
-        df, RawSchema, stage="raw", tournament=tournament, raise_on_error=raise_on_error
+        schema_frame, RawSchema, stage="raw", tournament=tournament, raise_on_error=raise_on_error
     )
 
 

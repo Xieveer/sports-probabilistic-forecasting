@@ -16,7 +16,7 @@ from sports_forecast.service.schemas import HealthResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.2.15"
+RELEASE_VERSION = "1.3.1"
 
 
 def test_package_and_fastapi_publish_same_release_version() -> None:
@@ -90,7 +90,7 @@ def test_evidence_workflow_is_manual_and_keeps_dynamic_facts_outside_application
     )
     assert "- Статус подготовки: `candidate`" in handoff
     assert "v1.1.12" not in handoff
-    assert "- source_tag: `v1.2.15`" in handoff
+    assert "- source_tag: `v1.3.1`" in handoff
     assert "--handoff docs/operations/production-handoff.md" in handoff
 
 
@@ -267,6 +267,25 @@ def test_release_gate_renders_and_validates_production_compose_contract() -> Non
     assert "--profile migration" in command
     assert "config --quiet" in command
     assert "verify_production_compose_contract.py" in command
+
+
+def test_tag_and_evidence_gates_render_all_registry_services() -> None:
+    """Release verifier должен видеть opt-in registry службы в обоих workflow."""
+    docker = yaml.safe_load((PROJECT_ROOT / ".github" / "workflows" / "docker.yml").read_text())
+    verify_step = next(
+        step
+        for step in docker["jobs"]["verify"]["steps"]
+        if step.get("name") == "Verify rendered production Compose contract"
+    )
+    assert verify_step["run"].count("--profile registry-sync --profile registry-feedback") == 2
+
+    evidence = yaml.safe_load(
+        (PROJECT_ROOT / ".github" / "workflows" / "release-evidence.yml").read_text()
+    )
+    commands = "\n".join(
+        step.get("run", "") for step in evidence["jobs"]["verify-evidence"]["steps"]
+    )
+    assert commands.count("--profile registry-sync --profile registry-feedback") == 2
 
 
 def test_worker_runtime_dependencies_are_explicit_and_visible_to_bare_python() -> None:

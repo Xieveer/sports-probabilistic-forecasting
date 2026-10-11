@@ -24,16 +24,24 @@ def build_fixture(
         "worker_db_password": "fixture-worker-password",
         "migrator_db_password": "fixture-migrator-password",
         "control_api_db_password": "fixture-control-api-password",
+        "registry_sync_db_password": "fixture-registry-sync-password",
+        "registry_feedback_db_password": "fixture-registry-feedback-password",
         "api_database_url": "postgresql://sf_api_reader:fixture-api-password@db:5432/sports_forecast",
         "worker_database_url": "postgresql://sf_refresh_writer:fixture-worker-password@db:5432/sports_forecast",
         "migrator_database_url": "postgresql://sf_migrator:fixture-migrator-password@db:5432/sports_forecast",
         "control_database_url": "postgresql://sf_control_api:fixture-control-api-password@db:5432/sports_forecast",
+        "registry_sync_database_url": "postgresql://sf_registry_sync:fixture-registry-sync-password@db:5432/sports_forecast",
+        "registry_feedback_database_url": "postgresql://sf_registry_feedback:fixture-registry-feedback-password@db:5432/sports_forecast",
         "owner_database_url": "postgresql://sf_user:fixture-postgres-password@db:5432/sports_forecast",
         "control_api_key": "fixture-control-api-key",
         "bot_token": "123456:fixture_test_token_for_local_contract",
         "bot_notification_destinations.json": '{"nhl_admins":-1001234567890}',
         "object_storage_access_key": "fixture-access-key",
         "object_storage_secret_key": "fixture-secret-key",
+        "registry_sync_object_storage_access_key": "fixture-registry-sync-access-key",
+        "registry_sync_object_storage_secret_key": "fixture-registry-sync-secret-key",
+        "registry_feedback_object_storage_access_key": "fixture-registry-feedback-access-key",
+        "registry_feedback_object_storage_secret_key": "fixture-registry-feedback-secret-key",
         "odds_api_key_free": "fixture-odds-free",
         "odds_api_key_20k": "fixture-odds-20k",
         "odds_api_key_100k": "fixture-odds-100k",
@@ -73,10 +81,16 @@ def build_fixture(
         "SF_WORKER_DB_PASSWORD_FILE": str(secret_root / "worker_db_password"),
         "SF_MIGRATOR_DB_PASSWORD_FILE": str(secret_root / "migrator_db_password"),
         "SF_CONTROL_API_DB_PASSWORD_FILE": str(secret_root / "control_api_db_password"),
+        "SF_REGISTRY_SYNC_DB_PASSWORD_FILE": str(secret_root / "registry_sync_db_password"),
+        "SF_REGISTRY_FEEDBACK_DB_PASSWORD_FILE": str(secret_root / "registry_feedback_db_password"),
         "SF_API_DATABASE_URL_FILE": str(secret_root / "api_database_url"),
         "SF_WORKER_DATABASE_URL_FILE": str(secret_root / "worker_database_url"),
         "SF_MIGRATOR_DATABASE_URL_FILE": str(secret_root / "migrator_database_url"),
         "SF_CONTROL_DATABASE_URL_FILE": str(secret_root / "control_database_url"),
+        "SF_REGISTRY_SYNC_DATABASE_URL_FILE": str(secret_root / "registry_sync_database_url"),
+        "SF_REGISTRY_FEEDBACK_DATABASE_URL_FILE": str(
+            secret_root / "registry_feedback_database_url"
+        ),
         "SF_CONTROL_API_KEY_FILE": str(secret_root / "control_api_key"),
         "SF_OWNER_DATABASE_URL_FILE": str(secret_root / "owner_database_url"),
         "SF_BOT_TOKEN_FILE": str(secret_root / "bot_token"),
@@ -86,6 +100,20 @@ def build_fixture(
         "SF_DATA_CYCLE_NOTIFICATION_ALIASES": "nhl_admins",
         "SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE": str(secret_root / "object_storage_access_key"),
         "SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE": str(secret_root / "object_storage_secret_key"),
+        "SF_REGISTRY_SYNC_OBJECT_STORAGE_ACCESS_KEY_ID_FILE": str(
+            secret_root / "registry_sync_object_storage_access_key"
+        ),
+        "SF_REGISTRY_SYNC_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE": str(
+            secret_root / "registry_sync_object_storage_secret_key"
+        ),
+        "SF_REGISTRY_FEEDBACK_SERVER_ACCESS_KEY_ID_FILE": str(
+            secret_root / "registry_feedback_object_storage_access_key"
+        ),
+        "SF_REGISTRY_FEEDBACK_SERVER_SECRET_ACCESS_KEY_FILE": str(
+            secret_root / "registry_feedback_object_storage_secret_key"
+        ),
+        "SF_REGISTRY_SYNC_DOWNLOAD_ROOT": str(root / "registry-downloads"),
+        "SF_ENTITY_REGISTRY_INSTALLATION_ID": "e8608691-baf7-46fb-ae0e-594cb86f1fcf",
         "ODDS_API_KEY_FREE_FILE": str(secret_root / "odds_api_key_free"),
         "ODDS_API_KEY_20K_FILE": str(secret_root / "odds_api_key_20k"),
         "ODDS_API_KEY_100K_FILE": str(secret_root / "odds_api_key_100k"),
@@ -93,11 +121,12 @@ def build_fixture(
         "BOT_TELEGRAM_API_BASE_URL": "http://telegram-test:8081",
         "BOT_ALLOWED_USER_IDS": "1",
         "BOT_ADMIN_USER_IDS": "1",
+        "BET_OWNER_USER_ID": "1",
         "SF_OBJECT_STORAGE_ENDPOINT": "https://storage.example.invalid",
         "SF_OBJECT_STORAGE_BUCKET": "fixture-bucket",
         **default_images,
     }
-    for directory in ("runtime_models", "source", "archive", "sync-state"):
+    for directory in ("runtime_models", "source", "archive", "sync-state", "registry-downloads"):
         (root / directory).mkdir(parents=True, exist_ok=True)
     path.write_text("".join(f"{key}={value}\n" for key, value in values.items()), encoding="utf-8")
 

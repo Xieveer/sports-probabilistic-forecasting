@@ -55,6 +55,13 @@ allowed_market_specs:
     specs: [total_over, total_under]
 
 target_sources:
+  # Winner long: ничья даёт 0 для обеих сторон; трёхклассовый рынок отдельно.
+  player_win:
+    format: long
+    player_column: pl_points
+    opponent_column: opp_points
+    comparison: greater
+
   # Winner wide: home_points > away_points (ничья → 0; 3-class — Phase 2)
   home_win:
     format: wide

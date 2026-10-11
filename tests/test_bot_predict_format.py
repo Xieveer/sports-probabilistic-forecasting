@@ -26,7 +26,9 @@ from sports_forecast.bot.handlers.predict import (
     _send_schedule,
     _split_schedule_messages,
     _upcoming_query_params,
+    cb_predict_period,
     cb_schedule_tournament,
+    cmd_predict,
     cmd_upcoming,
     fetch_schedule,
 )
@@ -65,6 +67,14 @@ def test_schedule_tournament_keyboard_is_limited_to_nhl() -> None:
     ] == [("NHL", "schedule:nhl")]
 
 
+def test_prediction_card_bounds_unexpectedly_long_names() -> None:
+    """Некорректно длинные имена не прерывают Telegram-выдачу."""
+    card = _format_prediction_card({"home_player": "<" * 5000, "away_player": ">" * 5000})
+    assert len(card) <= 4096
+    assert card.count("&lt;") == 128
+    assert card.count("&gt;") == 128
+
+
 def test_upcoming_starts_with_nhl_choice() -> None:
     message = _message("/upcoming")
 
@@ -75,6 +85,104 @@ def test_upcoming_starts_with_nhl_choice() -> None:
     assert (
         message.answer.await_args.kwargs["reply_markup"].inline_keyboard[0][0].callback_data
         == "schedule:nhl"
+    )
+
+
+def test_predict_starts_with_bookmaker_periods() -> None:
+    message = _message("/predict")
+
+    asyncio.run(cmd_predict(message))
+
+    keyboard = message.answer.await_args.kwargs["reply_markup"]
+    assert "период" in message.answer.await_args.args[0].lower()
+    assert [button.callback_data for row in keyboard.inline_keyboard for button in row] == [
+        f"predict_period:{period}:0" for period in SCHEDULE_PERIODS
+    ]
+
+
+def test_predict_period_sends_one_message_per_forecast(monkeypatch) -> None:
+    """Два прогноза не сливаются в один текст и получают один период API."""
+    from sports_forecast.bot.handlers import predict
+
+    requested: list[str | None] = []
+
+    async def fake_fetch(_client, *, cfg, tournament, period=None):
+        requested.append(period)
+        return {
+            "predictions": [
+                {"match_id": "m1", "home_player": "A", "away_player": "B"},
+                {"match_id": "m2", "home_player": "C", "away_player": "D"},
+            ]
+        }
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(predict, "fetch_predict_upcoming", fake_fetch)
+    monkeypatch.setattr(predict.httpx, "AsyncClient", FakeClient)
+    answer = AsyncMock()
+    callback = SimpleNamespace(
+        data="predict_period:today:0",
+        message=SimpleNamespace(answer=answer),
+        answer=AsyncMock(),
+    )
+
+    asyncio.run(cb_predict_period(callback, OmegaConf.create({"bot": {}})))
+
+    assert requested == ["today"]
+    assert answer.await_count == 2
+    assert "m1" in answer.await_args_list[0].args[0]
+    assert "m2" in answer.await_args_list[1].args[0]
+
+
+def test_owner_prediction_card_stores_context_before_record_button(monkeypatch) -> None:
+    """Кнопка записи ссылается на сохранённый snapshot увиденной карточки."""
+    from sports_forecast.bot.handlers import predict
+
+    async def fake_fetch(_client, *, cfg, tournament, period=None):
+        return {
+            "predictions": [
+                {
+                    "match_id": "m1",
+                    "tournament": "nhl",
+                    "market": "winner_withOT",
+                    "market_spec": "winner_withOT",
+                    "predictions": {"home_win": 0.6, "away_win": 0.4},
+                }
+            ]
+        }
+
+    async def fake_context(_cfg, _owner_id, prediction):
+        assert prediction["match_id"] == "m1"
+        return {"context_id": "12345678-1234-1234-1234-123456789abc", "prediction": prediction}
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(predict, "fetch_predict_upcoming", fake_fetch)
+    monkeypatch.setattr(predict.httpx, "AsyncClient", FakeClient)
+    monkeypatch.setattr(predict, "create_card_context", fake_context, raising=False)
+    answer = AsyncMock()
+    callback = SimpleNamespace(
+        data="predict_period:today:0",
+        from_user=SimpleNamespace(id=101),
+        message=SimpleNamespace(chat=SimpleNamespace(type="private"), answer=answer),
+        answer=AsyncMock(),
+    )
+    cfg = OmegaConf.create({"bot": {"admin_user_ids": [101], "bets_owner_id": "101"}})
+    asyncio.run(cb_predict_period(callback, cfg))
+    keyboard = answer.await_args.kwargs["reply_markup"]
+    assert (
+        keyboard.inline_keyboard[0][0].callback_data
+        == "bet:new:12345678-1234-1234-1234-123456789abc"
     )
 
 
@@ -416,10 +524,69 @@ def test_format_prediction_card_includes_live() -> None:
         "bet_decision_away": "bet",
     }
     text = _format_prediction_card(item)
-    assert "Edge home" in text
-    assert "Edge away" in text
-    assert "нет ставки" in text
-    assert "ставка" in text
+    assert "Pinnacle: 2.00 | 2.00" in text
+    assert "Edge: +0.1000 | -0.0500" in text
+    assert "Решение: away win" in text
+
+
+def test_prediction_card_uses_moscow_time_compact_metrics_and_market_recommendation() -> None:
+    item = {
+        "match_id": "2026020084",
+        "match_datetime": "2026-10-11T21:00:00Z",
+        "home_player": "WSH",
+        "away_player": "SEA",
+        "market_spec": "winner_withOT",
+        "predictions": {"home_win": 0.615, "away_win": 0.385},
+        "live_odds_status": "ok",
+        "pinnacle_home_decimal": 1.49,
+        "pinnacle_away_decimal": 2.78,
+        "edge_home": -0.0561,
+        "edge_away": 0.0253,
+        "bet_decision_home": "no_bet",
+        "bet_decision_away": "bet",
+    }
+
+    text = _format_prediction_card(item)
+
+    assert "12.10.2026 00:00 МСК" in text
+    assert "winner with OT: 0.615 | 0.385" in text
+    assert "Pinnacle: 1.49 | 2.78" in text
+    assert "Edge: -0.0561 | +0.0253" in text
+    assert "EV: -0.0837 | +0.0703" in text
+    assert "Решение: away win with OT" in text
+    assert "Edge home:" not in text
+
+
+def test_prediction_card_keeps_missing_quote_explicit_and_no_recommendation() -> None:
+    item = {
+        "match_id": "m1",
+        "market_spec": "winner_withOT",
+        "predictions": {"home_win": 0.6, "away_win": 0.4},
+        "live_odds_status": None,
+    }
+
+    text = _format_prediction_card(item)
+
+    assert "Pinnacle: — | —" in text
+    assert "Edge: — | —" in text
+    assert "EV: — | —" in text
+    assert "Решение: нет рекомендации" in text
+
+
+def test_prediction_card_keeps_recommendations_of_two_markets_separate() -> None:
+    item = {
+        "market_spec": "winner_withOT",
+        "predictions": {"home_win": 0.6, "away_win": 0.4},
+        "recommendations": [
+            {"market_spec": "winner_withOT", "outcome": "home_win"},
+            {"market_spec": "total_over", "outcome": "over_5.5"},
+        ],
+    }
+
+    text = _format_prediction_card(item)
+
+    assert "Решение · winner with OT: home win with OT" in text
+    assert "Решение · total over: over 5.5" in text
 
 
 def test_format_upcoming_line_indents_live() -> None:

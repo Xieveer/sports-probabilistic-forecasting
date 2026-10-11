@@ -14,7 +14,8 @@ Schema PostgreSQL изменяет только Alembic. API и Worker не вы
 
 2. Запустите идемпотентный bootstrap ролей и migration profile до API и Worker.
    PostgreSQL init создаёт owner `sf_user`; `role-bootstrap` создаёт
-   `sf_migrator`, `sf_api_reader`, `sf_control_api` и `sf_refresh_writer`, а `migrator` применяет
+   `sf_migrator`, `sf_api_reader`, `sf_control_api`, `sf_refresh_writer`,
+   `sf_registry_sync` и `sf_registry_feedback`, а `migrator` применяет
    Alembic от `sf_migrator` и выдаёт grants. URL передаются только secrets.
 
    ```bash
@@ -39,6 +40,48 @@ terminal status; UPDATE run/stage остаётся у `sf_refresh_writer`. Пр�
 ошибке acquisition он закрывает run с safe failure code и записывает failed attempt
 в `calendar_coverages`, сохраняя окно предыдущего успеха, но делая его статус
 недоступным до следующей успешной проверки. Старую историю run/stage не удаляют.
+
+Revision `0022_managed_model_pointer` добавляет nullable bundle binding и
+partial unique index для active deployment одной пары. Старые строки получают
+`is_managed=false`, поэтому миграция не назначает им неизвестные bundle IDs.
+Проверка ограничения выполняется перед managed activation; production pointer
+этим TASK не переключался.
+
+Revision `0023_prediction_revisions` создаёт append-only историю managed
+публикаций. `predictions.current_revision_id` остаётся nullable: legacy строки
+без подтверждённого bundle не получают выдуманную revision. Новая revision,
+обновление текущей витрины и ссылка на неё записываются одной транзакцией.
+Таблица защищена от UPDATE/DELETE на уровне БД; историю нельзя чистить обычным
+retention витрины. Для исправления схемы используется новая forward migration.
+
+Revision `0024_prediction_source_namespace` добавляет nullable
+`predictions.source_namespace` и составной lookup index. Новые managed-публикации
+разделяют mutable showcase по namespace источника внутри турнира. Старые строки
+остаются с `NULL`; migration не угадывает их источник. Как и прочие schema
+изменения, исправление выполняется forward migration, без Alembic downgrade.
+
+Revision `0025_real_bets_ledger` добавляет закрытые таблицы контекста Telegram
+карточки, фактических ставок и append-only истории исправлений. После Alembic
+обязателен шаг выдачи grants из `sports_forecast/deploy/database_roles.py`:
+`sf_control_api` получает только необходимые SELECT/INSERT и UPDATE текущей
+ставки, но не DELETE и не UPDATE audit/контекста. `sf_api_reader` не получает
+доступ к журналу. Без этих grants бот не сможет сохранять карточки и ставки.
+Перед применением на production убедитесь в успешной локальной миграции и
+финансовых API/бот тестах; для работы журнала задайте `BET_OWNER_USER_ID`
+равным Telegram ID владельца из `BOT_ADMIN_USER_IDS`. При пустом значении
+закрытый API отклоняет запросы журнала. Включение версии требует отдельного
+release gate.
+
+Для v1.3.1 перед upgrade запустить `role-bootstrap` именно из этого release:
+он создаёт отдельные `sf_registry_sync` и `sf_registry_feedback` из раздельных
+secret files. Затем `migrator` применяет `0018`–`0025` и выдаёт им
+ограниченные grants. `sf_refresh_writer` получает чтение и `INSERT` в
+`prediction_revisions`, нужные managed публикации, а также узкие права на
+runtime event bridge и candidate capture. `sf_api_reader` получает только
+чтение установленной registry projection. Перед включением registry процесса
+проверить разрешённые и запрещённые SQL операции под каждым DB identity на
+изолированном восстановлении production-подобной БД. Успех Alembic под owner
+не доказывает доступ runtime ролей.
 
 ## Проверка и recovery
 

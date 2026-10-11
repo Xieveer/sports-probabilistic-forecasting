@@ -48,6 +48,6 @@ class AllowedUsersMiddleware(BaseMiddleware):
         if uid is None:
             return await handler(event, data)
         if uid not in self._allowed:
-            logger.warning("bot: отклонён user_id=%s (не в whitelist)", uid)
+            logger.warning("bot: отклонён пользователь вне allowlist")
             return None
         return await handler(event, data)

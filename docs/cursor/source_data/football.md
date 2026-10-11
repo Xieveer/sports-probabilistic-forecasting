@@ -3,6 +3,15 @@
 **Статус:** Phase 1 ingest (R42).
 **Источник:** неофициальный backend Smart Tables (`backend.smart-tables.ru`).
 **Scope:** матчи **национальных сборных** (37 турниров, `for_national_teams=1`), ~11.6k матчей.
+
+Отдельный локальный кандидат клубного футбола из того же формата: Premier League
+(`ENG1`, `competition_id=13`). Существующий файл
+`data/source/football_top_leagues/source.csv` служит исходной историей; для
+candidate-цикла копия размещается в `data/source/premier_league/source.csv`.
+Профиль `conf/source/premier_league.yaml` выделяет только `ENG1`, а
+`conf/bookmaker/smart_tables.yaml` собирает исследовательские 1X2 odds из
+`odd_home`/`odd_draw`/`odd_away`. Время получения и букмекер этих odds не
+подтверждены; регулярный refresh и публикация этим контрактом не разрешены.
 **Разведка API:** [`smart_tables.md`](smart_tables.md), каталог [`smart-tables/competition_catalog.json`](smart-tables/competition_catalog.json).
 
 | Слой | Путь |

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 
 from sports_forecast.orchestration.data_cycle import (
@@ -19,10 +20,14 @@ from sports_forecast.orchestration.data_cycle import (
     start_stage,
 )
 from sports_forecast.orchestration.data_cycle_recovery import HostStopEvidence
+from sports_forecast.service.db.repository import DATA_CYCLE_FAILURE_CODES, DATA_CYCLE_STAGES
 from sports_forecast.utils.log_config import get_logger
 
 
 logger = get_logger(__name__)
+_RUN_ID_PATTERN = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -109,7 +114,22 @@ def main(argv: list[str] | None = None) -> int:
             )
         return 0
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError):
-        logger.error("Data Cycle lifecycle action failed: action=%s", args.action)
+        run_id = getattr(args, "run_id", None)
+        if not isinstance(run_id, str) or _RUN_ID_PATTERN.fullmatch(run_id) is None:
+            run_id = "unknown"
+        stage = getattr(args, "stage", None)
+        if stage not in DATA_CYCLE_STAGES:
+            stage = "unknown"
+        code = getattr(args, "code", None)
+        if code not in DATA_CYCLE_FAILURE_CODES:
+            code = "unknown"
+        logger.error(
+            "Data Cycle lifecycle action failed: action=%s run_id=%r stage=%r code=%r",
+            args.action,
+            run_id,
+            stage,
+            code,
+        )
         return 1
 
 

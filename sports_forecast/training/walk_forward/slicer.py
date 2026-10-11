@@ -39,6 +39,9 @@ class WalkForwardSlicer:
         datetime_col: str,
         frequency: str,
         init_end: pd.Timestamp,
+        *,
+        label_available_at_col: str | None = None,
+        train_eligible_col: str | None = None,
     ) -> None:
         if datetime_col not in df.columns:
             msg = f"datetime column {datetime_col!r} not in dataframe"
@@ -47,9 +50,35 @@ class WalkForwardSlicer:
             msg = f"WalkForwardSlicer: unsupported frequency {frequency!r} (only 'month')"
             raise NotImplementedError(msg)
         self._init_end = pd.Timestamp(init_end)
+        self._label_available_at_col = label_available_at_col
+        self._train_eligible_col = train_eligible_col
         self._ts = pd.to_datetime(df[datetime_col], utc=False)
         if getattr(self._ts.dt, "tz", None) is not None:
             self._ts = self._ts.dt.tz_convert("UTC").dt.tz_localize(None)
+        if label_available_at_col is not None:
+            if label_available_at_col not in df.columns:
+                raise KeyError(
+                    f"label availability column {label_available_at_col!r} not in dataframe"
+                )
+            self._label_available_at = pd.to_datetime(df[label_available_at_col], utc=False)
+            if getattr(self._label_available_at.dt, "tz", None) is not None:
+                self._label_available_at = self._label_available_at.dt.tz_convert(
+                    "UTC"
+                ).dt.tz_localize(None)
+        else:
+            self._label_available_at = None
+        if train_eligible_col is not None:
+            if train_eligible_col not in df.columns:
+                raise KeyError(f"train eligibility column {train_eligible_col!r} not in dataframe")
+            if (
+                not df[train_eligible_col]
+                .map(lambda value: isinstance(value, (bool, np.bool_)))
+                .all()
+            ):
+                raise ValueError("train eligibility column must contain only boolean values")
+            self._train_eligible = df[train_eligible_col].to_numpy(dtype=bool)
+        else:
+            self._train_eligible = None
 
     def __iter__(self) -> Iterator[tuple[int, np.ndarray, np.ndarray]]:
         ts = self._ts
@@ -73,6 +102,13 @@ class WalkForwardSlicer:
 
             train_mask_series = (ts <= init_end) | (oos_mask & (ts < period_start))
             train_mask_arr = train_mask_series.to_numpy(dtype=bool)
+            if self._label_available_at is not None:
+                available = self._label_available_at
+                train_mask_arr &= (available.notna() & (available <= period_start)).to_numpy(
+                    dtype=bool
+                )
+            if self._train_eligible is not None:
+                train_mask_arr &= self._train_eligible
 
             if train_mask_arr.sum() == 0:
                 logger.warning(

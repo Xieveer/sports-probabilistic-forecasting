@@ -13,10 +13,12 @@ MLOps-система промышленного уровня для вероят
 подключаться ML-инженером конфигурацией. Границы `sport`, `tournament`,
 `model_pool` и `market/spec` зафиксированы в
 [ADR-003](docs/architecture/adr/ADR-003-configured-multisport-portfolio.md).
-Первый шаг уже реализован — проверяемый каталог
-[`conf/portfolio/default.yaml`](conf/portfolio/default.yaml); он пока не заменяет
-статические DVC/Airflow списки. Их подключение запланировано отдельными задачами
-EPIC-003.
+Проверяемый каталог [`conf/portfolio/default.yaml`](conf/portfolio/default.yaml)
+задаёт также локальный цикл кандидата для совместимого файлового источника:
+`python -m sports_forecast.orchestration.candidate premier_league_winner`.
+Пример Premier League и ограничения исторических odds описаны в
+[руководстве](docs/cursor/context/HOW_TO_ADD_NEW_TOURNAMENT.md).
+Регулярные DVC/Airflow списки остаются отдельным контуром.
 
 ---
 
@@ -307,11 +309,36 @@ make materialize TOURNAMENT=uel_kz_1
 | `/health` | GET | Health check |
 | `/predict/{match_id}` | GET | Предсказание для матча |
 | `/predict/match/{match_id}/all` | GET | Все предсказания для матча |
-| `/predict/upcoming/{tournament}` | GET | Upcoming матчи турнира |
+| `/predict/upcoming/{tournament}` | GET | Прогнозы: прежний горизонт `hours` или `period=today\|tomorrow\|3\|7\|14\|30` по букмекерским суткам 08:00–08:00 МСК |
 | `/calendar/{tournament}?period=today\|tomorrow\|3\|7\|14\|30` | GET | Source-календарь с независимыми calendar/prediction/odds/readiness статусами и coverage (`unknown`, `incomplete`, `stale`, `confirmed_empty`, `complete`) |
+| `/admin/bet-contexts`, `/admin/bet-contexts/manual` | POST | Закрытая фиксация карточки или календарного матча перед записью ставки |
+| `/admin/bets`, `/admin/bets/{bet_id}` | GET/POST/PATCH | Закрытый журнал одиночных ставок и исправлений |
+| `/admin/bets/summary` | GET | Месячная сводка по дате расчёта МСК |
 | `/metrics` | GET | Prometheus метрики |
 
 ### Telegram: расписание NHL
+
+`/predict` предлагает те же периоды букмекерских суток и отправляет каждый
+доступный NHL-прогноз отдельным сообщением, по десять карточек на страницу.
+Карточка показывает время МСК, вероятность, Pinnacle, Edge, EV и решение по
+рынку. Если котировки нет, денежные метрики обозначены `—`. `/edge` и
+`/models` удалены из меню и обработчиков.
+
+Владелец в личном чате нажимает «Записать ставку» под прогнозом или вводит
+`/bet_add ID_матча` для NHL матча из календаря без прогноза. Бот спрашивает
+исход, тип средств, сумму в RUB, фактический коэффициент Winline и время
+размещения; перед сохранением показывает подтверждение. Каждый добор вводится
+отдельно. `/bets` показывает открытые ставки и кнопки ручного расчёта; при
+расчёте бот спрашивает фактическую выплату и время. `/bet_history` показывает
+последние записи, `/bet_correct ID поле значение` исправляет ошибку, а
+`/bet_audit ID` показывает историю. `/bet_report ГГГГ-ММ` выводит результат
+по дате расчёта в МСК, отдельно оборот/ROI своих денег и номинал/выплату
+фрибетов. `/bet_cancel` закрывает незавершённый диалог. При выигрыше фрибета
+номинал не возвращается; при void сгорает.
+Журнал доступен только одному `BET_OWNER_USER_ID` из `BOT_ADMIN_USER_IDS`
+в личном чате через закрытый control API. Пустой ID закрывает денежные команды.
+Перед использованием на существующей БД требуется migration и grant bootstrap
+из [runbook](docs/operations/database-migrations.md).
 
 Команда `/upcoming` открывает календарь NHL: выберите «Сегодня», «Завтра», 3, 7, 14
 или 30 букмекерских суток. Сутки идут с 08:00 до 08:00 МСК; до 08:00 «Сегодня»
@@ -323,10 +350,12 @@ make materialize TOURNAMENT=uel_kz_1
 Локальный сценарий бота и API, проверки UTF-16/HTML лимитов и результаты
 независимого review зафиксированы в [отчёте TASK-025-11](docs/changes/done/TASK-025-11-telegram-calendar.md).
 
-Администраторы из `BOT_ADMIN_USER_IDS` могут управлять NHL Data Cycle командами
-`/cycle` (состояние расписания, текущий запуск и история), `/cycle_time HH:MM`
-и `/cycle_interval N` (время и частота), `/cycle_history` и `/refresh` (ручной
-запуск цикла). Уведомление о terminal результате отправляется по настроенному
+Администраторы из `BOT_ADMIN_USER_IDS` могут управлять доступными Data Cycle
+командами `/cycle`, `/cycle_time [турнир] HH:MM`,
+`/cycle_interval [турнир] N`, `/cycle_history [турнир]` и `/refresh [турнир]`.
+Если сервер поддерживает один цикл, турнир можно опустить; при нескольких
+`/cycle` предлагает выбор. Сейчас control API поддерживает только NHL.
+Уведомление о terminal результате отправляется по настроенному
 alias; bot destination mapping хранится только в runtime secret. Ошибка Control
 API не отключает публичные `/upcoming` и календарь. Подробности локальной проверки
 есть в [руководстве Telegram admin testing](docs/development/telegram-admin-testing.md).
@@ -435,6 +464,18 @@ Product Owner ведёт отдельную ветку и компактную �
 Структура проверяется командой `make ai-validate`.
 
 ## Документация
+
+### Воспроизводимая финансовая оценка
+
+Исследовательский цикл собирает закреплённый набор событий и исторических
+котировок провайдера с `observed_at` не позже момента решения, строит
+помесячные OOS прогнозы и оценивает кандидата с
+baseline на одинаковых матчах. Первый срез NHL/Pinnacle/`winner_withOT`,
+команды повторения, входные fingerprints, ограничения и решение `STOP`
+описаны в [протоколе](docs/research/epic-030-nhl-protocol.md) и
+[итоговом отчёте](docs/research/epic-030-nhl-financial-result.md).
+Исследовательские CLI находятся в `sports_forecast.research` и не запускают
+production promotion.
 
 Локальная очередь проверки связей спортивных сущностей запускается отдельно от
 публичного API; подготовка registry, вход и остановка описаны в

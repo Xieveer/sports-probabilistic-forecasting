@@ -1,0 +1,40 @@
+{
+  "state": "candidate",
+  "tournament": "premier_league",
+  "display_name": "Premier League",
+  "model_pool": "premier_league_winner",
+  "market_spec": "winner",
+  "run_id": "225af497fb37486f82422899cc945868",
+  "data_sha256": "3d6372e03834226e2d33bdb223b44f5d9f8972996baee8a0bc9bb1cd333df92a",
+  "data_rows": 4138,
+  "competition_codes": [
+    "ENG1"
+  ],
+  "test_window": {
+    "first_event": "2025-05-25T18:00:00+00:00",
+    "last_event": "2026-09-06T18:30:00+00:00",
+    "n_events": 414,
+    "n_rows": 828,
+    "event_ids_sha256": "a651f86a4a3a8518b458779dfc21b98d991a6644995ab3786a8b3aa5b0d49e7d"
+  },
+  "ml_metrics": {
+    "logloss": 0.6416273633598403,
+    "auc": 0.647432209444209,
+    "brier": 0.2215734551900761
+  },
+  "betting_metrics": {
+    "roi": -14.818726591760282,
+    "coverage": 0.644927536231884,
+    "n_bets": 267.0,
+    "event_coverage": 0.642512077294686,
+    "n_bet_events": 266
+  },
+  "coverage_unit": "betting_coverage = min(1, число ставок / число тестовых матчей); event_coverage = доля уникальных матчей хотя бы с одной ставкой",
+  "simulation_metrics": {
+    "roi_std": 9.329256601479313,
+    "roi_ci_lower": -32.43732209737828,
+    "roi_ci_upper": 2.800608614232202,
+    "bootstrap_resamples": 500
+  },
+  "odds_limitation": "Источник, время получения и прематч статус исторических коэффициентов Smart Tables не подтверждены; betting-метрики исследовательские."
+}

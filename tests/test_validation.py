@@ -189,6 +189,13 @@ class TestRawSchema:
         result = validate_raw(df, tournament="test", raise_on_error=False)
         assert not result.is_valid
 
+    def test_smart_tables_raw_match_id_is_valid_source_identifier(
+        self, raw_df: pd.DataFrame
+    ) -> None:
+        df = raw_df.rename(columns={"id": "match_id"})
+        result = validate_raw(df, tournament="premier_league", raise_on_error=False)
+        assert result.is_valid
+
     def test_duplicate_ids_allowed(self, raw_df: pd.DataFrame) -> None:
         """Raw-данные допускают дублирующиеся id (до split на подтурниры)."""
         df = raw_df.copy()

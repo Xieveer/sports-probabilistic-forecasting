@@ -57,3 +57,29 @@ def test_skip_telegram_skip_pipeline_runs_digest_dry_run(notify_mod) -> None:
         assert kwargs.get("check") is False
         assert kwargs.get("capture_output") is True
         assert rc == 0
+
+
+def test_digest_child_output_is_not_copied_into_logs(
+    notify_mod, caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Dry-run сохраняет stdout-контракт, но не копирует полный stderr в лог."""
+    with patch.object(notify_mod.subprocess, "run") as mock_run:
+        mock_run.return_value = MagicMock(
+            returncode=1,
+            stdout="digest text\n",
+            stderr="sensitive child diagnostic",
+        )
+        argv = [
+            "run_nhl_refresh_notify.py",
+            "--delay-seconds",
+            "0",
+            "--skip-telegram",
+            "--skip-pipeline",
+        ]
+        with patch.object(sys, "argv", argv), caplog.at_level("INFO"):
+            rc = notify_mod.main()
+
+    assert rc == 1
+    assert "digest text" in capsys.readouterr().out
+    assert "sensitive child diagnostic" not in caplog.text
+    assert "code=1" in caplog.text

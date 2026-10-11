@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import yaml
+
 from scripts.verify_release_evidence import validate_evidence
 
 
@@ -68,6 +70,26 @@ def test_evidence_manifest_validates_release_identity_and_rendered_compose(tmp_p
     )
 
     assert errors == []
+
+
+def test_evidence_rejects_missing_registry_service(tmp_path: Path) -> None:
+    """Release evidence требует оба registry процесса в полном render."""
+    manifest_path = tmp_path / "release-manifest.json"
+    manifest_path.write_text(json.dumps(_manifest()), encoding="utf-8")
+    fixture = PROJECT_ROOT / "tests" / "fixtures" / "release-evidence-compose.yml"
+    rendered = yaml.safe_load(fixture.read_text(encoding="utf-8"))
+    del rendered["services"]["registry-feedback"]
+    rendered_path = tmp_path / "rendered.yml"
+    rendered_path.write_text(yaml.safe_dump(rendered), encoding="utf-8")
+
+    errors = validate_evidence(
+        manifest_path,
+        expected_version="1.1.14",
+        expected_source_commit=SOURCE_COMMIT,
+        rendered_compose_path=rendered_path,
+    )
+
+    assert "rendered Compose: недопустимый состав runtime services" in errors
 
 
 def test_evidence_accepts_next_immutable_revision_for_same_application_release(

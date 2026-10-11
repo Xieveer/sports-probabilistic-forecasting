@@ -214,6 +214,8 @@ def _ensure_sqlite_predictions_schema(eng: Engine) -> None:
             conn.execute(
                 text("ALTER TABLE predictions ADD COLUMN immutable_model_version VARCHAR(192)")
             )
+        if "source_namespace" not in column_names:
+            conn.execute(text("ALTER TABLE predictions ADD COLUMN source_namespace VARCHAR(128)"))
 
 
 def init_db(engine: Engine | None = None) -> None:

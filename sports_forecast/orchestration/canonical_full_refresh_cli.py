@@ -35,7 +35,17 @@ def main(cfg: DictConfig) -> None:
         )
         return
     if not result.published:
-        logger.error("Canonical full refresh не опубликован: %s", result.failure_code)
+        stage = {
+            "canonical_freshness_failed": "quality",
+            "bundle_verification_failed": "predictions",
+            "materialization_failed": "publication",
+        }.get(result.failure_code, "unknown")
+        logger.error(
+            "Canonical full refresh не опубликован: run_id=%r stage=%s code=%s",
+            os.environ["SF_WORKER_RUN_ID"],
+            stage,
+            result.failure_code,
+        )
         raise SystemExit(1)
 
 

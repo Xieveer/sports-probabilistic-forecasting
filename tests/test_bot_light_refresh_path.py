@@ -13,16 +13,15 @@ def test_predict_upcoming_url_is_api_only_no_airflow() -> None:
     assert "airflow" not in u.casefold()
 
 
-def test_edge_command_uses_live_path_fetch_predict_upcoming_only() -> None:
-    src = inspect.getsource(predict.cmd_edge)
+def test_predict_command_uses_live_path_fetch_predict_upcoming_only() -> None:
+    src = inspect.getsource(predict.cb_predict_period)
     assert "fetch_predict_upcoming" in src
     assert "api/v1/dags" not in src
 
 
-def test_edge_callback_matches_light_contract() -> None:
-    src = inspect.getsource(predict.cb_edge)
-    assert "fetch_predict_upcoming" in src
-    assert "api/v1/dags" not in src
+def test_edge_handler_is_removed() -> None:
+    assert not hasattr(predict, "cmd_edge")
+    assert not hasattr(predict, "cb_edge")
 
 
 def test_cmd_refresh_uses_data_cycle_control_api() -> None:

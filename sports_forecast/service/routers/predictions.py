@@ -15,7 +15,7 @@ import json
 import time
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -23,6 +23,7 @@ from sports_forecast.service.db.engine import get_session
 from sports_forecast.service.db.models import Prediction
 from sports_forecast.service.db.repository import PredictionRepository
 from sports_forecast.service.live_odds_enrichment import batch_live_response_extras
+from sports_forecast.service.routers import calendar as calendar_router
 from sports_forecast.service.schemas import (
     ModelInfo,
     PredictionListResponse,
@@ -51,12 +52,14 @@ def _to_response(
     base: dict[str, Any] = {
         "match_id": pred.match_id,
         "tournament": pred.tournament,
+        "source_namespace": pred.source_namespace,
         "market": pred.market,
         "market_spec": pred.market_spec,
         "home_player": pred.home_player,
         "away_player": pred.away_player,
         "match_datetime": pred.match_datetime,
         "predictions": predictions,
+        "current_revision_id": pred.current_revision_id,
         "model": ModelInfo(
             version=pred.model_version,
             algorithm=pred.algorithm,
@@ -94,6 +97,7 @@ def get_prediction(
     match_id: str,
     market: str = Query("winner", description="Тип рынка"),
     market_spec: str | None = Query(None, description="Спецификация рынка"),
+    source_namespace: str | None = Query(None, description="Namespace источника события"),
     live_pinnacle: bool = Query(
         True,
         description=(
@@ -121,6 +125,7 @@ def get_prediction(
             match_id=match_id,
             market=market,
             market_spec=market_spec,
+            source_namespace=source_namespace,
         )
 
     if pred is None:
@@ -140,6 +145,7 @@ def get_prediction(
 )
 def get_all_predictions_for_match(
     match_id: str,
+    source_namespace: str | None = Query(None, description="Namespace источника события"),
     live_pinnacle: bool = Query(
         True,
         description="См. ``/predict/{match_id}`` — батч live Pinnacle для NHL moneyline в списке.",
@@ -155,7 +161,7 @@ def get_all_predictions_for_match(
     """
     with get_session() as session:
         repo = PredictionRepository(session)
-        preds = repo.get_predictions_by_match(match_id)
+        preds = repo.get_predictions_by_match(match_id, source_namespace=source_namespace)
 
     if not preds:
         raise HTTPException(
@@ -202,6 +208,10 @@ def get_upcoming(
             "нужен горизонт дольше 48 ч."
         ),
     ),
+    period: Annotated[
+        calendar_router.CalendarPeriod | None,
+        Query(description="Букмекерский период 08:00–08:00 МСК; заменяет hours."),
+    ] = None,
     live_pinnacle: bool = Query(
         True,
         description=(
@@ -213,17 +223,24 @@ def get_upcoming(
     """Получить актуальные предсказания для предстоящих матчей.
 
     В выборку входят только записи со статусом ``ok``, непустым временем матча и
-    ``match_datetime`` в пределах указанного окна от текущего UTC.
+    ``match_datetime`` в пределах выбранного периода или прежнего окна ``hours``.
 
     Args:
         tournament: Название турнира (например ``nhl``, ``uel_kz_1``).
         market: Тип рынка.
         market_spec: Опциональный фильтр по спецификации (NHL OT — см. описание параметра).
         hours: Горизонт в часах (по умолчанию 48).
+        period: Букмекерский период, если указан.
 
     Returns:
         Список предсказаний.
     """
+    window_start: datetime | None = None
+    window_end: datetime | None = None
+    if period is not None:
+        window_start, window_end = calendar_router.calendar_window(
+            calendar_router.utc_now(), period
+        )
     with get_session() as session:
         repo = PredictionRepository(session)
         preds = repo.get_upcoming_predictions(
@@ -231,6 +248,8 @@ def get_upcoming(
             market=market,
             market_spec=market_spec,
             hours=hours,
+            window_start=window_start,
+            window_end=window_end,
         )
 
     extras_map = batch_live_response_extras(preds, live_pinnacle=live_pinnacle)
@@ -253,7 +272,12 @@ def _is_cache_valid() -> bool:
 
 
 @lru_cache(maxsize=512)
-def _cached_prediction(match_id: str, market: str, market_spec: str | None) -> dict | None:
+def _cached_prediction(
+    match_id: str,
+    market: str,
+    market_spec: str | None,
+    source_namespace: str | None = None,
+) -> dict | None:
     """Кешированный запрос предсказания из БД.
 
     Args:
@@ -270,6 +294,7 @@ def _cached_prediction(match_id: str, market: str, market_spec: str | None) -> d
             match_id=match_id,
             market=market,
             market_spec=market_spec,
+            source_namespace=source_namespace,
         )
     if pred is None:
         return None
@@ -278,6 +303,7 @@ def _cached_prediction(match_id: str, market: str, market_spec: str | None) -> d
     return {
         "match_id": pred.match_id,
         "tournament": pred.tournament,
+        "source_namespace": pred.source_namespace,
         "market": pred.market,
         "market_spec": pred.market_spec,
         "home_player": pred.home_player,
@@ -302,6 +328,7 @@ def get_prediction_cached(
     match_id: str,
     market: str = Query("winner", description="Тип рынка"),
     market_spec: str | None = Query(None, description="Спецификация рынка"),
+    source_namespace: str | None = Query(None, description="Namespace источника события"),
 ) -> PredictionResponse:
     """Получить предсказание с in-memory LRU кешем.
 
@@ -327,7 +354,7 @@ def get_prediction_cached(
         _cached_prediction.cache_clear()
         _cache_timestamp = time.time()
 
-    result = _cached_prediction(match_id, market, market_spec)
+    result = _cached_prediction(match_id, market, market_spec, source_namespace)
 
     if result is None:
         raise HTTPException(

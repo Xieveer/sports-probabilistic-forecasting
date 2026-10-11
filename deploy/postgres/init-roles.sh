@@ -23,6 +23,8 @@ psql --set=ON_ERROR_STOP=1 <<'SQL'
 \set control_api_password `cat "$SF_CONTROL_API_DB_PASSWORD_FILE"`
 \set worker_password `cat "$SF_WORKER_DB_PASSWORD_FILE"`
 \set migrator_password `cat "$SF_MIGRATOR_DB_PASSWORD_FILE"`
+\set registry_sync_password `cat "$SF_REGISTRY_SYNC_DB_PASSWORD_FILE"`
+\set registry_feedback_password `cat "$SF_REGISTRY_FEEDBACK_DB_PASSWORD_FILE"`
 SELECT format('CREATE ROLE sf_api_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD %L', :'api_password')
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sf_api_reader') \gexec
 SELECT format('ALTER ROLE sf_api_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD %L', :'api_password') \gexec
@@ -35,8 +37,14 @@ SELECT format('ALTER ROLE sf_refresh_writer LOGIN NOSUPERUSER NOCREATEDB NOCREAT
 SELECT format('CREATE ROLE sf_migrator LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD %L', :'migrator_password')
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sf_migrator') \gexec
 SELECT format('ALTER ROLE sf_migrator LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD %L', :'migrator_password') \gexec
+SELECT format('CREATE ROLE sf_registry_sync LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD %L', :'registry_sync_password')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sf_registry_sync') \gexec
+SELECT format('ALTER ROLE sf_registry_sync LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD %L', :'registry_sync_password') \gexec
+SELECT format('CREATE ROLE sf_registry_feedback LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD %L', :'registry_feedback_password')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sf_registry_feedback') \gexec
+SELECT format('ALTER ROLE sf_registry_feedback LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD %L', :'registry_feedback_password') \gexec
 ALTER SCHEMA public OWNER TO sf_migrator;
-GRANT CONNECT ON DATABASE sports_forecast TO sf_migrator, sf_api_reader, sf_control_api, sf_refresh_writer;
+GRANT CONNECT ON DATABASE sports_forecast TO sf_migrator, sf_api_reader, sf_control_api, sf_refresh_writer, sf_registry_sync, sf_registry_feedback;
 GRANT USAGE, CREATE ON SCHEMA public TO sf_migrator;
 GRANT USAGE ON SCHEMA public TO sf_user;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;

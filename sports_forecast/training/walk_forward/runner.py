@@ -48,6 +48,7 @@ class WalkForwardResult:
     cumulative_business_metrics: dict[str, Any] = field(default_factory=dict)
     cumulative_bet_trace_path: Path | None = None
     aggregate_ml_metrics: dict[str, float] = field(default_factory=dict)
+    per_step_training_indices: list[list[int]] = field(default_factory=list)
 
 
 def _ml_metrics(y_true: np.ndarray, proba: np.ndarray) -> dict[str, float]:
@@ -104,6 +105,9 @@ class WalkForwardRunner:
         init_train_end: pd.Timestamp,
         time_col: str,
         artifact_dir: Path,
+        label_available_at_col: str | None = None,
+        train_eligible_col: str | None = None,
+        prediction_only: bool = False,
     ) -> WalkForwardResult:
         """Execute walk-forward on row-aligned frames (train block before test block in ``combined_df``).
 
@@ -118,6 +122,11 @@ class WalkForwardRunner:
                 ``max(datetime)`` over the train split).
             time_col: Datetime column in ``combined_df``.
             artifact_dir: Output directory for ``cumulative_bet_trace.csv``.
+            label_available_at_col: Optional event-label availability timestamp used to
+                exclude unavailable labels from each training step.
+            train_eligible_col: Optional boolean column excluding invalid/unverified labels.
+            prediction_only: Return OOS probabilities without reading OOS target values,
+                computing target metrics, betting, or fitting a final all-data model.
 
         Returns:
             :class:`WalkForwardResult`.
@@ -130,6 +139,8 @@ class WalkForwardRunner:
         if len(combined_df) != len(features) or len(features) != len(target):
             msg = "combined_df, features, target must have identical row counts"
             raise ValueError(msg)
+        if prediction_only and bool(OmegaConf.select(self._cfg, "betting.enabled", default=False)):
+            raise ValueError("prediction_only is incompatible with the integrated betting path")
 
         frequency = str(OmegaConf.select(self._cfg, "walk_forward.frequency", default="month"))
         reuse_optuna = bool(
@@ -138,10 +149,18 @@ class WalkForwardRunner:
         step_params = best_params if reuse_optuna else None
 
         init_end = pd.Timestamp(init_train_end)
-        slicer = WalkForwardSlicer(combined_df, time_col, frequency, init_end)
+        slicer = WalkForwardSlicer(
+            combined_df,
+            time_col,
+            frequency,
+            init_end,
+            label_available_at_col=label_available_at_col,
+            train_eligible_col=train_eligible_col,
+        )
 
         per_step_metrics: list[dict[str, Any]] = []
         per_step_predictions: list[np.ndarray] = []
+        per_step_training_indices: list[list[int]] = []
         cum_rows: list[pd.DataFrame] = []
 
         betting_cfg = self._cfg.get("betting", {})
@@ -161,27 +180,34 @@ class WalkForwardRunner:
             train_feats = features.loc[train_mask].reset_index(drop=True)
             y_tr = target.loc[train_mask].reset_index(drop=True)
             test_feats = features.loc[test_mask].reset_index(drop=True)
-            y_te = target.loc[test_mask].reset_index(drop=True)
+            y_te = None if prediction_only else target.loc[test_mask].reset_index(drop=True)
             df_te = combined_df.loc[test_mask].reset_index(drop=True)
 
             model = self._create_model(step_params)
             model.fit(train_feats, y_tr)
+            per_step_training_indices.append(
+                [idx for idx, selected in enumerate(train_mask) if bool(selected)]
+            )
             proba = model.predict_proba(test_feats)[:, 1]
 
-            ml_i = _ml_metrics(np.asarray(y_te), np.asarray(proba))
-            row: dict[str, Any] = {"wf_step": step_i, **{f"ml_{k}": v for k, v in ml_i.items()}}
-            per_step_metrics.append(row)
+            row: dict[str, Any] = {"wf_step": step_i}
+            if not prediction_only:
+                assert y_te is not None
+                ml_i = _ml_metrics(np.asarray(y_te), np.asarray(proba))
+                row.update({f"ml_{k}": v for k, v in ml_i.items()})
+                per_step_metrics.append(row)
             per_step_predictions.append(np.asarray(proba, dtype=float))
 
             idx = np.where(test_mask)[0]
-            chunk = pd.DataFrame(
-                {
-                    "wf_step": step_i,
-                    "row_index": idx,
-                    "y_true": np.asarray(y_te, dtype=float),
-                    "proba_pos": np.asarray(proba, dtype=float),
-                }
-            )
+            chunk_data: dict[str, Any] = {
+                "wf_step": step_i,
+                "row_index": idx,
+                "proba_pos": np.asarray(proba, dtype=float),
+            }
+            if not prediction_only:
+                assert y_te is not None
+                chunk_data["y_true"] = np.asarray(y_te, dtype=float)
+            chunk = pd.DataFrame(chunk_data)
             if time_col in df_te.columns:
                 chunk[time_col] = df_te[time_col].to_numpy()
             cum_rows.append(chunk)
@@ -285,8 +311,11 @@ class WalkForwardRunner:
                 cumulative_test_df["proba_pos"].to_numpy(dtype=float),
             )
 
-        final_model = self._create_model(step_params)
-        final_model.fit(features, target)
+        if prediction_only:
+            final_model = model
+        else:
+            final_model = self._create_model(step_params)
+            final_model.fit(features, target)
 
         return WalkForwardResult(
             per_step_metrics=per_step_metrics,
@@ -296,4 +325,5 @@ class WalkForwardRunner:
             cumulative_business_metrics=cum_business,
             cumulative_bet_trace_path=trace_path,
             aggregate_ml_metrics=aggregate_ml,
+            per_step_training_indices=per_step_training_indices,
         )

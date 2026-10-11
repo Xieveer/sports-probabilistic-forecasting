@@ -12,15 +12,16 @@ import pytest
 from omegaconf import OmegaConf
 from sqlalchemy import create_engine
 
+from sports_forecast.deploy.model_bundle import build_managed_model_bundle, build_model_bundle
 from sports_forecast.features.features_build import process_tournament_new
 from sports_forecast.materialize import (
     _aggregate_long_predictions,
-    _resolve_model_provenance,
+    _resolve_verified_model_provenance,
     materialize_predictions,
 )
 from sports_forecast.service.db.engine import get_session, init_db, reset_engine
 from sports_forecast.service.db.models import Prediction
-from sports_forecast.service.db.repository import PredictionRepository
+from sports_forecast.service.db.repository import ModelRegistryRepository, PredictionRepository
 
 
 def _build_cfg() -> dict:
@@ -152,31 +153,283 @@ def test_aggregate_long_prefers_pl_short_name_en_over_pl() -> None:
     assert out.iloc[0]["away_player"] == "Away Star"
 
 
-def test_resolve_model_provenance_uses_active_pointer_for_explicit_pool() -> None:
-    """Pool materialize получает immutable identity только из active registry pointer."""
+@pytest.mark.parametrize(
+    "probabilities",
+    [
+        [[float("nan"), float("nan")], [0.4, 0.6]],
+        [[-0.1, 1.1], [0.4, 0.6]],
+        [[0.2, 0.7], [0.4, 0.6]],
+    ],
+    ids=["non-finite", "out-of-range", "row-sum"],
+)
+def test_aggregate_rejects_invalid_model_probabilities(probabilities: list[list[float]]) -> None:
+    frame = pd.DataFrame(
+        {
+            "id": ["m1", "m1"],
+            "side": ["h", "a"],
+            "datetime": ["2026-05-14T00:00:00Z"] * 2,
+            "pl": ["CAR", "BUF"],
+        }
+    )
+    with pytest.raises(ValueError, match="probabilit"):
+        _aggregate_long_predictions(frame, np.array(probabilities))
+
+
+def test_resolve_verified_model_provenance_matches_active_pointer(tmp_path: Path) -> None:
+    """Managed provenance берётся из bundle после совпадения с active registry."""
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "model.bin").write_bytes(b"model")
+    bundle = build_model_bundle(
+        source,
+        tmp_path / "bundles",
+        model_identity="pool:football_nationals_winner:winner:immutable",
+        app_version="1.2.15",
+        source_commit="abc",
+        release="test",
+    )
     cfg = OmegaConf.create(
         {
             "model_pool": {"name": "football_nationals_winner"},
             "market_spec": {"name": "winner"},
+            "runtime_model_bundle": str(bundle.path),
+            "runtime_model_bundle_app_version": "1.2.15",
         }
     )
     registry = MagicMock()
     registry.get_active.return_value = MagicMock(
-        model_identity="pool:football_nationals_winner:winner:immutable"
+        model_identity="pool:football_nationals_winner:winner:immutable", is_managed=False
     )
 
-    provenance = _resolve_model_provenance(cfg, registry)
+    provenance = _resolve_verified_model_provenance(cfg, registry)
 
     assert provenance == (
         "football_nationals_winner",
         "pool:football_nationals_winner:winner:immutable",
+        None,
     )
 
 
-def test_external_materialization_failure_rolls_back_stale_transition(
-    tmp_path: Path, monkeypatch
+@pytest.mark.parametrize("failure", ["stale_pin", "database_publish", "parquet_replace"])
+def test_managed_materialize_preserves_publication_boundaries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
-    """Failure after mark_stale propagates so caller rolls back and keeps prior showcase."""
+    """DB commit управляет успехом; stale DB или файловые ошибки не портят parquet."""
+    reset_engine()
+    engine = create_engine("sqlite:///:memory:")
+    init_db(engine)
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "model.bin").write_bytes(b"managed-model")
+    bundle = build_managed_model_bundle(
+        source,
+        tmp_path / "bundles",
+        model_identity="pool:nhl:winner_withOT:old",
+        app_version="1.2.15",
+        model_pool="nhl",
+        market_spec="winner_withOT",
+        market_rules={"overtime": True, "shootout": True, "draw": False},
+        outcomes=["home_win", "away_win"],
+        feature_contract_id="feature-contract-v1",
+        features=[{"name": "f1", "type": "float"}],
+        transformations_version="v1",
+        algorithm="lgbm",
+        model_entrypoint="model.bin",
+    )
+    with get_session(engine=engine) as session:
+        PredictionRepository(session).upsert_prediction(
+            match_id="old-match",
+            tournament="nhl",
+            market="winner_withOT",
+            market_spec="winner_withOT",
+            predictions={"home_win": 0.6, "away_win": 0.4},
+            model_version="previous",
+            algorithm="lgbm",
+            featureset="basic",
+        )
+        ModelRegistryRepository(session).promote_managed(
+            model_pool="nhl",
+            market_spec="winner_withOT",
+            model_identity=bundle.model_identity,
+            candidate_report_ref="reports/old.json",
+            artifact_ref=bundle.bundle_id,
+            bundle_id=bundle.bundle_id,
+            managed_artifact_location=f"{bundle.bundle_id}/model.bin",
+        )
+    processed = tmp_path / "data" / "processed" / "nhl"
+    processed.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "id": ["new-match", "new-match"],
+            "side": ["h", "a"],
+            "datetime": ["2026-10-10T12:00:00"] * 2,
+            "f1": [1.0, 2.0],
+        }
+    ).to_parquet(processed / "inference_long.parquet", index=False)
+    algorithm_dir = tmp_path / "conf" / "algorithm"
+    algorithm_dir.mkdir(parents=True)
+    (algorithm_dir / "lgbm.yaml").write_text("name: lgbm\n", encoding="utf-8")
+    cfg_data = _build_cfg()
+    cfg_data.update(
+        {
+            "tournament": {"name": "nhl"},
+            "market": {"name": "winner_withOT"},
+            "market_spec": {"name": "winner_withOT", "data_format": "long"},
+            "model_pool": {"name": "nhl"},
+            "source_namespace": "nhl_api",
+            "runtime_model_bundle_app_version": "1.2.15",
+            "runtime_model_bundle_root": str(tmp_path / "bundles"),
+        }
+    )
+    monkeypatch.setattr("sports_forecast.materialize.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        "sports_forecast.materialize.get_session", lambda: get_session(engine=engine)
+    )
+    output_path = (
+        tmp_path / "data" / "predictions" / "nhl" / "winner_withOT" / "predictions_prod.parquet"
+    )
+    output_path.parent.mkdir(parents=True)
+    preserved_file = pd.DataFrame({"match_id": ["still-current"], "marker": [42]})
+    preserved_file.to_parquet(output_path, index=False)
+
+    class RacingModel:
+        def predict_proba(self, _features: pd.DataFrame) -> np.ndarray:
+            if failure == "stale_pin":
+                with get_session(engine=engine) as session:
+                    ModelRegistryRepository(session).promote_managed(
+                        model_pool="nhl",
+                        market_spec="winner_withOT",
+                        model_identity="pool:nhl:winner_withOT:new",
+                        candidate_report_ref="reports/new.json",
+                        artifact_ref="sha256:new",
+                        bundle_id="sha256:new",
+                        managed_artifact_location="sha256:new/model.bin",
+                    )
+            return np.array([[0.2, 0.8], [0.7, 0.3]])
+
+    monkeypatch.setattr(
+        "sports_forecast.materialize.load_model_from_path", lambda *_: RacingModel()
+    )
+    if failure == "database_publish":
+        monkeypatch.setattr(
+            PredictionRepository,
+            "publish_showcase",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("DB publish failed")),
+        )
+    if failure == "parquet_replace":
+        monkeypatch.setattr(Path, "replace", lambda *_args: (_ for _ in ()).throw(OSError("disk")))
+    try:
+        result = materialize_predictions(OmegaConf.create(cfg_data), version="prod")
+        assert result is (failure == "parquet_replace")
+        pd.testing.assert_frame_equal(pd.read_parquet(output_path), preserved_file)
+        assert list(output_path.parent.glob(".*.tmp")) == []
+        with get_session(engine=engine) as session:
+            rows = session.query(Prediction).all()
+        if failure == "parquet_replace":
+            assert {row.match_id for row in rows} == {"old-match", "new-match"}
+        else:
+            assert [(row.match_id, row.predictions_json, row.status) for row in rows] == [
+                ("old-match", '{"home_win": 0.6, "away_win": 0.4}', "ok")
+            ]
+    finally:
+        reset_engine()
+        engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "failure", ["identity", "missing_active", "missing_bundle", "corrupt", "app_version"]
+)
+@pytest.mark.parametrize("empty_input", [False, True])
+def test_managed_materialize_rejects_invalid_contract_before_model_load(
+    tmp_path: Path, monkeypatch, empty_input: bool, failure: str
+) -> None:
+    """Managed registry/bundle failures block inference and empty-input publication."""
+    reset_engine()
+    engine = create_engine("sqlite:///:memory:")
+    init_db(engine)
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "deploy.yaml").write_text(
+        "model:\n  algorithm: catboost\n  featureset: basic\n", encoding="utf-8"
+    )
+    (source / "model_prod.cbm").write_bytes(b"model")
+    bundle = build_model_bundle(
+        source,
+        tmp_path / "bundles",
+        model_identity="identity-b",
+        app_version="1.2.15",
+        source_commit="abc",
+        release="test",
+    )
+    if failure == "corrupt":
+        (bundle.path / "model_prod.cbm").write_bytes(b"tampered")
+    processed = tmp_path / "data" / "processed" / "uel_kz_1"
+    processed.mkdir(parents=True)
+    frame = (
+        pd.DataFrame()
+        if empty_input
+        else pd.DataFrame(
+            {
+                "id": ["new", "new"],
+                "side": ["h", "a"],
+                "datetime": ["2026-10-01"] * 2,
+                "f1": [1.0, 2.0],
+            }
+        )
+    )
+    frame.to_parquet(processed / "inference_long.parquet", index=False)
+    with get_session(engine=engine) as session:
+        PredictionRepository(session).upsert_prediction(
+            match_id="old",
+            tournament="uel_kz_1",
+            market="winner",
+            market_spec="winner",
+            predictions={"home_win": 0.6, "away_win": 0.4},
+            model_version="old",
+            algorithm="catboost",
+            featureset="basic",
+        )
+    cfg_data = _build_cfg()
+    cfg_data["model_pool"] = {"name": "pool"}
+    cfg_data["runtime_model_bundle"] = str(
+        tmp_path / "missing-bundle" if failure == "missing_bundle" else bundle.path
+    )
+    cfg_data["runtime_model_bundle_app_version"] = "2.0.0" if failure == "app_version" else "1.2.15"
+    monkeypatch.setattr("sports_forecast.materialize.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        "sports_forecast.materialize.find_model_file",
+        lambda *_a, **_k: bundle.path / "model_prod.cbm",
+    )
+    registered_identity = "identity-b" if failure == "missing_active" else "identity-a"
+    active = (
+        None
+        if failure == "missing_active"
+        else MagicMock(model_identity=registered_identity, is_managed=False)
+    )
+    monkeypatch.setattr(
+        "sports_forecast.materialize.ModelRegistryRepository",
+        lambda _s: MagicMock(get_active=lambda *_a: active),
+    )
+    load_model = MagicMock()
+    monkeypatch.setattr("sports_forecast.materialize.load_model_from_path", load_model)
+    try:
+        with get_session(engine=engine) as session:
+            result = materialize_predictions(OmegaConf.create(cfg_data), session=session)
+        assert result is False
+        load_model.assert_not_called()
+        with get_session(engine=engine) as session:
+            rows = session.query(Prediction).all()
+            assert [(row.match_id, row.status) for row in rows] == [("old", "ok")]
+    finally:
+        reset_engine()
+        engine.dispose()
+
+
+@pytest.mark.parametrize("rollback_after_success", [False, True])
+def test_external_materialization_preserves_file_until_caller_commit(
+    tmp_path: Path, monkeypatch, rollback_after_success: bool
+) -> None:
+    """External transaction failure/rollback leaves the pre-existing parquet intact."""
     reset_engine()
     engine = create_engine("sqlite:///:memory:")
     init_db(engine)
@@ -211,6 +464,12 @@ def test_external_materialization_failure_rolls_back_stale_transition(
         ).to_parquet(processed / "inference_long.parquet", index=False)
 
         cfg = OmegaConf.create(_build_cfg())
+        output_path = (
+            tmp_path / "data" / "predictions" / "uel_kz_1" / "winner" / "predictions_prod.parquet"
+        )
+        output_path.parent.mkdir(parents=True)
+        preserved_file = pd.DataFrame({"match_id": ["still-current"]})
+        preserved_file.to_parquet(output_path, index=False)
         model_file = bundle / "model_prod.cbm"
         monkeypatch.setattr("sports_forecast.materialize.PROJECT_ROOT", tmp_path)
         monkeypatch.setattr(
@@ -226,12 +485,20 @@ def test_external_materialization_failure_rolls_back_stale_transition(
             assert previous.status == "stale"
             raise RuntimeError("simulated bulk upsert failure")
 
-        monkeypatch.setattr(PredictionRepository, "bulk_upsert", fail_after_stale)
-        with (
-            pytest.raises(RuntimeError, match="simulated bulk upsert failure"),
-            get_session(engine=engine) as session,
-        ):
-            materialize_predictions(cfg, version="prod", session=session)
+        if not rollback_after_success:
+            monkeypatch.setattr(PredictionRepository, "bulk_upsert", fail_after_stale)
+        if rollback_after_success:
+            with get_session(engine=engine) as session:
+                assert materialize_predictions(cfg, version="prod", session=session) is True
+                session.rollback()
+        else:
+            with (
+                pytest.raises(RuntimeError, match="simulated bulk upsert failure"),
+                get_session(engine=engine) as session,
+            ):
+                materialize_predictions(cfg, version="prod", session=session)
+        pd.testing.assert_frame_equal(pd.read_parquet(output_path), preserved_file)
+        assert list(output_path.parent.glob(".*.tmp")) == []
 
         with get_session(engine=engine) as session:
             rows = session.query(Prediction).all()

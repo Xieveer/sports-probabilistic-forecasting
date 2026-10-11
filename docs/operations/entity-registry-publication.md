@@ -100,14 +100,20 @@ publication records и скачивает недостающие пакеты. �
 cadence — раз в пять минут с jitter и без параллельных запусков. Runtime читает
 установленный `ir1` из PostgreSQL и не ждёт Object Storage.
 
-Для production Operations Agent должен создать отдельную DB role sync с
+Для production migration profile создаёт отдельную DB role `sf_registry_sync` с
 `SELECT` на `canonical_events` и registry projection, `INSERT` на immutable
 registry tables, publication history и первую строку
 `active_registry_installation`, `UPDATE` только active pointer и lock.
 Таблицы lock, active pointer, publications и event bridge также требуют
 явного `SELECT`; права на другие application tables не нужны.
-API/Worker получают только нужный `SELECT` на установленную проекцию;
-publisher не получает DB credential. Для bucket требуются отдельные prefix
+API получает только нужный `SELECT` на установленную проекцию. Worker дополнительно
+создаёт event mapping и кандидатов обратной очереди, поэтому получает узкие
+`INSERT` на bridge/outbox и sequence usage, но не права на переключение active
+publication. Отдельная роль `sf_registry_feedback` читает и отмечает только
+outbox/batch sequence; она не читает `canonical_events` и не получает права
+на prediction/data-cycle tables. Фактические права проверяются под каждой
+ролью после миграции.
+Локальный publisher не получает DB credential. Для bucket требуются отдельные prefix
 grants: локальный publisher — условные `GetObject`/`PutObject` на
 `entity-registry/v1/snapshots/`, `publications/`, `current.json`; server sync —
 только `GetObject` на эти ключи. `DeleteObject` не нужен. Старые
@@ -117,6 +123,24 @@ bucket проверены; четыре пары ключей выпущены �
 но серверные credentials на VPS не доставлены. PostgreSQL grants, server
 sync/feedback и расписание остаются эксплуатационными gates. До этих gates
 production registry mode не включать.
+
+Контейнерные one-shot команды используют явные Compose профили
+`registry-sync` и `registry-feedback`. Их DB URL и Object Storage credentials
+передаются отдельными secret files; обычный `docker compose up` их не запускает.
+До вызова sync Operations Agent подготавливает доступный UID 10001 каталог
+`SF_REGISTRY_SYNC_DOWNLOAD_ROOT`, проверяет свободное место и предоставляет
+`SF_REGISTRY_SYNC_DATABASE_URL_FILE`,
+`SF_REGISTRY_SYNC_OBJECT_STORAGE_ACCESS_KEY_ID_FILE` и
+`SF_REGISTRY_SYNC_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE`.
+После `role-bootstrap` и `migrator` одноразовый sync запускается так:
+
+```bash
+docker compose --env-file /etc/sf/production.env -f docker-compose.prod.yml \
+  --profile registry-sync run --rm registry-sync
+```
+
+Команда не означает включения расписания. Его настраивают только после
+проверенного первого sync и обратного цикла.
 
 Обратная доставка кандидатов находится в [TASK-026-6](../backlog/tasks/TASK-026-6-registry-candidate-feedback.md);
 полный контракт описан в [ADR-029](../architecture/adr/ADR-029-local-entity-registry-and-snapshots.md).
@@ -141,6 +165,17 @@ Object Storage credential. Ошибка доставки оставляет ст
 ```bash
 uv run python -m sports_forecast.deploy.registry_feedback_publish_cli publish --max-batches 10
 uv run python -m sports_forecast.deploy.registry_feedback_publish_cli collect-acks --max-batches 100
+```
+
+В production Compose для feedback используются
+`SF_REGISTRY_FEEDBACK_DATABASE_URL_FILE` и отдельные Object Storage secret
+files. Одноразовый профиль запускает `publish`; для `collect-acks` переопределите
+команду, сохранив тот же профиль, identity и лимит:
+
+```bash
+docker compose --env-file /etc/sf/production.env -f docker-compose.prod.yml \
+  --profile registry-feedback run --rm registry-feedback \
+  /app/.venv/bin/python -m sports_forecast.deploy.registry_feedback_publish_cli collect-acks --max-batches 100
 ```
 
 Запускайте обе команды периодически с раздельным от server sync расписанием;

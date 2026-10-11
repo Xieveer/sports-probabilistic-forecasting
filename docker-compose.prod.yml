@@ -45,6 +45,7 @@ services:
       SF_CONTROL_DATABASE_URL_FILE: /run/secrets/control_database_url
       SF_CONTROL_API_KEY_FILE: /run/secrets/control_api_key
       SF_CONTROL_ADMIN_IDS: ${BOT_ADMIN_USER_IDS:-}
+      SF_BETS_OWNER_ID: ${BET_OWNER_USER_ID:-}
       SF_DATA_CYCLE_NOTIFICATION_ALIASES: ${SF_DATA_CYCLE_NOTIFICATION_ALIASES:?set safe notification aliases}
       ODDS_API_KEY_FREE_FILE: /run/secrets/odds_api_key_free
       ODDS_API_KEY_20K_FILE: /run/secrets/odds_api_key_20k
@@ -104,6 +105,7 @@ services:
       BOT_TOKEN_FILE: /run/secrets/bot_token
       BOT_ALLOWED_USER_IDS: ${BOT_ALLOWED_USER_IDS:-}
       BOT_ADMIN_USER_IDS: ${BOT_ADMIN_USER_IDS:-}
+      BOT_BETS_OWNER_ID: ${BET_OWNER_USER_ID:-}
       BOT_API_BASE_URL: http://api:8000
       BOT_CONTROL_API_KEY_FILE: /run/secrets/control_api_key
       BOT_NOTIFICATION_DESTINATIONS_FILE: /run/secrets/bot_notification_destinations
@@ -224,6 +226,80 @@ services:
     tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
     logging: *prod_logging
 
+  registry-sync:
+    image: ${SF_ARCHIVE_SYNC_IMAGE:?set SF_ARCHIVE_SYNC_IMAGE to an immutable sync image digest}
+    pull_policy: always
+    command:
+      [
+        "/app/.venv/bin/python",
+        "-m",
+        "sports_forecast.deploy.registry_sync_cli",
+        "--download-root",
+        "/app/registry-downloads",
+      ]
+    environment:
+      DATABASE_URL_FILE: /run/secrets/registry_sync_database_url
+      SF_OBJECT_STORAGE_ENDPOINT: ${SF_OBJECT_STORAGE_ENDPOINT:?set SF_OBJECT_STORAGE_ENDPOINT}
+      SF_OBJECT_STORAGE_BUCKET: ${SF_OBJECT_STORAGE_BUCKET:?set SF_OBJECT_STORAGE_BUCKET}
+      SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE: /run/secrets/registry_sync_object_storage_access_key
+      SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE: /run/secrets/registry_sync_object_storage_secret_key
+    volumes:
+      - ${SF_REGISTRY_SYNC_DOWNLOAD_ROOT:?set SF_REGISTRY_SYNC_DOWNLOAD_ROOT}:/app/registry-downloads
+    secrets:
+      - registry_sync_database_url
+      - registry_sync_object_storage_access_key
+      - registry_sync_object_storage_secret_key
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["registry-sync"]
+    restart: "no"
+    cpus: "0.5"
+    mem_limit: 768m
+    user: "10001:10001"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    logging: *prod_logging
+
+  registry-feedback:
+    image: ${SF_ARCHIVE_SYNC_IMAGE:?set SF_ARCHIVE_SYNC_IMAGE to an immutable sync image digest}
+    pull_policy: always
+    command:
+      [
+        "/app/.venv/bin/python",
+        "-m",
+        "sports_forecast.deploy.registry_feedback_publish_cli",
+        "publish",
+        "--max-batches",
+        "10",
+      ]
+    environment:
+      DATABASE_URL_FILE: /run/secrets/registry_feedback_database_url
+      SF_ENTITY_REGISTRY_INSTALLATION_ID: ${SF_ENTITY_REGISTRY_INSTALLATION_ID:?set SF_ENTITY_REGISTRY_INSTALLATION_ID}
+      SF_OBJECT_STORAGE_ENDPOINT: ${SF_OBJECT_STORAGE_ENDPOINT:?set SF_OBJECT_STORAGE_ENDPOINT}
+      SF_OBJECT_STORAGE_BUCKET: ${SF_OBJECT_STORAGE_BUCKET:?set SF_OBJECT_STORAGE_BUCKET}
+      SF_REGISTRY_FEEDBACK_SERVER_ACCESS_KEY_ID_FILE: /run/secrets/registry_feedback_object_storage_access_key
+      SF_REGISTRY_FEEDBACK_SERVER_SECRET_ACCESS_KEY_FILE: /run/secrets/registry_feedback_object_storage_secret_key
+    secrets:
+      - registry_feedback_database_url
+      - registry_feedback_object_storage_access_key
+      - registry_feedback_object_storage_secret_key
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["registry-feedback"]
+    restart: "no"
+    cpus: "0.5"
+    mem_limit: 384m
+    user: "10001:10001"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    logging: *prod_logging
+
   migrator:
     image: ${SF_API_IMAGE:?set SF_API_IMAGE to an immutable ghcr image digest}
     pull_policy: always
@@ -252,6 +328,8 @@ services:
       SF_WORKER_DB_PASSWORD_FILE: /run/secrets/worker_db_password
       SF_MIGRATOR_DB_PASSWORD_FILE: /run/secrets/migrator_db_password
       SF_CONTROL_API_DB_PASSWORD_FILE: /run/secrets/control_api_db_password
+      SF_REGISTRY_SYNC_DB_PASSWORD_FILE: /run/secrets/registry_sync_db_password
+      SF_REGISTRY_FEEDBACK_DB_PASSWORD_FILE: /run/secrets/registry_feedback_db_password
     volumes:
       - ./deploy/postgres/init-roles.sh:/bootstrap/init-roles.sh:ro
     secrets:
@@ -260,6 +338,8 @@ services:
       - worker_db_password
       - migrator_db_password
       - control_api_db_password
+      - registry_sync_db_password
+      - registry_feedback_db_password
     depends_on:
       db:
         condition: service_healthy
@@ -293,6 +373,10 @@ secrets:
     file: ${SF_MIGRATOR_DB_PASSWORD_FILE:?set SF_MIGRATOR_DB_PASSWORD_FILE}
   control_api_db_password:
     file: ${SF_CONTROL_API_DB_PASSWORD_FILE:?set SF_CONTROL_API_DB_PASSWORD_FILE}
+  registry_sync_db_password:
+    file: ${SF_REGISTRY_SYNC_DB_PASSWORD_FILE:?set SF_REGISTRY_SYNC_DB_PASSWORD_FILE}
+  registry_feedback_db_password:
+    file: ${SF_REGISTRY_FEEDBACK_DB_PASSWORD_FILE:?set SF_REGISTRY_FEEDBACK_DB_PASSWORD_FILE}
   api_database_url:
     file: ${SF_API_DATABASE_URL_FILE:?set SF_API_DATABASE_URL_FILE}
   worker_database_url:
@@ -301,6 +385,10 @@ secrets:
     file: ${SF_MIGRATOR_DATABASE_URL_FILE:?set SF_MIGRATOR_DATABASE_URL_FILE}
   control_database_url:
     file: ${SF_CONTROL_DATABASE_URL_FILE:?set SF_CONTROL_DATABASE_URL_FILE}
+  registry_sync_database_url:
+    file: ${SF_REGISTRY_SYNC_DATABASE_URL_FILE:?set SF_REGISTRY_SYNC_DATABASE_URL_FILE}
+  registry_feedback_database_url:
+    file: ${SF_REGISTRY_FEEDBACK_DATABASE_URL_FILE:?set SF_REGISTRY_FEEDBACK_DATABASE_URL_FILE}
   control_api_key:
     file: ${SF_CONTROL_API_KEY_FILE:?set SF_CONTROL_API_KEY_FILE}
   bot_token:
@@ -311,3 +399,11 @@ secrets:
     file: ${SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE:?set SF_OBJECT_STORAGE_ACCESS_KEY_ID_FILE}
   object_storage_secret_key:
     file: ${SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE:?set SF_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE}
+  registry_sync_object_storage_access_key:
+    file: ${SF_REGISTRY_SYNC_OBJECT_STORAGE_ACCESS_KEY_ID_FILE:?set SF_REGISTRY_SYNC_OBJECT_STORAGE_ACCESS_KEY_ID_FILE}
+  registry_sync_object_storage_secret_key:
+    file: ${SF_REGISTRY_SYNC_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE:?set SF_REGISTRY_SYNC_OBJECT_STORAGE_SECRET_ACCESS_KEY_FILE}
+  registry_feedback_object_storage_access_key:
+    file: ${SF_REGISTRY_FEEDBACK_SERVER_ACCESS_KEY_ID_FILE:?set SF_REGISTRY_FEEDBACK_SERVER_ACCESS_KEY_ID_FILE}
+  registry_feedback_object_storage_secret_key:
+    file: ${SF_REGISTRY_FEEDBACK_SERVER_SECRET_ACCESS_KEY_FILE:?set SF_REGISTRY_FEEDBACK_SERVER_SECRET_ACCESS_KEY_FILE}

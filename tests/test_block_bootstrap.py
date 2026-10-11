@@ -58,8 +58,10 @@ def test_all_winning_roi_ci_strictly_positive() -> None:
         seed=0,
         confidence_level=0.95,
     )
-    roi = bb.run().metrics["roi"]
+    result = bb.run()
+    roi = result.metrics["roi"]
     assert roi.ci_lower > 0 and roi.ci_upper > 0
+    assert result.positive_roi_fraction == 1.0
 
 
 def test_block_length_exceeds_n_bets_uses_full_sample_block() -> None:
@@ -101,6 +103,7 @@ def test_reproducibility_with_seed() -> None:
     ).run()
     assert a.metrics["roi"].mean == b.metrics["roi"].mean
     assert a.metrics["profit_units"].ci_lower == b.metrics["profit_units"].ci_lower
+    assert a.positive_roi_fraction == b.positive_roi_fraction
 
 
 def test_empty_placed_bets_emits_warning_and_empty_metrics(

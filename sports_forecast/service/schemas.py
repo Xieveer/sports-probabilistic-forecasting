@@ -31,6 +31,7 @@ class PredictionResponse(BaseModel):
 
     match_id: str = Field(..., description="Идентификатор матча")
     tournament: str = Field(..., description="Турнир")
+    source_namespace: str | None = Field(None, description="Пространство идентификаторов источника")
     market: str = Field(..., description="Тип рынка (winner, total)")
     market_spec: str = Field(..., description="Спецификация (winner, total_over)")
 
@@ -41,6 +42,7 @@ class PredictionResponse(BaseModel):
 
     # Predictions
     predictions: dict[str, float] = Field(..., description="Вероятности {outcome: probability}")
+    current_revision_id: str | None = Field(None, description="Неизменяемая версия прогноза")
 
     # Model info
     model: ModelInfo

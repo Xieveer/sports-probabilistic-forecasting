@@ -24,9 +24,11 @@ bot:
   notification_destinations: {}
   notification_poll_interval_seconds: 10
   # Whitelist: список Telegram user_id (int). Пустой список = доступ запрещён всем.
-  # R41: пользователям доступен только /edge,/predict,/upcoming (GET к FastAPI); /refresh только admin_ids.
+  # Пользователям доступны /predict и /upcoming (GET к FastAPI); /refresh только admin_ids.
   allowed_user_ids: []
   admin_user_ids: []
+  # Один владелец денежного журнала; пустое значение закрывает все bet-команды.
+  bets_owner_id: ${oc.env:BOT_BETS_OWNER_ID, ""}
   # Устаревшие Airflow параметры оставлены только для совместимости конфигурации.
   airflow_base_url: ""
   airflow_username: ""

@@ -21,21 +21,44 @@ def test_register_commands_sets_public_and_admin_scoped_menus() -> None:
     calls = bot.set_my_commands.await_args_list
     assert len(calls) == 3
     public = [command.command for command in calls[0].args[0]]
-    assert public == ["start", "help", "predict", "upcoming", "edge"]
+    assert public == ["start", "help", "predict", "upcoming"]
     for call, user_id in zip(calls[1:], (7, 9), strict=True):
         assert [command.command for command in call.args[0]] == [
             "start",
             "help",
             "predict",
             "upcoming",
-            "edge",
             "status",
             "cycle",
             "cycle_time",
             "cycle_interval",
             "cycle_history",
             "refresh",
-            "models",
         ]
         assert isinstance(call.kwargs["scope"], BotCommandScopeChat)
         assert call.kwargs["scope"].chat_id == user_id
+        assert all(
+            "NHL" not in command.description
+            for command in call.args[0]
+            if command.command.startswith("cycle")
+        )
+
+
+def test_bet_commands_appear_only_for_configured_owner() -> None:
+    """Второму control admin не показывать денежные команды."""
+    bot = AsyncMock()
+    cfg = OmegaConf.create({"bot": {"admin_user_ids": [7, 9], "bets_owner_id": "7"}})
+    asyncio.run(register_commands(bot, cfg))
+    calls = bot.set_my_commands.await_args_list
+    owner_commands = {command.command for command in calls[1].args[0]}
+    other_commands = {command.command for command in calls[2].args[0]}
+    assert {
+        "bets",
+        "bet_add",
+        "bet_report",
+        "bet_history",
+        "bet_correct",
+        "bet_audit",
+        "bet_cancel",
+    } <= owner_commands
+    assert not any(command.startswith("bet") for command in other_commands)

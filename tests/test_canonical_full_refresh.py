@@ -174,6 +174,8 @@ def test_full_refresh_rebuilds_from_canonical_snapshot_not_existing_processed(
         def materialize(_cfg, *, version: str, session) -> bool:
             """Simulate ORM materializer writes on production's autoflush=False session."""
             assert version == "prod"
+            assert _cfg.runtime_model_bundle_app_version == "1.1.0"
+            assert _cfg.runtime_model_bundle == str(bundle_path)
             session.add(
                 Prediction(
                     match_id="1",
