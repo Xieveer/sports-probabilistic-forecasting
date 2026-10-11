@@ -16,3 +16,7 @@
 ## Граница release gate
 
 Полный `UV_OFFLINE=1 make test-unit` дал 1717 passed, 18 deselected; `UV_OFFLINE=1 make pre-commit` прошёл, включая Ruff и штатный mypy. `UV_OFFLINE=1 make lint`, `UV_OFFLINE=1 make type-check`, `UV_OFFLINE=1 make docs` (155 предупреждений), `UV_OFFLINE=1 make ai-validate`, `UV_OFFLINE=1 make production-check` и `uv lock --check --offline` прошли. Независимый review, terminal CI/Security, immutable source/image/model/evidence и серверный bounded feedback/forecast cycle остаются обязательными. Локальный pip-audit в предыдущем релизе не запустился из-за bootstrap; terminal Security workflow обязателен. Накопленные v1.3.5 outbox rows не опубликованы; после свежего backup/readback/restore они удалены адресно с exact predicate/count/range gate. Фактическое решение GO/NO-GO — в [production handoff](../../operations/production-handoff.md).
+
+## Независимое review и commit gate
+
+Reviewer проверил diff к `main e630a7c`, включая capture, UTC границы, инварианты сохранённой event-связи, idempotency, другие турниры, EPIC/TASK, handoff и runbook. P0–P2 findings нет. Самостоятельно выполнено `UV_OFFLINE=1 uv run pytest -q tests/test_registry_candidate_capture.py tests/test_canonical_bootstrap.py`: 19 passed; commit hook прошёл. Проверенный source commit: `54e8f3324e77ea7b3fa21f420276406faaea87c5`. Серверные release gates, реальная очередь feedback и 20 ticks остаются открытыми.
