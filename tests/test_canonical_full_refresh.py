@@ -690,7 +690,13 @@ def test_football_fixture_uses_shared_producer_with_its_own_policy(monkeypatch) 
             monkeypatch.setattr(
                 canonical_full_refresh,
                 "pin_installed_registry",
-                lambda _session: SimpleNamespace(snapshot_id="ir1:" + "a" * 64),
+                lambda _session: SimpleNamespace(
+                    snapshot_id="ir1:" + "a" * 64,
+                    event_snapshot=SimpleNamespace(event_snapshot=SimpleNamespace(events=())),
+                    get_event_mapping=lambda _event_id, _session: SimpleNamespace(
+                        status="unresolved", project_event_id=None
+                    ),
+                ),
             )
             strict_counts = _readiness_counts(session, tournament="football_fixture", at=run_at)
 

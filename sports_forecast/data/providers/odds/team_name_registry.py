@@ -1,8 +1,7 @@
-"""Реестр алиасов команд → каноническое имя для merge odds с source.
+"""Legacy NHL alias map для odds-потребителей в compatibility-режиме.
 
-Загружается из YAML (секции по источникам: NHL API, The Odds API). Ключи и значения
-нормализуются тем же способом, что и :func:`normalize_team_key`, чтобы сопоставление
-было устойчивым к регистру/диакритике.
+В strict-режиме функция возвращает пустой map, а идентичность разрешается через
+проверенный entity registry без открытия seed YAML.
 """
 
 from __future__ import annotations
@@ -100,16 +99,20 @@ def load_nhl_team_name_registry(
     project_root: Path | None = None,
     *,
     registry_path: Path | None = None,
+    strict_mode: bool = False,
 ) -> TeamNameRegistry:
     """Загрузить реестр NHL: ``conf/bookmaker/team_name_registry/nhl.yaml`` от корня проекта.
 
     Args:
         project_root: Корень репозитория; по умолчанию :data:`sports_forecast.config.loaders.PROJECT_ROOT`.
         registry_path: Явный путь к YAML; если задан, ``project_root`` не используется.
+        strict_mode: Не открывать legacy YAML, когда identity reader уже строгий.
 
     Returns:
         Реестр или пустой, если файла нет.
     """
+    if strict_mode:
+        return TeamNameRegistry()
     if registry_path is not None:
         return load_team_name_registry_file(registry_path)
     root = project_root or PROJECT_ROOT

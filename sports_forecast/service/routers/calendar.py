@@ -17,6 +17,7 @@ from sports_forecast.service.db.models import DataCycleRun, DataCycleStageResult
 from sports_forecast.service.db.repository import CalendarRepository
 from sports_forecast.service.event_readiness import evaluate_event_readiness
 from sports_forecast.service.readiness_policy import load_readiness_policy
+from sports_forecast.service.registry_readiness import pinned_participant_resolver
 from sports_forecast.service.schemas import (
     CalendarCoverageResponse,
     CalendarEventResponse,
@@ -110,8 +111,11 @@ def get_calendar(
         coverage = repository.get_coverage(
             tournament=tournament,
         )
+        installed_reader = (
+            pin_installed_registry(session) if registry_event_reader_enabled() else None
+        )
         registry_snapshot_id = (
-            pin_installed_registry(session).snapshot_id if registry_event_reader_enabled() else None
+            installed_reader.snapshot_id if installed_reader is not None else None
         )
         predictions_by_event, odds_by_event, attempts_by_event = repository.get_readiness_data(
             events, registry_snapshot_id=registry_snapshot_id
@@ -126,6 +130,11 @@ def get_calendar(
                 now,
                 odds_attempts=attempts_by_event[event.id],
                 odds_enabled=odds_enabled,
+                participant_resolver=(
+                    pinned_participant_resolver(installed_reader, session, event)
+                    if installed_reader is not None
+                    else None
+                ),
             )
             for event in events
         }

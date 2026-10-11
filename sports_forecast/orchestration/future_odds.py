@@ -462,7 +462,7 @@ def run_nhl_future_odds_batch(
             return resolution.project_event_id if resolution.status == "resolved" else None
 
         provider_project_event_id = resolve_provider_event
-    registry = team_registry or load_nhl_team_name_registry()
+    registry = team_registry or load_nhl_team_name_registry(strict_mode=reader is not None)
     client = provider
     quota = OddsApiQuotaSnapshot(None, None)
     retrieved_at = _utc(clock())

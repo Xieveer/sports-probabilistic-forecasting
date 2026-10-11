@@ -59,7 +59,7 @@ def _is_nhl_moneyline(pred: Prediction) -> bool:
 
 
 def _registry() -> TeamNameRegistry:
-    return load_nhl_team_name_registry()
+    return load_nhl_team_name_registry(strict_mode=registry_event_reader_enabled())
 
 
 def pinned_live_quote_matching(

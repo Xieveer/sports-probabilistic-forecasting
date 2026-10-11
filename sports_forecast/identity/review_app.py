@@ -287,7 +287,7 @@ def create_review_app(queue: ReviewQueueService, *, secret_path: Path, actor: st
                 + f"</select></label><input type='hidden' name='candidate_id' value='{html.escape(item.id, quote=True)}'><input type='hidden' name='revision_{html.escape(item.id, quote=True)}' value='{item.revision}'><input type='hidden' name='designation_revision_{html.escape(item.id, quote=True)}' value='{item.designation_revision}'></article>"
             )
         body = (
-            "<!doctype html><meta charset='utf-8'><title>Очередь</title><form method='get'><input name='q' placeholder='Поиск обозначения' value='"
+            "<!doctype html><meta charset='utf-8'><title>Очередь</title><nav><a href='/registry'>Каталог registry</a></nav><form method='get'><input name='q' placeholder='Поиск обозначения' value='"
             + html.escape(q, quote=True)
             + "'><input name='source' placeholder='Источник' value='"
             + html.escape(source, quote=True)
@@ -314,6 +314,203 @@ def create_review_app(queue: ReviewQueueService, *, secret_path: Path, actor: st
         if has_next:
             body += f"<a rel='next' href='{page_url(page_offset + page_size)}'>Следующая</a>"
         return HTMLResponse(body)
+
+    @app.get("/registry", response_class=HTMLResponse)
+    def registry_page(request: Request, q: str = "", kind: str = "", offset: int = 0) -> Response:
+        """Показать страницу поиска по локальному реестру сущностей."""
+        try:
+            secret = _secret(secret_file)
+        except RuntimeError:
+            return Response("Secret недоступен", status_code=503)
+        session = _decode(secret, request.cookies.get(COOKIE, ""))
+        if session is None:
+            return RedirectResponse("/login", status_code=303)
+        if kind not in {"", "team", "tournament", "event", "player"}:
+            return Response("Недопустимый тип сущности", status_code=400)
+        page_size = 50
+        page_offset = min(max(offset, 0), 100_000)
+        try:
+            entities = queue.list_catalog_entities(
+                kind=kind or None, query=q[:100], limit=page_size + 1, offset=page_offset
+            )
+        except ValueError:
+            return Response("Недопустимые параметры поиска", status_code=400)
+        has_next = len(entities) > page_size
+        entities = entities[:page_size]
+        rows = "".join(
+            "<li><a href='/registry/"
+            + html.escape(entity.id, quote=True)
+            + "'>"
+            + html.escape(entity.project_name)
+            + "</a> · "
+            + html.escape(entity.kind)
+            + " · "
+            + html.escape(entity.sport)
+            + "</li>"
+            for entity in entities
+        )
+        body = (
+            "<!doctype html><meta charset='utf-8'><title>Каталог registry</title><h1>Каталог registry</h1>"
+            "<nav><a href='/review'>К очереди кандидатов</a></nav><form method='get'>"
+            "<label>Поиск <input name='q' maxlength='100' value='"
+            + html.escape(q, quote=True)
+            + "'></label><label>Тип <select name='kind'><option value=''>Все</option>"
+            + "".join(
+                "<option value='"
+                + value
+                + "'"
+                + (" selected" if kind == value else "")
+                + ">"
+                + value
+                + "</option>"
+                for value in ("team", "tournament", "event", "player")
+            )
+            + "</select></label><button>Найти</button></form><ul>"
+            + rows
+            + "</ul>"
+        )
+        if page_offset > 0:
+            query_string = urlencode(
+                {"q": q, "kind": kind, "offset": max(0, page_offset - page_size)}
+            )
+            body += f"<a rel='prev' href='{html.escape('/registry?' + query_string, quote=True)}'>Предыдущая</a>"
+        if has_next:
+            query_string = urlencode({"q": q, "kind": kind, "offset": page_offset + page_size})
+            body += f"<a rel='next' href='{html.escape('/registry?' + query_string, quote=True)}'>Следующая</a>"
+        return HTMLResponse(body)
+
+    @app.get("/registry/{entity_id}", response_class=HTMLResponse)
+    def registry_entity_page(request: Request, entity_id: str) -> Response:
+        """Показать обозначения и формы аудируемой правки сущности."""
+        try:
+            secret = _secret(secret_file)
+        except RuntimeError:
+            return Response("Secret недоступен", status_code=503)
+        session = _decode(secret, request.cookies.get(COOKIE, ""))
+        if session is None:
+            return RedirectResponse("/login", status_code=303)
+        try:
+            entity = queue.registry.get_entity(entity_id)
+            designations = queue.registry.list_entity_designations(entity_id)
+        except KeyError:
+            return Response("Сущность не найдена", status_code=404)
+        csrf = html.escape(str(session["csrf"]), quote=True)
+        rows = (
+            "".join(
+                "<article><h2>"
+                + html.escape(item.source)
+                + " · "
+                + html.escape(item.value_kind)
+                + "</h2><p>"
+                + html.escape(item.raw_value)
+                + " · "
+                + html.escape(item.state)
+                + " · scope: "
+                + html.escape(json.dumps(item.scope, ensure_ascii=False))
+                + "</p>"
+                + (
+                    "<form method='post' action='/registry/designations/"
+                    + html.escape(item.id, quote=True)
+                    + "/reassign'>"
+                    "<input type='hidden' name='csrf' value='"
+                    + csrf
+                    + "'><input type='hidden' name='revision' value='"
+                    + str(item.revision)
+                    + "'>"
+                    "<label>UUID целевой сущности <input name='entity_id' required maxlength='36' pattern='[0-9a-fA-F-]{36}'></label>"
+                    "<p>Найдите сущность в каталоге и скопируйте её UUID со страницы сущности.</p>"
+                    "<label>Основание <input name='reason' required maxlength='500'></label><button>Переназначить</button></form>"
+                    if item.state == "confirmed"
+                    else ""
+                )
+                + "</article>"
+                for item in designations
+            )
+            or "<p>Связанных обозначений пока нет.</p>"
+        )
+        body = (
+            "<!doctype html><meta charset='utf-8'><title>Сущность</title><nav><a href='/registry'>К каталогу</a></nav><h1>"
+            + html.escape(entity.project_name)
+            + "</h1><p>"
+            + html.escape(entity.kind)
+            + " · "
+            + html.escape(entity.sport)
+            + " · "
+            + html.escape(entity.id)
+            + "</p>"
+            + "<form method='post' action='/registry/"
+            + html.escape(entity.id, quote=True)
+            + "/rename'>"
+            + "<input type='hidden' name='csrf' value='"
+            + csrf
+            + "'><input type='hidden' name='revision' value='"
+            + str(entity.revision)
+            + "'>"
+            + "<label>Проектное имя <input name='project_name' required maxlength='200' value='"
+            + html.escape(entity.project_name, quote=True)
+            + "'></label>"
+            + "<label>Основание <input name='reason' required maxlength='500'></label><button>Переименовать</button></form>"
+            + "<h2>Обозначения источников</h2>"
+            + rows
+        )
+        return HTMLResponse(body)
+
+    async def owner_post(
+        request: Request, limit: int
+    ) -> tuple[dict[str, list[str]] | None, Response | None]:
+        """Проверить loopback, сессию, размер тела и CSRF для операций каталога."""
+        if not _loopback_post(request):
+            return None, Response(status_code=403)
+        try:
+            secret = _secret(secret_file)
+        except RuntimeError:
+            return None, Response(status_code=503)
+        session = _decode(secret, request.cookies.get(COOKIE, ""))
+        if session is None:
+            return None, Response(status_code=403)
+        body = await _bounded_body(request, limit)
+        if body is None:
+            return None, Response(status_code=413)
+        form = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True)
+        if not hmac.compare_digest(form.get("csrf", [""])[0], str(session["csrf"])):
+            return None, Response(status_code=403)
+        return form, None
+
+    @app.post("/registry/{entity_id}/rename")
+    async def rename_entity(request: Request, entity_id: str) -> Response:
+        form, error = await owner_post(request, 8192)
+        if error:
+            return error
+        assert form is not None
+        try:
+            queue.registry.rename_entity(
+                entity_id,
+                form["project_name"][0],
+                actor=actor,
+                reason=form["reason"][0],
+                expected_revision=int(form["revision"][0]),
+            )
+        except (KeyError, ValueError):
+            return Response("Изменение не применено: перечитайте каталог", status_code=409)
+        return RedirectResponse("/registry/" + entity_id, status_code=303)
+
+    @app.post("/registry/designations/{designation_id}/reassign")
+    async def reassign_designation(request: Request, designation_id: str) -> Response:
+        form, error = await owner_post(request, 8192)
+        if error:
+            return error
+        assert form is not None
+        try:
+            queue.reassign_designation(
+                designation_id,
+                form["entity_id"][0],
+                expected_revision=int(form["revision"][0]),
+                actor=actor,
+                reason=form["reason"][0],
+            )
+        except (KeyError, ValueError):
+            return Response("Изменение не применено: перечитайте каталог", status_code=409)
+        return RedirectResponse("/registry", status_code=303)
 
     @app.get("/review/candidates/{candidate_id}/history", response_class=HTMLResponse)
     def candidate_history(request: Request, candidate_id: str, offset: int = 0) -> Response:

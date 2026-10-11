@@ -360,12 +360,17 @@ def test_strict_batch_queues_unknown_tournament_without_attaching_odds(
 
     monkeypatch.setattr(future_odds, "registry_event_reader_enabled", lambda: True)
     monkeypatch.setattr(future_odds, "pin_installed_registry", lambda _session: FakeReader())
+
+    def strict_empty_registry(*, strict_mode: bool = False) -> TeamNameRegistry:
+        assert strict_mode
+        return TeamNameRegistry()
+
+    monkeypatch.setattr(future_odds, "load_nhl_team_name_registry", strict_empty_registry)
     attempt = run_nhl_future_odds_batch(
         odds_session,
         run_id="run-1",
         now=NOW,
         provider=_FakeProvider([_provider_event()]),
-        team_registry=_registry(),
         clock=lambda: NOW,
     )
     assert attempt.status == "success"

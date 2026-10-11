@@ -677,6 +677,29 @@ class EntityRegistry:
             Entity(r["id"], r["kind"], r["sport"], r["project_name"], r["revision"]) for r in rows
         ]
 
+    def search_entities(
+        self, *, kind: str | None = None, query: str = "", limit: int = 50, offset: int = 0
+    ) -> list[Entity]:
+        """Искать сущности каталога с ограниченными размером и страницей."""
+        if not 1 <= limit <= 100 or not 0 <= offset <= 100_000 or len(query) > 100:
+            raise ValueError("Недопустимые параметры поиска сущностей")
+        escaped_query = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped_query}%"
+        with self._connect(write=False) as connection:
+            rows = connection.execute(
+                "SELECT * FROM entities WHERE state='active' AND (? IS NULL OR kind=?) "
+                "AND (?='' OR project_name LIKE ? ESCAPE '\\' OR EXISTS ("
+                "SELECT 1 FROM designations WHERE designations.entity_id=entities.id "
+                "AND designations.kind=entities.kind AND designations.state='confirmed' "
+                "AND designations.raw_value LIKE ? ESCAPE '\\')) "
+                "ORDER BY project_name,id LIMIT ? OFFSET ?",
+                (kind, kind, query, pattern, pattern, limit, offset),
+            ).fetchall()
+        return [
+            Entity(row["id"], row["kind"], row["sport"], row["project_name"], row["revision"])
+            for row in rows
+        ]
+
     def count_designations(self) -> int:
         """Вернуть число сохранённых внешних обозначений."""
         with self._connect(write=False) as connection:
@@ -689,16 +712,20 @@ class EntityRegistry:
         *,
         actor: str = "owner",
         reason: str = "Переименование проектного имени",
+        expected_revision: int | None = None,
     ) -> Entity:
         """Изменить отображаемое имя с сохранением UUID."""
         if not project_name.strip() or not actor.strip() or not reason.strip():
             raise ValueError("Имя, автор и основание обязательны")
         with self._connect() as connection:
             entity = connection.execute(
-                "SELECT project_name FROM entities WHERE id=?", (entity_id,)
+                "SELECT project_name,revision FROM entities WHERE id=? AND state='active'",
+                (entity_id,),
             ).fetchone()
             if entity is None:
                 raise KeyError(entity_id)
+            if expected_revision is not None and entity["revision"] != expected_revision:
+                raise ValueError("Версия сущности устарела; перечитайте каталог")
             prior_name = entity["project_name"]
             now = _timestamp()
             result = connection.execute(
@@ -741,6 +768,15 @@ class EntityRegistry:
             )
             for row in rows
         ]
+
+    def list_entity_designations(self, entity_id: str) -> list[Designation]:
+        """Вернуть обозначения, сейчас связанные с сущностью."""
+        with self._connect(write=False) as connection:
+            rows = connection.execute(
+                "SELECT * FROM designations WHERE entity_id=? ORDER BY source,kind,raw_value,id",
+                (entity_id,),
+            ).fetchall()
+        return [self._designation(row) for row in rows]
 
     @staticmethod
     def _scope_json(scope: dict[str, str]) -> str:

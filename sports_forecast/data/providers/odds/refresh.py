@@ -416,7 +416,7 @@ def build_refresh_segment(
 
 def _resolve_team_registry(tournament: str, sport_key: str) -> TeamNameRegistry | None:
     if tournament == "nhl" or sport_key == "icehockey_nhl":
-        return load_nhl_team_name_registry()
+        return load_nhl_team_name_registry(strict_mode=registry_event_reader_enabled())
     return None
 
 

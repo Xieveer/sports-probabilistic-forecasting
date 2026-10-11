@@ -47,6 +47,7 @@ from sports_forecast.data.providers.odds.team_name_registry import (
     TeamNameRegistry,
     load_nhl_team_name_registry,
 )
+from sports_forecast.identity.events import registry_event_reader_enabled
 from sports_forecast.utils.log_config import get_logger
 from sports_forecast.validation.schemas import validate_odds_float_columns
 
@@ -166,7 +167,7 @@ def last_n_season_windows(
 
 def _resolve_team_registry(tournament: str, sport_key: str) -> TeamNameRegistry | None:
     if tournament == "nhl" or sport_key == "icehockey_nhl":
-        return load_nhl_team_name_registry()
+        return load_nhl_team_name_registry(strict_mode=registry_event_reader_enabled())
     return None
 
 

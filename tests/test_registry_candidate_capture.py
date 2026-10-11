@@ -8,7 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pandas as pd
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from sports_forecast.data.providers.odds.client import OddsApiQuotaSnapshot
@@ -343,6 +343,14 @@ def test_owner_decision_republished_snapshot_unlocks_odds(tmp_path: Path, monkey
     installation_id = "11111111-1111-4111-8111-111111111111"
     monkeypatch.setenv("SF_ENTITY_REGISTRY_INSTALLATION_ID", installation_id)
     monkeypatch.setattr(future_odds, "registry_event_reader_enabled", lambda: True)
+    strict_loads: list[bool] = []
+
+    def strict_team_registry(*, strict_mode: bool = False) -> TeamNameRegistry:
+        strict_loads.append(strict_mode)
+        assert strict_mode
+        return TeamNameRegistry()
+
+    monkeypatch.setattr(future_odds, "load_nhl_team_name_registry", strict_team_registry)
     registry = EntityRegistry(tmp_path / "local.sqlite3")
     registry.initialize()
     tournament = registry.create_entity("tournament", "NHL", sport="ice_hockey")
@@ -424,17 +432,12 @@ def test_owner_decision_republished_snapshot_unlocks_odds(tmp_path: Path, monkey
         sync_current_registry(
             storage, engine, prefix="entity-registry/v1", download_root=tmp_path / "downloads"
         )
-        team_registry = TeamNameRegistry.from_source_sections(
-            {"NTH": "NTH", "STH": "STH"},
-            {"NORTHSTARS": "NTH", "SOUTHSTARS": "STH"},
-        )
         with Session(engine) as session:
             first_attempt = run_nhl_future_odds_batch(
                 session,
                 run_id="run-1",
                 now=datetime(2026, 10, 4, 12, tzinfo=UTC),
                 provider=_OddsProvider(),
-                team_registry=team_registry,
                 clock=lambda: datetime(2026, 10, 4, 12, tzinfo=UTC),
             )
             assert first_attempt.matched_events == 0
@@ -485,13 +488,32 @@ def test_owner_decision_republished_snapshot_unlocks_odds(tmp_path: Path, monkey
                 run_id="run-2",
                 now=datetime(2026, 10, 4, 12, tzinfo=UTC),
                 provider=_OddsProvider(),
-                team_registry=team_registry,
                 clock=lambda: datetime(2026, 10, 4, 12, tzinfo=UTC),
             )
             observation = session.scalar(select(OddsObservation))
             assert second_attempt.matched_events == 1
             assert observation is not None
             assert observation.registry_snapshot_id == second.snapshot_id
+            assert session.scalar(select(func.count()).select_from(OddsObservation)) == 1
+            second_run = session.scalar(
+                select(DataCycleRun).where(DataCycleRun.__table__.c.run_id == "run-2")
+            )
+            assert second_run is not None
+            second_run.status = "success"
+            session.flush()
+            session.add(
+                DataCycleRun(run_id="run-3", tournament="nhl", reason="scheduled", status="running")
+            )
+            session.flush()
+            repeated_attempt = run_nhl_future_odds_batch(
+                session,
+                run_id="run-3",
+                now=datetime(2026, 10, 4, 12, tzinfo=UTC),
+                provider=_OddsProvider(),
+                clock=lambda: datetime(2026, 10, 4, 12, tzinfo=UTC),
+            )
+            assert repeated_attempt.matched_events == 1
+            assert session.scalar(select(func.count()).select_from(OddsObservation)) == 1
             canonical = session.scalar(select(CanonicalEvent))
             assert canonical is not None
             canonical.home_participant = "STH"
@@ -512,5 +534,6 @@ def test_owner_decision_republished_snapshot_unlocks_odds(tmp_path: Path, monkey
             )
             conflicts = session.scalars(select(RegistryCandidateOutbox)).all()
             assert any("Изменившиеся участники" in row.payload_json for row in conflicts)
+        assert strict_loads == [True, True, True]
     finally:
         engine.dispose()

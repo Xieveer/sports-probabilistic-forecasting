@@ -18,6 +18,64 @@ def make_registry(tmp_path: Path) -> EntityRegistry:
     return registry
 
 
+def test_search_entities_matches_confirmed_designations_without_duplicates(
+    tmp_path: Path,
+) -> None:
+    registry = make_registry(tmp_path)
+    tournament = registry.create_entity("tournament", "NHL", sport="ice_hockey")
+    team = registry.create_entity("team", "Colorado Avalanche", sport="ice_hockey")
+    other = registry.create_entity("team", "Colorado Eagles", sport="ice_hockey")
+    pending = registry.create_entity("team", "Colorado Pending", sport="ice_hockey")
+    scope = {"sport": "ice_hockey", "tournament": tournament.id}
+    registry.add_designation(
+        entity_id=team.id,
+        source="the_odds_api",
+        kind="team",
+        scope=scope,
+        value_kind="name",
+        raw_value="COLORADOAVALANCHE",
+        state="confirmed",
+    )
+    registry.add_designation(
+        entity_id=team.id,
+        source="another_feed",
+        kind="team",
+        scope=scope,
+        value_kind="name",
+        raw_value="COLORADOAVALANCHE_ALT",
+        state="confirmed",
+    )
+    registry.add_designation(
+        entity_id=pending.id,
+        source="the_odds_api",
+        kind="team",
+        scope=scope,
+        value_kind="name",
+        raw_value="COLORADOAVALANCHE_PENDING",
+        state="pending",
+    )
+    registry.add_designation(
+        entity_id=other.id,
+        source="the_odds_api",
+        kind="team",
+        scope=scope,
+        value_kind="name",
+        raw_value="COLORADOAVALANCHE_ALT",
+        state="confirmed",
+    )
+
+    by_designation = registry.search_entities(kind="team", query="COLORADOAVALANCHE")
+    assert [entity.id for entity in by_designation] == [team.id, other.id]
+    assert [
+        entity.id
+        for entity in registry.search_entities(
+            kind="team", query="COLORADOAVALANCHE", limit=1, offset=1
+        )
+    ] == [other.id]
+    assert [entity.id for entity in registry.search_entities(query="NHL")] == [tournament.id]
+    assert [entity.id for entity in registry.search_entities(kind="team", query="%avalanche")] == []
+
+
 def test_read_requires_explicit_schema_initialization(tmp_path: Path) -> None:
     registry = EntityRegistry(tmp_path / "registry.sqlite3")
 
@@ -102,6 +160,22 @@ def test_pending_designation_requires_audited_owner_confirmation(tmp_path: Path)
     assert (
         registry.list_decisions(designation.id)[0].reason == "Проверено по официальному источнику"
     )
+
+
+def test_registry_lists_designations_for_entity(tmp_path: Path) -> None:
+    registry = make_registry(tmp_path)
+    team = registry.create_entity("team", "Team One", sport="hockey")
+    designation = registry.add_designation(
+        entity_id=team.id,
+        source="feed_a",
+        kind="team",
+        scope={"sport": "hockey"},
+        value_kind="name",
+        raw_value="Team One",
+        state="confirmed",
+    )
+
+    assert registry.list_entity_designations(team.id) == [designation]
 
 
 def test_overlapping_confirmed_designation_becomes_conflict_and_is_explicitly_resolved(

@@ -481,6 +481,36 @@ class ReviewQueueService:
             for row in rows
         ]
 
+    def list_catalog_entities(
+        self, *, kind: str | None = None, query: str = "", limit: int = 50, offset: int = 0
+    ) -> list[Entity]:
+        """Вернуть страницу локального каталога независимо от очереди кандидатов."""
+        return self.registry.search_entities(kind=kind, query=query, limit=limit, offset=offset)
+
+    def reassign_designation(
+        self,
+        designation_id: str,
+        entity_id: str,
+        *,
+        expected_revision: int,
+        actor: str,
+        reason: str,
+    ) -> None:
+        """Переназначить подтверждённое обозначение с optimistic revision и аудитом."""
+        designation = self.registry.get_designation(designation_id)
+        if designation.state != "confirmed":
+            raise ValueError("Из каталога можно переназначить только подтверждённое обозначение")
+        if designation.entity_id == entity_id:
+            raise ValueError("Обозначение уже связано с выбранной сущностью")
+        self.registry.decide_designation(
+            designation_id,
+            action="confirm",
+            entity_id=entity_id,
+            actor=actor,
+            reason=reason,
+            expected_revision=expected_revision,
+        )
+
     def decide_batch(
         self, decisions: list[CandidateDecision], *, actor: str
     ) -> list[ReviewCandidate]:

@@ -67,10 +67,11 @@ def fetch_odds_api_h2h_snapshots(
     if book_cfg is None:
         raise ValueError("Не найден конфиг букмекера live odds adapter-а")
     registry_loader = TEAM_NAME_REGISTRY_LOADERS.get(team_registry)
-    registry = registry_loader() if registry_loader is not None else None
+    strict_reader = registry_event_reader_enabled()
+    registry = registry_loader(strict_mode=strict_reader) if registry_loader is not None else None
     project_ids: Mapping[str, str] | None = None
     quote_resolver: Callable[[PinnacleH2HQuote], str | None] | None = None
-    if registry_event_reader_enabled():
+    if strict_reader:
         project_ids, quote_resolver = pinned_live_quote_matching(
             predictions, sport_key=sport_key, source=bookmaker_config
         )
