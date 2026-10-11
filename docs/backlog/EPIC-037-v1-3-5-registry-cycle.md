@@ -1,6 +1,6 @@
 # EPIC-037 — Исправляющий выпуск v1.3.5 для полного NHL Data Cycle
 
-> **Статус:** in_progress — production gate v1.3.4 получил NO-GO
+> **Статус:** cancelled — v1.3.5 NO-GO из-за массового feedback; продолжение в EPIC-038
 > **Приоритет:** critical
 > **Владелец:** Product Owner
 > **Ветка:** `initiative/epic-037-v1-3-5-release`
@@ -41,3 +41,7 @@
 - Reviewer запустил 72 целевых production contract/topology/version tests (passed) и `git diff --check` (passed). Product Owner сообщил о 1715 passed unit tests, успешных lint/type/docs/AI/production-check/pre-commit и offline lock check; эти gates не заменяют terminal CI и серверный Data Cycle.
 - Локальный `UV_OFFLINE=1 make security` остановился на bootstrap `pip-audit` (`Failed to upgrade pip`); аудит зависимостей не выполнялся. Terminal Security CI остаётся обязательным gate.
 - Остаточный риск: код ещё не прошёл terminal CI/Security, immutable image/model evidence и полный strict NHL Data Cycle на VPS. До них статус выпуска остаётся `NO-GO`.
+
+## Итог production gate v1.3.5
+
+Strict NHL Data Cycle `95169bca-160d-4a84-9f1f-58ecb10c8319` прошёл календарь, quality, archive, odds, predictions и publication; три реальные Pinnacle линии и 219 опубликованных прогнозов подтверждены. Но calendar записал 22 656 pending candidates из исторического `source.csv`, в основном 21 963 ненужных event-ID owner-связей. Feedback publication и timers оставлены остановленными; strict возвращается в false. Исправление и выпуск ведёт [EPIC-038](EPIC-038-v1-3-6-candidate-scope.md).

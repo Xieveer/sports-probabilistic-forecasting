@@ -9,7 +9,7 @@ import json
 import shutil
 import tempfile
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +47,8 @@ _NHL_RESULT_COLUMNS = (
     "home_score_mt",
     "away_score_mt",
 )
+_REGISTRY_FEEDBACK_LOOKBACK = timedelta(days=1)
+_REGISTRY_FEEDBACK_HORIZON = timedelta(days=30)
 
 
 class CanonicalBootstrapError(ValueError):
@@ -377,7 +379,36 @@ def _refresh_registry_feedback_for_nhl_events(
     ).all()
     for event in events:
         mapping = reader.get_event_mapping(int(event.id), session)
-        enqueue_unresolved_canonical_event(session, reader, event, mapping, observed_at=observed_at)
+        in_operational_window = _within_registry_feedback_window(event.scheduled_at, observed_at)
+        if not in_operational_window and mapping.status != "conflict":
+            continue
+        enqueue_unresolved_canonical_event(
+            session,
+            reader,
+            event,
+            mapping,
+            observed_at=observed_at,
+            capture_unknown_designations=in_operational_window,
+        )
+
+
+def _within_registry_feedback_window(scheduled_at: datetime, observed_at: datetime) -> bool:
+    """Ограничить alias feedback текущим operational window календаря NHL."""
+    scheduled_utc = (
+        scheduled_at.replace(tzinfo=UTC)
+        if scheduled_at.tzinfo is None
+        else scheduled_at.astimezone(UTC)
+    )
+    observed_utc = (
+        observed_at.replace(tzinfo=UTC)
+        if observed_at.tzinfo is None
+        else observed_at.astimezone(UTC)
+    )
+    return (
+        observed_utc - _REGISTRY_FEEDBACK_LOOKBACK
+        <= scheduled_utc
+        <= (observed_utc + _REGISTRY_FEEDBACK_HORIZON)
+    )
 
 
 def _import_calendar_coverage(source_csv: Path, session: Session) -> None:

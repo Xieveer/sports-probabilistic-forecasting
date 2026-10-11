@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -34,6 +34,7 @@ from sports_forecast.service.db.models import (
     Base,
     CanonicalEvent,
     DataCycleRun,
+    EventRegistryMapping,
     OddsObservation,
     RegistryCandidateOutbox,
     RegistryInstallationLock,
@@ -43,22 +44,39 @@ from sports_forecast.service.odds_projection import sync_odds_store_observations
 from sports_forecast.service.registry_candidate_capture import enqueue_unresolved_canonical_event
 
 
-def test_new_nhl_canonical_event_keeps_calendar_and_queues_tournament(
+def test_unlinked_nhl_source_event_id_is_not_an_owner_candidate(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """Unknown source alias не препятствует canonical import и ждёт владельца."""
-    local_registry = EntityRegistry(tmp_path / "registry.sqlite3")
-    local_registry.initialize()
-    snapshot = export_registry_snapshot(local_registry, tmp_path / "snapshot")
+    """Отсутствие owner event link само по себе не требует решения владельца."""
+    monkeypatch.setenv("SF_ENTITY_REGISTRY_INSTALLATION_ID", "11111111-1111-4111-8111-111111111111")
+    registry = EntityRegistry(tmp_path / "registry.sqlite3")
+    registry.initialize()
+    tournament = registry.create_entity("tournament", "NHL", sport="ice_hockey")
+    home = registry.create_entity("team", "North", sport="ice_hockey")
+    away = registry.create_entity("team", "South", sport="ice_hockey")
+    scope = {"sport": "ice_hockey", "tournament": tournament.id}
+    registry.add_designation(
+        entity_id=tournament.id,
+        source="nhl_web_api",
+        kind="tournament",
+        scope={"sport": "ice_hockey"},
+        value_kind="name",
+        raw_value="nhl",
+        state="confirmed",
+    )
+    for entity, raw in ((home, "North"), (away, "South")):
+        registry.add_designation(
+            entity_id=entity.id,
+            source="nhl_web_api",
+            kind="team",
+            scope=scope,
+            value_kind="name",
+            raw_value=raw,
+            state="confirmed",
+        )
+    snapshot = export_registry_snapshot(registry, tmp_path / "snapshot")
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
-    source_csv = tmp_path / "source.csv"
-    source_csv.write_text(
-        "id,datetime,match_is_end,home_team,away_team\nm1,2026-10-05T17:00:00Z,0,North,South\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("SF_ENTITY_REGISTRY_INSTALLATION_ID", "11111111-1111-4111-8111-111111111111")
-    monkeypatch.setattr(canonical_bootstrap, "registry_event_reader_enabled", lambda: True)
     try:
         with Session(engine) as session:
             session.add(RegistryInstallationLock(id=1, lock_version=0))
@@ -76,16 +94,118 @@ def test_new_nhl_canonical_event_keeps_calendar_and_queues_tournament(
                     actor="owner.registry",
                 ),
             )
+            event = CanonicalEvent(
+                sport="ice_hockey",
+                tournament="nhl",
+                source="nhl_web_api",
+                source_event_id="unlinked-source-id",
+                scheduled_at=datetime(2026, 10, 5, 17),
+                status="scheduled",
+                current_revision_sha256="a" * 64,
+                home_participant="North",
+                away_participant="South",
+            )
+            session.add(event)
+            session.flush()
+            reader = pin_installed_registry(session)
+            mapping = EventRegistryMapping(
+                snapshot_id=reader.snapshot_id,
+                canonical_event_id=int(event.id),
+                project_event_id=None,
+                status="unresolved",
+                reason="No owner event designation",
+                policy_version="test",
+            )
+            captured = enqueue_unresolved_canonical_event(
+                session,
+                reader,
+                event,
+                mapping,
+                observed_at=datetime(2026, 10, 4, 18, tzinfo=UTC),
+            )
+            assert captured == 0
+            assert session.scalar(select(func.count()).select_from(RegistryCandidateOutbox)) == 0
+    finally:
+        engine.dispose()
+
+
+def test_nhl_registry_feedback_queues_current_aliases_not_history(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Новые team aliases попадают владельцу, исторические матчи не копятся."""
+    local_registry = EntityRegistry(tmp_path / "registry.sqlite3")
+    local_registry.initialize()
+    tournament = local_registry.create_entity("tournament", "NHL", sport="ice_hockey")
+    home = local_registry.create_entity("team", "Phoenix", sport="ice_hockey")
+    away = local_registry.create_entity("team", "Atlanta", sport="ice_hockey")
+    scope = {"sport": "ice_hockey", "tournament": tournament.id}
+    local_registry.add_designation(
+        entity_id=tournament.id,
+        source="nhl_web_api",
+        kind="tournament",
+        scope={"sport": "ice_hockey"},
+        value_kind="name",
+        raw_value="nhl",
+        state="confirmed",
+    )
+    for entity, raw in ((home, "NTH"), (away, "STH")):
+        local_registry.add_designation(
+            entity_id=entity.id,
+            source="nhl_web_api",
+            kind="team",
+            scope=scope,
+            value_kind="name",
+            raw_value=raw,
+            state="confirmed",
+        )
+    snapshot = export_registry_snapshot(local_registry, tmp_path / "snapshot")
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    source_csv = tmp_path / "source.csv"
+    current_game_time = datetime.now(UTC).replace(microsecond=0) + timedelta(days=2)
+    source_csv.write_text(
+        "id,datetime,match_is_end,home_team,away_team\n"
+        "historic,2024-10-05T17:00:00Z,1,PHX,ATL\n"
+        f"current,{current_game_time.isoformat()},0,PHX,ATL\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SF_ENTITY_REGISTRY_INSTALLATION_ID", "11111111-1111-4111-8111-111111111111")
+    monkeypatch.setattr(canonical_bootstrap, "registry_event_reader_enabled", lambda: True)
+    try:
+        with Session(engine) as session:
+            session.add(RegistryInstallationLock(id=1, lock_version=0))
+            session.flush()
+            install_registry_publication(
+                session,
+                snapshot.path,
+                publication=VerifiedPublicationRecord(
+                    publication_id=str(uuid4()),
+                    sequence=1,
+                    snapshot_id=snapshot.snapshot_id,
+                    snapshot_sha256=snapshot.projection_sha256,
+                    previous_publication_id=None,
+                    published_at=datetime.now(UTC),
+                    actor="owner.registry",
+                ),
+            )
             session.commit()
             summary = canonical_bootstrap.refresh_nhl_canonical_with_summary_from_csv(
                 source_csv, session
             )
-            assert summary.new_events == 1
-            assert session.scalar(select(CanonicalEvent)) is not None
+            assert summary.new_events == 2
+            assert len(session.scalars(select(CanonicalEvent)).all()) == 2
             candidates = session.scalars(select(RegistryCandidateOutbox)).all()
-            assert len(candidates) == 1
-            assert '"kind":"tournament"' in candidates[0].payload_json
-            assert '"raw_value":"nhl"' in candidates[0].payload_json
+            assert len(candidates) == 2
+            assert all('"kind":"team"' in item.payload_json for item in candidates)
+            assert all(
+                '"raw_value":"PHX"' in item.payload_json or '"raw_value":"ATL"' in item.payload_json
+                for item in candidates
+            )
+            assert all('"source_event_id":"current"' in item.payload_json for item in candidates)
+            canonical_bootstrap.refresh_nhl_canonical_with_summary_from_csv(source_csv, session)
+            repeated = session.scalars(select(RegistryCandidateOutbox)).all()
+            assert len(repeated) == 4
+            assert len({item.idempotency_key for item in repeated}) == 2
     finally:
         engine.dispose()
 
