@@ -18,6 +18,7 @@ Production Compose передаёт `SF_ENTITY_REGISTRY_INSTALLATION_ID` обо�
 - Developer: 58 production contract/topology tests passed до UUID follow-up; targeted rendered Compose test, Ruff и `git diff --check` прошли после него.
 - Независимый Reviewer после UUID фикса: 72 targeted tests passed, `git diff --check` clean; call sites проверены.
 - `uv lock --check --offline`, `UV_OFFLINE=1 make production-check`, `UV_OFFLINE=1 make docs`, `UV_OFFLINE=1 make ai-validate`: прошли. Sphinx сообщил 155 существующих предупреждений.
+- `UV_OFFLINE=1 make security`: остановился на bootstrap `pip-audit` (`Failed to upgrade pip`); проверка зависимостей не была выполнена. Terminal Security CI обязателен до релиза.
 - После UUID follow-up `UV_OFFLINE=1 make pre-commit` прошёл полностью после автоматического форматирования одного Python файла первым запуском; `UV_OFFLINE=1 make lint`, `UV_OFFLINE=1 make type-check`, `UV_OFFLINE=1 make production-check` и 72 targeted tests прошли. Terminal CI/Security и серверный gate остаются отдельно.
 
 ## Release gate и остаток

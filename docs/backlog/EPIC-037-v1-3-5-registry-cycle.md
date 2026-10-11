@@ -33,3 +33,11 @@
 ## Решение
 
 До выполнения серверных критериев релиз `NO-GO`. Конкретные evidence и остаточный риск фиксируются в [production handoff](../operations/production-handoff.md). Legacy путь удаляется отдельной будущей инициативой.
+
+## Независимое review исходного кандидата
+
+- Reviewer проверил полный diff относительно `main`: Compose и все места записи кандидатов, rendered verifier, тесты, версию/lock, rollback, handoff, безопасность и документацию. Исходный P2 (невалидный UUID проходил preflight) устранён через проверку канонического UUID и mutation test. Открытых P0–P2 нет.
+- Проверенный commit: `b420c6d723af864e7a582b41fe08ac7929ac5aa4`.
+- Reviewer запустил 72 целевых production contract/topology/version tests (passed) и `git diff --check` (passed). Product Owner сообщил о 1715 passed unit tests, успешных lint/type/docs/AI/production-check/pre-commit и offline lock check; эти gates не заменяют terminal CI и серверный Data Cycle.
+- Локальный `UV_OFFLINE=1 make security` остановился на bootstrap `pip-audit` (`Failed to upgrade pip`); аудит зависимостей не выполнялся. Terminal Security CI остаётся обязательным gate.
+- Остаточный риск: код ещё не прошёл terminal CI/Security, immutable image/model evidence и полный strict NHL Data Cycle на VPS. До них статус выпуска остаётся `NO-GO`.
