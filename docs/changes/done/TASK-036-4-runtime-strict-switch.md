@@ -53,3 +53,9 @@ merge под новым immutable tag. Локальная правка не ме
 отсутствующего ключа; после правки три targeted теста прошли. Независимый
 re-review текущего diff: P1 закрыт, новых P0–P2 нет; reviewer повторил 97
 целевых тестов, Ruff и `git diff --check`.
+
+Проверенный source+docs commit:
+`98d9cf3e0d0f248b9c6b217827d6cb5b18b9a0b7`.
+Перед commit gate pre-commit hooks, включая Ruff и mypy, прошли. Остаточные
+риски остаются в server release gates; локальный `make security` не завершил
+аудит зависимостей из-за DNS/PyPI, terminal Security CI обязателен.

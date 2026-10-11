@@ -108,6 +108,22 @@ production Compose. Docker run `38177105034` отменён. Следующий 
   provider odds, 20 минутных ticks и полный candidate feedback остаются
   серверными gates следующего выпуска.
 
+## Независимое review кандидата v1.3.4
+
+- Проверенный source+docs commit:
+  `98d9cf3e0d0f248b9c6b217827d6cb5b18b9a0b7`.
+- Первое review выявило P1: systemd Data Cycle использовал отдельный
+  `nhl.env`, поэтому переключение только `production.env` оставляло Worker
+  в legacy режиме. После red/green исправления оба профиля и два Compose
+  render gate описаны в runbook; независимый re-review P0–P2 не выявил.
+- Reviewer повторил 97 целевых тестов, Ruff и `git diff --check`; перед
+  первым коммитом pre-commit hooks, включая Ruff и mypy, прошли. Автором
+  заявлены 1715 unit passed, lint/type-check/pre-commit/docs/AI validation/
+  production-check и offline lock check.
+- Остаточные gates: terminal CI/Security, immutable source/image/model
+  evidence, backup/restore и реальный strict/candidate/odds/bot/timer цикл.
+  Локальный `make security` не дошёл до pip-audit из-за DNS/PyPI.
+
 ## Решение и остановка
 
 До выполнения всех критериев GO статус release — NO-GO. При потере линии,
