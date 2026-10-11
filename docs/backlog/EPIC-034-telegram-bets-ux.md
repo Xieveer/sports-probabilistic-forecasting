@@ -1,22 +1,22 @@
 # EPIC-034 — Улучшение работы со ставками в Telegram-боте
 
-> **Статус:** done — все TASK завершены, документационный PR ожидается
+> **Статус:** done
 > **Приоритет:** выполнено
 > **Владелец:** Product Owner
 > **Требование:** [REQ-034](../product/requirements/REQ-034-telegram-bets-ux.md) (`confirmed`)
 
 ## Память Product Owner
 
-- Инициатива: `EPIC-034`; ветка `initiative/epic-034-telegram-bets-ux`, worktree `.worktrees/epic-034-telegram-bets-ux`.
+- Инициатива: `EPIC-034`; ветка `initiative/epic-034-telegram-bets-ux` сохранена после интеграции. Временный worktree закрывается по решению владельца.
 - Исходный запрос владельца: улучшить работу со ставками в Telegram-боте; выполнять параллельно с EPIC-026 без изменения текущего production-релиза. 2026-10-11 названы очистка сообщений после записи, Excel-шаблон и последующий перенос истории, универсальный `/bet_add` с указанием турнира и аналитикой по турнирам, примеры значений в подсказке `/bet_correct`.
 - Текущий baseline: [EPIC-031](EPIC-031-real-bets-ledger.md) уже выпустил ввод, добор, расчёт и исправление реальных ставок, отдельные карточки прогнозов и месячную сводку. Финансовые правила и хранение описаны в [REQ-031](../product/requirements/REQ-031-real-bets-ledger.md).
-- Этап: все TASK завершены. TASK-034-1/2/3 прошли независимый review и terminal CI, интегрированы в `main` через [PR #79](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/79) 2026-10-11 (merge commit `6a2e9b5267a32915ac7d5c57bed3595cdfb9cb9d`). Принят [ADR-034](../architecture/adr/ADR-034-manual-bet-market-rules.md). TASK-034-4 завершён: 59 исторических ставок и audit-записей перенесены и сверены с заполненным файлом.
+- Этап: все TASK завершены. TASK-034-1/2/3 прошли независимый review и terminal CI, интегрированы в `main` через [PR #79](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/79) 2026-10-11. Итоговые документы и TASK-034-4 интегрированы через [PR #81](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/81) после зелёного CI. Принят [ADR-034](../architecture/adr/ADR-034-manual-bet-market-rules.md). Перенесены и сверены 59 исторических ставок и audit-записей.
 - Граница: текущие записи ставок, audit, ссылки на исходную версию прогноза и разделение реальных/симулированных ставок не менять без отдельного подтверждения. Автоматическое размещение ставок у букмекера в запрос не входит.
 - Предыдущая роль: Operations Agent завершил серверный перенос TASK-034-4 с readback и проверкой повторного запуска; независимый Reviewer сверил заполненный файл со скриншотами и итоговые документы с операционным доказательством без P0–P2 findings.
-- Следующая роль: Product Owner оформляет документационный PR и ждёт terminal CI; новая работа по EPIC-034 не запланирована.
+- Следующая роль: нет; новая работа по турнирам, рынкам или deployment требует отдельного запроса владельца.
 - Релиз: код готовой части находится в `main`; production deployment новой версии не запрашивался и не выполнялся. Прямая запись исторических данных выполнена в действующем production `v1.3.1` по исходному запросу владельца.
-- CI evidence для последнего HEAD PR: [lint-test (3.12)](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38156749962/job/114521193700), [Filesystem and secrets](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38156750023/job/114521194704), [Python dependencies](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38156750023/job/114521194924) — `SUCCESS`.
-- Доказательство переноса: [отчёт TASK-034-4](../changes/done/TASK-034-4-historical-bets-import.md), подробный эксплуатационный отчёт — [Operations Agent draft PR #34](https://github.com/Xieveer/operations-agent/pull/34). Повторный импорт дал `inserted=0`, `replayed=59`; исходная открытая ставка сохранена.
+- CI evidence для итогового PR #81: [lint-test (3.12)](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38165136603/job/114546019910), [Filesystem and secrets](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38165136557/job/114546019965), [Python dependencies](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38165136557/job/114546019794) — `SUCCESS`.
+- Доказательство переноса: [отчёт TASK-034-4](../changes/done/TASK-034-4-historical-bets-import.md), подробный эксплуатационный отчёт — [Operations Agent PR #34](https://github.com/Xieveer/operations-agent/pull/34) (`merged`). Повторный импорт дал `inserted=0`, `replayed=59`; исходная открытая ставка сохранена.
 - Открытые вопросы: дополнительные рынки и иные турниры для следующего среза требуют отдельного решения; развёртывание новой версии бота не входит в текущий запрос.
 - Обновлено: 2026-10-11.
 
