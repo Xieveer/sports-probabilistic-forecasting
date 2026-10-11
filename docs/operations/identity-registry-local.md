@@ -51,6 +51,65 @@ snapshot. Новые обозначения в master не считаются о
 включайте strict reader до сверки и контрольного цикла NHL; для rollback
 используйте прежний проверенный выпуск вместе с его snapshot и YAML seed.
 
+## Подтверждённые события NHL
+
+Официальный NHL schedule можно импортировать для одного семидневного окна,
+если обозначения турнира и обеих команд уже подтверждены, время матча задано
+точно в UTC и в registry нет противоречивой связи. Перед применением создайте
+консистентную копию master с помощью SQLite backup API; не копируйте открытый
+файл обычной командой `cp`:
+
+```bash
+uv run python - <<'PY'
+from pathlib import Path
+import sqlite3
+
+source = Path('data/registry/master.sqlite3')
+backup = Path('data/registry/backups/pre-nhl-events.sqlite3')
+if not source.is_file():
+    raise SystemExit('Owner master отсутствует')
+backup.parent.mkdir(parents=True, exist_ok=True)
+if backup.exists():
+    raise SystemExit('Резервная копия уже существует: выберите новое имя')
+with sqlite3.connect(source) as origin, sqlite3.connect(backup) as target:
+    origin.backup(target)
+backup.chmod(0o600)
+PY
+uv run python -m sports_forecast.identity.nhl_event_bootstrap_cli \
+  --master data/registry/master.sqlite3 --anchor 2026-10-11
+```
+
+Дата `--anchor` — первая дата возвращаемой API недели; выберите актуальный
+горизонт. Dry-run по умолчанию показывает только счётчики. Проверьте число
+`planned` и причины `needs_review`, затем повторите команду с `--apply`.
+Неоднозначные случаи сохраняются в локальной веб-очереди для решения владельца;
+повторный запуск идемпотентен. Импорт подтверждает только NHL game IDs, а не
+The Odds API event IDs. Затем экспортируйте verified snapshot, установите его
+отдельным действием и снова выполните parity checker:
+
+```bash
+uv run python -m sports_forecast.identity.nhl_event_bootstrap_cli \
+  --master data/registry/master.sqlite3 --anchor 2026-10-11 --apply
+uv run python - <<'PY'
+from pathlib import Path
+from sports_forecast.identity import EntityRegistry
+from sports_forecast.identity.snapshot import export_registry_snapshot, install_registry_snapshot
+
+root = Path('data/registry')
+snapshot = export_registry_snapshot(EntityRegistry(root / 'master.sqlite3'), root / 'snapshots')
+install_registry_snapshot(snapshot.path, root / 'current/package')
+print(snapshot.snapshot_id)
+PY
+uv run python -m sports_forecast.identity.nhl_parity \
+  --yaml conf/bookmaker/team_name_registry/nhl.yaml \
+  --master data/registry/master.sqlite3 \
+  --snapshot data/registry/current/package
+```
+
+Публикация нового snapshot в Object Storage выполняется отдельно по
+[runbook публикации](entity-registry-publication.md), только после проверки
+покрытия production горизонта и релизных gates.
+
 Создайте локальный секрет и запустите UI на loopback:
 
 ```bash
