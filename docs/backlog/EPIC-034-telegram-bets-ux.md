@@ -67,6 +67,8 @@ Excel-шаблон сверены. Адресные тесты: 30 passed. Ruff 
 
 ## Итоговый review EPIC
 
+Проверенный документационный commit: `6aaadfa`.
+
 Сверены REQ-034, все четыре TASK, четыре отчёта `done`, SHA-256 заполненного
 файла и [операционное доказательство](https://github.com/Xieveer/operations-agent/pull/34)
 (commit `26e8e122616c9b780b50df0a06a3955ff479a4df`). В отчёте подтверждены
