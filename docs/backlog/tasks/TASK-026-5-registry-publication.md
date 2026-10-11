@@ -1,6 +1,6 @@
 # TASK-026-5 — Публикация registry и серверная установленная версия
 
-> **Статус:** blocked
+> **Статус:** done — серверный gate v1.3.1 пройден
 > **Владелец:** Developer
 > **Эпик:** [EPIC-026](../EPIC-026-entity-registry.md)
 > **Требование:** [REQ-026](../../product/requirements/REQ-026-entity-registry.md)
@@ -25,9 +25,11 @@ Production включение требует отдельного release gate.
 - [x] Предыдущие версии сохраняются для выполняющихся runs и отката;
       runbook описывает требуемые grants. На рабочем Object Storage проверены
       conditional writes, фактические IAM grants и retention prefix.
-- [ ] При следующем релизе отдельные PostgreSQL grants и server sync/feedback
+- [x] В релизе v1.3.1 отдельные PostgreSQL grants и server sync/feedback
       проверены в целевой среде; credentials доставлены только выделенным
-      процессам. До этого TASK остаётся `blocked`.
+      процессам. Ручные команды и первые плановые ticks завершились успешно.
+      Feedback проверен при пустой очереди; непустой цикл и строгий server
+      resolver остаются gate EPIC-026/REQ-026 #10.
 
 ## План реализации
 
@@ -43,5 +45,5 @@ Production включение требует отдельного release gate.
 - Код прошёл независимый review; evidence —
   [отчёт о реализации](../../changes/done/TASK-026-5-registry-publication.md).
   Object Storage gate закрыт 2026-10-09; см. раздел live evidence в отчёте.
-  Блокер завершения TASK — PostgreSQL grants и серверная интеграция,
-  перенесённые владельцем на следующий релиз новой версии 2026-10-09.
+  PostgreSQL grants и серверная интеграция проверены при ограниченном
+  production rollout v1.3.1; [ops evidence](https://github.com/Xieveer/operations-agent/pull/33).

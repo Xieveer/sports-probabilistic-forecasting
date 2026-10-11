@@ -1,6 +1,6 @@
 # TASK-026-5 — Публикация и установленная серверная версия registry
 
-> **Статус:** реализация и независимый review завершены; эксплуатационный gate открыт
+> **Статус:** done — эксплуатационный gate закрыт в v1.3.1; REQ-026 #10 остаётся открытым
 > **Задача:** [TASK-026-5](../../backlog/tasks/TASK-026-5-registry-publication.md)
 > **Требование:** [REQ-026](../../product/requirements/REQ-026-entity-registry.md)
 > **Решение:** [ADR-029](../../architecture/adr/ADR-029-local-entity-registry-and-snapshots.md)
@@ -55,7 +55,7 @@
 - Использованы только локальные тестовые bucket, prefix и БД. Рабочий Object
   Storage endpoint и фактические IAM/DB grants этой проверкой не охвачены.
 
-## Открытый эксплуатационный gate
+## Эксплуатационный gate
 
 ### Live Object Storage gate 2026-10-09
 
@@ -76,6 +76,27 @@
   `docs/runbooks/sports-forecast-epic026-object-storage.md` отдельного
   репозитория `operations-agent`.
 
-Отдельная sync DB role, фактические PostgreSQL grants, server sync/feedback и
-расписание не проверялись. Поэтому [TASK-026-5](../../backlog/tasks/TASK-026-5-registry-publication.md)
-остаётся `blocked`; production registry mode не включён.
+На 2026-10-09 отдельная sync DB role, фактические PostgreSQL grants,
+server sync/feedback и расписание ещё не проверялись. Их проверка выполнена
+в выпуске v1.3.1 ниже.
+
+### Production gate v1.3.1 — 2026-10-11
+
+- В PostgreSQL созданы отдельные роли `sf_registry_sync` и
+  `sf_registry_feedback`; grants и запрещённые запросы проверены под их
+  настоящими URL. Credentials переданы только соответствующим one-shot
+  процессам; API, бот и обычный Worker их не получают.
+- Из документированного NHL seed создан детерминированный verified snapshot
+  `ir1:e4266bf9be668e1e666580b5f10bf9a81a0f623ab72a3d1535caa0403e6261ae`.
+  Dedicated publisher создал первую immutable publication sequence 1,
+  readback и полная проверка remote bytes прошли. Server sync установил её
+  в PostgreSQL; повторный плановый sync не изменил active version.
+- Первоначальный sync выявил закрытые для UID 10001 runtime secret files.
+  Права исправлены адресно до `root:10001 0640`; пароли bootstrap остались
+  `root:root 0600`. Повторный sync, ручные feedback publish/collect-acks и
+  первые плановые ticks завершились успешно.
+- [Ops rollout evidence](https://github.com/Xieveer/operations-agent/pull/33)
+  содержит exact refs, времена, результат и остаточные риски. Очередь
+  кандидатов была пуста: непустой feedback/ack и строгий server resolver
+  остаются открытым gate [EPIC-026](../../backlog/EPIC-026-entity-registry.md)
+  по REQ-026 #10, за пределами этого TASK.
