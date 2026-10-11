@@ -91,8 +91,11 @@ def test_prepared_input_requires_archive_sync_and_pins_rows(tmp_path: Path) -> N
         engine.dispose()
 
 
-def test_prepared_worker_does_not_fetch_daily_odds(tmp_path: Path) -> None:
-    """Worker после sync считает прогноз и оставляет daily odds пропущенными."""
+@pytest.mark.parametrize("odds_enabled", [True, False])
+def test_prepared_worker_fetches_daily_odds_after_archive_validation(
+    tmp_path: Path, odds_enabled: bool
+) -> None:
+    """Worker сначала проверяет архив, а отключённый odds stage не вызывает provider."""
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
@@ -118,6 +121,7 @@ def test_prepared_worker_does_not_fetch_daily_odds(tmp_path: Path) -> None:
             },
         }
     )
+    cfg.data_odds_enabled = odds_enabled
     try:
         with get_session(engine=engine) as session:
             cycle = DataCycleRunRepository(session)
@@ -125,6 +129,31 @@ def test_prepared_worker_does_not_fetch_daily_odds(tmp_path: Path) -> None:
             for stage in ("calendar", "quality", "archive_sync"):
                 cycle.start_stage(RUN_ID, stage)
                 cycle.finish_stage(RUN_ID, stage, status="success")
+        call_order: list[str] = []
+
+        def verify_archive(**_: object) -> PreparedRunInput:
+            call_order.append("archive_verified")
+            return PreparedRunInput(
+                rows=[
+                    {
+                        "id": "1",
+                        "datetime": datetime.now(UTC).isoformat(),
+                        "match_is_end": "0",
+                        "game_type": "regular",
+                    }
+                ],
+                canonical_artifact_id="sha256:" + "a" * 64,
+            )
+
+        def request_odds(*_args: object, **_kwargs: object) -> SimpleNamespace:
+            call_order.append("odds_requested")
+            return SimpleNamespace(
+                status="success",
+                matched_events=1,
+                missing_events=0,
+                failure_code=None,
+            )
+
         with (
             patch(
                 "sports_forecast.orchestration.canonical_full_refresh.get_session",
@@ -132,17 +161,7 @@ def test_prepared_worker_does_not_fetch_daily_odds(tmp_path: Path) -> None:
             ),
             patch(
                 "sports_forecast.orchestration.canonical_full_refresh.load_prepared_input",
-                return_value=PreparedRunInput(
-                    rows=[
-                        {
-                            "id": "1",
-                            "datetime": datetime.now(UTC).isoformat(),
-                            "match_is_end": "0",
-                            "game_type": "regular",
-                        }
-                    ],
-                    canonical_artifact_id="sha256:" + "a" * 64,
-                ),
+                side_effect=verify_archive,
             ) as prepared,
             patch(
                 "sports_forecast.orchestration.canonical_full_refresh.load_current_model_bundle",
@@ -156,7 +175,7 @@ def test_prepared_worker_does_not_fetch_daily_odds(tmp_path: Path) -> None:
             ) as materialize,
             patch(
                 "sports_forecast.orchestration.canonical_full_refresh.run_nhl_future_odds_batch",
-                side_effect=AssertionError("daily odds запрещены"),
+                side_effect=request_odds,
             ),
         ):
             result = run_full_refresh(
@@ -169,15 +188,22 @@ def test_prepared_worker_does_not_fetch_daily_odds(tmp_path: Path) -> None:
             )
         assert result.published is True
         prepared.assert_called_once()
+        assert call_order == ["archive_verified"] + (["odds_requested"] if odds_enabled else [])
         assert materialize.call_args.args[0].canonical_snapshot_id == "sha256:" + "a" * 64
         with get_session(engine=engine) as session:
             cycle = DataCycleRunRepository(session)
             run = cycle.get(RUN_ID)
             assert run is not None
             stages = {stage.stage: stage.status for stage in run.stages}
-            assert stages["data_odds"] == "skipped"
+            assert stages["data_odds"] == ("success" if odds_enabled else "skipped")
             odds_stage = next(stage for stage in run.stages if stage.stage == "data_odds")
-            assert json.loads(odds_stage.counts_json or "{}")["disabled"] == 1
+            odds_counts = json.loads(odds_stage.counts_json or "{}")
+            assert odds_counts["disabled"] == int(not odds_enabled)
+            if odds_enabled:
+                assert odds_counts["canonical_events"] == 1
+                assert odds_counts["independently_observed_events"] == 1
+            else:
+                assert odds_counts == {"disabled": 1}
             assert stages["predictions"] == "success"
             assert stages["publication"] == "success"
             cycle.finish_run(

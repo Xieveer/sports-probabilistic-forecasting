@@ -30,19 +30,34 @@ commit и image digests закрепляются только после merge �
 - Обнаруженные blockers v1.3.2: шесть живых котировок исчезают при сдвиге
   старта +10 минут; реальный ORM `INSERT ... RETURNING` в outbox отклонён.
   На сервере не выполнен полный кандидат → решение → publication/sync.
-- [TASK-036-1](tasks/TASK-036-1-candidate-outbox-writer-grants.md) исправляет
-  grants и проверку реального INSERT под ролью Worker.
+- Production preflight v1.3.1 выявил ещё два дефекта: source-first Data Cycle
+  пропускает `data_odds`, поэтому будущие NHL котировки не обновлялись с
+  1 октября; dispatcher timer с минутным интервалом упирается в лимит пяти
+  запусков за 15 минут и теряет heartbeat. Оба дефекта входят в v1.3.3.
+- [TASK-036-1](tasks/TASK-036-1-candidate-outbox-writer-grants.md) исправил
+  grants и проверку реального INSERT под ролью Worker; review, CI/security и
+  merge [PR #88](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/88)
+  завершены.
+- [TASK-036-2](tasks/TASK-036-2-prepared-refresh-daily-odds.md) восстанавливает
+  сбор коэффициентов после проверки подготовленного архива.
+- [TASK-036-3](tasks/TASK-036-3-dispatcher-minute-cadence.md) исправляет
+  лимит запусков минутного dispatcher.
 - EPIC-026 реализует словари рынков/исходов и общий derived matcher для live,
   future batch и materialization; ADR-035 задаёт staged compatibility старого
-  и нового snapshot без удаления event history.
-- Следующая роль: Developer — завершить EPIC-026; Reviewer — независимо
-  проверить полный diff и release evidence; Operations Agent — повторить
+  и нового snapshot без удаления event history. Полное review чистое, 1706
+  unit-тестов прошли; [PR #89](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/89)
+  прошёл terminal CI/security и объединён с `main`.
+- Объединённый v1.3.3 release worktree: 1707 unit passed, полный pre-commit,
+  Sphinx docs, `make ai-validate`, `make production-check` и
+  `uv lock --check --offline` прошли; release code/TASK-036-2/3 независимые
+  локальные review прошли без P0–P2. Тег и production switch не выполнялись.
+- Следующая роль: Reviewer — проверить объединённый release diff; Operations Agent — повторить
   backup/restore, publication, реальный NHL цикл и контролируемый rollout.
 - Предыдущая роль: Product Owner зафиксировал NO-GO v1.3.2 и контракт
   корректировки; локальный grant fix проверен на disposable PostgreSQL.
-- Блокеры: реализация/merge EPIC-026, terminal CI, новый source/image/model
+- Блокеры: release review/terminal CI, новый source/image/model
   evidence, проверенный feedback цикл и серверный forecast/odds/bot smoke.
-- Обновлено: 2026-10-11.
+- Обновлено: 2026-10-12.
 
 ## Критерии GO
 
@@ -62,8 +77,11 @@ commit и image digests закрепляются только после merge �
    model bundle соответствует exact версии без изменения весов.
 5. До switch проходят свежие backup, off-host readback и isolated restore,
    disk/role/snapshot preflight. После switch проходят health, NHL forecast,
-   действующая линия в API/боте и первые плановые ticks. Rollback на exact
-   v1.3.1 и совместимый snapshot проверен и доступен.
+   действующая линия в API/боте и первые плановые ticks. Реальный source-first
+   цикл после проверки архива выполняет ограниченный odds batch, записывает
+   attempt и даёт ненулевые будущие observations; dispatcher проходит 20
+   последовательных минутных ticks без `start-limit-hit` и stale heartbeat.
+   Rollback на exact v1.3.1 и совместимый snapshot проверен и доступен.
 
 ## Решение и остановка
 

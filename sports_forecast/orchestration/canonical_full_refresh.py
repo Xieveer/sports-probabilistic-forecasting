@@ -348,7 +348,7 @@ def run_full_refresh(
     использованы execution/freshness lifecycle следующего среза. Здесь rebuild
     намеренно не читает persistent ``processed/inference_*.parquet``.
     """
-    odds_enabled = False if prepared_archive_root is not None else _data_odds_enabled(cfg)
+    odds_enabled = _data_odds_enabled(cfg)
     tournament = str(cfg.tournament.name)
     with get_session() as session:
         cycle = DataCycleRunRepository(session)
@@ -382,63 +382,63 @@ def run_full_refresh(
                             "changed_events": import_summary.changed_events,
                         },
                     )
-        if prepared_archive_root is not None:
-            with get_session() as session:
-                cycle = DataCycleRunRepository(session)
-                run = cycle.get(run_id)
-                if run is None:
-                    raise ValueError("Подготовленный snapshot требует Data Cycle run")
-                cycle.finish_stage(
-                    run_id,
-                    "data_odds",
-                    status="skipped",
-                    counts={"disabled": 1},
-                )
-        else:
-            if not cycle_present:
-                cycle_present = _start_cycle_stage(run_id, "data_odds")
-            else:
-                _start_cycle_stage(run_id, "data_odds")
-        if cycle_present and prepared_archive_root is None:
-            if odds_enabled:
+        prepared_input = (
+            load_prepared_input(run_id=run_id, archive_root=prepared_archive_root)
+            if prepared_archive_root is not None
+            else None
+        )
+        skip_prepared_odds = not odds_enabled and prepared_archive_root is not None
+        if not skip_prepared_odds:
+            cycle_present = _start_cycle_stage(run_id, "data_odds")
+        if cycle_present:
+            if skip_prepared_odds:
                 with get_session() as session:
-                    attempt = run_nhl_future_odds_batch(
-                        session,
-                        run_id=run_id,
-                        now=refreshed_at,
+                    DataCycleRunRepository(session).finish_stage(
+                        run_id,
+                        "data_odds",
+                        status="skipped",
+                        counts={"disabled": 1},
                     )
-                stage_status = attempt.status
-                canonical_events = attempt.matched_events + attempt.missing_events
-                missing_events = attempt.missing_events
-                stage_errors = int(attempt.status == "failed")
-                if stage_status == "success" and missing_events > 0:
+            else:
+                if odds_enabled:
+                    with get_session() as session:
+                        attempt = run_nhl_future_odds_batch(
+                            session,
+                            run_id=run_id,
+                            now=refreshed_at,
+                        )
+                    stage_status = attempt.status
+                    canonical_events = attempt.matched_events + attempt.missing_events
+                    missing_events = attempt.missing_events
+                    stage_errors = int(attempt.status == "failed")
+                    if stage_status == "success" and missing_events > 0:
+                        stage_status = "partial_success"
+                    failure_code = "odds_acquisition_failed" if attempt.status == "failed" else None
+                else:
+                    with get_session() as session:
+                        canonical_events = _count_scheduled_data_odds_events(
+                            session, tournament=tournament, at=refreshed_at
+                        )
                     stage_status = "partial_success"
-                failure_code = "odds_acquisition_failed" if attempt.status == "failed" else None
-            else:
+                    missing_events = canonical_events
+                    stage_errors = 0
+                    failure_code = None
+                stage_counts = {
+                    "canonical_events": canonical_events,
+                    "independently_observed_events": canonical_events - missing_events,
+                    "stage_errors": stage_errors,
+                    "disabled": int(not odds_enabled),
+                }
+                if not odds_enabled:
+                    stage_counts["missing_events"] = missing_events
                 with get_session() as session:
-                    canonical_events = _count_scheduled_data_odds_events(
-                        session, tournament=tournament, at=refreshed_at
+                    DataCycleRunRepository(session).finish_stage(
+                        run_id,
+                        "data_odds",
+                        status=stage_status,
+                        counts=stage_counts,
+                        failure_code=failure_code,
                     )
-                stage_status = "partial_success"
-                missing_events = canonical_events
-                stage_errors = 0
-                failure_code = None
-            stage_counts = {
-                "canonical_events": canonical_events,
-                "independently_observed_events": canonical_events - missing_events,
-                "stage_errors": stage_errors,
-                "disabled": int(not odds_enabled),
-            }
-            if not odds_enabled:
-                stage_counts["missing_events"] = missing_events
-            with get_session() as session:
-                DataCycleRunRepository(session).finish_stage(
-                    run_id,
-                    "data_odds",
-                    status=stage_status,
-                    counts=stage_counts,
-                    failure_code=failure_code,
-                )
         if prepared_archive_root is None:
             _start_cycle_stage(run_id, "quality")
             quality_config = load_tournament_quality_gate_config(tournament)
@@ -502,11 +502,6 @@ def run_full_refresh(
                 if isinstance(bundle, VerifiedModelBundle)
                 else str(cfg.algorithm.name)
             ),
-        )
-        prepared_input = (
-            load_prepared_input(run_id=run_id, archive_root=prepared_archive_root)
-            if prepared_archive_root is not None
-            else None
         )
         snapshot = (
             prepared_input.rows if prepared_input is not None else _canonical_rows(tournament)

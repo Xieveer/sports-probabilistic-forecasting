@@ -380,6 +380,8 @@ def test_systemd_scheduler_has_durable_cycle_before_calendar_acquisition() -> No
     assert "dispatch-data-cycle.sh %i" in service
     assert "OnBootSec=365d" in timer
     assert "OnUnitActiveSec=60s" in dispatcher_timer
+    assert "StartLimitIntervalSec=0" in dispatcher_service
+    assert "StartLimitBurst=" not in dispatcher_service
     assert "dispatch-data-cycle.sh nhl" in dispatcher_service
     assert "data-cycle-dispatcher" in bridge
     assert "systemctl start --no-block" in bridge
