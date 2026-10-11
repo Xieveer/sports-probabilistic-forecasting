@@ -330,6 +330,152 @@ def test_manual_context_uses_calendar_match_without_fabricated_prediction(client
     )
     assert bet.status_code == 201
     assert bet.json()["source_namespace"] == "nhl_api"
+    invalid_draw = http.post(
+        "/admin/bets",
+        headers=_headers(request_id="manual-hockey-draw"),
+        json={
+            "context_id": context_id,
+            "outcome": "draw",
+            "funding": "cash",
+            "stake": "100.00",
+            "decimal_odds": "3.00",
+            "placed_at": "2026-10-11T17:00:00+00:00",
+        },
+    )
+    assert invalid_draw.status_code == 422
+
+
+def test_manual_context_rejects_sport_without_market_rule(client) -> None:
+    http, engine = client
+    with Session(engine) as session:
+        session.add(
+            CanonicalEvent(
+                sport="unknown_sport",
+                tournament="new_league",
+                source="source",
+                source_event_id="match-1",
+                scheduled_at=datetime(2026, 10, 11, 18),
+                status="scheduled",
+                current_revision_sha256="a" * 64,
+                home_participant="Home",
+                away_participant="Away",
+            )
+        )
+        session.commit()
+    response = http.post(
+        "/admin/bet-contexts/manual",
+        headers=_headers(),
+        json={"tournament": "new_league", "match_id": "match-1"},
+    )
+    assert response.status_code == 422
+
+
+def test_manual_context_accepts_football_tournament_and_keeps_draw_outcome(client) -> None:
+    http, engine = client
+    with Session(engine) as session:
+        session.add(
+            CanonicalEvent(
+                sport="football",
+                tournament="epl",
+                source="football_api",
+                source_event_id="fixture-17",
+                scheduled_at=datetime(2026, 10, 12, 18),
+                status="scheduled",
+                current_revision_sha256="a" * 64,
+                home_participant="Arsenal",
+                away_participant="Chelsea",
+            )
+        )
+        session.commit()
+    context = http.post(
+        "/admin/bet-contexts/manual",
+        headers=_headers(),
+        json={"tournament": "epl", "match_id": "fixture-17"},
+    )
+    assert context.status_code == 201, context.text
+    prediction = context.json()["prediction"]
+    assert prediction["market_spec"] == "winner_1x2"
+    assert prediction["predictions"] == {}
+    assert set(prediction["available_outcomes"]) == {"home_win", "draw", "away_win"}
+    bet = http.post(
+        "/admin/bets",
+        headers=_headers(request_id="football-draw"),
+        json={
+            "context_id": context.json()["context_id"],
+            "outcome": "draw",
+            "funding": "cash",
+            "stake": "100.00",
+            "decimal_odds": "3.20",
+            "placed_at": "2026-10-12T17:00:00+00:00",
+        },
+    )
+    assert bet.status_code == 201, bet.text
+    assert bet.json()["tournament"] == "epl"
+    assert bet.json()["outcome"] == "draw"
+    invalid = http.patch(
+        f"/admin/bets/{bet.json()['bet_id']}",
+        headers=_headers(request_id="football-invalid-outcome"),
+        json={"expected_revision": 1, "outcome": "invalid"},
+    )
+    assert invalid.status_code == 422
+
+
+def test_monthly_summary_groups_by_tournament(client) -> None:
+    http, engine = client
+    with Session(engine) as session:
+        for sport, tournament, event_id in (
+            ("icehockey", "nhl", "hockey-1"),
+            ("football", "epl", "football-1"),
+        ):
+            session.add(
+                CanonicalEvent(
+                    sport=sport,
+                    tournament=tournament,
+                    source="test",
+                    source_event_id=event_id,
+                    scheduled_at=datetime(2026, 10, 12, 18),
+                    status="scheduled",
+                    current_revision_sha256="a" * 64,
+                    home_participant="Home",
+                    away_participant="Away",
+                )
+            )
+        session.commit()
+    for index, (tournament, event_id) in enumerate((("nhl", "hockey-1"), ("epl", "football-1"))):
+        context = http.post(
+            "/admin/bet-contexts/manual",
+            headers=_headers(),
+            json={"tournament": tournament, "match_id": event_id},
+        )
+        created = http.post(
+            "/admin/bets",
+            headers=_headers(request_id=f"tournament-create-{index}"),
+            json={
+                "context_id": context.json()["context_id"],
+                "outcome": "home_win",
+                "funding": "cash",
+                "stake": "100.00",
+                "decimal_odds": "2.00",
+                "placed_at": "2026-10-12T17:00:00+00:00",
+            },
+        )
+        settled = http.patch(
+            f"/admin/bets/{created.json()['bet_id']}",
+            headers=_headers(request_id=f"tournament-settle-{index}"),
+            json={
+                "expected_revision": 1,
+                "result": "win" if index == 0 else "loss",
+                "payout": "200.00" if index == 0 else "0.00",
+                "settled_at": "2026-10-12T20:00:00+00:00",
+            },
+        )
+        assert settled.status_code == 200, settled.text
+    summary = http.get("/admin/bets/summary?year=2026&month=10", headers=_headers())
+    assert summary.status_code == 200
+    by_tournament = summary.json()["by_tournament"]
+    assert by_tournament["nhl"]["total_cash_pnl"] == "100.00"
+    assert by_tournament["epl"]["total_cash_pnl"] == "-100.00"
+    assert summary.json()["total_cash_pnl"] == "0.00"
 
 
 def test_context_rejects_nonfinite_or_oversized_payload(client) -> None:
