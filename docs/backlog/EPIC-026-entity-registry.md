@@ -80,7 +80,8 @@ Object Storage endpoint, IAM и retention проверены на рабочем
 Релиз v1.3.1 подтвердил PostgreSQL grants, первую публикацию, server sync,
 zero-work feedback и первые плановые ticks. [TASK-026-5](tasks/TASK-026-5-registry-publication.md)
 закрыт; весь EPIC остаётся `blocked` до строгого production reader и
-непустого кандидатного цикла REQ-026 #10. Подробности — в
+непустого кандидатного цикла REQ-026 #10, веб-каталога #12 и проверенного
+вывода legacy YAML из рабочего пути #13. Подробности — в
 [ops evidence](https://github.com/Xieveer/operations-agent/pull/33).
 
 ## Риски и rollout
