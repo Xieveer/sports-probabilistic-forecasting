@@ -32,7 +32,7 @@ _ADMIN_COMMANDS = (
 )
 _BET_COMMANDS = (
     BotCommand(command="bets", description="Открытые фактические ставки"),
-    BotCommand(command="bet_add", description="Записать ставку из матча NHL"),
+    BotCommand(command="bet_add", description="Записать ставку из матча турнира"),
     BotCommand(command="bet_report", description="Месячный отчёт по ставкам"),
     BotCommand(command="bet_history", description="История фактических ставок"),
     BotCommand(command="bet_correct", description="Исправить фактическую ставку"),

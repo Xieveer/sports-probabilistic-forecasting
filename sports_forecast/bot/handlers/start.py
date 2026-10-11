@@ -30,7 +30,7 @@ async def cmd_start(message: Message, cfg: DictConfig | None = None) -> None:
     bets_owner_id = str(cfg.bot.get("bets_owner_id") or "").strip() if cfg is not None else ""
     if bets_owner_id == str(user_id) and user_id in admin_ids:
         admin_help += (
-            "; ставки: /bets, /bet_add ID_матча, /bet_history, /bet_report ГГГГ-ММ, "
+            "; ставки: /bets, /bet_add турнир ID_матча, /bet_history, /bet_report ГГГГ-ММ, "
             "/bet_correct, /bet_audit, /bet_cancel"
         )
     await message.answer(
