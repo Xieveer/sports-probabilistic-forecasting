@@ -48,3 +48,15 @@
 | [TASK-034-2](tasks/TASK-034-2-multitournament-bets.md) | Ручная запись и отчёт по турнирам | done |
 | [TASK-034-3](tasks/TASK-034-3-historical-bets-template.md) | Excel-шаблон истории | done |
 | [TASK-034-4](tasks/TASK-034-4-historical-bets-import.md) | Проверка файла и перенос на сервер | blocked — ждёт заполненный файл |
+
+## Независимый review готовой части
+
+Проверенный commit: `18ee64b`. P0–P2 findings отсутствуют после исправления
+подсказки для неверного `outcome`; код, тесты, REQ/ADR/TASK/done/README и
+Excel-шаблон сверены. Адресные тесты: 30 passed. Ruff и `git diff --check`
+прошли. Commit hooks ruff, форматирование, mypy и остальные проверки прошли;
+`ai-layer` через `uv run` не смог получить build dependency из-за сбоя DNS,
+поэтому тот же `scripts/validate_ai_layer.py` запущен напрямую через общий
+`.venv` и завершился успешно. Не проверены заполненный исторический файл,
+серверный перенос и поведение Telegram при отказе удалить старое сообщение.
+TASK-034-4 остаётся `blocked` до получения файла владельца.
