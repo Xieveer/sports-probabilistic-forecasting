@@ -104,6 +104,37 @@ sequence; не предполагайте её номер без повторн�
 После server sync сверяйте pinned указатель read-only запросом к
 `active_registry_installation` и код выхода `registry-sync.service`.
 
+Начиная с v1.3.4, production Compose передаёт
+`SF_REGISTRY_EVENT_READER_ENABLED` в API, Telegram bot, source-acquirer и
+Worker. Долгоживущие API/бот читают `/etc/sf/production.env`, а systemd
+Data Cycle и его одноразовые Worker/source-acquirer читают отдельный
+`/etc/sports-forecast/refresh/nhl.env`. Значение нужно выставить и
+проверить **в обоих файлах**. На staged запуске это `false`; после успешного
+v2 sync, market rule и smoke — `true`. Перед каждым switch из каталога
+`/opt/sports-forecast` выполните для ожидаемого значения (`false` на stage,
+`true` при включении) проверку обоих rendered Compose:
+
+```bash
+set -euo pipefail
+expected=true
+for env_file in /etc/sf/production.env /etc/sports-forecast/refresh/nhl.env; do
+  docker compose --env-file "$env_file" -f docker-compose.prod.yml \
+    --profile worker --profile source-acquisition config --format json \
+    | jq --exit-status --arg expected "$expected" \
+      '[.services.api, .services["telegram-bot"], .services["source-acquirer"], .services.worker]
+       | all(.[]; .environment.SF_REGISTRY_EVENT_READER_ENABLED == $expected)' \
+      >/dev/null
+done
+```
+
+Проверка не выводит rendered Compose: он содержит secret paths и другую
+конфигурацию. После изменения пересоздайте API/бот и запустите новый
+одноразовый цикл Worker/source-acquirer. Значения принимаются только как
+явные `true`/`false`; неверное значение вызывает ошибку при чтении.
+Для rollback сначала верните `false` в **оба** файла, проверьте оба Compose
+render и пересоздайте API/бот, затем публикуйте verified v1 snapshot как
+новую sequence и возвращайте v1.3.1.
+
 Для отката **сначала** новым publisher опубликуйте этот сохранённый verified
 v1 snapshot как новую publication с ещё большей sequence, выполните sync
 новым бинарником и убедитесь, что PostgreSQL pinned на v1. Лишь затем

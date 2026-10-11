@@ -18,6 +18,7 @@ APPLICATION_SERVICES = {
     "registry-sync",
     "registry-feedback",
 }
+REGISTRY_EVENT_READER_SERVICES = ("api", "worker", "source-acquirer", "telegram-bot")
 EXPECTED_SERVICES = APPLICATION_SERVICES | {"db", "migrator", "role-bootstrap"}
 FORBIDDEN_SERVICES = {"caddy", "mlflow", "prometheus", "grafana", "airflow", "dvc", "node-exporter"}
 
@@ -102,6 +103,7 @@ def verify_contract(rendered_path: Path, *, model_runtime_root: Path) -> None:
             "SF_CONTROL_API_KEY_FILE",
             "SF_CONTROL_ADMIN_IDS",
             "SF_BETS_OWNER_ID",
+            "SF_REGISTRY_EVENT_READER_ENABLED",
             "SF_DATA_CYCLE_NOTIFICATION_ALIASES",
             "ODDS_API_KEY_FREE_FILE",
             "ODDS_API_KEY_20K_FILE",
@@ -111,6 +113,8 @@ def verify_contract(rendered_path: Path, *, model_runtime_root: Path) -> None:
         and api_env["DATABASE_URL_FILE"] == "/run/secrets/api_database_url"
         and api_env["SF_CONTROL_DATABASE_URL_FILE"] == "/run/secrets/control_database_url"
         and api_env["SF_CONTROL_API_KEY_FILE"] == "/run/secrets/control_api_key"
+        and isinstance(api_env["SF_REGISTRY_EVENT_READER_ENABLED"], str)
+        and api_env["SF_REGISTRY_EVENT_READER_ENABLED"] in {"true", "false"}
         and api_env["ODDS_API_KEY_FREE_FILE"] == "/run/secrets/odds_api_key_free"
         and api_env["ODDS_API_KEY_20K_FILE"] == "/run/secrets/odds_api_key_20k"
         and api_env["ODDS_API_KEY_100K_FILE"] == "/run/secrets/odds_api_key_100k"
@@ -162,6 +166,16 @@ def verify_contract(rendered_path: Path, *, model_runtime_root: Path) -> None:
         and worker_env.get("SF_DATA_CYCLE_NOTIFICATION_ALIASES")
         == api_env["SF_DATA_CYCLE_NOTIFICATION_ALIASES"],
         "worker: aliases должны совпадать с API",
+    )
+    registry_reader_value = api_env["SF_REGISTRY_EVENT_READER_ENABLED"]
+    _require(
+        all(
+            isinstance(services[name].get("environment"), dict)
+            and services[name]["environment"].get("SF_REGISTRY_EVENT_READER_ENABLED")
+            == registry_reader_value
+            for name in REGISTRY_EVENT_READER_SERVICES
+        ),
+        "registry event reader: одинаковый true/false switch обязателен для runtime consumers",
     )
     migration_dependency = services["migrator"].get("depends_on", {}).get("role-bootstrap", {})
     _require(

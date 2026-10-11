@@ -1,6 +1,6 @@
-# EPIC-036 — Исправляющий выпуск v1.3.3 с рабочим NHL registry
+# EPIC-036 — Выпуск с рабочим NHL registry
 
-> **Статус:** in_progress — исправления и повторные release gates
+> **Статус:** in_progress — v1.3.3 NO-GO, исправление и gates v1.3.4
 > **Приоритет:** critical
 > **Владелец:** Product Owner
 > **Ветка:** `initiative/epic-036-v1-3-3-release`
@@ -18,9 +18,11 @@ designation каждого матча. Будущие игроки имеют с
 связь с командами. Legacy код остаётся для явного rollback.
 
 Владелец разрешил довести исправления до новой версии и deployment после
-review, CI и release gates. Следующий свободный тег — `v1.3.3`; exact source
-commit и image digests закрепляются только после merge и terminal CI. Тег
-`v1.3.2` не изменяется.
+review, CI и release gates. `v1.3.3` создан на exact merge commit
+`a89f1f95bcc5112ecae3f145253e01ab90d9ab7b`, но получил NO-GO до
+production switch: strict reader невозможно включить через существующий
+production Compose. Docker run `38177105034` отменён. Следующий тег —
+`v1.3.4`; прежние теги не меняются.
 
 ## Память Product Owner
 
@@ -50,13 +52,18 @@ commit и image digests закрепляются только после merge �
 - Объединённый v1.3.3 release worktree: 1707 unit passed, полный pre-commit,
   Sphinx docs, `make ai-validate`, `make production-check` и
   `uv lock --check --offline` прошли; release code/TASK-036-2/3 независимые
-  локальные review прошли без P0–P2. Тег и production switch не выполнялись.
-- Следующая роль: Reviewer — проверить объединённый release diff; Operations Agent — повторить
-  backup/restore, publication, реальный NHL цикл и контролируемый rollout.
+  локальные review прошли без P0–P2. PR #90, terminal CI/security и source
+  tag прошли. Pre-switch проверка обнаружила baked `false` без runtime override;
+  [TASK-036-4](tasks/TASK-036-4-runtime-strict-switch.md) исправляет release blocker.
+- Свежий production DB backup от 2026-10-11 21:36 UTC прошёл off-host
+  readback и isolated restore. Сервер остаётся на v1.3.1, strict выключен;
+  v2 snapshot не опубликован.
+- Следующая роль: Developer → независимый Reviewer → terminal CI/tag pipeline;
+  Operations Agent повторит model/server gates на новом exact образе.
 - Предыдущая роль: Product Owner зафиксировал NO-GO v1.3.2 и контракт
   корректировки; локальный grant fix проверен на disposable PostgreSQL.
-- Блокеры: release review/terminal CI, новый source/image/model
-  evidence, проверенный feedback цикл и серверный forecast/odds/bot smoke.
+- Блокеры: TASK-036-4, новый source/image/model evidence, проверенный
+  feedback цикл и серверный forecast/odds/bot smoke.
 - Обновлено: 2026-10-12.
 
 ## Критерии GO
@@ -64,6 +71,9 @@ commit и image digests закрепляются только после merge �
 1. Словари рынков/исходов доступны локально и в установленном snapshot;
    NHL/Pinnacle `h2h` означает полный матч с ОТ/буллитами, два исхода без
    ничьей. Старый snapshot читается новой версией до публикации нового.
+   Runtime strict switch одинаков в `/etc/sf/production.env` и отдельном
+   systemd profile `/etc/sports-forecast/refresh/nhl.env`; оба rendered
+   Compose проверены до включения и при rollback.
 2. Один алгоритм для live, future и materialization связывает шесть
    контрольных +10 минут котировок с правильными матчами без owner event
    links. При двух подходящих матчах, двух source event IDs, неизвестной
@@ -73,7 +83,7 @@ commit и image digests закрепляются только после merge �
    права записи ограничены и проверены на production-подобной БД.
 4. Source PR проходит независимый review, terminal CI/security и
    `make production-check`. На exact merge commit ставится новый annotated
-   tag v1.3.3; все образы проходят scan/provenance и release-evidence gate;
+   tag v1.3.4; все образы проходят scan/provenance и release-evidence gate;
    model bundle соответствует exact версии без изменения весов.
 5. До switch проходят свежие backup, off-host readback и isolated restore,
    disk/role/snapshot preflight. После switch проходят health, NHL forecast,
@@ -83,7 +93,7 @@ commit и image digests закрепляются только после merge �
    последовательных минутных ticks без `start-limit-hit` и stale heartbeat.
    Rollback на exact v1.3.1 и совместимый snapshot проверен и доступен.
 
-## Независимое release review
+## Независимое review кандидата v1.3.3
 
 - Проверенный diff: `dd5184b3475200abdf217340f9dc62db279a7142`.
 - P0–P2 findings не обнаружены. Проверены порядок валидации архива и запроса
@@ -93,9 +103,10 @@ commit и image digests закрепляются только после merge �
   прошли. Автором до review заявлены 1707 unit passed, полный pre-commit,
   Sphinx docs, `make ai-validate`, `make production-check` и
   `uv lock --check --offline`.
-- Остаточный риск: фактические provider odds, 20 минутных ticks и полный
-  candidate feedback проверяются только в release gates на VPS. Source tag,
-  immutable image/model evidence и production switch ещё не выполнены.
+- Остаточный риск, пропущенный review: baked strict flag не имел production
+  override. После выявления до server switch v1.3.3 получил NO-GO. Фактические
+  provider odds, 20 минутных ticks и полный candidate feedback остаются
+  серверными gates следующего выпуска.
 
 ## Решение и остановка
 

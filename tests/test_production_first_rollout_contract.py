@@ -68,14 +68,17 @@ def test_production_compose_fixture_supplies_control_and_notification_requiremen
         "SF_REGISTRY_FEEDBACK_DB_PASSWORD_FILE",
         "SF_REGISTRY_FEEDBACK_DATABASE_URL_FILE",
         "SF_CONTROL_API_KEY_FILE",
+        "SF_REGISTRY_EVENT_READER_ENABLED",
         "SF_DATA_CYCLE_NOTIFICATION_ALIASES",
         "BOT_ADMIN_USER_IDS",
         "BOT_NOTIFICATION_DESTINATIONS_FILE",
     }
     assert required_values <= values.keys()
     assert values["SF_DATA_CYCLE_NOTIFICATION_ALIASES"] == "nhl_admins"
+    assert values["SF_REGISTRY_EVENT_READER_ENABLED"] == "false"
     assert values["BOT_ADMIN_USER_IDS"] == "1"
     for key in required_values - {
+        "SF_REGISTRY_EVENT_READER_ENABLED",
         "SF_DATA_CYCLE_NOTIFICATION_ALIASES",
         "BOT_ADMIN_USER_IDS",
     }:
@@ -258,6 +261,22 @@ def test_production_compose_fixture_renders_all_first_rollout_profiles(tmp_path:
     rendered = tmp_path / "rendered.yml"
     rendered.write_text(result.stdout, encoding="utf-8")
     verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
+
+    config = yaml.safe_load(result.stdout)
+    for name in ("api", "worker", "source-acquirer", "telegram-bot"):
+        assert config["services"][name]["environment"]["SF_REGISTRY_EVENT_READER_ENABLED"] == (
+            "false"
+        )
+        config["services"][name]["environment"]["SF_REGISTRY_EVENT_READER_ENABLED"] = "true"
+    rendered.write_text(yaml.safe_dump(config), encoding="utf-8")
+    verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
+
+    config["services"]["source-acquirer"]["environment"]["SF_REGISTRY_EVENT_READER_ENABLED"] = (
+        "false"
+    )
+    rendered.write_text(yaml.safe_dump(config), encoding="utf-8")
+    with pytest.raises(ValueError, match="одинаковый true/false switch"):
+        verify_contract(rendered, model_runtime_root=tmp_path / "runtime_models")
 
     config = yaml.safe_load(result.stdout)
     config["services"]["archive-sync"]["network_mode"] = "bridge"

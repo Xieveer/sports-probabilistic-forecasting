@@ -2,7 +2,7 @@
 
 > **Статус:** done — шаблон и локальный контрактный тест; production gate ожидается
 > **Владелец:** Operations Agent
-> **Эпик:** [EPIC-036](../EPIC-036-v1-3-3-registry-rollout.md)
+> **Эпик:** [EPIC-036](../EPIC-036-registry-rollout.md)
 
 ## Дефект
 

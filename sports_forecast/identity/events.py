@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -37,7 +38,15 @@ class _ResolutionMetadata(TypedDict):
 
 
 def registry_event_reader_enabled(config_path: Path = Path("conf/identity_event.yaml")) -> bool:
-    """Прочитать compatibility switch; по умолчанию новый reader выключен."""
+    """Прочитать switch из окружения или compatibility-конфига."""
+    environment_value = os.environ.get("SF_REGISTRY_EVENT_READER_ENABLED")
+    if environment_value is not None:
+        if environment_value == "true":
+            return True
+        if environment_value == "false":
+            return False
+        raise ValueError("SF_REGISTRY_EVENT_READER_ENABLED должен быть 'true' или 'false'")
+
     config = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
     if not isinstance(config, dict) or not isinstance(
         config.get("registry_event_reader_enabled"), bool
