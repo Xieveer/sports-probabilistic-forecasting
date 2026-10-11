@@ -36,6 +36,7 @@ def test_monthly_summary_uses_settlement_date_and_separate_roi() -> None:
             "settled_at": datetime(2026, 10, 1, tzinfo=UTC),
             "bookmaker": "Winline",
             "market_spec": "winner_withOT",
+            "tournament": "nhl",
         },
         {
             "status": "settled",
@@ -46,6 +47,7 @@ def test_monthly_summary_uses_settlement_date_and_separate_roi() -> None:
             "settled_at": datetime(2026, 10, 2, tzinfo=UTC),
             "bookmaker": "Winline",
             "market_spec": "winner_withOT",
+            "tournament": "nhl",
         },
         {
             "status": "open",
@@ -57,6 +59,7 @@ def test_monthly_summary_uses_settlement_date_and_separate_roi() -> None:
             "settled_at": None,
             "bookmaker": "Winline",
             "market_spec": "winner_withOT",
+            "tournament": "nhl",
         },
     ]
     summary = monthly_summary(rows, 2026, 10)
@@ -80,6 +83,7 @@ def test_monthly_summary_uses_moscow_calendar_boundary() -> None:
         "settled_at": datetime(2026, 9, 30, 23, 30, tzinfo=UTC),
         "bookmaker": "Winline",
         "market_spec": "winner_withOT",
+        "tournament": "nhl",
     }
     assert monthly_summary([row], 2026, 9)["settled_count"] == 0
     assert monthly_summary([row], 2026, 10)["cash_pnl"] == "-100.00"

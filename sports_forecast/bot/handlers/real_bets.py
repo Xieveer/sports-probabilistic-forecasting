@@ -5,23 +5,79 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from html import escape
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from omegaconf import DictConfig
 
-from sports_forecast.betting.real_bets import Funding, Result, expected_payout
+from sports_forecast.betting.real_bets import MARKET_OUTCOMES, Funding, Result, expected_payout
 from sports_forecast.bot.handlers.admin import ControlApiError, _control_request
+from sports_forecast.utils.log_config import get_logger
 
 
 router = Router(name="real_bets")
 _MOSCOW = ZoneInfo("Europe/Moscow")
+logger = get_logger(__name__)
+_CORRECTION_HELP = (
+    "Скопируйте ID из /bet_history и подставьте его вместо ID_ставки.\n"
+    "Шаблон: /bet_correct ID_ставки поле значение\n"
+    "Примеры:\n"
+    "/bet_correct ID_ставки stake 500,50\n"
+    "/bet_correct ID_ставки payout 1176,18\n"
+    "/bet_correct ID_ставки odds 2,35\n"
+    "/bet_correct ID_ставки funding freebet\n"
+    "/bet_correct ID_ставки outcome home_win\n"
+    "/bet_correct ID_ставки outcome draw\n"
+    "/bet_correct ID_ставки result win\n"
+    "/bet_correct ID_ставки placed_at 11.10.2026 19:30\n"
+    "/bet_correct ID_ставки settled_at 12.10.2026 00:15\n"
+    "/bet_correct ID_ставки cancel Ошибочно записана дважды\n"
+    "/bet_correct ID_ставки reopen\n"
+    "Значения funding: cash или freebet; result: win, loss или void. "
+    "Для winner_withOT: home_win/away_win; для winner_1x2: home_win/draw/away_win. "
+    "Время указывайте в МСК. Для result у открытой ставки также нужны выплата "
+    "и время расчёта; удобнее использовать /bets."
+)
+
+
+async def _entry_answer(
+    message: Message,
+    state: FSMContext,
+    text: str,
+    *,
+    remember_incoming: bool = True,
+    **kwargs: Any,
+) -> None:
+    """Отправить шаг записи и запомнить его вместе с ответом владельца."""
+    data = await state.get_data()
+    ids = list(data.get("entry_message_ids") or [])
+    incoming_id = getattr(message, "message_id", None)
+    if remember_incoming and isinstance(incoming_id, int) and incoming_id not in ids:
+        ids.append(incoming_id)
+    sent = await message.answer(text, **kwargs)
+    sent_id = getattr(sent, "message_id", None)
+    if isinstance(sent_id, int) and sent_id not in ids:
+        ids.append(sent_id)
+    await state.update_data(entry_message_ids=ids)
+
+
+async def _delete_entry_messages(message: Message, ids: list[int]) -> None:
+    """Убрать сообщения завершённого диалога, не влияя на сохранённую ставку."""
+    bot = getattr(message, "bot", None)
+    if bot is None:
+        return
+    for message_id in dict.fromkeys(ids):
+        try:
+            await bot.delete_message(chat_id=message.chat.id, message_id=message_id)
+        except TelegramAPIError as exc:
+            logger.warning("Не удалось удалить сообщение диалога ставки %s: %s", message_id, exc)
 
 
 class BetEntryState(StatesGroup):
@@ -75,6 +131,40 @@ def card_context_button(context_id: str) -> InlineKeyboardMarkup:
     )
 
 
+def _outcome_label(outcome: str, market_spec: str) -> str:
+    """Показать владельцу исход с учётом правил рынка."""
+    labels = {
+        "home_win": "Победа хозяев",
+        "away_win": "Победа гостей",
+        "draw": "Ничья",
+    }
+    label = labels.get(outcome, outcome.replace("_", " "))
+    if market_spec == "winner_withOT" and outcome in {"home_win", "away_win"}:
+        return f"{label} с ОТ/буллитами"
+    if market_spec == "winner_1x2":
+        return f"{label} (основное время)"
+    return label
+
+
+def _market_label(market_spec: str) -> str:
+    """Показать период и значимые правила ручного рынка."""
+    return {
+        "winner_withOT": "Победитель матча с ОТ/буллитами",
+        "winner_1x2": "1X2, основное время",
+        "winner": "Победитель матча",
+    }.get(market_spec, market_spec)
+
+
+def _correction_outcome_hint(market_spec: str, bet_id: str) -> str:
+    """Показать допустимые исходы и копируемый пример для ставки."""
+    outcomes = MARKET_OUTCOMES.get(market_spec)
+    if not outcomes:
+        return ""
+    choices = ", ".join(outcomes[:-1]) + f" или {outcomes[-1]}"
+    example = "draw" if "draw" in outcomes else outcomes[0]
+    return f"Для этой ставки исходы: {choices}. Пример: /bet_correct {bet_id} outcome {example}"
+
+
 def _uuid(value: str) -> str | None:
     try:
         return str(UUID(value))
@@ -125,10 +215,14 @@ async def _show_entry_confirmation(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     placed_at = datetime.fromisoformat(str(data["placed_at"])).astimezone(_MOSCOW)
     funding = "фрибет" if data["funding"] == "freebet" else "свои деньги"
-    await message.answer(
+    await _entry_answer(
+        message,
+        state,
         "Проверьте ставку перед сохранением:\n"
+        f"Турнир: {escape(str(data.get('tournament') or 'не указан'))}\n"
         f"Матч: {escape(str(data['match_label']))}\n"
-        f"Рынок: {escape(str(data['market_spec']))}; исход: {escape(str(data['outcome']))}\n"
+        f"Рынок: {escape(_market_label(str(data['market_spec'])))}; "
+        f"исход: {escape(_outcome_label(str(data['outcome']), str(data['market_spec'])))}\n"
         f"Winline: {escape(str(data['stake']))} ₽ × {escape(str(data['decimal_odds']))}\n"
         f"Средства: {funding}; размещена: {placed_at:%d.%m.%Y %H:%M} МСК\n"
         f"Версия прогноза: {escape(str(data.get('prediction_revision_id') or 'нет подтверждённой'))}; "
@@ -159,7 +253,9 @@ async def cb_new_bet(cq: CallbackQuery, cfg: DictConfig, state: FSMContext) -> N
         await cq.answer("Карточка недоступна.", show_alert=True)
         return
     prediction = context.get("prediction") or {}
-    outcomes = list((prediction.get("predictions") or {}).keys())
+    outcomes = list(
+        prediction.get("available_outcomes") or (prediction.get("predictions") or {}).keys()
+    )
     if not outcomes and prediction.get("market_spec") == "winner_withOT":
         outcomes = ["home_win", "away_win"]
     if not outcomes or len(outcomes) > 10:
@@ -169,6 +265,7 @@ async def cb_new_bet(cq: CallbackQuery, cfg: DictConfig, state: FSMContext) -> N
     await state.update_data(
         context_id=context_id,
         outcomes=outcomes,
+        tournament=prediction.get("tournament"),
         market_spec=prediction.get("market_spec"),
         match_label=f"{prediction.get('home_player') or 'Home'} — {prediction.get('away_player') or 'Away'}",
         prediction_revision_id=context.get("prediction_revision_id"),
@@ -178,13 +275,20 @@ async def cb_new_bet(cq: CallbackQuery, cfg: DictConfig, state: FSMContext) -> N
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=outcome.replace("_", " "), callback_data=f"bet:outcome:{index}"
+                    text=_outcome_label(outcome, str(prediction.get("market_spec") or "")),
+                    callback_data=f"bet:outcome:{index}",
                 )
             ]
             for index, outcome in enumerate(outcomes)
         ]
     )
-    await cq.message.answer("Выберите фактический исход ставки:", reply_markup=keyboard)
+    await _entry_answer(
+        cast(Message, cq.message),
+        state,
+        "Выберите фактический исход ставки:",
+        remember_incoming=False,
+        reply_markup=keyboard,
+    )
     await cq.answer()
 
 
@@ -200,7 +304,9 @@ async def cb_bet_outcome(cq: CallbackQuery, cfg: DictConfig, state: FSMContext) 
         await cq.answer("Начните запись с карточки прогноза.", show_alert=True)
         return
     await state.update_data(outcome=outcomes[int(raw_index)])
-    await cq.message.answer(
+    await _entry_answer(
+        cast(Message, cq.message),
+        state,
         "Чем сделали ставку?",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
@@ -224,7 +330,9 @@ async def cb_bet_funding(cq: CallbackQuery, cfg: DictConfig, state: FSMContext) 
         return
     await state.update_data(funding=funding)
     await state.set_state(BetEntryState.waiting_stake)
-    await cq.message.answer("Введите сумму в рублях, например 500 или 500,50:")
+    await _entry_answer(
+        cast(Message, cq.message), state, "Введите сумму в рублях, например 500 или 500,50:"
+    )
     await cq.answer()
 
 
@@ -234,11 +342,13 @@ async def msg_bet_stake(message: Message, cfg: DictConfig, state: FSMContext) ->
         return
     stake = _rub(message.text or "", positive=True)
     if stake is None:
-        await message.answer("Введите положительную сумму в рублях с точностью до копейки.")
+        await _entry_answer(
+            message, state, "Введите положительную сумму в рублях с точностью до копейки."
+        )
         return
     await state.update_data(stake=stake)
     await state.set_state(BetEntryState.waiting_odds)
-    await message.answer("Введите фактический коэффициент Winline, например 2,35:")
+    await _entry_answer(message, state, "Введите фактический коэффициент Winline, например 2,35:")
 
 
 @router.message(BetEntryState.waiting_odds, ~F.text.startswith("/"))
@@ -247,12 +357,14 @@ async def msg_bet_odds(message: Message, cfg: DictConfig, state: FSMContext) -> 
         return
     odds = _odds(message.text or "")
     if odds is None:
-        await message.answer(
-            "Введите decimal коэффициент больше 1, максимум 4 знака после запятой."
+        await _entry_answer(
+            message, state, "Введите decimal коэффициент больше 1, максимум 4 знака после запятой."
         )
         return
     await state.update_data(decimal_odds=odds)
-    await message.answer("Когда разместили ставку?", reply_markup=_time_buttons("placed"))
+    await _entry_answer(
+        message, state, "Когда разместили ставку?", reply_markup=_time_buttons("placed")
+    )
 
 
 @router.callback_query(F.data.startswith("bet:placed:"))
@@ -267,10 +379,12 @@ async def cb_bet_placed(cq: CallbackQuery, cfg: DictConfig, state: FSMContext) -
     choice = (cq.data or "").removeprefix("bet:placed:")
     if choice == "now":
         await state.update_data(placed_at=datetime.now(UTC).isoformat(), request_id=str(uuid4()))
-        await _show_entry_confirmation(cq.message, state)
+        await _show_entry_confirmation(cast(Message, cq.message), state)
     elif choice == "manual":
         await state.set_state(BetEntryState.waiting_placed_at)
-        await cq.message.answer("Введите время размещения: ДД.ММ.ГГГГ ЧЧ:ММ МСК")
+        await _entry_answer(
+            cast(Message, cq.message), state, "Введите время размещения: ДД.ММ.ГГГГ ЧЧ:ММ МСК"
+        )
     else:
         await cq.answer("Неизвестный выбор.", show_alert=True)
         return
@@ -283,7 +397,7 @@ async def msg_bet_placed(message: Message, cfg: DictConfig, state: FSMContext) -
         return
     placed_at = _manual_time(message.text or "")
     if placed_at is None:
-        await message.answer("Введите дату и время в формате ДД.ММ.ГГГГ ЧЧ:ММ МСК.")
+        await _entry_answer(message, state, "Введите дату и время в формате ДД.ММ.ГГГГ ЧЧ:ММ МСК.")
         return
     await state.update_data(placed_at=placed_at, request_id=str(uuid4()))
     await _show_entry_confirmation(message, state)
@@ -320,11 +434,19 @@ async def cb_bet_confirm(cq: CallbackQuery, cfg: DictConfig, state: FSMContext) 
     except ControlApiError:
         await cq.answer("Не удалось сохранить ставку. Повторите подтверждение.", show_alert=True)
         return
-    await state.clear()
-    await cq.message.answer(
+    sent = await cq.message.answer(
         f"Ставка сохранена: <code>{escape(str(response['bet_id']))}</code>. Добор запишите отдельной ставкой."
     )
-    await cq.answer()
+    ids = list(data.get("entry_message_ids") or [])
+    confirmation_id = getattr(cq.message, "message_id", None)
+    if isinstance(confirmation_id, int):
+        ids.append(confirmation_id)
+    sent_id = getattr(sent, "message_id", None)
+    if isinstance(sent_id, int):
+        ids.append(sent_id)
+    await state.clear()
+    await _delete_entry_messages(cast(Message, cq.message), ids)
+    await cq.answer("Ставка сохранена")
 
 
 @router.message(Command("bets"))
@@ -346,7 +468,8 @@ async def cmd_bets(message: Message, cfg: DictConfig) -> None:
     for bet in bets[:20]:
         bet_id = str(bet["bet_id"])
         await message.answer(
-            f"<code>{escape(bet_id)}</code> · {escape(str(bet['match_id']))}\n"
+            f"<code>{escape(bet_id)}</code> · {escape(str(bet['tournament']))} · "
+            f"{escape(str(bet['match_id']))}\n"
             f"{escape(str(bet['outcome']))}: {escape(str(bet['stake']))} ₽ × {escape(str(bet['decimal_odds']))}",
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
@@ -358,14 +481,20 @@ async def cmd_bets(message: Message, cfg: DictConfig) -> None:
 
 @router.message(Command("bet_add"))
 async def cmd_bet_add(message: Message, cfg: DictConfig) -> None:
-    """Начать запись из календарного NHL матча без прогноза."""
+    """Начать запись из календарного матча указанного турнира без прогноза."""
     owner_id = _private_owner(message, cfg)
     if owner_id is None:
         await message.answer("Журнал доступен владельцу в личном чате.")
         return
     parts = (message.text or "").split()
-    if len(parts) != 2 or not parts[1].replace("-", "").isalnum():
-        await message.answer("Используйте /bet_add ID_матча_NHL из /upcoming.")
+    if (
+        len(parts) != 3
+        or not parts[1].replace("_", "").replace("-", "").isalnum()
+        or not parts[2].replace("-", "").isalnum()
+    ):
+        await message.answer(
+            "Используйте /bet_add турнир ID_матча, например /bet_add nhl 2026020084."
+        )
         return
     try:
         context = await _control_request(
@@ -373,15 +502,24 @@ async def cmd_bet_add(message: Message, cfg: DictConfig) -> None:
             owner_id,
             "POST",
             "bet-contexts/manual",
-            payload={"tournament": "nhl", "match_id": parts[1]},
+            payload={"tournament": parts[1], "match_id": parts[2]},
         )
-    except ControlApiError:
-        await message.answer("Матч не найден или журнал недоступен. Проверьте ID в /upcoming.")
+    except ControlApiError as exc:
+        if exc.status_code == 404:
+            await message.answer("Матч не найден. Проверьте турнир и ID в календаре.")
+        elif exc.status_code == 422:
+            await message.answer(
+                "Для матча нет однозначного поддерживаемого рынка. Проверьте турнир и ID."
+            )
+        else:
+            await message.answer("Журнал временно недоступен.")
         return
     prediction = context["prediction"]
     await message.answer(
+        f"Турнир: {escape(str(prediction.get('tournament') or parts[1]))}\n"
         f"Матч: {escape(str(prediction.get('home_player') or 'Home'))} — "
         f"{escape(str(prediction.get('away_player') or 'Away'))}\n"
+        f"Рынок: {escape(_market_label(str(prediction.get('market_spec') or '')))}\n"
         "Прогноза и Pinnacle-котировки нет; ставка будет записана без этих ссылок.",
         reply_markup=card_context_button(str(context["context_id"])),
     )
@@ -464,7 +602,7 @@ async def cb_expected_payout(cq: CallbackQuery, cfg: DictConfig, state: FSMConte
     if "expected_payout" not in data:
         await cq.answer("Выберите ставку из /bets.", show_alert=True)
         return
-    await _ask_settlement_time(cq.message, state, str(data["expected_payout"]))
+    await _ask_settlement_time(cast(Message, cq.message), state, str(data["expected_payout"]))
     await cq.answer()
 
 
@@ -510,7 +648,7 @@ async def cb_bet_settled_time(cq: CallbackQuery, cfg: DictConfig, state: FSMCont
     choice = (cq.data or "").removeprefix("bet:settled:")
     if choice == "now":
         await state.update_data(settled_at=datetime.now(UTC).isoformat(), request_id=str(uuid4()))
-        await _show_settlement_confirmation(cq.message, state)
+        await _show_settlement_confirmation(cast(Message, cq.message), state)
     elif choice == "manual":
         await state.set_state(BetSettlementState.waiting_settled_at)
         await cq.message.answer("Введите время расчёта: ДД.ММ.ГГГГ ЧЧ:ММ МСК")
@@ -595,6 +733,7 @@ async def cmd_bet_report(message: Message, cfg: DictConfig) -> None:
         ("Букмекеры", "by_bookmaker"),
         ("Рынки", "by_market"),
         ("Средства", "by_funding"),
+        ("Турниры", "by_tournament"),
     ):
         items = report.get(key) or {}
         if items:
@@ -632,7 +771,8 @@ async def cmd_bet_history(message: Message, cfg: DictConfig) -> None:
         await message.answer("Записей пока нет.")
         return
     lines = [
-        f"<code>{escape(str(bet['bet_id']))}</code> · {escape(str(bet['match_id']))} · "
+        f"<code>{escape(str(bet['bet_id']))}</code> · {escape(str(bet['tournament']))} · "
+        f"{escape(str(bet['match_id']))} · {escape(str(bet['market_spec']))} · "
         f"{escape(str(bet['outcome']))} · {bet['stake']} ₽ × {bet['decimal_odds']} · "
         f"{escape(str(bet['status']))}"
         for bet in bets[:20]
@@ -675,9 +815,16 @@ async def cmd_bet_correct(message: Message, cfg: DictConfig) -> None:
     parts = (message.text or "").split(maxsplit=3)
     bet_id = _uuid(parts[1]) if len(parts) >= 2 else None
     if bet_id is None or len(parts) < 3:
-        await message.answer(
-            "Используйте /bet_correct ID поле значение. Поля: payout, stake, odds, funding, outcome, result, placed_at, settled_at, cancel, reopen."
-        )
+        outcome_hint = ""
+        if bet_id is not None:
+            try:
+                bet = await _control_request(cfg, owner_id, "GET", f"bets/{bet_id}")
+            except ControlApiError:
+                bet = {}
+            hint = _correction_outcome_hint(str(bet.get("market_spec") or ""), bet_id)
+            if hint:
+                outcome_hint = "\n" + hint
+        await message.answer(_CORRECTION_HELP + outcome_hint)
         return
     field = parts[2]
     value = parts[3] if len(parts) == 4 else ""
@@ -685,19 +832,26 @@ async def cmd_bet_correct(message: Message, cfg: DictConfig) -> None:
     if field in {"payout", "stake"}:
         amount = _rub(value, positive=field == "stake")
         if amount is None:
-            await message.answer("Введите корректную сумму в рублях.")
+            example = "stake 500,50" if field == "stake" else "payout 1176,18"
+            await message.answer(
+                f"Введите сумму в рублях до копейки: /bet_correct ID_ставки {example}"
+            )
             return
         patch = {field: amount}
     elif field == "odds":
         odds = _odds(value)
         if odds is None:
-            await message.answer("Коэффициент должен быть больше 1.")
+            await message.answer(
+                "Коэффициент больше 1, до 4 знаков: /bet_correct ID_ставки odds 2,35"
+            )
             return
         patch = {"decimal_odds": odds}
     elif field in {"placed_at", "settled_at"}:
         timestamp = _manual_time(value)
         if timestamp is None:
-            await message.answer("Введите время ДД.ММ.ГГГГ ЧЧ:ММ МСК.")
+            await message.answer(
+                f"Время ДД.ММ.ГГГГ ЧЧ:ММ МСК: /bet_correct ID_ставки {field} 11.10.2026 19:30"
+            )
             return
         patch = {field: timestamp}
     elif field == "funding" and value in {"cash", "freebet"}:
@@ -711,10 +865,16 @@ async def cmd_bet_correct(message: Message, cfg: DictConfig) -> None:
     elif field == "reopen" and not value:
         patch = {"status": "open"}
     else:
-        await message.answer("Недопустимое поле или значение.")
+        await message.answer("Недопустимое поле или значение.\n" + _CORRECTION_HELP)
         return
     try:
         bet = await _control_request(cfg, owner_id, "GET", f"bets/{bet_id}")
+        if field == "outcome":
+            market_spec = str(bet.get("market_spec") or "")
+            allowed_outcomes = MARKET_OUTCOMES.get(market_spec)
+            if allowed_outcomes is not None and value not in allowed_outcomes:
+                await message.answer(_correction_outcome_hint(market_spec, bet_id))
+                return
         updated = await _control_request(
             cfg,
             owner_id,

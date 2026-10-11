@@ -11,6 +11,12 @@ from zoneinfo import ZoneInfo
 
 Funding = Literal["cash", "freebet"]
 Result = Literal["win", "loss", "void"]
+MANUAL_MARKETS_BY_SPORT: dict[str, tuple[str, tuple[str, ...]]] = {
+    "icehockey": ("winner_withOT", ("home_win", "away_win")),
+    "football": ("winner_1x2", ("home_win", "draw", "away_win")),
+    "table_tennis": ("winner", ("home_win", "away_win")),
+}
+MARKET_OUTCOMES: dict[str, tuple[str, ...]] = dict(MANUAL_MARKETS_BY_SPORT.values())
 _CENT = Decimal("0.01")
 _MOSCOW = ZoneInfo("Europe/Moscow")
 
@@ -97,6 +103,7 @@ def monthly_summary(rows: Iterable[Mapping[str, Any]], year: int, month: int) ->
     by_bookmaker: dict[str, dict[str, Any]] = {}
     by_market: dict[str, dict[str, Any]] = {}
     by_funding: dict[str, dict[str, Any]] = {}
+    by_tournament: dict[str, dict[str, Any]] = {}
     open_count = 0
     for row in rows:
         if row.get("status") == "open":
@@ -121,6 +128,7 @@ def monthly_summary(rows: Iterable[Mapping[str, Any]], year: int, month: int) ->
             (by_bookmaker, "bookmaker"),
             (by_market, "market_spec"),
             (by_funding, "funding"),
+            (by_tournament, "tournament"),
         ):
             key = str(row[field])
             _add_row(grouping.setdefault(key, _summary_bucket()), row)
@@ -132,4 +140,5 @@ def monthly_summary(rows: Iterable[Mapping[str, Any]], year: int, month: int) ->
         "by_bookmaker": {key: _serialize_bucket(bucket) for key, bucket in by_bookmaker.items()},
         "by_market": {key: _serialize_bucket(bucket) for key, bucket in by_market.items()},
         "by_funding": {key: _serialize_bucket(bucket) for key, bucket in by_funding.items()},
+        "by_tournament": {key: _serialize_bucket(bucket) for key, bucket in by_tournament.items()},
     }

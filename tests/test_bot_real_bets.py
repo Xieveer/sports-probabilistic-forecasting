@@ -160,13 +160,96 @@ def test_owner_can_start_bet_from_calendar_match_without_prediction(monkeypatch)
         }
 
     monkeypatch.setattr(real_bets, "_control_request", control)
-    message = _message("/bet_add 2026020084")
+    message = _message("/bet_add nhl 2026020084")
     asyncio.run(real_bets.cmd_bet_add(message, cfg))
     assert "Прогноза и Pinnacle-котировки нет" in message.answer.await_args.args[0]
     keyboard = message.answer.await_args.kwargs["reply_markup"]
     assert keyboard.inline_keyboard[0][0].callback_data.endswith(
         "12345678-1234-1234-1234-123456789abc"
     )
+
+
+def test_manual_football_bet_uses_tournament_and_draw_choice(monkeypatch) -> None:
+    cfg = OmegaConf.create({"bot": {"admin_user_ids": [101], "bets_owner_id": "101"}})
+    state = FakeState()
+    context_id = "12345678-1234-1234-1234-123456789abc"
+
+    async def control(_cfg, _owner, method, path, *, payload=None, **_kwargs):
+        if method == "POST":
+            assert path == "bet-contexts/manual"
+            assert payload == {"tournament": "epl", "match_id": "fixture-17"}
+        return {
+            "context_id": context_id,
+            "prediction": {
+                "tournament": "epl",
+                "home_player": "Arsenal",
+                "away_player": "Chelsea",
+                "market_spec": "winner_1x2",
+                "predictions": {},
+                "available_outcomes": ["home_win", "draw", "away_win"],
+            },
+        }
+
+    monkeypatch.setattr(real_bets, "_control_request", control)
+    message = _message("/bet_add epl fixture-17")
+    asyncio.run(real_bets.cmd_bet_add(message, cfg))
+    assert "Турнир: epl" in message.answer.await_args.args[0]
+    assert "1X2, основное время" in message.answer.await_args.args[0]
+    asyncio.run(real_bets.cb_new_bet(_callback(f"bet:new:{context_id}", message), cfg, state))
+    buttons = message.answer.await_args.kwargs["reply_markup"].inline_keyboard
+    assert [button[0].text for button in buttons] == [
+        "Победа хозяев (основное время)",
+        "Ничья (основное время)",
+        "Победа гостей (основное время)",
+    ]
+
+
+def test_bet_report_shows_tournament_breakdown(monkeypatch) -> None:
+    cfg = OmegaConf.create({"bot": {"admin_user_ids": [101], "bets_owner_id": "101"}})
+
+    async def control(_cfg, _owner, _method, _path, **_kwargs):
+        return {
+            "settled_count": 1,
+            "open_count": 0,
+            "cash_turnover": "100.00",
+            "cash_pnl": "120.00",
+            "cash_roi": "1.2000",
+            "freebet_nominal": "0.00",
+            "freebet_payout": "0.00",
+            "total_cash_pnl": "120.00",
+            "hit_rate": "1.0000",
+            "by_tournament": {"epl": {"total_cash_pnl": "120.00"}},
+        }
+
+    monkeypatch.setattr(real_bets, "_control_request", control)
+    message = _message("/bet_report 2026-10")
+    asyncio.run(real_bets.cmd_bet_report(message, cfg))
+    assert "Турниры: epl — 120.00 ₽" in message.answer.await_args.args[0]
+
+
+def test_bet_history_shows_tournament_for_each_bet(monkeypatch) -> None:
+    cfg = OmegaConf.create({"bot": {"admin_user_ids": [101], "bets_owner_id": "101"}})
+
+    async def control(*_args, **_kwargs):
+        return {
+            "bets": [
+                {
+                    "bet_id": "12345678-1234-1234-1234-123456789abc",
+                    "tournament": "epl",
+                    "match_id": "fixture-17",
+                    "market_spec": "winner_1x2",
+                    "outcome": "draw",
+                    "stake": "100.00",
+                    "decimal_odds": "3.20",
+                    "status": "open",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(real_bets, "_control_request", control)
+    message = _message("/bet_history")
+    asyncio.run(real_bets.cmd_bet_history(message, cfg))
+    assert "epl · fixture-17" in message.answer.await_args.args[0]
 
 
 def test_correction_command_uses_current_revision_and_stable_message_key(monkeypatch) -> None:
@@ -185,3 +268,138 @@ def test_correction_command_uses_current_revision_and_stable_message_key(monkeyp
     asyncio.run(real_bets.cmd_bet_correct(message, cfg))
     assert calls[0]["payload"] == {"expected_revision": 2, "payout": "123.45"}
     assert calls[0]["idempotency_key"] == "telegram:correct:101:42"
+
+
+def test_successful_entry_removes_dialog_messages_but_keeps_prediction_card(monkeypatch) -> None:
+    cfg = OmegaConf.create({"bot": {"admin_user_ids": [101], "bets_owner_id": "101"}})
+    state = FakeState()
+    context_id = "12345678-1234-1234-1234-123456789abc"
+    bot = SimpleNamespace(delete_message=AsyncMock())
+    next_id = 100
+
+    async def control(_cfg, _owner, method, _path, **_kwargs):
+        if method == "GET":
+            return {
+                "prediction": {
+                    "home_player": "WSH",
+                    "away_player": "SEA",
+                    "market_spec": "winner_withOT",
+                    "predictions": {"home_win": 0.6, "away_win": 0.4},
+                }
+            }
+        return {"bet_id": "saved-bet"}
+
+    def message(text: str = "") -> SimpleNamespace:
+        nonlocal next_id
+        next_id += 1
+        current = _message(text)
+        current.message_id = next_id
+        current.bot = bot
+
+        async def answer(*_args, **_kwargs):
+            nonlocal next_id
+            next_id += 1
+            return SimpleNamespace(message_id=next_id)
+
+        current.answer = AsyncMock(side_effect=answer)
+        return current
+
+    monkeypatch.setattr(real_bets, "_control_request", control)
+    card = message()
+    card_id = card.message_id
+    awaitable = real_bets.cb_new_bet(_callback(f"bet:new:{context_id}", card), cfg, state)
+    asyncio.run(awaitable)
+    prompt_outcome = message()
+    asyncio.run(real_bets.cb_bet_outcome(_callback("bet:outcome:0", prompt_outcome), cfg, state))
+    prompt_funding = message()
+    asyncio.run(real_bets.cb_bet_funding(_callback("bet:funding:cash", prompt_funding), cfg, state))
+    asyncio.run(real_bets.msg_bet_stake(message("100"), cfg, state))
+    asyncio.run(real_bets.msg_bet_odds(message("2,35"), cfg, state))
+    prompt_time = message()
+    asyncio.run(real_bets.cb_bet_placed(_callback("bet:placed:now", prompt_time), cfg, state))
+    confirmation = message()
+    asyncio.run(real_bets.cb_bet_confirm(_callback("bet:confirm", confirmation), cfg, state))
+    deleted = {call.kwargs["message_id"] for call in bot.delete_message.await_args_list}
+    assert card_id not in deleted
+    assert {
+        prompt_outcome.message_id,
+        prompt_funding.message_id,
+        prompt_time.message_id,
+        confirmation.message_id,
+    }.issubset(deleted)
+    assert next_id in deleted  # последнее подтверждение «Ставка сохранена»
+    assert len(deleted) >= 10
+
+
+def test_bet_correct_help_shows_valid_examples() -> None:
+    cfg = OmegaConf.create({"bot": {"admin_user_ids": [101], "bets_owner_id": "101"}})
+    message = _message("/bet_correct")
+    asyncio.run(real_bets.cmd_bet_correct(message, cfg))
+    help_text = message.answer.await_args.args[0]
+    assert "/bet_correct ID_ставки stake 500,50" in help_text
+    assert "/bet_correct ID_ставки placed_at 11.10.2026 19:30" in help_text
+    assert "/bet_correct ID_ставки reopen" in help_text
+    assert "cash" in help_text and "freebet" in help_text
+
+
+def test_bet_correct_help_with_id_shows_its_market_outcomes(monkeypatch) -> None:
+    cfg = OmegaConf.create({"bot": {"admin_user_ids": [101], "bets_owner_id": "101"}})
+    bet_id = "12345678-1234-1234-1234-123456789abc"
+
+    async def control(*_args, **_kwargs):
+        return {"market_spec": "winner_1x2"}
+
+    monkeypatch.setattr(real_bets, "_control_request", control)
+    message = _message(f"/bet_correct {bet_id}")
+    asyncio.run(real_bets.cmd_bet_correct(message, cfg))
+    assert (
+        "Для этой ставки исходы: home_win, draw или away_win" in message.answer.await_args.args[0]
+    )
+
+
+def test_invalid_football_outcome_correction_shows_allowed_values(monkeypatch) -> None:
+    cfg = OmegaConf.create({"bot": {"admin_user_ids": [101], "bets_owner_id": "101"}})
+    bet_id = "12345678-1234-1234-1234-123456789abc"
+    methods: list[str] = []
+
+    async def control(_cfg, _owner, method, _path, **_kwargs):
+        methods.append(method)
+        if method == "GET":
+            return {"revision": 1, "market_spec": "winner_1x2"}
+        raise real_bets.ControlApiError(422)
+
+    monkeypatch.setattr(real_bets, "_control_request", control)
+    message = _message(f"/bet_correct {bet_id} outcome invalid")
+    asyncio.run(real_bets.cmd_bet_correct(message, cfg))
+    reply = message.answer.await_args.args[0]
+    assert "home_win, draw или away_win" in reply
+    assert f"/bet_correct {bet_id} outcome draw" in reply
+    assert methods == ["GET"]
+
+
+def test_failed_bet_save_keeps_dialog_for_retry(monkeypatch) -> None:
+    cfg = OmegaConf.create({"bot": {"admin_user_ids": [101], "bets_owner_id": "101"}})
+    state = FakeState()
+    state.data = {
+        "context_id": "12345678-1234-1234-1234-123456789abc",
+        "outcome": "home_win",
+        "funding": "cash",
+        "stake": "100.00",
+        "decimal_odds": "2.00",
+        "placed_at": "2026-10-11T18:00:00+00:00",
+        "request_id": "retry-key",
+        "entry_message_ids": [20, 21],
+    }
+    message = _message()
+    message.bot = SimpleNamespace(delete_message=AsyncMock())
+
+    async def unavailable(*_args, **_kwargs):
+        raise real_bets.ControlApiError("недоступно")
+
+    monkeypatch.setattr(real_bets, "_control_request", unavailable)
+    callback = _callback("bet:confirm", message)
+    asyncio.run(real_bets.cb_bet_confirm(callback, cfg, state))
+    assert state.data["request_id"] == "retry-key"
+    assert state.data["entry_message_ids"] == [20, 21]
+    message.bot.delete_message.assert_not_awaited()
+    assert callback.answer.await_args.kwargs["show_alert"] is True

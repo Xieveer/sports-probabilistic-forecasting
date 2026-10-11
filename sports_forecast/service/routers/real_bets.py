@@ -16,7 +16,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from sports_forecast.betting.real_bets import expected_payout, money, monthly_summary
+from sports_forecast.betting.real_bets import (
+    MANUAL_MARKETS_BY_SPORT,
+    MARKET_OUTCOMES,
+    expected_payout,
+    money,
+    monthly_summary,
+)
 from sports_forecast.service.control_auth import require_control_admin
 from sports_forecast.service.db.engine import get_control_session, get_session
 from sports_forecast.service.db.models import (
@@ -314,8 +320,6 @@ def create_manual_bet_context(
     owner: Annotated[str, Depends(require_bets_owner)],
 ) -> dict[str, Any]:
     """Подготовить запись из существующего календарного матча без прогноза."""
-    if body.tournament != "nhl":
-        raise HTTPException(status_code=422, detail="Пока поддерживается только NHL")
     with get_session() as session:
         query = select(CanonicalEvent).where(
             CanonicalEvent.tournament == body.tournament,
@@ -329,16 +333,23 @@ def create_manual_bet_context(
         if len(events) != 1:
             raise HTTPException(status_code=422, detail="Уточните источник матча")
         event = events[0]
+        market_rule = MANUAL_MARKETS_BY_SPORT.get(event.sport)
+        if market_rule is None:
+            raise HTTPException(
+                status_code=422, detail="Для вида спорта не задан рынок ручной ставки"
+            )
+        market_spec, available_outcomes = market_rule
         prediction = {
             "tournament": event.tournament,
             "source_namespace": event.source,
             "match_id": event.source_event_id,
-            "market": "winner_withOT",
-            "market_spec": "winner_withOT",
+            "market": market_spec,
+            "market_spec": market_spec,
             "home_player": event.home_participant,
             "away_player": event.away_participant,
             "match_datetime": _iso(event.scheduled_at),
             "predictions": {},
+            "available_outcomes": available_outcomes,
             "current_revision_id": None,
             "live_odds_status": "no_prediction",
         }
@@ -349,8 +360,8 @@ def create_manual_bet_context(
         tournament=body.tournament,
         source_namespace=prediction["source_namespace"],
         source_event_id=body.match_id,
-        market="winner_withOT",
-        market_spec="winner_withOT",
+        market=market_spec,
+        market_spec=market_spec,
         prediction_revision_id=None,
         quote_observation_id=None,
         snapshot_json=json.dumps(prediction, ensure_ascii=False, sort_keys=True),
@@ -419,7 +430,13 @@ def create_bet(
         context = session.get(BetCardContext, body.context_id)
         if context is None or context.owner_user_id != owner:
             raise HTTPException(status_code=404, detail="Карточка не найдена")
-        if context.market_spec == "winner_withOT" and body.outcome not in {"home_win", "away_win"}:
+        snapshot = json.loads(context.snapshot_json)
+        allowed = snapshot.get("available_outcomes") or list(
+            (snapshot.get("predictions") or {}).keys()
+        )
+        if not allowed and context.market_spec == "winner_withOT":
+            allowed = ["home_win", "away_win"]
+        if allowed and body.outcome not in allowed:
             raise HTTPException(status_code=422, detail="Исход не соответствует рынку")
         bet = RealBet(
             bet_id=str(uuid4()),
@@ -517,6 +534,7 @@ def get_bet_summary(
                 "settled_at": bet.settled_at,
                 "bookmaker": bet.bookmaker,
                 "market_spec": bet.market_spec,
+                "tournament": bet.tournament,
             }
             for bet in bets
         ]
@@ -639,7 +657,8 @@ def update_bet(
             bet.settled_at = None
         if bet.stake <= 0 or bet.decimal_odds <= 1:
             raise HTTPException(status_code=422, detail="Некорректная сумма или коэффициент")
-        if bet.market_spec == "winner_withOT" and bet.outcome not in {"home_win", "away_win"}:
+        allowed_outcomes = MARKET_OUTCOMES.get(bet.market_spec)
+        if allowed_outcomes is not None and bet.outcome not in allowed_outcomes:
             raise HTTPException(status_code=422, detail="Исход не соответствует рынку")
         bet.revision += 1
         bet.updated_at = now
