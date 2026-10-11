@@ -82,4 +82,5 @@ REQ и источник данных EPIC-027 можно прорабатыва�
 | EPIC-023 | in_progress | high | [Пилот агентского цикла: расписание NHL в Telegram](EPIC-023-nhl-schedule-agent-pilot.md) |
 | TASK-023-1 | in_progress | high | [Расписание NHL в Telegram и агентский delivery pilot](tasks/TASK-023-1-nhl-schedule-agent-pilot.md) |
 | TASK-023-2 | done | high | [Согласование тестового контракта optional EWM-метрики](tasks/TASK-023-2-ewm-optional-metric-contract.md) |
-| EPIC-034 | backlog | уточнить | [Улучшение работы со ставками в Telegram-боте](EPIC-034-telegram-bets-ux.md) |
+| EPIC-034 | done | выполнено | [Улучшение работы со ставками в Telegram-боте](EPIC-034-telegram-bets-ux.md) |
+| EPIC-035 | blocked | critical | [Выпуск v1.3.2 с работающим NHL registry](EPIC-035-v1-3-2-registry-rollout.md) |
