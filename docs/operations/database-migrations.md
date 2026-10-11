@@ -72,7 +72,7 @@ Revision `0025_real_bets_ledger` добавляет закрытые табли�
 закрытый API отклоняет запросы журнала. Включение версии требует отдельного
 release gate.
 
-Для v1.3.0 перед upgrade запустить `role-bootstrap` именно из этого release:
+Для v1.3.1 перед upgrade запустить `role-bootstrap` именно из этого release:
 он создаёт отдельные `sf_registry_sync` и `sf_registry_feedback` из раздельных
 secret files. Затем `migrator` применяет `0018`–`0025` и выдаёт им
 ограниченные grants. `sf_refresh_writer` получает чтение и `INSERT` в
