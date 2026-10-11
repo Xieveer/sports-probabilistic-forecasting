@@ -70,10 +70,10 @@ REQ и источник данных EPIC-027 можно прорабатыва�
 | TASK-012-2 | done | critical | [Release documentation gate и recovery runbook](tasks/TASK-012-2-release-documentation-gate.md) |
 | EPIC-009 | done | high | [Проверяемые gates процесса Codex-агентов](EPIC-009-agent-workflow-gates.md) |
 | TASK-009-1 | done | high | [Проверяемые gates workflow агентов](tasks/TASK-009-1-enforce-agent-workflow-gates.md) |
-| EPIC-014 | blocked | high | [Проверяемый каталог спортивных API для Research Mode](EPIC-014-research-api-catalog.md) |
+| EPIC-014 | done | high | [Проверяемый каталог спортивных API для Research Mode](EPIC-014-research-api-catalog.md) |
 | TASK-014-1 | done | high | [Строгий контракт каталога API](tasks/TASK-014-1-api-catalog-contract.md) |
-| TASK-014-2 | blocked | high | [Полный каталог NHL Web API](tasks/TASK-014-2-nhl-api-catalog.md) |
-| TASK-014-3 | blocked | high | [Полный каталог Smart Tables API](tasks/TASK-014-3-smart-tables-api-catalog.md) |
+| TASK-014-2 | done | high | [Полный каталог NHL Web API](tasks/TASK-014-2-nhl-api-catalog.md) |
+| TASK-014-3 | done | high | [Полный каталог Smart Tables API](tasks/TASK-014-3-smart-tables-api-catalog.md) |
 | EPIC-018 | in_progress | high | [Runtime-исправления после rollout](EPIC-018-post-rollout-runtime-corrections.md) |
 | TASK-018-1 | done | high | [Readiness в Telegram status](tasks/TASK-018-1-status-readiness.md) |
 | TASK-018-2 | done | high | [File-backed DB URL для canonical bootstrap](tasks/TASK-018-2-bootstrap-database-url-file.md) |

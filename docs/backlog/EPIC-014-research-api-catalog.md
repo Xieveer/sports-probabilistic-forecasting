@@ -1,6 +1,6 @@
 # EPIC-014 — Проверяемый каталог спортивных API для Research Mode
 
-> **Статус:** blocked
+> **Статус:** done
 > **Приоритет:** high
 > **Владелец:** главный агент
 > **Требование:** [REQ-014](../product/requirements/REQ-014-research-api-catalog.md)
@@ -17,8 +17,8 @@ Ingest, production-интеграция и обход ограничений н�
 | Задача | Результат | Зависимости | Проверка | Статус |
 |---|---|---|---|---|
 | [TASK-014-1](tasks/TASK-014-1-api-catalog-contract.md) | Typed endpoint/field contract, validation и документация формата | ADR-014 | unit tests + docs | done |
-| [TASK-014-2](tasks/TASK-014-2-nhl-api-catalog.md) | Полная verified NHL Web API card и dictionary | TASK-014-1 | contract validation + source review | blocked |
-| [TASK-014-3](tasks/TASK-014-3-smart-tables-api-catalog.md) | Полная verified Smart Tables card и dictionary | TASK-014-1 | contract validation + source review | blocked |
+| [TASK-014-2](tasks/TASK-014-2-nhl-api-catalog.md) | NHL Web API card и dictionary с отмеченными неизвестными полями | TASK-014-1 | contract validation + source review | done |
+| [TASK-014-3](tasks/TASK-014-3-smart-tables-api-catalog.md) | Smart Tables card и dictionary с отмеченными неизвестными полями | TASK-014-1 | contract validation + source review | done |
 
 ## Риски и rollout
 
@@ -28,9 +28,10 @@ Ingest, production-интеграция и обход ограничений н�
 
 ## Полное EPIC review
 
-Для закрытия эпика не выполнен подтверждённый пользователем критерий предметного смысла
-каждого поля. Независимый reviewer отдельно проверяет подготовленные исправления контракта,
-карточек и документации; его review не заменяет недостающего доказательства семантики.
+Владелец 2026-10-11 принял исследовательский результат с явно отмеченной
+неизвестной семантикой полей и разрешил закрытие и интеграцию. Неизвестные и
+интерпретированные поля не становятся подтверждённым контрактом поставщика;
+перед моделированием требуется отдельная проверка.
 
 Промежуточное независимое review 2026-10-11 обнаружило P1 в преждевременной
 предматчевой классификации Smart Tables match-center и два P2 в роли ключа и
@@ -39,8 +40,14 @@ Ingest, production-интеграция и обход ограничений н�
 44 теста каталога прошли, `git diff --check` прошёл. Проверенный diff зафиксирован
 коммитом `f262145e8e2f558b56d88681b00e2b7b0e11bcfe`; pre-commit hooks (включая Ruff,
 mypy и AI validation) прошли.
-Итоговое review EPIC после снятия предметного блокера остаётся обязательным;
-PR/CI evidence добавляется после соответствующих проверок.
+Итоговое независимое review EPIC 2026-10-11 сверило [REQ-014](../product/requirements/REQ-014-research-api-catalog.md),
+ADR-014, все три TASK и отчёты `done`, контракт, обе карточки и словари,
+тесты, границы ingest и release evidence. P0–P2 не обнаружены. Повторно
+прошли 54 целевых теста и `git diff --check`; количество endpoint/field records
+и `unknown` совпадает с отчётами. Неподтверждённая семантика и ограниченный
+доступ к источникам остаются явно записанными рисками. Окончательный CI
+[PR #72](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/72)
+проверяется после push итогового diff.
 
 ## Память Product Owner
 
@@ -50,31 +57,30 @@ PR/CI evidence добавляется после соответствующих 
 - Цель: понять доступные семейства данных NHL и Smart Tables, их происхождение,
   ограничения и допустимое время применения для будущих гипотез и моделей.
   Критерии закреплены в [REQ-014](../product/requirements/REQ-014-research-api-catalog.md).
-- Текущий gate: владелец 2026-10-11 подтвердил, что для закрытия нужен
-  предметный смысл каждого поля. После доступной публичной разведки четыре
+- Решение: владелец 2026-10-11 принял каталог с явными неизвестными полями
+  и разрешил закрыть EPIC и слить PR в `main`. После доступной разведки четыре
   NHL field records имеют `usage=unknown`. У Smart Tables все 261 поля
   match-center и одно поле `match-card` имеют `usage=unknown`:
   23 описания match-center остаются непрозрачными, 238 являются явно
   помеченными интерпретациями, а не подтверждённым контрактом поставщика.
-  Дальнейшая проверка заблокирована недостатком доказательств.
+  Проверка их смысла остаётся отдельной будущей задачей при появлении доказательств;
+  эти поля не разрешены для признаков или меток модели.
 - Evidence: [NHL-карточка](../research/catalogs/nhl-web-api.json),
   [Smart Tables-карточка](../research/catalogs/smart-tables-football-api.json),
   [NHL-словарь](../research/nhl-web-api-catalog.md),
   [Smart Tables-словарь](../research/smart-tables-football-api-catalog.md).
-- Предыдущая роль: независимый Reviewer — повторное review исправлений без
-  P0–P2. Следующая роль: Product Owner ожидает дополнительных данных
-  источников, после которых Data Researcher возобновит семантическую проверку
-  и Reviewer выполнит итоговое review EPIC.
+- Предыдущая роль: независимый Reviewer — итоговое review EPIC без P0–P2.
+  Следующая роль: Product Owner проверяет terminal CI, интегрирует PR и
+  закрывает временный worktree.
 - Проверки текущего diff: 54 теста двух затронутых suites прошли, Ruff и
   `git diff --check` прошли; `make docs` собрал документацию с 1 предупреждением.
   Reviewer gate для подготовленных исправлений пройден. Проверенный коммит
   `f262145e8e2f558b56d88681b00e2b7b0e11bcfe`, evidence-коммит
   `b2d33a876438f749ac1c98e214dd86a4a0c8fbc1`.
-- [Черновой PR #72](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/72)
-  открыт без намерения merge до снятия предметного блокера. На HEAD
-  `b2d33a8` 2026-10-11 завершились успешно `lint-test (3.12)`,
-  `Python dependencies` и `Filesystem and secrets`. Итоговое review EPIC и
-  его PR/CI gate выполняются после подтверждения оставшихся полей.
+- [PR #72](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/72)
+  готовится к merge по решению владельца. На HEAD `b2d33a8` 2026-10-11
+  завершились успешно `lint-test (3.12)`, `Python dependencies` и
+  `Filesystem and secrets`; для окончательного HEAD проверка повторяется.
 - Ограничения: пять NHL GET 2026-10-11 вернули 200, но не проверяли всю схему;
   Smart Tables GET завершился тайм-аутом без ответа. Регулярный сбор или
   использование в модели требует отдельного решения и проверки доступа/as-of.
