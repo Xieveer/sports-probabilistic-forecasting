@@ -26,6 +26,14 @@ uv run python -c 'from pathlib import Path; from sports_forecast.identity import
 
 Для работы с локальной очередью используйте loopback review UI:
 
+Сейчас этот интерфейс показывает очередь кандидатов. Просмотр и исправление
+всех уже подтверждённых связей через веб ещё не реализованы и входят в
+[REQ-026 #12](../product/requirements/REQ-026-entity-registry.md). Пустая
+очередь не доказывает полноту registry. Файл
+`conf/bookmaker/team_name_registry/nhl.yaml` используется как исходный legacy
+seed и остаётся в старом runtime пути до проверки паритета и отключения этого
+пути по REQ-026 #13.
+
 Создайте локальный секрет и запустите UI на loopback:
 
 ```bash
