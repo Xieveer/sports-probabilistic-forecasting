@@ -14,7 +14,8 @@ Schema PostgreSQL изменяет только Alembic. API и Worker не вы
 
 2. Запустите идемпотентный bootstrap ролей и migration profile до API и Worker.
    PostgreSQL init создаёт owner `sf_user`; `role-bootstrap` создаёт
-   `sf_migrator`, `sf_api_reader`, `sf_control_api` и `sf_refresh_writer`, а `migrator` применяет
+   `sf_migrator`, `sf_api_reader`, `sf_control_api`, `sf_refresh_writer`,
+   `sf_registry_sync` и `sf_registry_feedback`, а `migrator` применяет
    Alembic от `sf_migrator` и выдаёт grants. URL передаются только secrets.
 
    ```bash
@@ -70,6 +71,17 @@ Revision `0025_real_bets_ledger` добавляет закрытые табли�
 равным Telegram ID владельца из `BOT_ADMIN_USER_IDS`. При пустом значении
 закрытый API отклоняет запросы журнала. Включение версии требует отдельного
 release gate.
+
+Для v1.3.0 перед upgrade запустить `role-bootstrap` именно из этого release:
+он создаёт отдельные `sf_registry_sync` и `sf_registry_feedback` из раздельных
+secret files. Затем `migrator` применяет `0018`–`0025` и выдаёт им
+ограниченные grants. `sf_refresh_writer` получает чтение и `INSERT` в
+`prediction_revisions`, нужные managed публикации, а также узкие права на
+runtime event bridge и candidate capture. `sf_api_reader` получает только
+чтение установленной registry projection. Перед включением registry процесса
+проверить разрешённые и запрещённые SQL операции под каждым DB identity на
+изолированном восстановлении production-подобной БД. Успех Alembic под owner
+не доказывает доступ runtime ролей.
 
 ## Проверка и recovery
 

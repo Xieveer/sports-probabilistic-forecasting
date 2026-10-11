@@ -15,6 +15,8 @@ APPLICATION_SERVICES = {
     "source-acquirer",
     "worker",
     "archive-sync",
+    "registry-sync",
+    "registry-feedback",
 }
 EXPECTED_SERVICES = APPLICATION_SERVICES | {"db", "migrator", "role-bootstrap"}
 FORBIDDEN_SERVICES = {"caddy", "mlflow", "prometheus", "grafana", "airflow", "dvc", "node-exporter"}
@@ -172,6 +174,50 @@ def verify_contract(rendered_path: Path, *, model_runtime_root: Path) -> None:
         "migrator: DB URL должен передаваться только secret file",
     )
 
+    registry_sync = services["registry-sync"]
+    _require(
+        registry_sync.get("profiles") == ["registry-sync"]
+        and registry_sync.get("environment", {}).get("DATABASE_URL_FILE")
+        == "/run/secrets/registry_sync_database_url"
+        and registry_sync.get("command", [None, None, None])[2]
+        == "sports_forecast.deploy.registry_sync_cli",
+        "registry-sync: отдельный opt-in profile и собственный DB URL обязательны",
+    )
+    registry_feedback = services["registry-feedback"]
+    _require(
+        registry_feedback.get("profiles") == ["registry-feedback"]
+        and registry_feedback.get("environment", {}).get("DATABASE_URL_FILE")
+        == "/run/secrets/registry_feedback_database_url"
+        and registry_feedback.get("command", [None, None, None])[2]
+        == "sports_forecast.deploy.registry_feedback_publish_cli",
+        "registry-feedback: отдельный opt-in profile и собственный DB URL обязательны",
+    )
+    for name, expected_secrets in (
+        (
+            "registry-sync",
+            {
+                "registry_sync_database_url",
+                "registry_sync_object_storage_access_key",
+                "registry_sync_object_storage_secret_key",
+            },
+        ),
+        (
+            "registry-feedback",
+            {
+                "registry_feedback_database_url",
+                "registry_feedback_object_storage_access_key",
+                "registry_feedback_object_storage_secret_key",
+            },
+        ),
+    ):
+        mounted = (
+            registry_sync.get("secrets", [])
+            if name == "registry-sync"
+            else registry_feedback.get("secrets", [])
+        )
+        actual = {item.get("source") for item in mounted if isinstance(item, dict)}
+        _require(actual == expected_secrets, f"{name}: отдельные secret mounts обязательны")
+
     for name in ("db", "api", "telegram-bot"):
         _require(services[name].get("restart") == "unless-stopped", f"{name}: restart contract")
     _require(bool(services["db"].get("healthcheck")), "db: healthcheck обязателен")
@@ -181,7 +227,13 @@ def verify_contract(rendered_path: Path, *, model_runtime_root: Path) -> None:
     )
     job_memory = max(
         _memory_mib(services[name]["mem_limit"])
-        for name in ("source-acquirer", "worker", "archive-sync")
+        for name in (
+            "source-acquirer",
+            "worker",
+            "archive-sync",
+            "registry-sync",
+            "registry-feedback",
+        )
     )
     _require(
         base_memory + job_memory <= 6720,
