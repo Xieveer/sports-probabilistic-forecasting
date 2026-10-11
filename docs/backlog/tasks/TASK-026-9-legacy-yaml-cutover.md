@@ -1,6 +1,6 @@
 # TASK-026-9 — Вывод legacy NHL YAML из рабочего пути
 
-> **Статус:** blocked — локальная owner master и NHL event-cycle evidence недоступны
+> **Статус:** blocked — owner master/snapshot подготовлены, реальный NHL forecast cycle ещё не проверен
 > **Эпик:** [EPIC-026](../EPIC-026-entity-registry.md)
 > **Требование:** [REQ-026 #13](../../product/requirements/REQ-026-entity-registry.md)
 
@@ -37,7 +37,10 @@
   [локальном руководстве](../../operations/identity-registry-local.md).
 - [x] Synthetic NHL strict cycle проверяет неизвестную designation → owner
   decision → новый snapshot → успешное разрешение и повторный цикл без дубля.
-- [ ] Полная приёмка остаётся заблокированной: доступный staging snapshot имеет
-  ноль project events, а актуальный owner master отсутствует в worktree. Поэтому
-  staging parity не заменяет owner-master parity, и реальный NHL event/forecast
-  cycle здесь не подтверждён. Подробности: [отчёт локальной подготовки](../../changes/done/TASK-026-9-legacy-yaml-cutover.md).
+- [x] Локальный owner master защищён резервной копией и наполнен 51
+  однозначным событием из официального NHL schedule; новый verified snapshot
+  разрешает все 51 source event ID. Паритет 100 старых team aliases сохранён.
+  Подробности: [TASK-026-11](TASK-026-11-nhl-event-bootstrap.md).
+- [ ] Полная приёмка остаётся заблокированной до реального NHL
+  event/forecast cycle на production горизонте после установки нового snapshot.
+  Подробности предыдущего этапа: [отчёт локальной подготовки](../../changes/done/TASK-026-9-legacy-yaml-cutover.md).
