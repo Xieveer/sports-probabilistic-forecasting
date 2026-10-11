@@ -48,6 +48,8 @@ ADR-014, все три TASK и отчёты `done`, контракт, обе к�
 доступ к источникам остаются явно записанными рисками. Окончательный CI
 [PR #72](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/72)
 проверяется после push итогового diff.
+Проверенный итоговый diff зафиксирован коммитом
+`add9c4ed97d127f4753d6fa9e51405a657161d5c`.
 
 ## Память Product Owner
 
