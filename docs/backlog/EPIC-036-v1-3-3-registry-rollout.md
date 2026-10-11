@@ -83,6 +83,20 @@ commit и image digests закрепляются только после merge �
    последовательных минутных ticks без `start-limit-hit` и stale heartbeat.
    Rollback на exact v1.3.1 и совместимый snapshot проверен и доступен.
 
+## Независимое release review
+
+- Проверенный diff: `dd5184b3475200abdf217340f9dc62db279a7142`.
+- P0–P2 findings не обнаружены. Проверены порядок валидации архива и запроса
+  котировок, семантика выключенного `data_odds`, лимит минутного systemd
+  dispatcher, версия, документация, безопасность и rollback.
+- Независимо повторены 59 целевых тестов, Ruff и `git diff --check`; все
+  прошли. Автором до review заявлены 1707 unit passed, полный pre-commit,
+  Sphinx docs, `make ai-validate`, `make production-check` и
+  `uv lock --check --offline`.
+- Остаточный риск: фактические provider odds, 20 минутных ticks и полный
+  candidate feedback проверяются только в release gates на VPS. Source tag,
+  immutable image/model evidence и production switch ещё не выполнены.
+
 ## Решение и остановка
 
 До выполнения всех критериев GO статус release — NO-GO. При потере линии,
