@@ -42,6 +42,7 @@ class PredictionResponse(BaseModel):
 
     # Predictions
     predictions: dict[str, float] = Field(..., description="Вероятности {outcome: probability}")
+    current_revision_id: str | None = Field(None, description="Неизменяемая версия прогноза")
 
     # Model info
     model: ModelInfo

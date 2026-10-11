@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -9,6 +10,7 @@ from sqlalchemy import create_engine
 
 from sports_forecast.service.db.engine import get_session, init_db, reset_engine
 from sports_forecast.service.db.repository import PredictionRepository
+from sports_forecast.service.routers import calendar, predictions
 
 
 def _upsert(
@@ -110,3 +112,58 @@ def test_get_upcoming_predictions_market_spec_filter(memory_session) -> None:
         now_utc=now,
     )
     assert [r.match_id for r in ot_only] == ["a"]
+
+
+def test_get_upcoming_predictions_uses_half_open_bookmaker_window(memory_session) -> None:
+    """Явное окно включает начало и исключает границу следующих суток."""
+    repo = PredictionRepository(memory_session)
+    start = datetime(2026, 10, 11, 5, tzinfo=UTC)
+    end = start + timedelta(days=1)
+    for match_id, moment in (
+        ("before", start - timedelta(seconds=1)),
+        ("start", start),
+        ("inside", end - timedelta(seconds=1)),
+        ("end", end),
+    ):
+        _upsert(repo, match_id, _utc_naive(moment))
+    memory_session.flush()
+
+    rows = repo.get_upcoming_predictions(
+        tournament="nhl",
+        now_utc=start,
+        window_start=start,
+        window_end=end,
+    )
+
+    assert [row.match_id for row in rows] == ["start", "inside"]
+
+
+def test_upcoming_api_today_passes_calendar_window(monkeypatch) -> None:
+    """Период today использует ту же границу 08:00 МСК, что календарь."""
+    now = datetime(2026, 10, 11, 4, tzinfo=UTC)
+    seen: dict[str, object] = {}
+
+    @contextmanager
+    def fake_session():
+        yield object()
+
+    def fake_upcoming(self, **kwargs):
+        seen.update(kwargs)
+        return []
+
+    monkeypatch.setattr(calendar, "utc_now", lambda: now)
+    monkeypatch.setattr(predictions, "get_session", fake_session)
+    monkeypatch.setattr(PredictionRepository, "get_upcoming_predictions", fake_upcoming)
+
+    result = predictions.get_upcoming(
+        "nhl",
+        market="winner_withOT",
+        market_spec="winner_withOT",
+        period="today",
+        hours=48,
+        live_pinnacle=False,
+    )
+
+    assert result.count == 0
+    assert seen["window_start"] == now
+    assert seen["window_end"] == datetime(2026, 10, 11, 5, tzinfo=UTC)

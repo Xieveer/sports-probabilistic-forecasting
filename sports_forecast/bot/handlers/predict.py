@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import UTC, datetime
 from html import escape
 from typing import Any
@@ -18,6 +17,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from omegaconf import DictConfig, OmegaConf
 
+from sports_forecast.bot.handlers.real_bets import card_context_button, create_card_context
 from sports_forecast.utils.log_config import get_logger
 
 
@@ -61,16 +61,6 @@ _PERIOD_LABELS = {
 }
 
 
-# Лёгкий операционный путь (R41): только HTTP GET к витрине + ``live_pinnacle`` на стороне API.
-# Никаких вызовов Airflow/source_refresh/features.
-LIGHT_PATH_EDGE_HTML = (
-    "🔄 <b>Лёгкий путь · котировки/edge</b>\n"
-    "Актуальные коэффициенты через API (<code>/predict/upcoming</code>, "
-    "<code>live_pinnacle</code>); вероятности из витрины <b>без пересчёта</b>.\n"
-    "Администратор может отдельно управлять Data Cycle командами <code>/cycle</code> и <code>/refresh</code>.\n\n"
-)
-
-
 def _predict_upcoming_url(base_api: str, tournament: str) -> str:
     """Публичный URL ``GET /predict/upcoming/{tournament}`` (лёгкий путь без Airflow)."""
     root = base_api.rstrip("/")
@@ -82,11 +72,12 @@ async def fetch_predict_upcoming(
     *,
     cfg: DictConfig,
     tournament: str,
+    period: str | None = None,
 ) -> dict[str, Any]:
     """Загрузить предстоящие матчи через тот же контракт, что и Telegram/digest enrichment (GET)."""
     base = str(cfg.bot.api_base_url).rstrip("/")
     url = _predict_upcoming_url(base, tournament)
-    params = _upcoming_query_params(tournament, cfg)
+    params = _upcoming_query_params(tournament, cfg, period=period)
     data = await _fetch_json(client, url, params=params)
     return data if isinstance(data, dict) else {"predictions": []}
 
@@ -113,21 +104,6 @@ async def fetch_schedule(
     return data
 
 
-def _tournament_choices(_cfg: DictConfig) -> list[str]:
-    raw = os.getenv("BOT_TOURNAMENTS", "").strip()
-    if raw:
-        return [x.strip() for x in raw.split(",") if x.strip()]
-    return ["nhl", "uel_kz_1", "uel_kz_2", "uel_cz", "lp_ru", "lp_eu", "lp_eu_a18", "lp_by"]
-
-
-def _kb_tournaments(cfg: DictConfig, prefix: str):
-    b = InlineKeyboardBuilder()
-    for t in _tournament_choices(cfg):
-        b.add(InlineKeyboardButton(text=t, callback_data=f"{prefix}:{t}"))
-    b.adjust(2)
-    return b.as_markup()
-
-
 def _kb_schedule_tournaments():
     """Вернуть доступные в первом пилоте турниры расписания."""
     b = InlineKeyboardBuilder()
@@ -144,13 +120,24 @@ def _kb_schedule_periods():
     return builder.as_markup()
 
 
+def _kb_predict_periods():
+    """Кнопки периода для прогнозов с теми же bookmaker-day границами."""
+    builder = InlineKeyboardBuilder()
+    for period in SCHEDULE_PERIODS:
+        builder.button(text=_PERIOD_LABELS[period], callback_data=f"predict_period:{period}:0")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
 def _is_nhl_tournament(tournament: str) -> bool:
     """Турнир NHL: slug ``nhl``; ``nhl_train``/``nhl_*`` — только совместимость со старыми данными."""
     t = tournament.strip().lower()
     return t == "nhl" or t.startswith("nhl_")
 
 
-def _upcoming_query_params(tournament: str, cfg: DictConfig) -> dict[str, str | bool | int]:
+def _upcoming_query_params(
+    tournament: str, cfg: DictConfig, *, period: str | None = None
+) -> dict[str, str | bool | int]:
     """Параметры GET ``/predict/upcoming/{tournament}`` (R37.7: live + рынок OT для NHL)."""
     params: dict[str, str | bool | int] = {}
     if bool(OmegaConf.select(cfg, "bot.live_pinnacle", default=True)):
@@ -158,6 +145,10 @@ def _upcoming_query_params(tournament: str, cfg: DictConfig) -> dict[str, str | 
     if _is_nhl_tournament(tournament):
         params["market"] = "winner_withOT"
         params["market_spec"] = "winner_withOT"
+    if period is not None:
+        if period not in SCHEDULE_PERIODS:
+            raise ValueError("Недопустимый период прогнозов")
+        params["period"] = period
     return params
 
 
@@ -232,25 +223,89 @@ def _format_live_lines(item: dict[str, Any]) -> list[str]:
 
 
 def _format_prediction_card(item: dict[str, Any]) -> str:
-    mid = item.get("match_id", "")
-    dt = item.get("match_datetime", "")
-    hp = item.get("home_player", "")
-    ap = item.get("away_player", "")
+    mid = escape(str(item.get("match_id") or "—")[:64])
+    dt = _parse_schedule_datetime(item.get("match_datetime"))
+    time_label = dt.astimezone(MOSCOW_TZ).strftime("%d.%m.%Y %H:%M МСК") if dt else "—"
+    hp = escape(str(item.get("home_player") or "—")[:128])
+    ap = escape(str(item.get("away_player") or "—")[:128])
     pr = item.get("predictions") or {}
     if isinstance(pr, str):
         try:
             pr = json.loads(pr)
         except json.JSONDecodeError:
             pr = {}
-    lines = [f"<b>{hp}</b> vs <b>{ap}</b>", f"id: <code>{mid}</code>", f"время: {dt}"]
-    if isinstance(pr, dict):
-        for k, v in pr.items():
-            lines.append(f"{k}: {v}")
-    live = _format_live_lines(item)
-    if live:
-        lines.append("")
-        lines.extend(live)
+    probabilities = pr if isinstance(pr, dict) else {}
+    home = _finite_number(probabilities.get("home_win"))
+    away = _finite_number(probabilities.get("away_win"))
+    market_spec = str(item.get("market_spec") or item.get("market") or "winner")[:64]
+    market_label = "winner with OT" if market_spec == "winner_withOT" else escape(market_spec)
+    lines = [
+        f"<b>{hp} — {ap}</b>",
+        f"Время: {time_label}",
+        f"ID: <code>{mid}</code>",
+        f"{market_label}: {_pair(home, away, 3)}",
+    ]
+    price_home = _finite_number(item.get("pinnacle_home_decimal"))
+    price_away = _finite_number(item.get("pinnacle_away_decimal"))
+    edge_home = _finite_number(item.get("edge_home"))
+    edge_away = _finite_number(item.get("edge_away"))
+    ev_home = home * price_home - 1 if home is not None and price_home is not None else None
+    ev_away = away * price_away - 1 if away is not None and price_away is not None else None
+    lines.extend(
+        [
+            f"Pinnacle: {_pair(price_home, price_away, 2)}",
+            f"Edge: {_pair(edge_home, edge_away, 4, signed=True)}",
+            f"EV: {_pair(ev_home, ev_away, 4, signed=True)}",
+        ]
+    )
+    recommendations = item.get("recommendations")
+    if isinstance(recommendations, list):
+        for recommendation in recommendations[:4]:
+            if not isinstance(recommendation, dict):
+                continue
+            rec_market = str(recommendation.get("market_spec") or "—")[:32]
+            rec_outcome = str(recommendation.get("outcome") or "—")[:32]
+            rec_market_label = (
+                "winner with OT" if rec_market == "winner_withOT" else rec_market.replace("_", " ")
+            )
+            if rec_market == "winner_withOT" and rec_outcome in {"home_win", "away_win"}:
+                rec_outcome_label = f"{rec_outcome.split('_')[0]} win with OT"
+            else:
+                rec_outcome_label = rec_outcome.replace("_", " ")
+            lines.append(f"Решение · {escape(rec_market_label)}: {escape(rec_outcome_label)}")
+        if not any(line.startswith("Решение · ") for line in lines):
+            lines.append("Решение: нет рекомендации")
+    else:
+        selected = [
+            side
+            for side, key in (("home", "bet_decision_home"), ("away", "bet_decision_away"))
+            if item.get(key) == "bet"
+        ]
+        outcome_suffix = " win with OT" if market_spec == "winner_withOT" else " win"
+        decision = (
+            ", ".join(f"{side}{outcome_suffix}" for side in selected)
+            if selected
+            else "нет рекомендации"
+        )
+        lines.append(f"Решение: {decision}")
     return "\n".join(lines)
+
+
+def _finite_number(value: object) -> float | None:
+    """Принять только конечное число для пользовательской карточки."""
+    try:
+        number = float(str(value)) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+    return (
+        number if number is not None and number == number and abs(number) != float("inf") else None
+    )
+
+
+def _pair(home: float | None, away: float | None, digits: int, *, signed: bool = False) -> str:
+    """Показать значения в постоянном порядке home | away."""
+    spec = f"{'+' if signed else ''}.{digits}f"
+    return " | ".join(format(value, spec) if value is not None else "—" for value in (home, away))
 
 
 def _format_upcoming_line(item: dict[str, Any]) -> str:
@@ -379,31 +434,70 @@ def _split_schedule_messages(items: list[dict[str, Any]], *, limit: int = 4000) 
 
 
 @router.message(Command("predict"))
-async def cmd_predict(message: Message, cfg: DictConfig) -> None:
-    """Показать клавиатуру турниров → upcoming predictions."""
-    await message.answer("Выберите турнир:", reply_markup=_kb_tournaments(cfg, "pred"))
+async def cmd_predict(message: Message) -> None:
+    """Выбрать период прогнозов NHL по букмекерским суткам."""
+    await message.answer(
+        "Выберите период (сутки 08:00–08:00 МСК):", reply_markup=_kb_predict_periods()
+    )
 
 
-@router.callback_query(F.data.startswith("pred:"))
-async def cb_predict(cq: CallbackQuery, cfg: DictConfig) -> None:
+@router.callback_query(F.data.startswith("predict_period:"))
+async def cb_predict_period(cq: CallbackQuery, cfg: DictConfig) -> None:
     if cq.data is None or cq.message is None:
         return
-    tournament = cq.data.split(":", 1)[1]
+    parts = cq.data.split(":")
+    if len(parts) != 3 or parts[1] not in SCHEDULE_PERIODS or not parts[2].isdigit():
+        await cq.answer("Период недоступен.", show_alert=True)
+        return
+    period, offset = parts[1], int(parts[2])
     async with httpx.AsyncClient() as client:
         try:
-            data = await fetch_predict_upcoming(client, cfg=cfg, tournament=tournament)
-        except Exception as e:
+            data = await fetch_predict_upcoming(client, cfg=cfg, tournament="nhl", period=period)
+        except Exception:
             logger.exception("predict fetch failed")
-            await cq.message.answer(f"Ошибка API: {e}")
+            await cq.message.answer("Прогнозы временно недоступны.")
             await cq.answer()
             return
     items = data.get("predictions") or []
     if not items:
-        await cq.message.answer(f"Нет предсказаний для {tournament}")
+        await cq.message.answer("Нет прогнозов за выбранный период.")
         await cq.answer()
         return
-    chunk = "\n\n---\n\n".join(_format_prediction_card(x) for x in items[:10])
-    await cq.message.answer(chunk[:4000])
+    for item in items[offset : offset + 10]:
+        owner_id = getattr(getattr(cq, "from_user", None), "id", None)
+        chat = getattr(cq.message, "chat", None)
+        admins = {
+            int(value) for value in (cfg.bot.get("admin_user_ids") or []) if value is not None
+        }
+        configured_owner = str(cfg.bot.get("bets_owner_id") or "").strip()
+        if (
+            configured_owner.isdigit()
+            and owner_id == int(configured_owner)
+            and owner_id in admins
+            and getattr(chat, "type", None) == "private"
+        ):
+            try:
+                context = await create_card_context(cfg, int(owner_id), item)
+            except Exception:
+                logger.exception("bet card context failed")
+                await cq.message.answer(
+                    _format_prediction_card(item) + "\nЖурнал ставок временно недоступен."
+                )
+                continue
+            await cq.message.answer(
+                _format_prediction_card(context["prediction"]),
+                reply_markup=card_context_button(str(context["context_id"])),
+            )
+        else:
+            await cq.message.answer(_format_prediction_card(item))
+    if offset + 10 < len(items):
+        builder = InlineKeyboardBuilder()
+        builder.button(
+            text="Следующие прогнозы", callback_data=f"predict_period:{period}:{offset + 10}"
+        )
+        await cq.message.answer(
+            f"Показано {offset + 10} из {len(items)}.", reply_markup=builder.as_markup()
+        )
     await cq.answer()
 
 
@@ -492,54 +586,4 @@ async def cb_schedule_period(cq: CallbackQuery, state: FSMContext, cfg: DictConf
         await cq.answer()
         return
     await _send_schedule(cq.message, state, cfg, cq.data.split(":", 1)[1])
-    await cq.answer()
-
-
-@router.message(Command("edge"))
-async def cmd_edge(message: Message, cfg: DictConfig) -> None:
-    """Повторно запросить live-котировки/edge через API без Airflow (R41 лёгкий путь)."""
-    parts = (message.text or "").split(maxsplit=1)
-    if len(parts) > 1 and parts[1].strip():
-        tournament = parts[1].strip()
-        async with httpx.AsyncClient() as client:
-            try:
-                data = await fetch_predict_upcoming(client, cfg=cfg, tournament=tournament)
-            except Exception as e:
-                logger.exception("edge command fetch failed")
-                await message.answer(f"Ошибка API: {e}")
-                return
-        items = data.get("predictions") or []
-        if not items:
-            await message.answer(LIGHT_PATH_EDGE_HTML + "Пусто")
-            return
-        text = "\n\n".join(_format_prediction_card(x) for x in items[:10])
-        await message.answer(LIGHT_PATH_EDGE_HTML + text[:3800])
-        return
-    await message.answer(
-        LIGHT_PATH_EDGE_HTML + "Выберите турнир:",
-        reply_markup=_kb_tournaments(cfg, "edge"),
-    )
-
-
-@router.callback_query(F.data.startswith("edge:"))
-async def cb_edge(cq: CallbackQuery, cfg: DictConfig) -> None:
-    """Кнопка «обновить edge» для whitelist-пользователя (только GET /predict/upcoming/*)."""
-    if cq.data is None or cq.message is None:
-        return
-    tournament = cq.data.split(":", 1)[1]
-    async with httpx.AsyncClient() as client:
-        try:
-            data = await fetch_predict_upcoming(client, cfg=cfg, tournament=tournament)
-        except Exception as e:
-            logger.exception("edge callback fetch failed")
-            await cq.message.answer(f"Ошибка API: {e}")
-            await cq.answer()
-            return
-    items = data.get("predictions") or []
-    if not items:
-        await cq.message.answer(LIGHT_PATH_EDGE_HTML + f"Нет предсказаний для {tournament}")
-        await cq.answer()
-        return
-    chunk = "\n\n---\n\n".join(_format_prediction_card(x) for x in items[:10])
-    await cq.message.answer(LIGHT_PATH_EDGE_HTML + chunk[:3800])
     await cq.answer()

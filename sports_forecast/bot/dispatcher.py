@@ -12,7 +12,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import BotCommand, BotCommandScopeChat
 from omegaconf import DictConfig
 
-from sports_forecast.bot.handlers import admin, predict, start
+from sports_forecast.bot.handlers import admin, predict, real_bets, start
 from sports_forecast.bot.middleware import AllowedUsersMiddleware, InjectConfigMiddleware
 
 
@@ -21,16 +21,23 @@ _PUBLIC_COMMANDS = (
     BotCommand(command="help", description="Справка"),
     BotCommand(command="predict", description="Ближайшие прогнозы"),
     BotCommand(command="upcoming", description="Календарь NHL"),
-    BotCommand(command="edge", description="Котировки и edge"),
 )
 _ADMIN_COMMANDS = (
     BotCommand(command="status", description="Готовность API"),
-    BotCommand(command="cycle", description="Управление циклом NHL"),
+    BotCommand(command="cycle", description="Управление циклами данных"),
     BotCommand(command="cycle_time", description="Изменить основное время цикла"),
     BotCommand(command="cycle_interval", description="Изменить интервал цикла"),
-    BotCommand(command="cycle_history", description="История циклов NHL"),
-    BotCommand(command="refresh", description="Повторить цикл NHL сейчас"),
-    BotCommand(command="models", description="Список моделей"),
+    BotCommand(command="cycle_history", description="История циклов данных"),
+    BotCommand(command="refresh", description="Запустить цикл данных сейчас"),
+)
+_BET_COMMANDS = (
+    BotCommand(command="bets", description="Открытые фактические ставки"),
+    BotCommand(command="bet_add", description="Записать ставку из матча NHL"),
+    BotCommand(command="bet_report", description="Месячный отчёт по ставкам"),
+    BotCommand(command="bet_history", description="История фактических ставок"),
+    BotCommand(command="bet_correct", description="Исправить фактическую ставку"),
+    BotCommand(command="bet_audit", description="История исправлений ставки"),
+    BotCommand(command="bet_cancel", description="Отменить ввод ставки"),
 )
 
 
@@ -47,7 +54,11 @@ async def register_commands(bot: Bot, cfg: DictConfig) -> None:
         int(user_id) for user_id in (cfg.bot.get("admin_user_ids") or []) if user_id is not None
     }
     for admin_id in sorted(admin_ids):
-        await bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=admin_id))
+        owner_id = str(cfg.bot.get("bets_owner_id") or "").strip()
+        commands = (
+            [*admin_commands, *_BET_COMMANDS] if owner_id == str(admin_id) else admin_commands
+        )
+        await bot.set_my_commands(commands, scope=BotCommandScopeChat(chat_id=admin_id))
 
 
 def build_dispatcher(cfg: DictConfig, token: str) -> tuple[Bot, Dispatcher]:
@@ -81,6 +92,7 @@ def build_dispatcher(cfg: DictConfig, token: str) -> tuple[Bot, Dispatcher]:
     dp.include_router(start.router)
     dp.include_router(predict.router)
     dp.include_router(admin.router)
+    dp.include_router(real_bets.router)
     dp["cfg"] = cfg
     dp["admin_ids"] = {int(x) for x in (cfg.bot.get("admin_user_ids") or []) if x is not None}
     return bot, dp

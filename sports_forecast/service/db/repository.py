@@ -409,6 +409,8 @@ class PredictionRepository:
         hours: int = 48,
         *,
         now_utc: datetime | None = None,
+        window_start: datetime | None = None,
+        window_end: datetime | None = None,
     ) -> list[Prediction]:
         """Получить актуальные предсказания для предстоящих матчей.
 
@@ -428,8 +430,12 @@ class PredictionRepository:
             Список Prediction, отсортированных по match_datetime.
         """
         now = now_utc if now_utc is not None else datetime.now(tz=UTC)
-        start = _utc_naive_for_query(now)
-        end = _utc_naive_for_query(now + timedelta(hours=hours))
+        if (window_start is None) != (window_end is None):
+            raise ValueError("Обе границы окна должны быть заданы вместе")
+        start = _utc_naive_for_query(window_start or now)
+        end = _utc_naive_for_query(window_end or now + timedelta(hours=hours))
+        if start >= end:
+            raise ValueError("Конец окна должен быть позже начала")
 
         query = self.session.query(Prediction).filter(
             and_(
@@ -437,7 +443,11 @@ class PredictionRepository:
                 Prediction.status == status,
                 Prediction.match_datetime.isnot(None),  # type: ignore[attr-defined]
                 Prediction.match_datetime >= start,  # type: ignore[operator]
-                Prediction.match_datetime <= end,  # type: ignore[operator]
+                (
+                    Prediction.match_datetime < end
+                    if window_end is not None
+                    else Prediction.match_datetime <= end
+                ),  # type: ignore[operator]
             )
         )
 

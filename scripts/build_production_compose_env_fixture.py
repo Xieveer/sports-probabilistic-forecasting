@@ -93,6 +93,7 @@ def build_fixture(
         "BOT_TELEGRAM_API_BASE_URL": "http://telegram-test:8081",
         "BOT_ALLOWED_USER_IDS": "1",
         "BOT_ADMIN_USER_IDS": "1",
+        "BET_OWNER_USER_ID": "1",
         "SF_OBJECT_STORAGE_ENDPOINT": "https://storage.example.invalid",
         "SF_OBJECT_STORAGE_BUCKET": "fixture-bucket",
         **default_images,

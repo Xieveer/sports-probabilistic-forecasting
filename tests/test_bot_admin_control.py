@@ -245,3 +245,50 @@ def test_admin_run_fields_are_html_escaped() -> None:
     assert "<bad>" not in line
     assert "old&lt;&amp;&gt;id" in history
     assert "<reason>" not in history
+
+
+def test_cycle_lists_supported_pipelines_without_nhl_default(monkeypatch) -> None:
+    """Несколько серверных циклов требуют явного выбора турнира."""
+
+    async def control_request(_cfg, _admin_id, method, path, **_kwargs):
+        assert (method, path) == ("GET", "pipelines")
+        return {"pipelines": [{"pipeline_id": "nhl"}, {"pipeline_id": "eng1"}]}
+
+    monkeypatch.setattr(admin, "_control_request", control_request)
+    cfg = OmegaConf.create({"bot": {"admin_user_ids": [101]}})
+    message = _message("/cycle")
+
+    asyncio.run(admin.cmd_cycle(message, cfg))
+
+    keyboard = message.answer.await_args.kwargs["reply_markup"]
+    assert [button.callback_data for row in keyboard.inline_keyboard for button in row] == [
+        "cycle:select:nhl",
+        "cycle:select:eng1",
+    ]
+
+
+def test_forged_cycle_callback_rejects_invalid_pipeline_id(monkeypatch) -> None:
+    """Callback ID нельзя использовать как произвольный API path segment."""
+    request = AsyncMock()
+    monkeypatch.setattr(admin, "_control_request", request)
+    cfg = OmegaConf.create({"bot": {"admin_user_ids": [101]}})
+    callback = _callback("cycle:toggle:../runs:1:0", "forged")
+
+    asyncio.run(admin.cb_cycle_toggle(callback, cfg))
+
+    callback.answer.assert_awaited_once()
+    request.assert_not_called()
+
+
+def test_cycle_callback_stays_within_telegram_limit() -> None:
+    """Максимальный разрешённый slug помещается в callback с revision."""
+    slug = "a" * 38
+    assert admin._valid_pipeline_id(slug)
+    assert not admin._valid_pipeline_id(slug + "a")
+    keyboard = admin._cycle_keyboard({"pipeline_id": slug, "revision": 2147483647, "enabled": True})
+    assert all(
+        len(button.callback_data.encode("utf-8")) <= 64
+        for row in keyboard.inline_keyboard
+        for button in row
+        if button.callback_data is not None
+    )

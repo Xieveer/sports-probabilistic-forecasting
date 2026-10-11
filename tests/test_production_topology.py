@@ -206,6 +206,7 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
         "SF_CONTROL_DATABASE_URL_FILE": "/run/secrets/control_database_url",
         "SF_CONTROL_API_KEY_FILE": "/run/secrets/control_api_key",
         "SF_CONTROL_ADMIN_IDS": "${BOT_ADMIN_USER_IDS:-}",
+        "SF_BETS_OWNER_ID": "${BET_OWNER_USER_ID:-}",
         "SF_DATA_CYCLE_NOTIFICATION_ALIASES": (
             "${SF_DATA_CYCLE_NOTIFICATION_ALIASES:?set safe notification aliases}"
         ),
@@ -231,6 +232,7 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     )
     assert "bot_notification_destinations" in cast(list[str], bot["secrets"])
     assert bot_environment["BOT_TELEGRAM_API_BASE_URL"] == "${BOT_TELEGRAM_API_BASE_URL:-}"
+    assert bot_environment["BOT_BETS_OWNER_ID"] == "${BET_OWNER_USER_ID:-}"
     assert worker["environment"] == {
         "DATABASE_URL_FILE": "/run/secrets/worker_database_url",
         "SF_WORKER_RUN_ID": "${SF_WORKER_RUN_ID:?set a scheduler-generated id}",
@@ -650,6 +652,7 @@ def test_scheduler_profile_provides_every_production_compose_input() -> None:
         "SF_CONTROL_API_KEY_FILE",
         "SF_DATA_CYCLE_DISPATCHER_ID",
         "BOT_ADMIN_USER_IDS",
+        "BET_OWNER_USER_ID",
         "SF_BOT_TOKEN_FILE",
         "ODDS_API_KEY_FREE_FILE",
         "ODDS_API_KEY_20K_FILE",
