@@ -472,6 +472,29 @@ def test_upcoming_query_params_uel_no_market_override() -> None:
     assert p == {"live_pinnacle": True}
 
 
+def test_upcoming_query_params_club_1x2() -> None:
+    cfg = OmegaConf.create({"bot": {"live_pinnacle": True}})
+    assert _upcoming_query_params("football_top_leagues", cfg) == {
+        "market": "winner",
+        "market_spec": "winner_1x2",
+        "hours": 168,
+    }
+
+
+def test_club_1x2_upcoming_line_shows_both_strategies_and_draw() -> None:
+    base = {
+        "home_player": "A",
+        "away_player": "B",
+        "match_datetime": "2026-10-15T12:00:00Z",
+        "market_spec": "winner_1x2",
+        "predictions": {"home_win": 0.4, "draw": 0.3, "away_win": 0.3},
+    }
+    long_item = {**base, "model": {"version": "catboost_basic_shadow__football_long_binary"}}
+    wide_item = {**base, "model": {"version": "catboost_basic_shadow__football_wide_multiclass"}}
+    assert "1X2 (бинарная): П1 0.400 | Х 0.300 | П2 0.300" in _format_upcoming_line(long_item)
+    assert "1X2 (многоклассовая): П1 0.400 | Х 0.300 | П2 0.300" in _format_upcoming_line(wide_item)
+
+
 def test_upcoming_query_params_live_off() -> None:
     cfg = OmegaConf.create({"bot": {"live_pinnacle": False}})
     p = _upcoming_query_params("nhl", cfg)

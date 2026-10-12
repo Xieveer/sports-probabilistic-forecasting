@@ -36,6 +36,9 @@ bot:
   airflow_dag_id: "data_refresh"
   # R37.7: запрашивать у API live Pinnacle + edge / bet (см. PredictionResponse); на стороне API нужен ODDS_API_KEY.
   live_pinnacle: true
+  # Локальная выдача двух 1X2-кандидатов; включать только с test DB/API.
+  club_test_enabled: false
+  club_test_hours: 168
 
 logging:
   level: INFO
