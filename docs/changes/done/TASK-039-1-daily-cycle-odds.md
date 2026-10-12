@@ -19,4 +19,13 @@
 Reviewer повторно выполнил targeted tests (25 passed), `make production-check`,
 `bash -n deploy/systemd/run-canonical-refresh.sh` и `git diff --check`;
 commit hooks `ruff`, `ruff format`, mypy и AI validation прошли.
-CI, Docker/release evidence и production run ещё ожидаются.
+
+PR [#96](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/96)
+слит в exact merge `e08452bc17b6d6bfab8fd97fd860f6df15fd56cd`;
+post-merge CI `38210285959` и Security `38210285974` завершились успешно.
+Annotated source tag `v1.3.7` указывает на этот commit.
+
+Source-tag Docker `38210415506` завершился успешно: release gates,
+first-rollout, четыре опубликованных digest с scan/provenance. Exact published
+Worker/model gate прошёл под UID10001/read-only/network-none с 489 ordered
+features. Отдельный evidence commit ещё готовится; production cycle не запускался.
