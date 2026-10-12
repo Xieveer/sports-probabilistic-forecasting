@@ -1,11 +1,11 @@
 # ============================================================================
-# DVC Pipeline: Data Processing + Production Workflow
+# DVC Pipeline: локальная обработка данных
 # ============================================================================
 #
 # Основной pipeline (dvc repro):
 #   ingest → clean → features → validate
 #
-# Обучение и inference — через CLI / Airflow (не через DVC).
+# Обучение и inference — через отдельные CLI (не через DVC).
 # См. комментарии в конце файла.
 #
 # Параметризация (params.yaml):
@@ -20,7 +20,7 @@ stages:
   # Читает CSV, разделяет на подтурниры, извлекает odds
   # NHL: провайдер nhl_web_api (conf/source/nhl.yaml) пишет data/source/nhl/source.csv;
   # Football: smart_tables_api → data/source/football_nationals/source.csv;
-  # этап features включает football_nationals при наличии interim (R44).
+  # features обрабатывает все каталоги с matches_interim.parquet и конфигом.
   ingest:
     cmd: uv run python -m sports_forecast.data.ingest
     deps:
@@ -62,16 +62,17 @@ stages:
           persist: true
 
   # Шаг 3: Features (interim → processed)
-  # Генерация фичей, набор определяется параметром features.config
+  # Генерация фичей для всех подготовленных interim-турниров;
+  # набор фичей определяется параметром features.config.
   features:
     cmd: >-
-      uv run python -m sports_forecast.features.features_build --multirun
-      tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by,nhl,football_nationals
-      features=${features.config}
+      uv run python -m sports_forecast.features.build_available
+      --features ${features.config}
     params:
       - features.config
     deps:
       - sports_forecast/features/features_build.py
+      - sports_forecast/features/build_available.py
       - sports_forecast/identity/snapshot.py
       - sports_forecast/identity/data_provenance.py
       - conf/identity_registry.yaml
@@ -81,6 +82,7 @@ stages:
       - sports_forecast/features/feature_pipeline_compose.py
       - sports_forecast/features/generators/
       - conf/features/
+      - conf/tournament/
       - conf/features_pipeline.yaml
       - conf/paths.yaml
       - data/interim/
@@ -120,8 +122,7 @@ stages:
 #   uv run python -m sports_forecast.materialize \
 #       tournament=uel_kz_1 algorithm=catboost features=advanced
 #
-# В production всё оркестрируется через Airflow DAGs:
-#   dag_data_refresh  → dvc repro (данные)
-#   dag_training      → CLI train + promote (модели)
-#   dag_materialize   → CLI materialize (предсказания → DB)
-#   dag_monitoring    → drift + performance checks
+# Действующий production цикл NHL запускается systemd и Worker, без Airflow.
+# Этот локальный DVC features stage обнаруживает готовые interim-турниры.
+# Общий плановый Airflow DAG использует deployment profiles из portfolio;
+# legacy data_refresh оставлен только для ручного запуска.

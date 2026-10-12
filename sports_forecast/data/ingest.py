@@ -569,13 +569,31 @@ def process_tournament(
             from sports_forecast.validation.club_regulation_scores import audit_regulation_scores
 
             cup_mask = df["competition_code"].isin({"UCL", "UEL"})
-            accepted_cups, quarantined = audit_regulation_scores(df.loc[cup_mask])
+            score_columns = (
+                "home_score_ft",
+                "away_score_ft",
+                "home_goals_all",
+                "away_goals_all",
+                "home_goals_1h",
+                "away_goals_1h",
+                "home_goals_2h",
+                "away_goals_2h",
+            )
+            score_frame = pd.DataFrame(df.loc[:, list(score_columns)])
+            scores_empty = (
+                score_frame.replace(r"^\s*$", pd.NA, regex=True).isna().all(axis="columns")
+            )
+            ended = df["match_is_end"].astype(str).str.strip().isin({"1", "True", "true"})
+            upcoming_cups = cup_mask & ~ended & scores_empty
+            accepted_cups, quarantined = audit_regulation_scores(df.loc[cup_mask & ~upcoming_cups])
             if not quarantined.empty:
                 logger.warning(
                     "Счёт основного времени: исключены матчи UCL/UEL: %s",
                     quarantined.to_dict(orient="records"),
                 )
-            df = df.loc[~cup_mask | df["match_id"].isin(accepted_cups["match_id"])].copy()
+            df = df.loc[
+                ~cup_mask | upcoming_cups | df["match_id"].isin(accepted_cups["match_id"])
+            ].copy()
             logger.info("После аудита счёта основного времени: %d матчей", len(df))
 
         identity_context = None

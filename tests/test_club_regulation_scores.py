@@ -67,6 +67,19 @@ def test_club_ingest_excludes_quarantined_cup_match(tmp_path, monkeypatch) -> No
             _match(1),
             _match(2, home_goals_2h=None),
             _match(3, competition_code="ENG1"),
+            _match(
+                4,
+                match_is_end=0,
+                match_status="Не начался",
+                home_score_ft=None,
+                away_score_ft=None,
+                home_goals_all=None,
+                away_goals_all=None,
+                home_goals_1h=None,
+                away_goals_1h=None,
+                home_goals_2h=None,
+                away_goals_2h=None,
+            ),
         ]
     ).to_csv(source, index=False)
 
@@ -83,4 +96,4 @@ def test_club_ingest_excludes_quarantined_cup_match(tmp_path, monkeypatch) -> No
     raw_root = tmp_path / "raw"
     ingest.process_tournament(source_dir, raw_root, OmegaConf.create({}))
     raw = pd.read_parquet(raw_root / "football_top_leagues" / "matches.parquet")
-    assert raw.match_id.tolist() == ["1", "3"]
+    assert raw.match_id.tolist() == ["1", "3", "4"]
