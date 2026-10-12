@@ -22,6 +22,9 @@
   `b56175b70a4b444f93de995940283728`; обе Optuna study имеют
   50 COMPLETE и 0 FAIL. ROI при `edge > 0.05`: `−13.16%` long и
   `−12.57%` wide; базовые модели тоже отрицательны.
+- Финальное независимое review: проверенный commit
+  `a9f77e1ccc98720f316a8202eac108a77512ecb5`; блокирующих findings нет.
+  На нём прошли 88 тестов, Ruff, mypy, `make ai-validate` и `make docs`.
 - Предыдущая роль: независимый Reviewer — сверил runs, studies, trace,
   SHA-256 и расчёт метрик; кодовых блокеров нет, документационный gate устранён.
 - Следующая роль: Product Owner — зафиксировать ITERATE и открыть отдельную
