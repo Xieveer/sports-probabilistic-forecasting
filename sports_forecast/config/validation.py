@@ -10,6 +10,7 @@ from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
 
 from sports_forecast.config.loaders import load_bookmaker_config
+from sports_forecast.config.model_strategy import effective_market_spec
 from sports_forecast.utils.log_config import get_logger
 
 
@@ -118,10 +119,11 @@ def validate_experiment_config(cfg: DictConfig, project_root: Path) -> None:
                     )
 
     # 5. data_format явно задан
-    if not hasattr(cfg.market_spec, "data_format"):
+    resolved_market_spec = effective_market_spec(cfg)
+    if not hasattr(resolved_market_spec, "data_format"):
         errors.append("market_spec.data_format обязателен! Должен быть 'long' или 'wide'")
     else:
-        data_format = cfg.market_spec.data_format
+        data_format = resolved_market_spec.data_format
         if data_format not in ["long", "wide"]:
             errors.append(
                 f"market_spec.data_format должен быть 'long' или 'wide', получено: {data_format}"
@@ -134,14 +136,14 @@ def validate_experiment_config(cfg: DictConfig, project_root: Path) -> None:
         and hasattr(cfg.market_spec, "data_format")
     ):
         try:
-            data_path = get_data_path(cfg.tournament, cfg.market_spec.data_format)
+            data_path = get_data_path(cfg.tournament, resolved_market_spec.data_format)
             full_path = project_root / data_path
 
             if not full_path.exists():
                 errors.append(
                     f"Файл данных не найден: {full_path}\n"
                     f"  Tournament: {cfg.tournament.name}\n"
-                    f"  Format: {cfg.market_spec.data_format}\n"
+                    f"  Format: {resolved_market_spec.data_format}\n"
                     f"  Убедитесь что DVC pipeline запущен: make dvc-repro"
                 )
         except Exception as e:
@@ -277,7 +279,7 @@ def print_config_summary(cfg: DictConfig) -> None:
         print(f"  Side: {cfg.market_spec.get('side', 'N/A')}")
         if hasattr(cfg.market_spec, "line"):
             print(f"  Line: {cfg.market_spec.line}")
-        print(f"  Data Format: {cfg.market_spec.data_format}")
+        print(f"  Data Format: {effective_market_spec(cfg).data_format}")
 
     if hasattr(cfg, "algorithm"):
         print(f"  Algorithm: {cfg.algorithm.name}")

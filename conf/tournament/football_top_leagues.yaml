@@ -2,6 +2,7 @@
 
 defaults:
   - /sport@_here_: football
+  - _self_
 
 name: football_top_leagues
 region: international

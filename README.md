@@ -5,7 +5,7 @@
 
 # Sports Probabilistic Forecasting
 
-MLOps-система промышленного уровня для вероятностного прогнозирования спортивных событий.
+Платформа вероятностного прогнозирования спортивных событий.
 Калибровка вероятностей влияет на итоговую доходность от value-ставок в беттинге.
 
 Проектируется как мультиспортивная платформа, а не как сервис одного турнира:
@@ -18,7 +18,16 @@ MLOps-система промышленного уровня для вероят
 `python -m sports_forecast.orchestration.candidate premier_league_winner`.
 Пример Premier League и ограничения исторических odds описаны в
 [руководстве](docs/cursor/context/HOW_TO_ADD_NEW_TOURNAMENT.md).
-Регулярные DVC/Airflow списки остаются отдельным контуром.
+Локальный DVC и плановый Airflow используют разные контуры данных и запуска.
+
+**Фактические границы на 2026-10-12.** Действующий production цикл NHL
+запускается systemd и Worker, а `docker-compose.prod.yml` не содержит Airflow,
+MLflow, Prometheus или Grafana. DVC обслуживает локальный граф данных и строит
+features для всех подготовленных interim-турниров. Legacy Airflow `data_refresh`
+доступен вручную, а плановый `portfolio_refresh` читает deployment profiles.
+Hydra композит конфигураций работает для моделей. Локальный клубный E2E на девяти
+соревнованиях описан в [EPIC-040](docs/backlog/EPIC-040-club-football-platform-e2e.md);
+он не включает production-расписание или модельный pointer.
 
 ---
 
@@ -389,14 +398,20 @@ TTL и срок подготовки задаются отдельной policy 
 
 ### Monitoring
 
-- **Prometheus:** AUC, LogLoss, ECE, ROI, drift score, request latency
-- **Grafana:** dashboards с автоматическим provisioning
-- **Alerts:** ModelAUCDegraded, ModelLogLossHigh, DataDriftSignificant
-- **A/B Testing:** сравнение prod vs shadow моделей
+Локальный Compose запускает Prometheus и Grafana и может собирать `/metrics`
+API. В production Compose этих сервисов нет. Функция записи модельных
+Prometheus-метрик сейчас не вызывается регулярным runtime-путём, поэтому AUC,
+LogLoss, ECE, ROI и drift нельзя считать действующим production monitoring.
+Сравнение клубных shadow-моделей выполнено локально в EPIC-040.
 
 ---
 
 ## Orchestration (Airflow)
+
+Ниже перечислены DAG локального Airflow-контура. Действующий production цикл
+NHL запускается systemd и Worker; эти DAG не являются его расписанием.
+`data_refresh` с ручным списком `SF_REFRESH_TOURNAMENTS` больше не имеет
+расписания; плановый `portfolio_refresh` берёт состав из deployment profiles.
 
 | DAG | Описание | Расписание |
 |-----|----------|------------|

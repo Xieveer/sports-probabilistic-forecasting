@@ -31,7 +31,10 @@ import json
 import os
 from contextlib import nullcontext
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
+from typing import Any, cast
 from uuid import uuid4
 
 import hydra
@@ -41,6 +44,7 @@ import yaml
 from omegaconf import DictConfig, OmegaConf
 from sqlalchemy.orm import Session
 
+from sports_forecast.config.model_strategy import effective_market_spec, model_strategy_name
 from sports_forecast.deploy.managed_model import (
     PinnedModelContract,
     deployment_matches_pin,
@@ -55,6 +59,7 @@ from sports_forecast.predict import (
 )
 from sports_forecast.service.db.engine import get_engine, get_session
 from sports_forecast.service.db.repository import ModelRegistryRepository, PredictionRepository
+from sports_forecast.training.probability_metrics import audit_long_1x2_probabilities
 from sports_forecast.utils.log_config import configure_logging, get_logger
 
 
@@ -356,6 +361,93 @@ def _aggregate_long_predictions(
     return pd.DataFrame(records)
 
 
+def _aggregate_football_1x2_predictions(
+    df: pd.DataFrame,
+    proba: np.ndarray,
+    classes: np.ndarray,
+    *,
+    strategy: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Собрать 1X2 и отдельно вернуть события с невалидным остатком."""
+    probabilities = np.asarray(proba, dtype=float)
+    class_list = list(np.asarray(classes))
+    if strategy == "football_long_binary":
+        if probabilities.shape != (len(df), 2) or set(class_list) != {0, 1}:
+            raise ValueError("Long 1X2 требует бинарные вероятности классов 0/1")
+        valid, rejected = audit_long_1x2_probabilities(df, probabilities[:, class_list.index(1)])
+        home_rows = df.loc[df["is_home"].astype(int).eq(1)].set_index("id")
+        away_rows = df.loc[df["is_home"].astype(int).eq(0)].set_index("id")
+    elif strategy == "football_wide_multiclass":
+        if probabilities.shape != (len(df), 3) or set(class_list) != {0, 1, 2}:
+            raise ValueError("Wide 1X2 требует классы 0/1/2")
+        if (
+            not np.isfinite(probabilities).all()
+            or (probabilities < 0).any()
+            or (probabilities > 1).any()
+            or not np.allclose(probabilities.sum(axis=1), 1.0, atol=1e-6)
+        ):
+            raise ValueError("Wide 1X2 содержит невалидное распределение")
+        if df["id"].isna().any() or df["id"].duplicated().any():
+            raise ValueError("Wide 1X2 содержит пустой или повторный ID")
+        valid = pd.DataFrame(
+            {
+                "home_win": probabilities[:, class_list.index(0)],
+                "draw": probabilities[:, class_list.index(1)],
+                "away_win": probabilities[:, class_list.index(2)],
+            },
+            index=df["id"],
+        )
+        rejected = pd.DataFrame(columns=["reason"])
+        home_rows = df.set_index("id")
+        away_rows = home_rows
+    else:
+        raise ValueError(f"Неизвестная модельная стратегия 1X2: {strategy}")
+
+    records: list[dict[str, object]] = []
+    for match_id, probabilities_row in valid.iterrows():
+        event_key = cast(Any, match_id)
+        home = home_rows.loc[event_key]
+        away = away_rows.loc[event_key]
+        p_home = round(float(probabilities_row["home_win"]), 6)
+        p_draw = round(float(probabilities_row["draw"]), 6)
+        p_away = round(1.0 - p_home - p_draw, 6)
+        if min(p_home, p_draw, p_away) < 0:
+            raise ValueError(f"1X2 стал невалидным после округления: {match_id}")
+        predictions = {"home_win": p_home, "draw": p_draw, "away_win": p_away}
+        odds_raw = home.get("odds_raw")
+        if pd.isna(odds_raw):
+            odds_raw = None
+        canonical_id = home.get("canonical_event_id")
+        away_canonical_id = away.get("canonical_event_id")
+        if (
+            pd.notna(canonical_id)
+            and pd.notna(away_canonical_id)
+            and int(canonical_id) != int(away_canonical_id)
+        ):
+            raise ValueError(f"Разные canonical_event_id для матча {match_id}")
+        if pd.isna(canonical_id):
+            canonical_id = away_canonical_id
+        records.append(
+            {
+                "match_id": str(match_id),
+                "match_datetime": pd.to_datetime(home["datetime"]),
+                "home_player": str(home["pl"]),
+                "away_player": str(
+                    away["pl"] if strategy == "football_long_binary" else home["opp"]
+                ),
+                "proba_home": p_home,
+                "proba_away": p_away,
+                "predictions_json": json.dumps(predictions, ensure_ascii=False),
+                "odds_raw": str(odds_raw) if odds_raw is not None else None,
+                "canonical_event_id": int(canonical_id) if pd.notna(canonical_id) else None,
+            }
+        )
+    rejected_report = rejected.reset_index().rename(columns={"id": "match_id"})
+    if "match_id" not in rejected_report:
+        rejected_report["match_id"] = pd.Series(dtype=str)
+    return pd.DataFrame(records), rejected_report[["match_id", "reason"]]
+
+
 def _publish_empty_showcase(
     session: Session | None,
     *,
@@ -389,6 +481,48 @@ def _remove_staged_predictions(path: Path) -> None:
         logger.warning("Не удалось удалить временный parquet: %s", path, exc_info=True)
 
 
+def _assert_local_test_session(session: Session, project_root: Path) -> None:
+    """Допустить 1X2 только в изолированную локальную SQLite test DB."""
+    bind = session.get_bind()
+    url = bind.engine.url
+    if url.get_backend_name() != "sqlite":
+        raise ValueError("Локальный 1X2 требует SQLite test DB")
+    database = url.database
+    if database is None or database in ("", ":memory:"):
+        return
+    test_root = (project_root / "data" / "local_test").resolve()
+    if not Path(database).resolve().is_relative_to(test_root):
+        raise ValueError("Локальный 1X2 требует DB внутри data/local_test")
+
+
+def _assert_smart_tables_upcoming_snapshot(inference_path: Path, df: pd.DataFrame) -> None:
+    """Проверить источник, байты и будущую дату каждого upcoming-события."""
+    manifest_path = inference_path.with_suffix(".snapshot.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("source") != "smart_tables":
+        raise ValueError("Локальный 1X2 требует snapshot Smart Tables")
+    actual_hash = sha256(inference_path.read_bytes()).hexdigest()
+    if manifest.get("sha256") != actual_hash:
+        raise ValueError("Hash inference не совпадает со Smart Tables snapshot")
+    observed_at = pd.to_datetime(manifest.get("observed_at"), utc=True, errors="coerce")
+    if pd.isna(observed_at):
+        raise ValueError("Smart Tables snapshot не содержит observed_at")
+    now = datetime.now(UTC)
+    if (
+        observed_at.to_pydatetime() > now
+        or (now - observed_at.to_pydatetime()).total_seconds() > 3600
+    ):
+        raise ValueError("Smart Tables upcoming snapshot устарел или датирован будущим")
+    scheduled = pd.to_datetime(df.get("datetime"), utc=True, errors="coerce")
+    if (
+        scheduled is None
+        or scheduled.isna().any()
+        or (scheduled <= observed_at).any()
+        or (scheduled <= now).any()
+    ):
+        raise ValueError("Upcoming содержит матч без будущей даты")
+
+
 def materialize_predictions(
     cfg: DictConfig, version: str = "prod", *, session: Session | None = None
 ) -> bool:
@@ -407,7 +541,21 @@ def materialize_predictions(
     market_spec_name = str(cfg.market_spec.name)
     algorithm_name = str(cfg.algorithm.name)
     featureset_name = str(cfg.features.name)
-    data_format = str(cfg.market_spec.data_format)
+    data_format = str(effective_market_spec(cfg).data_format)
+    strategy = model_strategy_name(cfg)
+    club_local = market_spec_name == "winner_1x2"
+    if club_local and (
+        session is None or version != "shadow" or strategy == "standard" or cfg.get("model_pool")
+    ):
+        logger.error("Локальный 1X2 требует явную strategy, shadow и внешнюю test DB-сессию")
+        return False
+    if club_local:
+        try:
+            assert session is not None
+            _assert_local_test_session(session, PROJECT_ROOT)
+        except ValueError as exc:
+            logger.error("Локальная DB не прошла проверку: %s", exc)
+            return False
     model_dir = get_model_dir(cfg, PROJECT_ROOT)
     algorithm_cfg = cfg.algorithm
 
@@ -450,6 +598,8 @@ def materialize_predictions(
         algorithm_cfg = _load_algorithm_config(PROJECT_ROOT, algorithm_name, cfg.algorithm)
 
     model_version = f"{algorithm_name}_{featureset_name}_{version}"
+    if club_local:
+        model_version = f"{model_version}__{strategy}"
 
     logger.info("=" * 60)
     logger.info("MATERIALIZE PREDICTIONS")
@@ -467,6 +617,8 @@ def materialize_predictions(
             if pinned_model is not None
             else find_model_file(model_dir, version=version)
         )
+        if club_local and model_file != model_dir / f"{strategy}_shadow.cbm":
+            raise ValueError("Локальный 1X2 требует точный shadow-артефакт стратегии")
 
         if model_file is None:
             logger.error("Модель не найдена в %s (version=%s)", model_dir, version)
@@ -491,6 +643,17 @@ def materialize_predictions(
 
         df = pd.read_parquet(inference_path)
         logger.info("Inference data loaded: %d строк", len(df))
+        if club_local and not df.empty:
+            _assert_smart_tables_upcoming_snapshot(inference_path, df)
+            if "status" not in df or not df["status"].eq("upcoming").all():
+                raise ValueError("Локальный 1X2 принимает только upcoming-события")
+            score_columns = (
+                ("pl_points", "opp_points")
+                if data_format == "long"
+                else ("home_points", "away_points")
+            )
+            if any(column in df and df[column].notna().any() for column in score_columns):
+                raise ValueError("Upcoming 1X2 содержит известный итоговый счёт")
 
         if df.empty:
             logger.warning("Inference data пуст — нет предстоящих матчей")
@@ -499,7 +662,9 @@ def materialize_predictions(
                 tournament=tournament_name,
                 market=market_name,
                 market_spec=market_spec_name,
-                source_namespace=cfg.get("source_namespace"),
+                source_namespace=(
+                    f"local_test/{strategy}" if club_local else cfg.get("source_namespace")
+                ),
                 model_pool=model_pool,
                 pin=pinned_model,
             )
@@ -510,7 +675,7 @@ def materialize_predictions(
             available = [f for f in feature_names if f in df.columns]
             if len(available) < len(feature_names):
                 missing = set(feature_names) - set(available)
-                if pinned_model is not None:
+                if pinned_model is not None or club_local:
                     raise BundleVerificationError(
                         f"Managed bundle features отсутствуют во входе: {sorted(missing)}"
                     )
@@ -527,7 +692,20 @@ def materialize_predictions(
         proba = model.predict_proba(features)
 
         # 6. Агрегация
-        preds_df = _aggregate_long_predictions(df, proba)
+        if club_local:
+            preds_df, rejected = _aggregate_football_1x2_predictions(
+                df, proba, np.asarray(getattr(model, "classes_", None)), strategy=strategy
+            )
+            logger.info(
+                "1X2: отклонено %d из %d матчей (%.2f%%)",
+                len(rejected),
+                len(preds_df) + len(rejected),
+                100 * len(rejected) / max(1, len(preds_df) + len(rejected)),
+            )
+            if not rejected.empty:
+                logger.warning("1X2 карантин прогноза: %s", rejected.to_dict(orient="records"))
+        else:
+            preds_df = _aggregate_long_predictions(df, proba)
         logger.info("Агрегировано %d предсказаний (матчей)", len(preds_df))
 
         if preds_df.empty:
@@ -538,7 +716,11 @@ def materialize_predictions(
         predictions_root = PROJECT_ROOT / cfg.paths.predictions_dir
         out_dir = predictions_root / tournament_name / market_spec_name
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"predictions_{version}.parquet"
+        out_path = out_dir / (
+            f"predictions_{version}_{strategy}.parquet"
+            if club_local
+            else f"predictions_{version}.parquet"
+        )
         staged_predictions_path = out_dir / f".{out_path.name}.{uuid4().hex}.tmp"
         preds_df.to_parquet(staged_predictions_path, index=False)
 
@@ -580,6 +762,8 @@ def materialize_predictions(
                     "odds_raw": row.get("odds_raw"),
                     "status": "ok",
                 }
+                if club_local:
+                    publication_record["source_namespace"] = f"local_test/{strategy}"
                 if pinned_model is not None:
                     publication_record.update(
                         {
@@ -597,6 +781,7 @@ def materialize_predictions(
                 tournament=tournament_name,
                 market=market_name,
                 market_spec=market_spec_name,
+                source_namespace=f"local_test/{strategy}" if club_local else None,
             )
 
             logger.info("Записано %d предсказаний в Prediction Store", count)

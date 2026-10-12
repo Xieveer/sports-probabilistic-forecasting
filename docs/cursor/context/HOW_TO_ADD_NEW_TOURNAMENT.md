@@ -387,23 +387,25 @@ production pointer. При отсутствующем CSV или неполно�
 в отчёте границы относятся только к данному snapshot данных. Новые данные
 могут изменить тестовый период и метрики.
 
-Статические списки DVC и Airflow остаются действующим путём регулярной выдачи;
-candidate-команда их не меняет. Границы описаны в
-[ADR-030](../../architecture/adr/ADR-030-local-candidate-cycle.md).
+Candidate-команда не включает регулярную выдачу. Локальный DVC features stage
+берёт состав из готовых interim-данных и конфигов; плановый Airflow
+`portfolio_refresh` использует deployment profiles, а legacy `data_refresh`
+запускается только вручную. Действующий production NHL использует systemd и
+Worker. Границы описаны в
+[ADR-030](../../architecture/adr/ADR-030-local-candidate-cycle.md) и
+[ADR-041](../../architecture/adr/ADR-041-local-data-stage-tournament-selection.md).
 
-DVC для этапа `features` уже использует **multirun** по списку турниров; менять `features=` в команде не требуется: состав генераторов определяется **спортом** и `feature_pipeline` (R29). После изменения `conf/features/`, `conf/sport/` или модулей композиции выполните `dvc repro features` (или полный `make dvc-repro`) и закоммитьте обновлённый **`dvc.lock`** — хэши `processed` и зависимостей сменятся.
+DVC для этапа `features` обрабатывает каждый `data/interim/<name>/matches_interim.parquet`
+при наличии `conf/tournament/<name>.yaml`; состав генераторов определяется
+спортом и `feature_pipeline` (R29). После изменения конфигов или модулей
+композиции выполните `dvc repro features` (или полный `make dvc-repro`) и
+закоммитьте обновлённый `dvc.lock` после проверки артефактов.
 
-### Добавить турнир в DVC pipeline
+### Проверить включение в DVC pipeline
 
-Отредактируйте `dvc.yaml`, добавив новый турнир в список:
-
-```yaml
-features:
-  cmd: >-
-    uv run python -m sports_forecast.features.features_build --multirun
-    tournament=uel_kz_1,uel_kz_2,uel_cz,lp_ru,lp_eu,lp_eu_a18,lp_by,nba
-    features=${features.config}
-```
+После ingest и clean убедитесь, что существуют
+`data/interim/<name>/matches_interim.parquet` и конфиг турнира. `dvc.yaml`
+для нового совместимого турнира менять не нужно.
 
 ---
 
@@ -472,7 +474,7 @@ make mlflow-ui
 - [ ] Source конфиг создан: `conf/source/<name>.yaml`
 - [ ] **Один файл турнира**: `conf/tournament/<slug>.yaml` — defaults из source/sport через Hydra `@packaging`, без отдельного `*_train` YAML для того же slug (правило R38/R41, см. `nhl_single_tournament_slug.md`)
 - [ ] Данные размещены: `data/source/<name>/source.csv`
-- [ ] Турнир добавлен в `dvc.yaml`
+- [ ] Interim-файл обнаружен локальным DVC features stage
 - [ ] `make dvc-repro` — pipeline отработал без ошибок
 - [ ] `make validate-data` — данные прошли валидацию
 - [ ] `make train TOURNAMENT=<name>` — обучение прошло

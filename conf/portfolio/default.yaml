@@ -13,6 +13,9 @@ model_pools:
   premier_league_winner:
     sport: football
     market_specs: [winner]
+  football_top_leagues:
+    sport: football
+    market_specs: [winner_1x2]
 
 tournaments:
   nhl:
@@ -41,6 +44,13 @@ tournaments:
     memberships:
       - model_pool: premier_league_winner
         market_specs: [winner]
+  football_top_leagues:
+    sport: football
+    source: football_top_leagues
+    display_name: "Топовый клубный футбол"
+    memberships:
+      - model_pool: football_top_leagues
+        market_specs: [winner_1x2]
 
 deployment_profiles:
   nhl_winner_with_ot:

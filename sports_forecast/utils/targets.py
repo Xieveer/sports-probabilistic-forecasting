@@ -298,6 +298,23 @@ def _compute_target_from_source(
             data_format,
             target.mean() * 100,
         )
+    elif comparison == "three_way":
+        home_score = pd.to_numeric(df[col_a], errors="coerce")
+        away_score = pd.to_numeric(df[col_b], errors="coerce")
+        valid_score = (
+            home_score.notna()
+            & away_score.notna()
+            & (home_score >= 0)
+            & (away_score >= 0)
+            & home_score.mod(1).eq(0)
+            & away_score.mod(1).eq(0)
+        )
+        if not bool(valid_score.all()):
+            raise TargetComputationError("Для 1X2 нужен полный неотрицательный целый счёт")
+        target = pd.Series(1, index=df.index, dtype=int)
+        target.loc[home_score > away_score] = 0
+        target.loc[home_score < away_score] = 2
+        logger.info("✓ Таргет '%s': 1X2 по %s/%s, n=%d", target_name, col_a, col_b, len(target))
     elif comparison == "total_over":
         if line is None:
             line = market_spec.get("line")

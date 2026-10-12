@@ -1,4 +1,4 @@
-"""DAG A — Data Refresh per tournament.
+"""Ручной legacy DAG Data Refresh per tournament.
 
 Оркестрирует по-турнирный контур обновления:
     1. source
@@ -61,7 +61,7 @@ default_args = {
 with DAG(
     dag_id="data_refresh",
     description="Data pipeline: source → raw → interim → processed",
-    schedule="0 */4 * * *",  # каждые 4 часа
+    schedule=None,
     start_date=datetime(2026, 1, 1),
     catchup=False,
     tags=["data", "pipeline", "v2"],

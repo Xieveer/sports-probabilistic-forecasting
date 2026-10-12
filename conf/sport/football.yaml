@@ -49,7 +49,7 @@ form_params:
 
 allowed_market_specs:
   winner:
-    specs: [winner, winner_home]
+    specs: [winner, winner_home, winner_1x2]
   total:
     lines: [1.5, 2.5, 3.5, 4.5]
     specs: [total_over, total_under]
@@ -68,6 +68,13 @@ target_sources:
     home_column: home_points
     away_column: away_points
     comparison: greater
+
+  # Итог основного времени: 0=П1, 1=Х, 2=П2.
+  home_result_1x2:
+    format: wide
+    home_column: home_points
+    away_column: away_points
+    comparison: three_way
 
   total_sum:
     format: wide

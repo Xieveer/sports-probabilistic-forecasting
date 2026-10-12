@@ -46,6 +46,46 @@ def normalize_season_token(value: Any) -> str:
         return str(value).strip()
 
 
+def build_temporal_event_masks(
+    frame: pd.DataFrame,
+    locked_holdout: str,
+    *,
+    id_column: str = "id",
+    time_column: str = "datetime",
+) -> tuple[pd.Series, pd.Series]:
+    """Разделить матчи по времени без разрыва long-строк одного события.
+
+    Окно `YYYY-MM-DD/YYYY-MM-DD` включает обе указанные даты. События после
+    окна не участвуют ни в обучении, ни в проверке зафиксированного holdout.
+    """
+    if id_column not in frame or time_column not in frame:
+        raise TrainEvalSplitError("Для temporal holdout нужны ID и время матча")
+    try:
+        start_raw, end_raw = locked_holdout.split("/", maxsplit=1)
+        start = pd.Timestamp(start_raw, tz="UTC")
+        end = pd.Timestamp(end_raw, tz="UTC") + pd.Timedelta(days=1)
+    except (TypeError, ValueError) as exc:
+        raise TrainEvalSplitError(
+            "locked_holdout должен иметь формат YYYY-MM-DD/YYYY-MM-DD"
+        ) from exc
+    if start >= end:
+        raise TrainEvalSplitError("locked_holdout имеет неверные границы")
+    event_ids = frame[id_column].astype("string")
+    if event_ids.isna().any() or event_ids.str.strip().eq("").any():
+        raise TrainEvalSplitError("Temporal holdout содержит пустой ID матча")
+    times = pd.to_datetime(frame[time_column], errors="coerce", utc=True)
+    if times.isna().any():
+        raise TrainEvalSplitError("Temporal holdout содержит пустое или неверное время")
+    grouped = pd.DataFrame({"id": event_ids.to_numpy(), "at": times.to_numpy()})
+    if grouped.groupby("id", sort=False)["at"].nunique().gt(1).any():
+        raise TrainEvalSplitError("Один матч имеет разные времена в long-строках")
+    train_mask = pd.Series(times < start, index=frame.index, dtype=bool)
+    test_mask = pd.Series((times >= start) & (times < end), index=frame.index, dtype=bool)
+    if not train_mask.any() or not test_mask.any():
+        raise TrainEvalSplitError("Temporal holdout дал пустое обучение или тест")
+    return train_mask, test_mask
+
+
 def subset_frame_for_season_holdout(
     df: pd.DataFrame,
     target: pd.Series,
