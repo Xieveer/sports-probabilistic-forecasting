@@ -2,6 +2,7 @@
 
 defaults:
   - smart_tables
+  - _self_
 
 name: football_top_leagues
 
