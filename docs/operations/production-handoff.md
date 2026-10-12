@@ -1,22 +1,41 @@
 # Передача сервиса в эксплуатацию: v1.3.7 candidate
 
 - Статус подготовки: `candidate`
-- Решение на 2026-10-12: `HOLD` до исправления ежедневного odds вызова, review, CI/Security, immutable release gates, строгого production Data Cycle и 20 ticks. Владелец перенёс непустой owner candidate gate на подключение нового турнира.
+- Решение на 2026-10-12: `HOLD` до evidence workflow, строгого production Data Cycle и 20 ticks. Исправление ежедневного odds вызова, review, terminal CI/Security, Docker/first-rollout, публикация, scan/provenance и exact Worker/model gate прошли. Владелец перенёс непустой owner candidate gate на подключение нового турнира.
 - Инициатива: [EPIC-039](../backlog/EPIC-039-v1-3-7-daily-cycle.md), исходные контракты [EPIC-025](../backlog/EPIC-025-bot-schedule-readiness.md) и [EPIC-026](../backlog/EPIC-026-entity-registry.md).
 - Владелец выпуска: пользователь; rollout выполняет Operations Agent.
 - Среда: production VPS `ops-prod-01`; планируемая версия `1.3.7`.
-- source_tag: `v1.3.7` — создать на exact merge после review, terminal CI и Security.
-- source_commit: ожидает terminal CI и merge ветки EPIC-039.
-- evidence_tag: `v1.3.7-evidence.1` — создать после проверки image/model evidence.
+- source_tag: `v1.3.7` — immutable annotated tag на exact merge после review, terminal CI и Security.
+- source_commit: `e08452bc17b6d6bfab8fd97fd860f6df15fd56cd` (post-merge CI `38210285959` и Security `38210285974`: success).
+- evidence_tag: `v1.3.7-evidence.1` — создать после проверки image/model evidence и локального manifest gate.
 - Текущий server stage: exact v1.3.6 source `b06b544313b1915da3960670ddfbd836ad0a5b53`, registry v2 publication sequence 3, strict reader `true`, API/бот здоровы, все три timers остановлены; outbox 0 после полного цикла и zero-work feedback. Резервные v1.3.5/v1.3.4/v1.3.1 образы сохранены.
 
 ## План v1.3.7 и остановка
 
-После локального red/green и независимого review проверить terminal CI/Security, exact source tag, четыре опубликованных OCI digest с scan/provenance, exact Worker/model wrapper и evidence workflow. Operations Agent сверяет grant, диск, backup/readback/isolated restore, source/env/registry/schema и отсутствие активного цикла. Переключает exact v1.3.7 со strict reader `true`, выполняет один controlled Data Cycle через установленный runner: calendar → quality → archive → features → predictions → publication, `data_odds=skipped`, без нового The Odds API acquisition attempt; сравнивает результаты и признаки там, где появились завершённые игры. `/predict` отдельно проверяется на текущей линии и edge. Затем активирует `sports-forecast-data-cycle-dispatcher.timer`, `sports-forecast-registry-sync.timer`, `sports-forecast-registry-feedback.timer`; подтверждает 20 минутных ticks, heartbeat, отсутствие start-limit-hit и лишних уведомлений. Старый `sports-forecast-canonical-refresh@nhl.timer` не включать: он дублирует цикл.
+Локальный red/green и независимый review прошли, terminal CI/Security и exact source tag получены. Проверить четыре опубликованных OCI digest с scan/provenance, exact Worker/model wrapper и evidence workflow. Operations Agent сверяет grant, диск, backup/readback/isolated restore, source/env/registry/schema и отсутствие активного цикла. Переключает exact v1.3.7 со strict reader `true`, выполняет один controlled Data Cycle через установленный runner: calendar → quality → archive → features → predictions → publication, `data_odds=skipped`, без нового The Odds API acquisition attempt; сравнивает результаты и признаки там, где появились завершённые игры. `/predict` отдельно проверяется на текущей линии и edge. Затем активирует `sports-forecast-data-cycle-dispatcher.timer`, `sports-forecast-registry-sync.timer`, `sports-forecast-registry-feedback.timer`; подтверждает 20 минутных ticks, heartbeat, отсутствие start-limit-hit и лишних уведомлений. Старый `sports-forecast-canonical-refresh@nhl.timer` не включать: он дублирует цикл.
 
 Scheduled NHL запуск ожидается в 10:00 Europe/Moscow (07:00 UTC). Если rollout не завершится до этого времени, Operations Agent сверяет due slot и запускает один контролируемый цикл через dispatcher после switch; повторную публикацию/дубли не создавать. При P0/P1, новом odds attempt из цикла, неверных rolling features, ошибке backup/restore, устаревшем heartbeat или провале уведомлений — остановить dispatcher и вернуть сохранённый v1.3.6 exact image/env либо safe hold; strict reader выключать только при его собственной ошибке. `make acceptance-check` и эквивалентные безопасные GET/SELECT probes применить без раскрытия секретов.
 
 Непустой owner candidate → local decision → publication/sync/ack остаётся открытым сценарием EPIC-026 до появления нового обозначения при подключении турнира; текущий NHL outbox 0. Нулевой feedback, работа таймеров и строгий reader проверяются в этом выпуске. Ручной refresh с явным `data_odds_enabled=true` остаётся диагностической возможностью, `/predict` запрашивает live odds по запросу пользователя.
+
+## Release evidence v1.3.7
+
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38210285959 — terminal success на exact source commit.
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38210285974 — terminal success на exact source commit.
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38210415506 — release gates, проверенный OCI, publish, scan и provenance success.
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38210415506 — чистый first-rollout success.
+
+- api: ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:fc21a3598ac27463c3c0ea03371ad1ffc671f1fb6d8462da7e10fe3c8db36838 — published; linux/amd64; scan; provenance.
+- worker: ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:054a36bc11690820438ccdb8b03feddad24d32719d5ed10e70b8ae729799ad54 — published; linux/amd64; scan; provenance.
+- telegram_bot: ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:3ca2dbf90b3b65d42457995f4d7f9286a58fa5d9801f1fe6cc1a0ab889eba793 — published; linux/amd64; scan; provenance.
+- archive_sync: ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:7cb4c6b24a069a712719a6928d738cf1d4bf0fea42754ab3c5064839063d33bd — published; linux/amd64; scan; provenance.
+- postgres: postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94 — проверенный базовый образ.
+
+Для v1.3.7 из прежних approved model payload собран immutable wrapper `sha256:ad967f34ec37060eec3388a90e94af23f00d85f9534e30a46407db661959b543` (manifest SHA-256 `b3f30be712cb0e024024a50a9aad400da19c28d798b61a24b8c73278634bf192`). Локальная проверка manifest, SHA payload и 489 ordered features прошла. Exact опубликованный Worker digest `sha256:054a36bc11690820438ccdb8b03feddad24d32719d5ed10e70b8ae729799ad54` проверен с этим wrapper под UID:GID10001:10001, network none, read-only rootfs/model mount, cap-drop ALL, no-new-privileges, RAM 1 GiB, pids 128: bundle verified, CatBoost и 489 ordered features совпали. Серверный mount ещё ожидается.
+
+Pre-switch backup `/var/backups/sports-forecast/postgres/pre-v1.3.7-20261012T060418522429569.dump` (58 626 998 байт, SHA-256 `8de021721b00ccba4871afd73062f7061ef666e6a025ba22f5ef07c81d17a9da`) прошёл full off-host readback/bytecmp и isolated restore на exact PostgreSQL image: schema `0025_real_bets_ledger`, 22 581 events, 1 919 predictions, 5 odds observations, 8 odds acquisition attempts, outbox 0. Strict reader остаётся `true`, timers inactive; release source/unit templates v1.3.7 staged отдельно, live switch ещё не выполнен.
+
+До выпуска в старом verified canonical архиве `sha256:1c0c66f6f5a2d7bd7445b5a3d3080a25605016a788413157e942b05c5df66adb` матчи `2026020085` (VAN–NYR) и `2026020086` (CAR–PHI) ещё не завершены. Официальный NHL API показал оба `OFF`; новый результат должен войти в следующий snapshot. Offline baseline на старом pinned архиве и реальном approved feature pipeline воспроизвёл contract `sha256:cea3521e8f7ba866dfc47128047646aa86f0a472885b1d715639f7fb1ecf759f`: для будущего CAR `2026020093` `f_pl_global_diff_ewm_5=2.432152504331492`, для будущего VAN `2026020097` `f_pl_global_diff_ewm_5=-2.1936840179919486`. После контролируемого цикла эти поля будут пересчитаны из нового pinned архива и сравнены; odds acquisition attempts до цикла — 8.
 
 ## Исторические evidence v1.3.6
 
