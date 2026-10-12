@@ -1,14 +1,26 @@
-# Передача сервиса в эксплуатацию: v1.3.6 candidate
+# Передача сервиса в эксплуатацию: v1.3.7 candidate
 
 - Статус подготовки: `candidate`
-- Решение на 2026-10-12: `HOLD` до решения владельца по отсутствующему реальному кандидату и проверки 20 ticks; кодовое исправление, immutable release gates и strict forecast cycle прошли.
-- Инициатива: [EPIC-038](../backlog/EPIC-038-v1-3-6-candidate-scope.md), исходный контракт [EPIC-026](../backlog/EPIC-026-entity-registry.md).
+- Решение на 2026-10-12: `HOLD` до исправления ежедневного odds вызова, review, CI/Security, immutable release gates, строгого production Data Cycle и 20 ticks. Владелец перенёс непустой owner candidate gate на подключение нового турнира.
+- Инициатива: [EPIC-039](../backlog/EPIC-039-v1-3-7-daily-cycle.md), исходные контракты [EPIC-025](../backlog/EPIC-025-bot-schedule-readiness.md) и [EPIC-026](../backlog/EPIC-026-entity-registry.md).
 - Владелец выпуска: пользователь; rollout выполняет Operations Agent.
-- Среда: production VPS `ops-prod-01`; планируемая версия `1.3.6`.
-- source_tag: `v1.3.6` — immutable annotated tag exact merge после review, terminal CI и Security.
-- source_commit: `b06b544313b1915da3960670ddfbd836ad0a5b53` (post-merge CI `38184112119` и Security `38184112107`: success).
-- evidence_tag: `v1.3.6-evidence.1` — отдельный tag после проверки image/model evidence.
+- Среда: production VPS `ops-prod-01`; планируемая версия `1.3.7`.
+- source_tag: `v1.3.7` — создать на exact merge после review, terminal CI и Security.
+- source_commit: ожидает terminal CI и merge ветки EPIC-039.
+- evidence_tag: `v1.3.7-evidence.1` — создать после проверки image/model evidence.
 - Текущий server stage: exact v1.3.6 source `b06b544313b1915da3960670ddfbd836ad0a5b53`, registry v2 publication sequence 3, strict reader `true`, API/бот здоровы, все три timers остановлены; outbox 0 после полного цикла и zero-work feedback. Резервные v1.3.5/v1.3.4/v1.3.1 образы сохранены.
+
+## План v1.3.7 и остановка
+
+После локального red/green и независимого review проверить terminal CI/Security, exact source tag, четыре опубликованных OCI digest с scan/provenance, exact Worker/model wrapper и evidence workflow. Operations Agent сверяет grant, диск, backup/readback/isolated restore, source/env/registry/schema и отсутствие активного цикла. Переключает exact v1.3.7 со strict reader `true`, выполняет один controlled Data Cycle через установленный runner: calendar → quality → archive → features → predictions → publication, `data_odds=skipped`, без нового The Odds API acquisition attempt; сравнивает результаты и признаки там, где появились завершённые игры. `/predict` отдельно проверяется на текущей линии и edge. Затем активирует `sports-forecast-data-cycle-dispatcher.timer`, `sports-forecast-registry-sync.timer`, `sports-forecast-registry-feedback.timer`; подтверждает 20 минутных ticks, heartbeat, отсутствие start-limit-hit и лишних уведомлений. Старый `sports-forecast-canonical-refresh@nhl.timer` не включать: он дублирует цикл.
+
+Scheduled NHL запуск ожидается в 10:00 Europe/Moscow (07:00 UTC). Если rollout не завершится до этого времени, Operations Agent сверяет due slot и запускает один контролируемый цикл через dispatcher после switch; повторную публикацию/дубли не создавать. При P0/P1, новом odds attempt из цикла, неверных rolling features, ошибке backup/restore, устаревшем heartbeat или провале уведомлений — остановить dispatcher и вернуть сохранённый v1.3.6 exact image/env либо safe hold; strict reader выключать только при его собственной ошибке. `make acceptance-check` и эквивалентные безопасные GET/SELECT probes применить без раскрытия секретов.
+
+Непустой owner candidate → local decision → publication/sync/ack остаётся открытым сценарием EPIC-026 до появления нового обозначения при подключении турнира; текущий NHL outbox 0. Нулевой feedback, работа таймеров и строгий reader проверяются в этом выпуске. Ручной refresh с явным `data_odds_enabled=true` остаётся диагностической возможностью, `/predict` запрашивает live odds по запросу пользователя.
+
+## Исторические evidence v1.3.6
+
+Следующие разделы — историческая запись v1.3.6, не текущие инструкции запуска и не gates v1.3.7. Release evidence, source/image/model refs и измерения ниже относятся только к точке отката; для v1.3.7 действуют «План v1.3.7 и остановка» выше и последующая запись exact refs после сборки и production gate.
 
 ## Идентификация и ответственность
 
@@ -47,19 +59,19 @@ Compose secrets передаются как `*_FILE` paths; обычные API/W
 
 ## Healthcheck и smoke-проверка
 
-Перед включением расписания повторно сверить source/image/model refs, schema `0025_real_bets_ledger`, v2 sequence, disk/RAM, zero active runs и rollback artifacts. `/health`, `/ready`, `/docs`, `/openapi.json` вернули HTTP 200; реальные NHL прогнозы и двухсторонняя Pinnacle линия есть в API, бот здоров. Контрольный strict Data Cycle прошёл calendar → quality → archive → `data_odds` → predictions → publication; `partial_success` относится только к фактическому покрытию линии.
+Для планировавшегося v1.3.6 включения требовалась повторная сверка source/image/model refs, schema `0025_real_bets_ledger`, v2 sequence, disk/RAM, zero active runs и rollback artifacts. `/health`, `/ready`, `/docs`, `/openapi.json` вернули HTTP 200; реальные NHL прогнозы и двухсторонняя Pinnacle линия были в API, бот здоров. Контрольный strict Data Cycle v1.3.6 прошёл calendar → quality → archive → `data_odds` → predictions → publication; `partial_success` относился только к фактическому покрытию линии.
 
-Перед возобновлением feedback timer сверить post-remediation outbox и подтвердить, что новый strict Data Cycle создаёт только bounded актуальные неизвестные словарные обозначения. Ошибочный batch v1.3.5 уже адресно удалён после backup/readback/restore: транзакция сверила 22 656 pending rows с exact ID 2–22657, одним installation ID, null batch и ожидаемым payload digest; `DELETE ... RETURNING` подтвердил тот же count/range, postcheck outbox — 0. Никакие другие таблицы и registry snapshot не менялись. Новый реальный актуальный candidate должен пройти outbox → feedback publish → local owner review → publication/sync/ack. Если требуется неоднозначное решение владельца, представить ему короткую таблицу с evidence; не угадывать. После GO возобновить timers и проверить 20 последовательных минутных ticks без `start-limit-hit`, stale heartbeat и лишних уведомлений. `make acceptance-check` применять только с безопасно переданными secret files и без DB URL в аргументах процесса; разрешены эквивалентные GET/SELECT probes без полного provider payload.
+Для планировавшегося v1.3.6 включения feedback timer требовалось проверить post-remediation outbox и bounded capture. Ошибочный batch v1.3.5 адресно удалён после backup/readback/restore: транзакция сверила 22 656 pending rows с exact ID 2–22657, одним installation ID, null batch и ожидаемым payload digest; `DELETE ... RETURNING` подтвердил тот же count/range, postcheck outbox — 0. Никакие другие таблицы и registry snapshot не менялись. Тогда непустой актуальный candidate → owner review → publication/sync/ack оставался release gate; владелец 2026-10-12 перенёс его на подключение нового турнира. Таймеры v1.3.6 не запускались. Проверка 20 ticks перенесена в v1.3.7.
 
 ## Данные и совместимость
 
 Резервные копии: до адресной remediation — `/var/backups/sports-forecast/postgres/pre-v1.3.6-outbox-20261011T231706104990022.dump` (59 868 177 байт, SHA-256 `d379d32d8f11e7191e76bc692efc500e48ecb54febd0ffe8c0c20f990a2d8dfe`, 22 656 outbox); после remediation и до switch — `/var/backups/sports-forecast/postgres/pre-v1.3.6-clean-20261011T233055414377080.dump` (58 625 067 байт, SHA-256 `c9c9b6b5e9eb57d1eab50edd0c18259d3a9fba9f6fd6d03510fdb98a95bfce77`, outbox 0); после полного strict цикла — `/var/backups/sports-forecast/postgres/post-v1.3.6-strict-20261012T000844261240469.dump` (58 626 764 байт, SHA-256 `39872c5a5792c9185ebc5f0b7946ecc32d643707a1f2914e01b18102e908d723`, outbox 0). У всех прошли off-host full readback/bytecmp и isolated restore на exact PostgreSQL image, schema `0025_real_bets_ledger`. v1.3.6 не потребовала миграцию БД; owner master, snapshots, audit/cursor и immutable objects сохранены.
 
-После staged v1.3.6 pulls адресно удалены пять старых orphan Docker images без контейнерных ссылок; refs v1.3.1/v1.3.4/v1.3.5/v1.3.6 сохранены, после post-cycle backup свободно около 9,47 ГБ. Текущая безопасная точка ожидания — v1.3.6 strict=true, timers paused, v2 seq3. Проверенный rollback к v1.3.5 strict=false доступен по refs ниже; полный возврат к v1.3.1 требует новую publication verified v1 snapshot с возрастающей sequence и sync новым бинарником до возврата старого.
+После staged v1.3.6 pulls адресно удалены пять старых orphan Docker images без контейнерных ссылок; refs v1.3.1/v1.3.4/v1.3.5/v1.3.6 сохранены, после post-cycle backup было свободно около 9,47 ГБ. Безопасная точка ожидания перед v1.3.7 — v1.3.6 strict=true, timers paused, v2 seq3. Проверенный rollback к v1.3.5 strict=false доступен по refs ниже; полный возврат к v1.3.1 требует новую publication verified v1 snapshot с возрастающей sequence и sync новым бинарником до возврата старого.
 
 ## Наблюдаемость
 
-Release evidence фиксирует UTC, source tag/commit, CI/Security/Docker/evidence workflows, пять digest refs и provenance, model bundle, backup hash/readback/restore, snapshot sequence, outbox counts, stage/attempt counts, future odds/predictions, API/bot smoke, disk/RAM/restart/OOM. Открытые пункты: настоящий candidate/owner review/ack и 20 ticks; итог GO/NO-GO будет записан после решения владельца. Секреты, персональные данные и полные внешние ответы не сохранять.
+Evidence v1.3.6 зафиксировало UTC, source tag/commit, CI/Security/Docker/evidence workflows, пять digest refs и provenance, model bundle, backup hash/readback/restore, snapshot sequence, outbox counts, stage/attempt counts, future odds/predictions, API/bot smoke, disk/RAM/restart/OOM. На тот момент оставались настоящий candidate/owner review/ack и 20 ticks. Владелец 2026-10-12 перенёс первый сценарий на новый турнир, второй — на v1.3.7.
 
 ## Артефакт и откат
 
@@ -71,4 +83,4 @@ Rollback safe hold: exact v1.3.5 source `e630a7c929720cd1585b2af825c43dacff444f8
 
 1. Код, review, terminal CI/Security, `make production-check`, Docker, exact Worker model gate и отдельный evidence workflow прошли.
 2. Адресная remediation, post-cycle backup/readback/restore, полный strict цикл, API/бот и zero-work feedback прошли; outbox 0.
-3. Настоящий актуальный candidate с owner решением не появился в текущих данных. Владелец решает, переносить ли этот gate до появления события. До решения timers остановлены; после разрешения проверить 20 ticks и зафиксировать итог GO/NO-GO.
+3. Настоящий актуальный candidate с owner решением не появился в текущих NHL данных; владелец 2026-10-12 перенёс этот gate на подключение нового турнира. Таймеры v1.3.6 оставались выключенными; проверка 20 ticks входит в v1.3.7.

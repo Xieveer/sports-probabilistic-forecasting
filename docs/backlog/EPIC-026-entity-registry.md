@@ -1,6 +1,6 @@
 # EPIC-026 — Единые идентификаторы спортивных сущностей
 
-> **Статус:** in_progress — strict registry работает на v1.3.6; непустой owner candidate cycle ещё не наблюдался
+> **Статус:** in_progress — strict registry работает на v1.3.6; непустой owner candidate cycle перенесён на подключение нового турнира
 > **Приоритет:** high
 > **Владелец:** Product Owner
 > **Требование:** [REQ-026](../product/requirements/REQ-026-entity-registry.md) (`confirmed`)
@@ -8,6 +8,7 @@
 
 ## Память Product Owner
 
+- Решение владельца 2026-10-12: все актуальные NHL команды известны, текущий outbox 0; непустой owner candidate → review → publication/sync/ack проверить при подключении нового турнира, сохранив открытый статус соответствующих критериев. Strict reader остаётся включён. Ежедневный odds вызов исправляется в [EPIC-039](EPIC-039-v1-3-7-daily-cycle.md); после release gates включить три таймера и проверить расписание. Это уточнение заменяет прежний блокер текущего релиза по отсутствующему NHL кандидату.
 - Инициатива: `EPIC-026`.
 - Ветка инициативы: `initiative/epic-026-entity-registry`.
 - Workflow / этап: TASK-026-12/13 прошли review и вошли в main через PR #89; runtime strict override и кандидаты исправлены в релизах до v1.3.6. Сейчас production strict=true на v1.3.6; TASK-026-9 ждёт итогового подтверждения рабочего пути без YAML, TASK-026-10 — настоящего неизвестного обозначения с owner review/ack. Следующая проверка расписания — 20 ticks после решения владельца.

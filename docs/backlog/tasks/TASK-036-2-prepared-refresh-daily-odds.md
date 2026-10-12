@@ -28,4 +28,9 @@ Worker, получающий уже подготовленный source-first ar
 после успешной проверки stage вызывает существующий `run_nhl_future_odds_batch`.
 Новый scheduler, provider client или повторный вызов batch не добавлялся.
 
+Решение владельца 2026-10-12 уточнило границу: ежедневный Data Cycle не запрашивает
+коэффициенты, а `/predict` делает это при обращении пользователя. Вызов batch
+остаётся доступным при явном ручном `data_odds_enabled=true`; ежедневный runner
+отключает его в [TASK-039-1](TASK-039-1-daily-cycle-odds.md).
+
 Детали и проверки: [отчёт](../../changes/done/TASK-036-2-prepared-refresh-daily-odds.md).

@@ -42,6 +42,17 @@ Docker volume. До запуска Worker Operations убеждается, чт�
 
 ## Scheduler и цикл
 
+Начиная с `v1.3.7` штатный ежедневный runner получает завершённые результаты и
+календарь, проверяет и архивирует canonical snapshot, затем пересчитывает
+признаки и записывает прогнозы. В нём оба сбора коэффициентов выключены:
+`source_snapshot_cli --odds-enabled false` и Worker
+`data_odds_enabled=false`. Проверяйте, что новые результаты меняют признаки
+будущих матчей, а стадия `data_odds` имеет статус `skipped` и не появляется
+новый The Odds API acquisition attempt. Текущую линию и edge `/predict`
+получает при запросе пользователя; ручной Worker refresh с явным
+`data_odds_enabled=true` остаётся для отдельной диагностики. Решение и
+production gates — [EPIC-039](../backlog/EPIC-039-v1-3-7-daily-cycle.md).
+
 1. Хранить `SF_CONTROL_API_DB_PASSWORD_FILE`, `SF_CONTROL_DATABASE_URL_FILE` и
    `SF_CONTROL_API_KEY_FILE` в защищённых secret files вне Git. Только API и
    Telegram bot получают service key; dispatcher получает только control DB URL.

@@ -86,6 +86,8 @@ REQ и источник данных EPIC-027 можно прорабатыва�
 | EPIC-035 | cancelled | critical | [Выпуск v1.3.2: NO-GO](EPIC-035-v1-3-2-registry-rollout.md) |
 | EPIC-036 | cancelled | critical | [Выпуск v1.3.4: NO-GO на Data Cycle](EPIC-036-registry-rollout.md) |
 | EPIC-037 | cancelled | critical | [Выпуск v1.3.5: NO-GO по feedback](EPIC-037-v1-3-5-registry-cycle.md) |
-| EPIC-038 | in_progress | critical | [Очередь registry candidates и выпуск v1.3.6](EPIC-038-v1-3-6-candidate-scope.md) |
+| EPIC-038 | done | critical | [Очередь registry candidates и выпуск v1.3.6](EPIC-038-v1-3-6-candidate-scope.md) |
+| EPIC-039 | in_progress | critical | [Ежедневный Data Cycle без Odds API, выпуск v1.3.7](EPIC-039-v1-3-7-daily-cycle.md) |
+| TASK-039-1 | in_progress | critical | [Убрать Odds API из ежедневного Data Cycle](tasks/TASK-039-1-daily-cycle-odds.md) |
 | TASK-038-1 | done | critical | [Ограничить календарную очередь кандидатов](tasks/TASK-038-1-bounded-registry-candidates.md) |
 | TASK-037-1 | done | critical | [Передача installation ID производителям кандидатов](tasks/TASK-037-1-candidate-producer-installation-id.md) |
