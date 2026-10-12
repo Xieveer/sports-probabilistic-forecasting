@@ -1,6 +1,6 @@
 # TASK-039-1 — Убрать Odds API из ежедневного Data Cycle
 
-> **Статус:** in_progress — код готовится к независимому review
+> **Статус:** done — исправление прошло review, CI и production cycle
 > **Эпик:** [EPIC-039](../EPIC-039-v1-3-7-daily-cycle.md)
 > **Тип:** исправление регрессии подтверждённого [REQ-025](../../product/requirements/REQ-025-bot-schedule-readiness.md)
 > **Ветка:** `initiative/epic-039-v1-3-7-daily-odds`

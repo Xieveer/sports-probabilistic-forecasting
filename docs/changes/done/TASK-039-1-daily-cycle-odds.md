@@ -1,6 +1,6 @@
 # TASK-039-1 — Ежедневный Data Cycle без Odds API
 
-> **Статус:** локальная реализация и независимый review пройдены; release gates ожидаются
+> **Статус:** done — v1.3.7 выпущена и плановый цикл проверен
 > **Задача:** [TASK-039-1](../../backlog/tasks/TASK-039-1-daily-cycle-odds.md)
 
 ## Изменение
@@ -28,4 +28,12 @@ Annotated source tag `v1.3.7` указывает на этот commit.
 Source-tag Docker `38210415506` завершился успешно: release gates,
 first-rollout, четыре опубликованных digest с scan/provenance. Exact published
 Worker/model gate прошёл под UID10001/read-only/network-none с 489 ordered
-features. Отдельный evidence commit ещё готовится; production cycle не запускался.
+features. Evidence PR [#97](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/97),
+post-merge CI/Security и [release evidence workflow](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/38212187109)
+прошли. Контролируемый production Data Cycle `4202cb11-9b72-4874-8503-75668c931e06`
+и плановый `514cee55-1905-4d0d-a131-3da0e49a605e` завершились успешно:
+`data_odds=skipped`, odds attempts 8/8, observations 5/5. Новые результаты
+изменили последующие EWM-признаки; оба запуска записали и опубликовали по 216
+прогнозов, 206 будущих готовы. Три таймера активны, dispatcher выдержал 20
+минутных ticks; подробные доказательства — в
+[production handoff](../../operations/production-handoff.md).
