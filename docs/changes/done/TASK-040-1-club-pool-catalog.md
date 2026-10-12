@@ -30,6 +30,7 @@
   запуск `uv run pytest -q tests/test_club_pool_catalog.py
   tests/test_club_pool_coverage.py tests/test_portfolio_orchestration.py
   tests/integration/test_portfolio_refresh_dag.py` завершился `9 passed`.
+- Проверенный commit: `399d65d` (`feat: catalog club football pool and source coverage`).
 - Реальный локальный CSV: SHA-256
   `799cd61405e8d9ffb7aee8ac078fcbce9abefda3c2c3450c26a2c22b21407975`,
   31 625 строк, все завершены. Coverage по соревнованиям:
