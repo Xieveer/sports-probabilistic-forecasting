@@ -89,6 +89,7 @@ data/cache/the_odds_api/
 
 # Optuna (локальные SQLite studies)
 /optuna/
+/data/research/epic041/optuna/
 
 # CatBoost
 catboost_info/
