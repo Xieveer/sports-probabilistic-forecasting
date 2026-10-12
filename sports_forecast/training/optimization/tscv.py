@@ -25,6 +25,7 @@ import pandas as pd
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
 from sklearn.model_selection import TimeSeriesSplit
 
+from sports_forecast.training.probability_metrics import evaluate_multiclass_probabilities
 from sports_forecast.utils.log_config import get_logger
 
 # Используем ECE из train.py
@@ -150,6 +151,7 @@ class TimeSeriesCrossValidator:
             fit_kwargs = {}
 
         logger.info("Запуск TSCV: %d фолдов на %d записях", self.n_splits, len(features))
+        expected_multiclass = len(np.unique(target)) == 3
 
         # Сохраняем метрики для каждого фолда
         fold_metrics: dict[str, list[float]] = {
@@ -177,12 +179,23 @@ class TimeSeriesCrossValidator:
                 target.iloc[train_idx] if isinstance(target, pd.Series) else target[train_idx]
             )
             val_target = target.iloc[val_idx] if isinstance(target, pd.Series) else target[val_idx]
+            if expected_multiclass and set(np.unique(train_target)) != {0, 1, 2}:
+                raise ValueError(f"TSCV fold {fold_idx} не содержит все классы 1X2 в обучении")
 
             # Обучаем модель
             model.fit(train_features, train_target, **fit_kwargs)
 
             # Предсказания
-            proba = model.predict_proba(val_features)[:, 1]
+            full_proba = model.predict_proba(val_features)
+            if expected_multiclass:
+                metrics = evaluate_multiclass_probabilities(
+                    np.asarray(val_target), full_proba, np.asarray(model.classes_)
+                )
+                for name, value in metrics.items():
+                    fold_metrics[name].append(value)
+                    logger.info("  %s: %.4f", name, value)
+                continue
+            proba = full_proba[:, 1]
             y_pred = (proba >= 0.5).astype(int)
 
             # Метрики
@@ -243,9 +256,8 @@ class TimeSeriesCrossValidator:
             results.get("mean_logloss", 0),
             results.get("std_logloss", 0),
         )
-        logger.info(
-            "Mean AUC:     %.4f ± %.4f", results.get("mean_auc", 0), results.get("std_auc", 0)
-        )
+        if "mean_auc" in results:
+            logger.info("Mean AUC:     %.4f ± %.4f", results["mean_auc"], results["std_auc"])
         logger.info(
             "Mean Acc:     %.4f ± %.4f",
             results.get("mean_accuracy", 0),

@@ -42,3 +42,22 @@ post-event статистика не попадают в inference features. Н�
 `python -m sports_forecast.validation.club_regulation_scores`. Аудит проверяет
 согласованность полей источника, но не является независимой внешней проверкой
 всех 6 045 матчей.
+
+## Промежуточный локальный прогон
+
+`SF_TOURNAMENT_FILTER=football_top_leagues` применён к ingest и clean;
+`features_build tournament=football_top_leagues features=basic` создал
+31 621 wide-строку и 63 242 long-строки. Исходный interim/processed до этого
+содержал только 12 тестовых матчей и не годился для E2E.
+
+Пробный CatBoost 1X2 с 100 итерациями и двумя TSCV-фолдами обучился на полном
+snapshot: holdout 2025-07-01/2026-06-30 содержит 2 805 матчей, multiclass
+logloss 1.0028, accuracy 0.5162. Это технический smoke-run, не утверждение о
+качестве или production-пригодности модели. MLflow run и локальный артефакт
+созданы; до завершения TASK остаются отдельная long-стратегия, единый контракт
+идентичности, проверка утечек и сравнение на одинаковых событиях.
+
+Первый пробный запуск остановлен после обнаружения бинарных метрик в TSCV.
+После исправления wide smoke-run завершён с полным трёхклассовым
+logloss/Brier/accuracy. Market-spec явно отключает бинарные калибровку и
+BettingSimulator; fold без всех трёх классов останавливается до расчёта метрик.

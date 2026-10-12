@@ -7,6 +7,9 @@ target_source_key: home_result_1x2
 target_name: target_result_1x2
 outcomes: [home_win, draw, away_win]
 score_basis: regulation
+training:
+  binary_calibration: false
+  binary_betting_simulator: false
 feature_prefixes: [home_f_, away_f_]
 prematch_line:
   enabled: false

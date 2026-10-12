@@ -41,6 +41,7 @@ from sports_forecast.training.model_factory import ModelFactory
 from sports_forecast.training.optimization.optuna_optimizer import OptunaHyperOptimizer
 from sports_forecast.training.optimization.optuna_study_name import build_optuna_study_name
 from sports_forecast.training.optimization.tscv import TimeSeriesCrossValidator
+from sports_forecast.training.probability_metrics import evaluate_multiclass_probabilities
 from sports_forecast.training.train_eval_split import (
     build_temporal_event_masks,
     normalize_season_token,
@@ -74,6 +75,11 @@ _DEFAULT_TEST_BET_TRACE_COLUMNS: Final[tuple[str, ...]] = (
     "match_id",
     "id",
 )
+
+
+def supports_binary_training_component(cfg: DictConfig, component: str) -> bool:
+    """Разрешить бинарный компонент только при явной поддержке market-spec."""
+    return bool(cfg.market_spec.get("training", {}).get(component, True))
 
 
 class SingleExperimentRunner:
@@ -428,7 +434,11 @@ class SingleExperimentRunner:
             inner_train_features = train_features
             inner_train_target = train_target
 
-            calibration_enabled = cfg.get("calibration", {}).get("enabled", False)
+            calibration_enabled = bool(cfg.get("calibration", {}).get("enabled", False))
+            if not supports_binary_training_component(cfg, "binary_calibration"):
+                if calibration_enabled:
+                    logger.info("Бинарная калибровка отключена контрактом market_spec 1X2")
+                calibration_enabled = False
             if calibration_enabled:
                 cal_size = cfg.calibration.get("validation_size", 0.1)
                 cal_split_idx = int(len(train_features) * (1 - cal_size))
@@ -1054,6 +1064,15 @@ class SingleExperimentRunner:
 
         tscv_results = tscv.cross_validate(model, train_features, train_target)
 
+        if len(pd.unique(train_target)) == 3:
+            shadow_1x2_metrics = {
+                name: tscv_results[f"mean_{name}"] for name in ("logloss", "accuracy", "brier")
+            }
+            shadow_1x2_metrics["std_logloss"] = tscv_results["std_logloss"]
+            shadow_1x2_metrics["fold_details"] = tscv_results
+            logger.info("TSCV 1X2: logloss=%.4f", shadow_1x2_metrics["logloss"])
+            return shadow_1x2_metrics
+
         shadow_metrics: dict[str, Any] = {
             "logloss": tscv_results.get("mean_logloss", 0),
             "auc": tscv_results.get("mean_auc", 0),
@@ -1184,7 +1203,18 @@ class SingleExperimentRunner:
         logger.info("ОЦЕНКА НА TEST SET")
         logger.info("=" * 60)
 
-        proba = model.predict_proba(test_features)[:, 1]
+        full_proba = model.predict_proba(test_features)
+        if full_proba.shape[1] == 3:
+            wide_metrics = evaluate_multiclass_probabilities(
+                np.asarray(test_target), full_proba, np.asarray(getattr(model, "classes_", None))
+            )
+            logger.info(
+                "Test 1X2: logloss=%.4f accuracy=%.4f",
+                wide_metrics["logloss"],
+                wide_metrics["accuracy"],
+            )
+            return wide_metrics
+        proba = full_proba[:, 1]
         y_pred = np.asarray(proba >= 0.5, dtype=int)
 
         metrics: dict[str, float] = {}
@@ -1356,9 +1386,14 @@ class SingleExperimentRunner:
             Словарь бизнес-метрик (пустой если odds не найдены).
         """
         betting_cfg = cfg.get("betting", {})
+        if not supports_binary_training_component(cfg, "binary_betting_simulator"):
+            logger.info("Бинарный BettingSimulator отключён контрактом market_spec 1X2")
+            return {}
         if not betting_cfg.get("enabled", False):
             logger.info("BettingSimulator отключён (betting.enabled=false)")
             return {}
+        if len(cfg.market_spec.get("outcomes", [])) == 3:
+            raise ValueError("Бинарный BettingSimulator не поддерживает рынок 1X2")
 
         # Извлекаем odds (odds_raw или wide transport по профилю букмекера)
         bookmaker_cfg = cfg.get("bookmaker", {})
@@ -1852,14 +1887,12 @@ class SingleExperimentRunner:
                 mlflow.log_param(f"model__{key}", value)
 
         # ── Shadow метрики (TSCV) — VALIDATED ────────────────────────
-        mlflow.log_metric("shadow_logloss", shadow_metrics["logloss"])
-        mlflow.log_metric("shadow_logloss_std", shadow_metrics["std_logloss"])
-        mlflow.log_metric("shadow_auc", shadow_metrics["auc"])
-        mlflow.log_metric("shadow_auc_std", shadow_metrics["std_auc"])
-        mlflow.log_metric("shadow_accuracy", shadow_metrics["accuracy"])
-        mlflow.log_metric("shadow_brier", shadow_metrics["brier"])
-        mlflow.log_metric("shadow_ece", shadow_metrics["ece"])
-        mlflow.log_metric("shadow_ece_std", shadow_metrics["std_ece"])
+        for name in ("logloss", "accuracy", "brier", "auc", "ece"):
+            if name in shadow_metrics:
+                mlflow.log_metric(f"shadow_{name}", shadow_metrics[name])
+            std_key = f"std_{name}"
+            if std_key in shadow_metrics:
+                mlflow.log_metric(f"shadow_{name}_std", shadow_metrics[std_key])
         mlflow.set_tag("shadow_validated", "true")
 
         # ── Test-set метрики (holdout) ───────────────────────────────
@@ -1872,14 +1905,12 @@ class SingleExperimentRunner:
             for metric_name, value in tfu.items():
                 mlflow.log_metric(f"test_full_{metric_name}", value)
             smu = metrics_full["shadow"]
-            mlflow.log_metric("shadow_full_logloss", smu["logloss"])
-            mlflow.log_metric("shadow_full_logloss_std", smu["std_logloss"])
-            mlflow.log_metric("shadow_full_auc", smu["auc"])
-            mlflow.log_metric("shadow_full_auc_std", smu["std_auc"])
-            mlflow.log_metric("shadow_full_accuracy", smu["accuracy"])
-            mlflow.log_metric("shadow_full_brier", smu["brier"])
-            mlflow.log_metric("shadow_full_ece", smu["ece"])
-            mlflow.log_metric("shadow_full_ece_std", smu["std_ece"])
+            for name in ("logloss", "accuracy", "brier", "auc", "ece"):
+                if name in smu:
+                    mlflow.log_metric(f"shadow_full_{name}", smu[name])
+                std_key = f"std_{name}"
+                if std_key in smu:
+                    mlflow.log_metric(f"shadow_full_{name}_std", smu[std_key])
             fold_full = smu.get("fold_details", {})
             if fold_full:
                 for key, value in fold_full.items():
