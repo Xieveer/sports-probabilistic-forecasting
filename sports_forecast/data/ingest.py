@@ -565,6 +565,19 @@ def process_tournament(
             logger.warning("Турнир %s: CSV файл пустой, пропускаю", tournament_name)
             return
 
+        if tournament_name == "football_top_leagues":
+            from sports_forecast.validation.club_regulation_scores import audit_regulation_scores
+
+            cup_mask = df["competition_code"].isin({"UCL", "UEL"})
+            accepted_cups, quarantined = audit_regulation_scores(df.loc[cup_mask])
+            if not quarantined.empty:
+                logger.warning(
+                    "Счёт основного времени: исключены матчи UCL/UEL: %s",
+                    quarantined.to_dict(orient="records"),
+                )
+            df = df.loc[~cup_mask | df["match_id"].isin(accepted_cups["match_id"])].copy()
+            logger.info("После аудита счёта основного времени: %d матчей", len(df))
+
         identity_context = None
         from sports_forecast.identity.data_provenance import (
             configured_snapshot_root,

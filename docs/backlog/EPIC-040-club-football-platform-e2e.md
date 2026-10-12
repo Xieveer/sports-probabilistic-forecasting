@@ -37,7 +37,7 @@
 | Задача | Результат | Проверка | Статус |
 | --- | --- | --- | --- |
 | [TASK-040-1](tasks/TASK-040-1-club-pool-catalog.md) | Закреплённый состав и coverage всего пула | Fixture и локальный data smoke | done |
-| TASK-040-2 | Два winner-кандидата: независимые П1/П2 и 1X2 | Target, temporal и model contract tests | backlog |
+| [TASK-040-2](tasks/TASK-040-2-winner-model-strategies.md) | Два winner-кандидата: независимые П1/П2 и 1X2 | Target, temporal и model contract tests | in_progress |
 | TASK-040-3 | Локальная материализация, API и тестовый бот на реальном upcoming | Сквозной integration smoke | backlog |
 | TASK-040-4 | Один источник состава запусков и актуальные инструкции | Config contract tests, docs review | backlog |
 

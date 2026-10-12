@@ -42,6 +42,7 @@ from sports_forecast.training.optimization.optuna_optimizer import OptunaHyperOp
 from sports_forecast.training.optimization.optuna_study_name import build_optuna_study_name
 from sports_forecast.training.optimization.tscv import TimeSeriesCrossValidator
 from sports_forecast.training.train_eval_split import (
+    build_temporal_event_masks,
     normalize_season_token,
     subset_frame_for_season_holdout,
     uses_season_holdout_split,
@@ -363,10 +364,30 @@ class SingleExperimentRunner:
             features, feature_names = self._select_features(df, cfg)
             logger.info("Фичи: %d колонок", len(feature_names))
 
-            # 3. Train/Test split — trailing fraction or full-season holdout
+            # 3. Train/Test split — trailing fraction or configured holdout
             wf_enabled = bool(OmegaConf.select(cfg, "walk_forward.enabled", default=False))
             test_size = cfg.get("split", {}).get("test_size", 0.1)
-            if uses_season_holdout_split(cfg):
+            split_kind = OmegaConf.select(cfg, "tournament.train_eval_split.kind", default=None)
+            if split_kind == "temporal":
+                locked = OmegaConf.select(
+                    cfg, "tournament.train_eval_split.locked_holdout", default=None
+                )
+                if not isinstance(locked, str):
+                    raise ValueError("Temporal holdout требует locked_holdout")
+                train_mask, test_mask = build_temporal_event_masks(df, locked, time_column=time_col)
+                train_features = features.loc[train_mask].reset_index(drop=True)
+                test_features = features.loc[test_mask].reset_index(drop=True)
+                train_target = target.loc[train_mask].reset_index(drop=True)
+                test_target = target.loc[test_mask].reset_index(drop=True)
+                train_df = df.loc[train_mask].reset_index(drop=True)
+                test_df = df.loc[test_mask].reset_index(drop=True)
+                logger.info(
+                    "Split (temporal event holdout): train=%d, test=%d, window=%s",
+                    len(train_features),
+                    len(test_features),
+                    locked,
+                )
+            elif uses_season_holdout_split(cfg):
                 te_cfg = cfg.tournament.train_eval_split
                 season_col = OmegaConf.select(te_cfg, "season_column", default="season")
                 holdout_tokens = {normalize_season_token(x) for x in list(te_cfg.holdout_seasons)}
