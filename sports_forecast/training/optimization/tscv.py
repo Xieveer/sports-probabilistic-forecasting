@@ -82,6 +82,7 @@ class TimeSeriesCrossValidator:
         self,
         features: pd.DataFrame | np.ndarray,
         target: pd.Series | np.ndarray | None = None,
+        groups: pd.Series | np.ndarray | None = None,
     ) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
         """
         Генерирует индексы train/validation для каждого фолда.
@@ -100,7 +101,23 @@ class TimeSeriesCrossValidator:
         """
         logger.debug("Разбиваю данные на %d фолдов (TSCV)", self.n_splits)
 
-        for fold_idx, (train_idx, val_idx) in enumerate(self.tscv.split(features), 1):
+        if groups is not None:
+            group_values = np.asarray(groups)
+            if len(group_values) != len(features):
+                raise ValueError("TSCV groups должны соответствовать строкам features")
+            if pd.isna(group_values).any():
+                raise ValueError("TSCV groups содержат пустой ID события")
+            events = pd.unique(group_values)
+            splits = (
+                (
+                    np.flatnonzero(np.isin(group_values, events[train_events])),
+                    np.flatnonzero(np.isin(group_values, events[val_events])),
+                )
+                for train_events, val_events in self.tscv.split(events)
+            )
+        else:
+            splits = self.tscv.split(features)
+        for fold_idx, (train_idx, val_idx) in enumerate(splits, 1):
             logger.debug(
                 "Фолд %d/%d: train=%d записей (%.1f%%), val=%d записей (%.1f%%)",
                 fold_idx,
@@ -118,6 +135,7 @@ class TimeSeriesCrossValidator:
         features: pd.DataFrame,
         target: pd.Series,
         fit_kwargs: dict | None = None,
+        groups: pd.Series | np.ndarray | None = None,
     ) -> dict[str, Any]:
         """
         Выполнить кросс-валидацию модели и вернуть метрики.
@@ -163,7 +181,9 @@ class TimeSeriesCrossValidator:
         }  # type: ignore[assignment]
 
         # Проходим по фолдам
-        for fold_idx, (train_idx, val_idx) in enumerate(self.split(features, target), 1):
+        for fold_idx, (train_idx, val_idx) in enumerate(
+            self.split(features, target, groups=groups), 1
+        ):
             logger.info("--- Фолд %d/%d ---", fold_idx, self.n_splits)
 
             # Разбиваем данные

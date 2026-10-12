@@ -202,6 +202,7 @@ class CatBoostModel(BaseSingleModel):
         # Загрузка
         self.model_.load_model(str(path))
         self.is_fitted_ = True
+        self.classes_ = self.model_.classes_
 
         logger.info("CatBoost модель '%s' загружена из: %s", self.name, path)
         return self

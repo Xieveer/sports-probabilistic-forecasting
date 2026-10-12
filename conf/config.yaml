@@ -17,6 +17,7 @@ defaults:
   - market_spec: ???       # REQUIRED: market_spec=total_over
   - algorithm: ???         # REQUIRED: algorithm=catboost
   - features: ???          # REQUIRED: features=basic
+  - model_strategy: standard
 
   - hyper: none               # По умолчанию без оптимизации
   - feature_selection: default  # Feature selection (по умолчанию отключён)

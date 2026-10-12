@@ -1,0 +1,7 @@
+name: football_long_binary
+data_format: long
+target_source_key: player_win
+target_name: target_is_win
+feature_prefixes: [f_]
+prediction_outcomes: [home_win, away_win]
+probability_semantics: separate_win_estimates

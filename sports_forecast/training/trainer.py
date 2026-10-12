@@ -33,6 +33,7 @@ from sports_forecast.betting.bootstrap import BlockBootstrap
 from sports_forecast.betting.odds import extract_betting_odds
 from sports_forecast.betting.simulator import BettingSimulator
 from sports_forecast.config import get_data_path
+from sports_forecast.config.model_strategy import effective_market_spec, model_strategy_name
 from sports_forecast.config.validation import apply_tournament_default_bookmaker
 from sports_forecast.features.column_utils import get_feature_columns
 from sports_forecast.training.base import BaseModel
@@ -236,8 +237,8 @@ class SingleExperimentRunner:
         ):
             tags["line"] = str(cfg.market_spec.line)
 
-        if hasattr(cfg.market_spec, "data_format"):
-            tags["data_format"] = cfg.market_spec.data_format
+        tags["data_format"] = effective_market_spec(cfg).data_format
+        tags["model_strategy"] = model_strategy_name(cfg)
 
         model_pool = cfg.get("model_pool")
         if model_pool is not None:
@@ -262,7 +263,7 @@ class SingleExperimentRunner:
         Raises:
             FileNotFoundError: Если файл данных не найден.
         """
-        data_format = cfg.market_spec.data_format
+        data_format = effective_market_spec(cfg).data_format
         data_path = get_data_path(cfg.tournament, data_format)
         full_path = self.project_root / data_path
 
@@ -319,9 +320,10 @@ class SingleExperimentRunner:
         Returns:
             Series с таргетом.
         """
-        line = cfg.market_spec.get("line") if hasattr(cfg.market_spec, "line") else None
+        market_spec = effective_market_spec(cfg)
+        line = market_spec.get("line") if hasattr(market_spec, "line") else None
         tournament_cfg = cfg.tournament if hasattr(cfg, "tournament") else None
-        return compute_target_from_market_spec(df, cfg.market_spec, tournament_cfg, line=line)
+        return compute_target_from_market_spec(df, market_spec, tournament_cfg, line=line)
 
     def _train_model(
         self,
@@ -468,7 +470,11 @@ class SingleExperimentRunner:
             # 7. TSCV на inner_train → Shadow модель
             logger.info("TSCV (Shadow модель)...")
             shadow_metrics = self._train_with_tscv(
-                shadow_model, inner_train_features, inner_train_target, cfg
+                shadow_model,
+                inner_train_features,
+                inner_train_target,
+                cfg,
+                groups=train_df["id"] if cfg.market_spec.name == "winner_1x2" else None,
             )
 
             # 8. Дообучаем Shadow модель на полном inner_train
@@ -591,6 +597,7 @@ class SingleExperimentRunner:
                         inner_train_features,
                         inner_train_target,
                         cfg,
+                        groups=train_df["id"] if cfg.market_spec.name == "winner_1x2" else None,
                     )
                     logger.info("Дообучаем Shadow на inner_train (отобранные фичи)...")
                     shadow_model = self._create_model(cfg.algorithm, optimized_params)
@@ -678,7 +685,9 @@ class SingleExperimentRunner:
             self._register_model_in_mlflow(prod_path, cfg)
 
             # 16. Анализ стабильности по shadow (после отбора — TSCV на отобранных фичах)
-            stability_metrics = self._analyze_training_stability(shadow_metrics)
+            stability_metrics = self._analyze_training_stability(
+                shadow_metrics, candidate_only=cfg.market_spec.name == "winner_1x2"
+            )
 
             # 17. MLflow логирование
             self._log_metrics_to_mlflow(
@@ -822,7 +831,8 @@ class SingleExperimentRunner:
             Кортеж (features DataFrame, список имён фичей).
         """
         # Стратегия 1: Явные префиксы из market_spec (wide format)
-        feature_prefixes = list(cfg.market_spec.get("feature_prefixes", []))
+        market_spec = effective_market_spec(cfg)
+        feature_prefixes = list(market_spec.get("feature_prefixes", []))
         if feature_prefixes:
             f_cols = get_feature_columns(df, prefixes=feature_prefixes)
             if f_cols:
@@ -854,7 +864,7 @@ class SingleExperimentRunner:
         exclude_cols.extend(result_cols)
 
         # Добавляем имя таргета
-        target_name = get_target_name(cfg.market_spec)
+        target_name = get_target_name(market_spec)
         if target_name in df.columns:
             exclude_cols.append(target_name)
 
@@ -924,6 +934,8 @@ class SingleExperimentRunner:
         if not hyper_cfg.get("enabled", False):
             logger.info("Optuna оптимизация отключена (hyper.enabled=false)")
             return None, {}
+        if cfg.market_spec.name == "winner_1x2":
+            raise ValueError("Optuna для winner_1x2 отключена до поддержки event-level folds")
 
         # Проверяем наличие optuna_space
         optuna_space = cfg.algorithm.get("optuna_space", None)
@@ -1045,6 +1057,8 @@ class SingleExperimentRunner:
         train_features: pd.DataFrame,
         train_target: pd.Series,
         cfg: DictConfig,
+        *,
+        groups: pd.Series | None = None,
     ) -> dict[str, Any]:
         """Обучить модель с TSCV и вернуть агрегированные метрики.
 
@@ -1062,7 +1076,7 @@ class SingleExperimentRunner:
 
         logger.info("  TSCV: %d фолдов", n_splits)
 
-        tscv_results = tscv.cross_validate(model, train_features, train_target)
+        tscv_results = tscv.cross_validate(model, train_features, train_target, groups=groups)
 
         if len(pd.unique(train_target)) == 3:
             shadow_1x2_metrics = {
@@ -1617,7 +1631,9 @@ class SingleExperimentRunner:
         features_path.write_text("\n".join(feature_names))
         logger.debug("features.txt сохранён: %s (%d фичей)", features_path, len(feature_names))
 
-    def _analyze_training_stability(self, shadow_metrics: dict[str, Any]) -> dict[str, Any]:
+    def _analyze_training_stability(
+        self, shadow_metrics: dict[str, Any], *, candidate_only: bool = False
+    ) -> dict[str, Any]:
         """Анализ стабильности обучения как индикатор качества Prod модели.
 
         Args:
@@ -1635,6 +1651,19 @@ class SingleExperimentRunner:
         auc_std = shadow_metrics.get("std_auc", 0)
 
         cv_logloss = (logloss_std / logloss_mean * 100) if logloss_mean > 0 else 0
+
+        if candidate_only:
+            logger.info(
+                "Кандидат 1X2: CV(LogLoss)=%.2f%%; production готовность не оценивалась",
+                cv_logloss,
+            )
+            return {
+                "cv_logloss": cv_logloss,
+                "std_auc": None,
+                "stability_level": "not_assessed",
+                "prod_confidence": "not_assessed",
+                "recommendation": "Нужны оценка кандидата и отдельное решение о выпуске",
+            }
 
         if cv_logloss < 10:
             stability_level = "high"
@@ -1684,6 +1713,7 @@ class SingleExperimentRunner:
         algorithm_name = str(cfg.algorithm.name)
         featureset_name = str(cfg.features.name)
         market_spec_name = str(cfg.market_spec.name)
+        strategy_name = model_strategy_name(cfg)
         model_pool = cfg.get("model_pool")
 
         if model_pool is not None:
@@ -1708,6 +1738,8 @@ class SingleExperimentRunner:
                 / market_spec_name
                 / f"{algorithm_name}_{featureset_name}"
             )
+        if strategy_name != "standard":
+            model_dir = model_dir / strategy_name
         model_dir.mkdir(parents=True, exist_ok=True)
         return model_dir
 
@@ -1732,7 +1764,10 @@ class SingleExperimentRunner:
             algorithm = cfg.algorithm.name
             featureset = cfg.features.name
 
+            strategy_name = model_strategy_name(cfg)
             model_name = f"{tournament}__{market_spec}__{algorithm}_{featureset}"
+            if strategy_name != "standard":
+                model_name = f"{model_name}__{strategy_name}"
 
             # Определяем и логируем модель через flavor-specific API
             model_info = self._log_model_with_flavor(algorithm, model_path)
@@ -1946,7 +1981,8 @@ class SingleExperimentRunner:
 
         # ── Стабильность ─────────────────────────────────────────────
         mlflow.log_metric("stability_cv_logloss", stability_metrics["cv_logloss"])
-        mlflow.log_metric("stability_std_auc", stability_metrics["std_auc"])
+        if stability_metrics["std_auc"] is not None:
+            mlflow.log_metric("stability_std_auc", stability_metrics["std_auc"])
         mlflow.set_tag("stability_level", stability_metrics["stability_level"])
         mlflow.set_tag("prod_confidence", stability_metrics["prod_confidence"])
         mlflow.set_tag("recommendation", stability_metrics["recommendation"])
