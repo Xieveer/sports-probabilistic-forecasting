@@ -1,6 +1,6 @@
 # EPIC-026 — Единые идентификаторы спортивных сущностей
 
-> **Статус:** in_progress — код словарей и сопоставления проверен локально; strict rollout ждёт release gates EPIC-036
+> **Статус:** in_progress — strict registry работает на v1.3.6; непустой owner candidate cycle ещё не наблюдался
 > **Приоритет:** high
 > **Владелец:** Product Owner
 > **Требование:** [REQ-026](../product/requirements/REQ-026-entity-registry.md) (`confirmed`)
@@ -23,6 +23,7 @@
 - Следующая роль: Developer/Reviewer — TASK-036-4 и новый release tag; Operations Agent — release gates EPIC-036 и production strict switch.
 - Открытые вопросы: owner master и опубликованный snapshot содержат 51 событие по прежнему контракту; паритет 100 legacy team aliases сохранён. Publication/sync прошли на v1, но реальный forecast cycle в strict режиме и непустой цикл кандидата с решением владельца не прошли. v2 нельзя публиковать через старый v1.3.1 sync; новый sync и совместимый rollback нужны в release window. В строгом режиме legacy merge historical odds в `source.csv` отключён до проверенного локального materialization по подтверждённым связям.
 - Research: не применяется.
+- Production v1.3.6: strict reader включён, полный NHL цикл `98a75688-50c3-4f07-822d-9fdbdcead0e2` опубликовал 218 прогнозов и три реальных Pinnacle observations без отказов; outbox 0 и zero-work feedback прошёл. Массовая очередь v1.3.5 исправлена. Реального неизвестного обозначения в текущих данных нет, поэтому TASK-026-10/REQ-026 #10 остаётся открытым до решения владельца; timers пока остановлены. Подробности — в [production handoff](../operations/production-handoff.md).
 - Обновлено: 2026-10-12.
 
 ### Итоговое review кода EPIC-026

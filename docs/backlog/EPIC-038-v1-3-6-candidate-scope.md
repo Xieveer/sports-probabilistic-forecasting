@@ -1,6 +1,6 @@
 # EPIC-038 — Ограниченная очередь registry candidates и выпуск v1.3.6
 
-> **Статус:** in_progress — v1.3.5 NO-GO до feedback и расписания
+> **Статус:** in_progress — v1.3.6 strict production cycle прошёл; реальный candidate и 20 ticks ожидают решения владельца
 > **Приоритет:** critical
 > **Владелец:** Product Owner
 > **Ветка:** `initiative/epic-038-v1-3-6-candidate-scope`
@@ -20,6 +20,7 @@
 - [TASK-038-1](tasks/TASK-038-1-bounded-registry-candidates.md) убирает event-ID candidates при отсутствии постоянной owner-связи, оставляет явный конфликт уже подтверждённой связи, а календарный capture неизвестных словарных обозначений ограничивает UTC `now−1 день … now+30 дней`. 30 дней совпадают с NHL calendar coverage и будущим odds batch; нижняя граница исключает исторический backfill. Реальные неоднозначные котировки по-прежнему остаются неприсоединёнными и диагностируются matcher.
 - Накопленные 22 656 pending rows не опубликованы. Новый root-only backup `/var/backups/sports-forecast/postgres/pre-v1.3.6-outbox-20261011T231706104990022.dump` с SHA-256 `d379d32d8f11e7191e76bc692efc500e48ecb54febd0ffe8c0c20f990a2d8dfe` прошёл off-host full readback и isolated restore. Адресная транзакция после exact predicate/count/digest gate удалила только batch ID 2–22657: `DELETE RETURNING` 22 656, postcheck outbox 0; registry snapshot/остальные таблицы не менялись. Код исправления не требует миграции БД.
 - Следующая роль: независимый Reviewer → terminal CI/Security/tag/image/model/evidence → Operations Agent. TASK-038-1 code/red-green готов, 1717 unit и полный pre-commit прошли; outbox remediation завершена. Блокеры: review/release gates и реальный bounded feedback цикл с owner review, forecast/odds/bot и 20 ticks dispatcher.
+- Production evidence v1.3.6: PR #93/94, source tag `v1.3.6` на `b06b544313b1915da3960670ddfbd836ad0a5b53`, release-evidence workflow `38185467879` green. Strict Data Cycle `98a75688-50c3-4f07-822d-9fdbdcead0e2` опубликовал 218 прогнозов, три будущие Pinnacle observations (matched 3/rejected 0), outbox 0 после calendar/odds/цикла; нулевой feedback прошёл. Настоящего актуального кандидата нет, timers остановлены; владелец решает, переносить ли непустой gate до появления данных.
 - Обновлено: 2026-10-12.
 
 ## Критерии GO

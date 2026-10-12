@@ -1,14 +1,14 @@
 # Передача сервиса в эксплуатацию: v1.3.6 candidate
 
 - Статус подготовки: `candidate`
-- Решение на 2026-10-12: `NO-GO` до серверного strict feedback/forecast цикла и 20 ticks; кодовое исправление и immutable release gates прошли.
+- Решение на 2026-10-12: `HOLD` до решения владельца по отсутствующему реальному кандидату и проверки 20 ticks; кодовое исправление, immutable release gates и strict forecast cycle прошли.
 - Инициатива: [EPIC-038](../backlog/EPIC-038-v1-3-6-candidate-scope.md), исходный контракт [EPIC-026](../backlog/EPIC-026-entity-registry.md).
 - Владелец выпуска: пользователь; rollout выполняет Operations Agent.
 - Среда: production VPS `ops-prod-01`; планируемая версия `1.3.6`.
 - source_tag: `v1.3.6` — immutable annotated tag exact merge после review, terminal CI и Security.
 - source_commit: `b06b544313b1915da3960670ddfbd836ad0a5b53` (post-merge CI `38184112119` и Security `38184112107`: success).
 - evidence_tag: `v1.3.6-evidence.1` — отдельный tag после проверки image/model evidence.
-- Текущий server stage: exact v1.3.5 source `e630a7c929720cd1585b2af825c43dacff444f85`, registry v2 publication sequence 3, strict reader возвращается в `false`, API/бот здоровы, scheduler и feedback timers остановлены; ошибочные 22 656 pending candidates из исторического capture адресно удалены после нового backup/restore; feedback не публиковался. Резервные v1.3.4/v1.3.1 образы сохранены.
+- Текущий server stage: exact v1.3.6 source `b06b544313b1915da3960670ddfbd836ad0a5b53`, registry v2 publication sequence 3, strict reader `true`, API/бот здоровы, все три timers остановлены; outbox 0 после полного цикла и zero-work feedback. Резервные v1.3.5/v1.3.4/v1.3.1 образы сохранены.
 
 ## Идентификация и ответственность
 
@@ -28,6 +28,14 @@ v1.3.5 прошла CI/Security, tag, Docker first-rollout/scan/provenance и re
 - telegram_bot: ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:ee4f3aefb67d3880479865d0a0f8d3dc116c3be20a82af60b16a2a60b8ffb478 — published; linux/amd64; scan; provenance.
 - archive_sync: ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:6b1191d0c0199418e48027b65f1d0fde2f5babaf44ee9488dbad627f0793da28 — published; linux/amd64; scan; provenance.
 - postgres: postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94 — проверенный базовый образ PostgreSQL.
+
+## Фактический production gate v1.3.6
+
+- Source `v1.3.6` и четыре exact digest установлены на VPS; локальный и серверный model runtime gate прошли под UID10001/read-only/network-none, bundle `sha256:175fc56bf79010892a4d817a222aacdbfc8ff6f6492aa64066c1b0a8618f15f5`, 489 ordered features.
+- Strict Data Cycle `98a75688-50c3-4f07-822d-9fdbdcead0e2` завершился `partial_success` только по покрытию odds: calendar, quality, archive, predictions, publication успешны; fresh Pinnacle attempt provider 3/matched 3/rejected 0, три future observations, 218 опубликованных прогнозов. API/бот здоровы, в API доступны 49–50 будущих прогнозов и три двухсторонние линии.
+- Outbox был 0 после календаря, odds и полного цикла. Zero-work feedback: published batches 0, acknowledged batches 0. Writer `INSERT … RETURNING id` проверен только на изолированной восстановленной БД с `ROLLBACK`; production outbox не менялся. Настоящего неизвестного обозначения среди текущих событий нет, поэтому непустой owner review не воспроизведён.
+- После адресной очистки пяти старых Docker-образов без контейнерных ссылок свободно около 9,47 ГБ; сохранены все rollback refs. Post-cycle backup `/var/backups/sports-forecast/postgres/post-v1.3.6-strict-20261012T000844261240469.dump` (58 626 764 байт, SHA-256 `39872c5a5792c9185ebc5f0b7946ecc32d643707a1f2914e01b18102e908d723`) прошёл off-host readback/bytecmp и isolated restore на exact PostgreSQL image: schema `0025_real_bets_ledger`, outbox 0. Три timers остановлены до решения владельца по открытому gate и 20 ticks.
+- Workflow Docker, вызванный на evidence tag `v1.3.6-evidence.1`, завершился ошибкой проверки `tag_version == project_version`: evidence tag не является source version. Исходный Docker `38184178356` и отдельный Release evidence `38185467879` завершились успешно.
 
 ## Runtime и конфигурация
 
