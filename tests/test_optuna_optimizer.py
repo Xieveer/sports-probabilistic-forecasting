@@ -17,10 +17,11 @@ from typing import Any, cast
 from unittest.mock import MagicMock
 
 import optuna
+import pandas as pd
 import pytest
 from omegaconf import DictConfig, OmegaConf
 from optuna.study import load_study
-from optuna.trial import Trial
+from optuna.trial import Trial, TrialState
 
 from sports_forecast.training.optimization.optuna_optimizer import (
     OptunaHyperOptimizer,
@@ -261,6 +262,22 @@ class TestOptunaHyperOptimizer:
 
         assert optimizer.study_name == "custom_study"
 
+    def test_custom_storage_dir_is_isolated(
+        self,
+        logreg_algorithm_cfg: DictConfig,
+        hyper_cfg: DictConfig,
+        tmp_path: Path,
+    ) -> None:
+        """Исследовательский study хранится вне временного каталога тестов."""
+        hyper_cfg.storage_dir = str(tmp_path / "research_optuna")
+        optimizer = OptunaHyperOptimizer(
+            algorithm_cfg=logreg_algorithm_cfg,
+            hyper_cfg=hyper_cfg,
+            study_name="isolated",
+        )
+        assert (tmp_path / "research_optuna").is_dir()
+        assert str(tmp_path / "research_optuna") in optimizer.storage_url
+
     def test_default_split_cfg(
         self,
         logreg_algorithm_cfg: DictConfig,
@@ -373,6 +390,36 @@ class TestOptunaHyperOptimizer:
             storage=optimizer.storage_url,
         )
         assert len(study.trials) == 3  # n_trials=3
+
+    @pytest.mark.usefixtures("_cleanup_optuna_dir")
+    def test_failed_trial_does_not_reduce_completed_target(
+        self,
+        logreg_algorithm_cfg: DictConfig,
+        hyper_cfg: DictConfig,
+        split_cfg: DictConfig,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Один сбой требует дополнительную попытку до трёх COMPLETE."""
+        optimizer = OptunaHyperOptimizer(
+            algorithm_cfg=logreg_algorithm_cfg,
+            hyper_cfg=hyper_cfg,
+            split_cfg=split_cfg,
+            study_name="test_retry_completed",
+        )
+        calls = 0
+
+        def evaluate(**_kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise ValueError("случайный сбой")
+            return {"mean_logloss": 0.5}
+
+        monkeypatch.setattr(optimizer.tscv, "cross_validate", evaluate)
+        optimizer.optimize(pd.DataFrame({"x": range(10)}), pd.Series([0, 1] * 5))
+        study = load_study(study_name=optimizer.study_name, storage=optimizer.storage_url)
+        assert len(study.get_trials(states=(TrialState.COMPLETE,))) == 3
+        assert len(study.get_trials(states=(TrialState.FAIL,))) == 1
 
 
 class TestOptunaHyperOptimizerSampler:

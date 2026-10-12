@@ -17,6 +17,7 @@ Optuna оптимизатор для подбора гиперпараметро
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -158,7 +159,7 @@ class OptunaHyperOptimizer:
         self.study_name = study_name or f"hyper_{model_name}"
 
         # SQLite storage
-        storage_dir = Path("optuna")
+        storage_dir = Path(str(hyper_cfg.get("storage_dir", "optuna")))
         storage_dir.mkdir(parents=True, exist_ok=True)
         self.storage_url = f"sqlite:///{storage_dir}/{self.study_name}.db"
 
@@ -223,6 +224,7 @@ class OptunaHyperOptimizer:
         self,
         train_features: Any,
         train_target: Any,
+        groups: Any = None,
     ) -> dict[str, Any]:
         """Оптимизировать гиперпараметры модели.
 
@@ -292,8 +294,9 @@ class OptunaHyperOptimizer:
                     model=model,
                     features=train_features,
                     target=train_target,
+                    groups=groups,
                 )
-                objective_value = float(results.get(f"mean_{self.metric}", 1e6))
+                objective_value = float(results[f"mean_{self.metric}"])
                 # Сохраняем агрегаты TSCV на trial — для отчётов / MLflow / study.trials_dataframe()
                 for key, raw in results.items():
                     if not (key.startswith("mean_") or key.startswith("std_")):
@@ -307,8 +310,8 @@ class OptunaHyperOptimizer:
                 return objective_value
 
             except Exception as e:
-                logger.warning("Trial %d failed: %s", trial.number, e)
-                return 1e6
+                logger.exception("Trial %d failed: %s", trial.number, e)
+                raise
 
         # Создаём/загружаем study
         study = create_study(
@@ -324,12 +327,33 @@ class OptunaHyperOptimizer:
         verbose = self.hyper_cfg.get("verbose", True)
         set_verbosity(INFO if verbose else WARNING)
 
-        study.optimize(
-            objective,
-            n_trials=self.n_trials,
-            timeout=self.timeout,
-            show_progress_bar=self.hyper_cfg.get("show_progress_bar", False),
-        )
+        completed = len(study.get_trials(states=(TrialState.COMPLETE,)))
+        attempts = 0
+        max_extra_attempts = max(5, self.n_trials // 5)
+        max_attempts = max(0, self.n_trials - completed) + max_extra_attempts
+        started_at = time.monotonic()
+        while completed < self.n_trials:
+            remaining_seconds = (
+                None if self.timeout is None else self.timeout - (time.monotonic() - started_at)
+            )
+            if remaining_seconds is not None and remaining_seconds <= 0:
+                break
+            if attempts >= max_attempts:
+                break
+            study.optimize(
+                objective,
+                n_trials=1,
+                timeout=remaining_seconds,
+                catch=(Exception,),
+                show_progress_bar=self.hyper_cfg.get("show_progress_bar", False),
+            )
+            attempts += 1
+            completed = len(study.get_trials(states=(TrialState.COMPLETE,)))
+        if completed < self.n_trials:
+            raise RuntimeError(
+                f"Optuna study {self.study_name}: завершено {completed}/{self.n_trials} "
+                "валидных trials; проверьте ошибки и повторите запуск"
+            )
 
         best_params = dict(study.best_params)
 
