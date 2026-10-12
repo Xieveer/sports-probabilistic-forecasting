@@ -1038,6 +1038,73 @@ class TestFeaturePipelineDictFormat:
         # no diff for total (compute_diff=false)
         assert "f_all_global_total_ewm_5" not in result_df.columns
 
+    def test_new_finished_result_updates_future_features_without_rewriting_history(self) -> None:
+        """Завершение матча обновляет признаки следующих игр, сохраняя прошлые значения."""
+        upcoming = pd.DataFrame(
+            {
+                "id": [101, 202, 303],
+                "datetime": pd.to_datetime(["2024-01-01", "2024-01-03", "2024-01-05"], utc=True),
+                "home_team": ["A", "A", "A"],
+                "away_team": ["B", "C", "D"],
+                "home_points": [3.0, float("nan"), float("nan")],
+                "away_points": [1.0, float("nan"), float("nan")],
+                "status": ["finished", "upcoming", "upcoming"],
+            }
+        )
+        completed = upcoming.copy()
+        completed.loc[completed["id"] == 202, "home_points"] = 1.0
+        completed.loc[completed["id"] == 202, "away_points"] = 5.0
+        completed.loc[completed["id"] == 202, "status"] = "finished"
+
+        pipeline = FeaturePipeline(
+            {
+                "generators": {
+                    "ewm_diff": {
+                        "type": "ewm",
+                        "metric": "diff_ps",
+                        "metric_label": "diff",
+                        "spans": [2],
+                        "shift": 1,
+                        "min_periods": 1,
+                        "adjust": False,
+                        "contexts": [
+                            {
+                                "name": "global",
+                                "keys": ["pl"],
+                                "players": ["pl"],
+                                "compute_diff": False,
+                            }
+                        ],
+                    },
+                    "streak": {
+                        "type": "streak",
+                        "win_mode": "points",
+                        "win_rate_windows": [2],
+                    },
+                },
+                "create_metrics": ["diff", "total"],
+            }
+        )
+
+        before, feature_names = pipeline.generate_features(upcoming, format="wide")
+        after, _ = pipeline.generate_features(completed, format="wide")
+
+        past_before = before.loc[before["id"] == 101, feature_names].reset_index(drop=True)
+        past_after = after.loc[after["id"] == 101, feature_names].reset_index(drop=True)
+        pd.testing.assert_frame_equal(past_before, past_after)
+
+        updated_match_before = before.loc[before["id"] == 202, feature_names].reset_index(drop=True)
+        updated_match_after = after.loc[after["id"] == 202, feature_names].reset_index(drop=True)
+        pd.testing.assert_frame_equal(updated_match_before, updated_match_after)
+
+        next_home_before = before.loc[(before["id"] == 303) & (before["side"] == "h")].iloc[0]
+        next_home_after = after.loc[(after["id"] == 303) & (after["side"] == "h")].iloc[0]
+        assert (
+            next_home_before["f_pl_global_diff_ewm_2"] != next_home_after["f_pl_global_diff_ewm_2"]
+        )
+        assert next_home_before["f_pl_win_rate_last2"] != next_home_after["f_pl_win_rate_last2"]
+        assert next_home_before["f_pl_lose_streak"] != next_home_after["f_pl_lose_streak"]
+
     def test_unknown_generator_type_skipped(self) -> None:
         """Неизвестный тип генератора пропускается с warning."""
         config = {

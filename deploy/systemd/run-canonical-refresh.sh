@@ -132,6 +132,7 @@ run_with_heartbeat /usr/bin/docker compose -f docker-compose.prod.yml --profile 
   /app/.venv/bin/python -m sports_forecast.orchestration.canonical_full_refresh_cli \
   "tournament=${SF_TOURNAMENT}" "market=${SF_MARKET}" \
   "market_spec=${SF_MARKET_SPEC}" "algorithm=${SF_ALGORITHM}" "features=${SF_FEATURES}" \
+  "data_odds_enabled=false" \
   "hydra/job_logging=stdout" "hydra.output_subdir=null"
 control finish-run --run-id "${SF_WORKER_RUN_ID}" --status auto
 trap - EXIT

@@ -1,6 +1,6 @@
 # TASK-038-1 — Ограничить календарную очередь кандидатов
 
-> **Статус:** done — ожидает независимый review и terminal CI
+> **Статус:** done — независимый review, terminal CI и strict production cycle v1.3.6 пройдены
 > **Эпик:** [EPIC-038](../EPIC-038-v1-3-6-candidate-scope.md)
 > **Тип:** дефект production gate
 > **Ветка:** `initiative/epic-038-v1-3-6-candidate-scope`

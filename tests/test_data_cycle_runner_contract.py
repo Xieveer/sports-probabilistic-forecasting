@@ -70,6 +70,16 @@ def test_canonical_full_refresh_uses_stdout_hydra_logging_without_output_dir() -
     assert '"hydra.output_subdir=null"' in command
 
 
+def test_daily_canonical_refresh_disables_odds_collection() -> None:
+    """Ежедневный canonical refresh строит прогноз без расходования запросов Odds API."""
+    runner = (PROJECT_ROOT / "deploy/systemd/run-canonical-refresh.sh").read_text(encoding="utf-8")
+    command = runner.split("canonical_full_refresh_cli \\", 1)[1].split(
+        'active_stage="pipeline"', 1
+    )[0]
+
+    assert '"data_odds_enabled=false"' in command
+
+
 def test_archive_sync_runner_executes_the_installed_application_cli() -> None:
     """Compose CMD override must name archive_sync_cli, not shell's system sync."""
     runner = (PROJECT_ROOT / "deploy/systemd/run-canonical-refresh.sh").read_text(encoding="utf-8")
@@ -198,7 +208,7 @@ def test_run_archive_list_is_bound_to_descriptor_and_rejects_missing_artifact(
     assert missing.stdout == b""
 
 
-def test_runner_syncs_pinned_input_before_features_without_daily_odds() -> None:
+def test_runner_syncs_pinned_input_before_features_and_disables_daily_odds() -> None:
     """Стадия Object Storage предшествует Worker inference без future odds."""
     runner = (PROJECT_ROOT / "deploy/systemd/run-canonical-refresh.sh").read_text(encoding="utf-8")
 
@@ -207,4 +217,4 @@ def test_runner_syncs_pinned_input_before_features_without_daily_odds() -> None:
     assert runner.index("archive_sync_cli") < runner.index("canonical_full_refresh_cli")
     assert "--odds-enabled false" in runner
     assert "SF_DATA_ODDS_ENABLED" not in runner
-    assert '"data_odds_enabled=' not in runner
+    assert '"data_odds_enabled=false"' in runner
