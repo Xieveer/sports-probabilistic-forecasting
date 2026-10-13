@@ -8,7 +8,7 @@
 
 - Инициатива: `EPIC-043`.
 - Ветка: `initiative/epic-043-football-feature-research`, отдельный worktree.
-- Workflow: Research; этап: отчёт и независимое review завершены.
+- Workflow: Research; этап: отчёт, review и PR/CI завершены.
 - Цель и критерии: [REQ-043](../product/requirements/REQ-043-football-feature-research.md).
 - Baseline: [EPIC-041](../research/epic-041-advanced-club-1x2.md) — advanced
   long и wide, holdout 2025/26 уже раскрыт, итог ITERATE.
@@ -25,8 +25,12 @@
 - Review evidence: проверенный diff `0814cd4`; pre-commit hooks, четыре
   теста, календарная диагностика, калибровка, инвентаризация и парный
   bootstrap проверены независимо; блокирующих замечаний нет.
-- Следующая роль: Product Owner — оформить PR, дождаться окончательного CI
-  и передать пользователю исследовательское решение ITERATE.
+- PR: [#101](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/101)
+  поверх EPIC-041; исходный diff и review evidence закоммичены и отправлены.
+- CI на `3a88a4e`: `lint-test (3.12)`, `Python dependencies`,
+  `Filesystem and secrets` — success.
+- Следующий шаг: передать пользователю исследовательское решение ITERATE;
+  отдельный цикл потребуется для stage/as-of данных и новой модели голов.
 - Release intent: production выпуск не запрошен.
 - Обновлено: 2026-10-13.
 
