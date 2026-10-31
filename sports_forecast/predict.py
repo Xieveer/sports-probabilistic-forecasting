@@ -34,6 +34,7 @@ import hydra
 import pandas as pd
 from omegaconf import DictConfig
 
+from sports_forecast.config.model_strategy import model_strategy_name
 from sports_forecast.training.base import BaseModel
 from sports_forecast.training.model_factory import ModelFactory
 from sports_forecast.utils.log_config import configure_logging, get_logger
@@ -143,13 +144,15 @@ def get_model_dir(cfg: DictConfig, project_root: Path) -> Path:
     featureset_name = str(cfg.features.name)
     models_dir = Path(str(cfg.paths.models_dir))
 
-    return (
+    model_dir = (
         project_root
         / models_dir
         / tournament_name
         / market_spec_name
         / f"{algorithm_name}_{featureset_name}"
     )
+    strategy = model_strategy_name(cfg)
+    return model_dir / strategy if strategy != "standard" else model_dir
 
 
 def find_model_file(model_dir: Path, version: str = "prod") -> Path | None:
@@ -215,6 +218,9 @@ def predict_single(cfg: DictConfig, version: str = "prod") -> bool:
     featureset_name = cfg.features.name
     market_spec_name = cfg.market_spec.name
     data_format = cfg.market_spec.data_format
+    if market_spec_name == "winner_1x2":
+        logger.error("1X2 публикуется только через materialize с проверкой трёх исходов")
+        return False
 
     logger.info("=" * 60)
     logger.info("ИНФЕРЕНС МОДЕЛИ")

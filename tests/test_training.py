@@ -370,6 +370,7 @@ def test_model_save_load(sample_data, tmp_path):
     # Загружаем новую модель (файл внутри директории)
     model_loaded = CatBoostModel()
     model_loaded.load(save_path / "test_model_shadow.cbm")
+    assert list(model_loaded.classes_) == list(model.classes_)
 
     # Предсказания после загрузки
     proba_after = model_loaded.predict_proba(features)

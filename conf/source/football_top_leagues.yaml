@@ -2,9 +2,12 @@
 
 defaults:
   - smart_tables
+  - _self_
 
 name: football_top_leagues
 
 provider:
+  # Исторический snapshot уже закреплён локально; upcoming запрашивается отдельно.
+  type: file
   national_teams_only: false
   competition_codes: [ENG1, SPA1, GER1, ITA1, FRA1, RUS1, RUS2, UCL, UEL]

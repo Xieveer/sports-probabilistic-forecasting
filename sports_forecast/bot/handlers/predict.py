@@ -145,6 +145,11 @@ def _upcoming_query_params(
     if _is_nhl_tournament(tournament):
         params["market"] = "winner_withOT"
         params["market_spec"] = "winner_withOT"
+    elif tournament == "football_top_leagues":
+        params["market"] = "winner"
+        params["market_spec"] = "winner_1x2"
+        params["hours"] = int(OmegaConf.select(cfg, "bot.club_test_hours", default=168))
+        params.pop("live_pinnacle", None)
     if period is not None:
         if period not in SCHEDULE_PERIODS:
             raise ValueError("Недопустимый период прогнозов")
@@ -311,6 +316,28 @@ def _pair(home: float | None, away: float | None, digits: int, *, signed: bool =
 def _format_upcoming_line(item: dict[str, Any]) -> str:
     """Одна строка расписания + при наличии — блок live/edge."""
     line1 = f"{item.get('home_player')} — {item.get('away_player')} ({item.get('match_datetime')})"
+    if item.get("market_spec") == "winner_1x2":
+        outcomes = item.get("predictions") or {}
+        if not isinstance(outcomes, dict):
+            return line1 + "\n  1X2: нет валидных вероятностей"
+        home = _finite_number(outcomes.get("home_win"))
+        draw = _finite_number(outcomes.get("draw"))
+        away = _finite_number(outcomes.get("away_win"))
+        if any(value is None or not 0 <= value <= 1 for value in (home, draw, away)):
+            return line1 + "\n  1X2: нет валидных вероятностей"
+        assert home is not None and draw is not None and away is not None
+        if abs(home + draw + away - 1) > 1e-5:
+            return line1 + "\n  1X2: нет валидных вероятностей"
+        model = item.get("model") or {}
+        version = str(model.get("version", "")) if isinstance(model, dict) else ""
+        strategy = (
+            "бинарная"
+            if version.endswith("__football_long_binary")
+            else "многоклассовая"
+            if version.endswith("__football_wide_multiclass")
+            else "модель не указана"
+        )
+        return f"{line1}\n  1X2 ({strategy}): П1 {home:.3f} | Х {draw:.3f} | П2 {away:.3f}"
     live = _format_live_lines(item)
     if not live:
         return line1
@@ -518,6 +545,24 @@ async def cb_upcoming(cq: CallbackQuery, cfg: DictConfig) -> None:
     text = "\n\n".join(_format_upcoming_line(x) for x in (items[:20] if items else []))
     await cq.message.answer(text or "Пусто")
     await cq.answer()
+
+
+@router.message(Command("club_test"))
+async def cmd_club_test(message: Message, cfg: DictConfig) -> None:
+    """Показать локальную тестовую выдачу двух 1X2-кандидатов."""
+    if not bool(OmegaConf.select(cfg, "bot.club_test_enabled", default=False)):
+        await message.answer("Тестовая выдача клубного футбола отключена.")
+        return
+    async with httpx.AsyncClient() as client:
+        try:
+            data = await fetch_predict_upcoming(client, cfg=cfg, tournament="football_top_leagues")
+        except (httpx.HTTPError, ValueError):
+            logger.exception("club test fetch failed")
+            await message.answer("Тестовые прогнозы временно недоступны.")
+            return
+    items = [item for item in data.get("predictions", []) if isinstance(item, dict)]
+    lines = [_format_upcoming_line(item) for item in items[:20]]
+    await message.answer("\n\n".join(lines) if lines else "Тестовых прогнозов пока нет.")
 
 
 @router.message(Command("upcoming"))

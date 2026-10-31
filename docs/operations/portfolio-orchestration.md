@@ -11,9 +11,10 @@ profile, без изменения списка в DAG.
 существующим Airflow pool `SF_REFRESH_POOL`. Число slots pool определяет
 допустимую конкурентность и не должно увеличиваться без измерений источников.
 
-`dvc.yaml` остаётся отдельным dev/CI контуром воспроизводимости. Новый DAG не
-изменяет его multirun stages и не делает DVC production scheduler-ом.
+`dvc.yaml` остаётся отдельным локальным контуром воспроизводимости. Его features
+stage выбирает все готовые interim-турниры с Hydra-конфигом; DVC не является
+production scheduler-ом.
 
-Legacy `data_refresh` сохраняется на время перехода; production scheduler
-должен включать только один из двух DAG для одного и того же турнира, иначе
-per-key lock лишь сериализует дублирующую работу.
+Legacy `data_refresh` сохранён для ручной диагностики с `schedule=None`.
+Плановый Airflow `portfolio_refresh` читает только deployment profiles;
+действующий production NHL использует systemd и Worker, без Airflow.
