@@ -135,6 +135,11 @@ class WalkForwardRunner:
             RuntimeError: If the slicer yields no step.
             ValueError: If lengths mismatch.
         """
+        if (
+            not prediction_only
+            and OmegaConf.select(self._cfg, "market_spec.name", default=None) == "winner_1x2"
+        ):
+            raise ValueError("walk_forward не поддерживает оценку рынка winner_1x2")
         _ = feature_names
         if len(combined_df) != len(features) or len(features) != len(target):
             msg = "combined_df, features, target must have identical row counts"

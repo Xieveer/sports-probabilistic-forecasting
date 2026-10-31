@@ -14,10 +14,17 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 from omegaconf import DictConfig
 
 from sports_forecast.betting.real_bets import MARKET_OUTCOMES, Funding, Result, expected_payout
+from sports_forecast.bot.bet_chart import render_season_pnl_chart
 from sports_forecast.bot.handlers.admin import ControlApiError, _control_request
 from sports_forecast.utils.log_config import get_logger
 
@@ -708,12 +715,48 @@ async def cb_bet_settle_confirm(cq: CallbackQuery, cfg: DictConfig, state: FSMCo
 
 @router.message(Command("bet_report"))
 async def cmd_bet_report(message: Message, cfg: DictConfig) -> None:
-    """Показать месячный отчёт за YYYY-MM по дате расчёта в МСК."""
+    """Показать месяц или сезон по фактически рассчитанным ставкам."""
     owner_id = _private_owner(message, cfg)
     if owner_id is None:
         await message.answer("Журнал доступен владельцу в личном чате.")
         return
     argument = (message.text or "").split(maxsplit=1)
+    parts = argument[1].strip().split() if len(argument) == 2 else []
+    if parts and parts[0] in {"season", "сезон"}:
+        if len(parts) > 2:
+            await message.answer("Используйте /bet_report season [турнир]")
+            return
+        tournament = parts[1] if len(parts) == 2 else "nhl"
+        try:
+            report = await _control_request(
+                cfg, owner_id, "GET", "bets/season-summary", params={"tournament": tournament}
+            )
+        except ControlApiError:
+            await message.answer("Сезонный отчёт недоступен или не настроен для турнира.")
+            return
+        await message.answer(
+            f"Фактические ставки · {escape(str(report['tournament']).upper())} · "
+            f"{report['start']}—{report['end']} (МСК)\n"
+            f"Рассчитано: {report['settled_count']}; открыто: {report['open_count']}\n"
+            f"Свои: оборот {report['cash_turnover']} ₽, PnL {report['cash_pnl']} ₽, "
+            f"ROI {report['cash_roi'] or '—'}\n"
+            f"Фрибеты: номинал {report['freebet_nominal']} ₽, "
+            f"выплата {report['freebet_payout']} ₽\n"
+            f"Общий денежный PnL: {report['total_cash_pnl']} ₽; "
+            f"hit rate: {report['hit_rate'] or '—'}"
+        )
+        try:
+            chart = render_season_pnl_chart(
+                start=report["start"],
+                end=report["end"],
+                tournament=report["tournament"],
+                points=report["daily_pnl"],
+            )
+            await message.answer_photo(BufferedInputFile(chart, filename="season-pnl.png"))
+        except (KeyError, ValueError, TypeError, TelegramAPIError):
+            logger.warning("Не удалось показать график сезонного отчёта")
+            await message.answer("График временно недоступен.")
+        return
     try:
         month = (
             datetime.strptime(argument[1], "%Y-%m") if len(argument) == 2 else datetime.now(_MOSCOW)

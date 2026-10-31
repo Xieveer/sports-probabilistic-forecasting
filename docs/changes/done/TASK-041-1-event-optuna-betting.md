@@ -45,6 +45,8 @@ tests/test_optuna_optimizer.py tests/test_market_1x2_betting.py
 tests/test_club_model_strategies.py tests/test_multiclass_probability_metrics.py`
 — 52 passed; `uv run --locked ruff check` для изменённых модулей и их тестов
 — успешно.
+После объединения с EPIC-040 прошли 142 адресных теста и `make lint`;
+независимый Reviewer не нашёл блокирующих интеграционных замечаний.
 
 ## Не изменено и остаточные риски
 

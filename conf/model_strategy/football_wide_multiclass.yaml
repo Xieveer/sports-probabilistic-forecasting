@@ -5,3 +5,5 @@ target_name: target_result_1x2
 feature_prefixes: [home_f_, away_f_]
 prediction_outcomes: [home_win, draw, away_win]
 probability_semantics: categorical_distribution
+catboost_loss_function: MultiClass
+catboost_eval_metric: MultiClass

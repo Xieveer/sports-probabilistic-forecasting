@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal, cast
 
@@ -215,13 +217,18 @@ def get_run(
 @router.post("/notifications/claim")
 def claim_notifications(
     body: NotificationClaimRequest,
-    _admin: Annotated[str, Depends(require_control_admin)],
+    admin: Annotated[str, Depends(require_control_admin)],
 ) -> dict[str, Any]:
     """Выдать короткую lease на ограниченную партию outbox rows."""
     now = datetime.now(UTC)
     with get_control_session() as session:
         repository = DataCycleNotificationOutboxRepository(session)
-        rows = repository.claim_due(limit=body.limit, at=now)
+        owner_id = os.environ.get("SF_BETS_OWNER_ID", "").strip()
+        rows = repository.claim_due(
+            limit=body.limit,
+            at=now,
+            include_bet_summaries=bool(owner_id and admin == owner_id),
+        )
         notifications = []
         for row in rows:
             run = DataCycleRunRepository(session).get(row.run_id)
@@ -233,6 +240,8 @@ def claim_notifications(
                     "notification_id": row.id,
                     "lease_token": row.lease_token,
                     "destination_alias": row.destination_alias,
+                    "kind": row.kind,
+                    "payload": json.loads(row.payload_json) if row.payload_json else None,
                     "run_id": run.run_id,
                     "pipeline_id": run.tournament,
                     "reason": run_dto["reason"],

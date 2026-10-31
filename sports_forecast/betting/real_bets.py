@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
@@ -141,4 +141,66 @@ def monthly_summary(rows: Iterable[Mapping[str, Any]], year: int, month: int) ->
         "by_market": {key: _serialize_bucket(bucket) for key, bucket in by_market.items()},
         "by_funding": {key: _serialize_bucket(bucket) for key, bucket in by_funding.items()},
         "by_tournament": {key: _serialize_bucket(bucket) for key, bucket in by_tournament.items()},
+    }
+
+
+def season_summary(
+    rows: Iterable[Mapping[str, Any]], *, tournament: str, start: str, end: str
+) -> dict[str, Any]:
+    """Свести фактические ставки турнира и накопленный денежный PnL по дням МСК."""
+    start_date = date.fromisoformat(start)
+    end_date = date.fromisoformat(end)
+    if start_date > end_date or not tournament:
+        raise ValueError("Некорректный период сезона")
+    total = _summary_bucket()
+    by_bookmaker: dict[str, dict[str, Any]] = {}
+    by_market: dict[str, dict[str, Any]] = {}
+    by_funding: dict[str, dict[str, Any]] = {}
+    daily: dict[date, Decimal] = {}
+    open_count = 0
+    for row in rows:
+        if row.get("tournament") != tournament:
+            continue
+        if row.get("status") == "open":
+            placed_at = row.get("placed_at")
+            if isinstance(placed_at, datetime):
+                placed = placed_at.replace(tzinfo=UTC) if placed_at.tzinfo is None else placed_at
+                if start_date <= placed.astimezone(_MOSCOW).date() <= end_date:
+                    open_count += 1
+            continue
+        if row.get("status") != "settled":
+            continue
+        settled_at = row.get("settled_at")
+        if not isinstance(settled_at, datetime):
+            continue
+        moment = settled_at.replace(tzinfo=UTC) if settled_at.tzinfo is None else settled_at
+        day = moment.astimezone(_MOSCOW).date()
+        if not start_date <= day <= end_date:
+            continue
+        previous = total["total_cash_pnl"]
+        _add_row(total, row)
+        daily[day] = daily.get(day, Decimal("0.00")) + total["total_cash_pnl"] - previous
+        for grouping, field in (
+            (by_bookmaker, "bookmaker"),
+            (by_market, "market_spec"),
+            (by_funding, "funding"),
+        ):
+            key = str(row[field])
+            _add_row(grouping.setdefault(key, _summary_bucket()), row)
+    cumulative = Decimal("0.00")
+    points: list[dict[str, str]] = []
+    for day, pnl in sorted(daily.items()):
+        cumulative += pnl
+        points.append({"date": day.isoformat(), "cumulative_cash_pnl": str(cumulative)})
+    return {
+        "tournament": tournament,
+        "start": start,
+        "end": end,
+        "open_count": open_count,
+        **_serialize_bucket(total),
+        "by_bookmaker": {key: _serialize_bucket(bucket) for key, bucket in by_bookmaker.items()},
+        "by_market": {key: _serialize_bucket(bucket) for key, bucket in by_market.items()},
+        "by_funding": {key: _serialize_bucket(bucket) for key, bucket in by_funding.items()},
+        "by_tournament": {tournament: _serialize_bucket(total)},
+        "daily_pnl": points,
     }

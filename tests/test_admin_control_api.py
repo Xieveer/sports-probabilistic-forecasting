@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from sports_forecast.service import app as app_module
-from sports_forecast.service.db.models import Base
+from sports_forecast.service.db.models import Base, DataCycleNotificationOutbox, DataCycleRun
 from sports_forecast.service.db.repository import DataCycleRunRepository
 from sports_forecast.service.routers import admin_control
 
@@ -75,6 +76,42 @@ def test_control_routes_deny_empty_or_invalid_auth(control_client, monkeypatch) 
     monkeypatch.delenv("SF_CONTROL_ADMIN_IDS")
     response = client.get("/admin/pipelines", headers=_headers())
     assert response.status_code == 403
+
+
+def test_only_bet_owner_can_claim_private_settlement_summary(control_client, monkeypatch) -> None:
+    """Другой control admin не видит ID и денежный результат ставок."""
+    client, engine = control_client
+    monkeypatch.setenv("SF_BETS_OWNER_ID", "101")
+    now = datetime.now(UTC).replace(tzinfo=None)
+    with Session(engine) as session:
+        session.add(
+            DataCycleRun(
+                run_id="run-private", tournament="nhl", reason="scheduled", status="success"
+            )
+        )
+        session.add(
+            DataCycleNotificationOutbox(
+                run_id="run-private",
+                destination_alias="bets_owner",
+                kind="bet_summary",
+                payload_json='{"settled_count":1,"total_cash_pnl":"120.00"}',
+                status="pending",
+                attempts=0,
+                available_at=now,
+                created_at=now,
+            )
+        )
+        session.commit()
+    other = client.post(
+        "/admin/notifications/claim", headers=_headers(admin_id="202"), json={"limit": 5}
+    )
+    assert other.status_code == 200
+    assert other.json()["notifications"] == []
+    owner = client.post(
+        "/admin/notifications/claim", headers=_headers(admin_id="101"), json={"limit": 5}
+    )
+    assert owner.status_code == 200
+    assert owner.json()["notifications"][0]["payload"]["total_cash_pnl"] == "120.00"
 
 
 def test_schedule_is_persistent_and_uses_optimistic_revision(control_client) -> None:

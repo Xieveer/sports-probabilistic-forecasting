@@ -97,6 +97,39 @@ def test_poll_sends_compact_terminal_summary_then_acks(monkeypatch) -> None:
     assert "91" in send["text"]
 
 
+def test_bet_summary_is_sent_only_to_private_owner(monkeypatch) -> None:
+    """Административный групповой alias не получает данные фактических ставок."""
+    cfg = _cfg()
+    cfg.bot.bets_owner_id = "101"
+    notification = _notification(
+        kind="bet_summary",
+        destination_alias="bets_owner",
+        payload={
+            "settled_count": 1,
+            "skipped_count": 1,
+            "total_cash_pnl": "120.00",
+            "settled": [{"bet_id": "bet-1", "result": "win", "pnl": "120.00"}],
+            "skipped": [{"bet_id": "bet-2", "reason": "<проверить>"}],
+        },
+    )
+
+    async def fake_request(_cfg, _admin_id, _method, path, **_kwargs):
+        return (
+            {"notifications": [notification]}
+            if path == "notifications/claim"
+            else {"acknowledged": True}
+        )
+
+    monkeypatch.setattr("sports_forecast.bot.notifications._control_request", fake_request)
+    bot = SimpleNamespace(send_message=AsyncMock())
+    assert asyncio.run(poll_notifications_once(cfg, bot)) == 1
+    send = bot.send_message.await_args.kwargs
+    assert send["chat_id"] == 101
+    assert "&lt;проверить&gt;" in send["text"]
+    assert "выигрыш" in send["text"]
+    assert "120.00 ₽" in send["text"]
+
+
 def test_unknown_destination_alias_is_neither_sent_nor_acked(monkeypatch) -> None:
     """Misconfigured alias остаётся в lease до expiry и не теряется ack-ом."""
     calls: list[str] = []

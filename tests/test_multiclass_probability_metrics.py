@@ -64,6 +64,27 @@ def test_long_audit_rejects_only_invalid_event() -> None:
     assert len(rejected) / (len(valid) + len(rejected)) == 0.5
 
 
+@pytest.mark.parametrize("bad_value", [np.nan, np.inf, -np.inf, -0.1, 1.1])
+@pytest.mark.parametrize("side", [0, 1])
+def test_long_audit_quarantines_invalid_probability_per_event(bad_value, side) -> None:
+    frame = pd.DataFrame({"id": ["a", "a", "b", "b"], "is_home": [1, 0, 1, 0]})
+    values = [0.4, 0.3, 0.4, 0.3]
+    values[2 + side] = bad_value
+    valid, rejected = audit_long_1x2_probabilities(frame, np.array(values))
+    assert valid.index.tolist() == ["a"]
+    assert rejected.index.tolist() == ["b"]
+    assert rejected.loc["b", "reason"] == "invalid_win_probability"
+    assert np.isfinite(valid.to_numpy()).all()
+    with pytest.raises(ValueError, match="невалидные вероятности"):
+        compose_long_1x2_probabilities(frame, np.array(values))
+
+
+def test_long_audit_distinguishes_missing_side_from_nan() -> None:
+    frame = pd.DataFrame({"id": ["a", "a", "b"], "is_home": [1, 0, 1]})
+    with pytest.raises(ValueError, match="обе стороны"):
+        audit_long_1x2_probabilities(frame, np.array([np.nan, 0.3, 0.4]))
+
+
 def test_tscv_rejects_fold_without_all_1x2_classes() -> None:
     frame = pd.DataFrame({"x": range(15)})
     target = pd.Series([0] * 5 + [1] * 5 + [2] * 5)

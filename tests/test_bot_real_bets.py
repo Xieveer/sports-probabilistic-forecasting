@@ -39,6 +39,7 @@ def _message(text: str = "") -> SimpleNamespace:
         chat=SimpleNamespace(type="private", id=101),
         message_id=42,
         answer=AsyncMock(),
+        answer_photo=AsyncMock(),
     )
 
 
@@ -225,6 +226,35 @@ def test_bet_report_shows_tournament_breakdown(monkeypatch) -> None:
     message = _message("/bet_report 2026-10")
     asyncio.run(real_bets.cmd_bet_report(message, cfg))
     assert "Турниры: epl — 120.00 ₽" in message.answer.await_args.args[0]
+
+
+def test_season_bet_report_sends_chart_to_owner(monkeypatch) -> None:
+    """Сезонная команда отдаёт общий PnL и PNG только владельцу."""
+    cfg = OmegaConf.create({"bot": {"admin_user_ids": [101], "bets_owner_id": "101"}})
+
+    async def control(_cfg, _owner, _method, path, **_kwargs):
+        assert path == "bets/season-summary"
+        return {
+            "tournament": "nhl",
+            "start": "2026-09-01",
+            "end": "2026-10-31",
+            "settled_count": 0,
+            "open_count": 0,
+            "cash_turnover": "0.00",
+            "cash_pnl": "0.00",
+            "cash_roi": None,
+            "freebet_nominal": "0.00",
+            "freebet_payout": "0.00",
+            "total_cash_pnl": "0.00",
+            "hit_rate": None,
+            "daily_pnl": [],
+        }
+
+    monkeypatch.setattr(real_bets, "_control_request", control)
+    message = _message("/bet_report season")
+    asyncio.run(real_bets.cmd_bet_report(message, cfg))
+    assert "Общий денежный PnL: 0.00 ₽" in message.answer.await_args.args[0]
+    message.answer_photo.assert_awaited_once()
 
 
 def test_bet_history_shows_tournament_for_each_bet(monkeypatch) -> None:
