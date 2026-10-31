@@ -72,7 +72,7 @@ services:
 
   data-cycle-dispatcher:
     image: ${SF_API_IMAGE:?set SF_API_IMAGE to an immutable ghcr image digest}
-    pull_policy: always
+    pull_policy: never
     command:
       [
         "/app/.venv/bin/python",
@@ -107,6 +107,7 @@ services:
       BOT_ALLOWED_USER_IDS: ${BOT_ALLOWED_USER_IDS:-}
       BOT_ADMIN_USER_IDS: ${BOT_ADMIN_USER_IDS:-}
       BOT_BETS_OWNER_ID: ${BET_OWNER_USER_ID:-}
+      SF_APP_VERSION: ${SF_APP_VERSION:?set SF_APP_VERSION}
       BOT_API_BASE_URL: http://api:8000
       BOT_CONTROL_API_KEY_FILE: /run/secrets/control_api_key
       SF_REGISTRY_EVENT_READER_ENABLED: ${SF_REGISTRY_EVENT_READER_ENABLED:-false}
@@ -128,7 +129,7 @@ services:
 
   source-acquirer:
     image: ${SF_WORKER_IMAGE:?set SF_WORKER_IMAGE to an immutable ghcr image digest}
-    pull_policy: always
+    pull_policy: never
     environment:
       DATABASE_URL_FILE: /run/secrets/worker_database_url
       SF_DATA_CYCLE_RUN_ID: ${SF_DATA_CYCLE_RUN_ID:-untracked}
@@ -161,10 +162,11 @@ services:
 
   worker:
     image: ${SF_WORKER_IMAGE:?set SF_WORKER_IMAGE to an immutable ghcr image digest}
-    pull_policy: always
+    pull_policy: never
     environment:
       DATABASE_URL_FILE: /run/secrets/worker_database_url
       SF_WORKER_RUN_ID: ${SF_WORKER_RUN_ID:?set a scheduler-generated id}
+      SF_BETS_OWNER_ID: ${BET_OWNER_USER_ID:-}
       SF_DATA_CYCLE_NOTIFICATION_ALIASES: ${SF_DATA_CYCLE_NOTIFICATION_ALIASES:?set safe notification aliases}
       SF_DATA_CYCLE_RUN_ID: ${SF_DATA_CYCLE_RUN_ID:-untracked}
       SF_DATA_CYCLE_GENERATION: ${SF_DATA_CYCLE_GENERATION:-0}
@@ -203,7 +205,7 @@ services:
 
   archive-sync:
     image: ${SF_ARCHIVE_SYNC_IMAGE:?set SF_ARCHIVE_SYNC_IMAGE to an immutable sync image digest}
-    pull_policy: always
+    pull_policy: never
     network_mode: host
     environment:
       SF_DATA_CYCLE_RUN_ID: ${SF_DATA_CYCLE_RUN_ID:-untracked}

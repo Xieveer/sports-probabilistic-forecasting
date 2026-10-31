@@ -1,4 +1,61 @@
-# Передача сервиса в эксплуатацию: v1.3.7 candidate
+# Передача сервиса в эксплуатацию: v1.4.0 candidate
+
+- Статус подготовки: `candidate`
+- Инициатива: [EPIC-044](../backlog/EPIC-044-bets-cycle-report.md),
+  требования [REQ-044](../product/requirements/REQ-044-automatic-bet-settlement-and-season-report.md),
+  решение [ADR-044](../architecture/adr/ADR-044-automatic-bet-settlement.md).
+- Целевая версия: `1.4.0`; установленная до выпуска версия: `1.3.7`.
+- Целевой source tag: `v1.4.0` после merge и terminal CI/Security.
+- Среда: `ops-prod-01`; release intent подтверждён владельцем 2026-10-31.
+
+## Граница выпуска v1.4.0
+
+Образ API, Worker, bot и archive-sync должен быть опубликован по exact digest
+из проверенного tag `v1.4.0`. Обычный dispatcher и стадии цикла используют
+локальные exact образы (`pull_policy: never`), поэтому release preflight
+явно получает их и сверяет digest до переключения. Отсутствующий образ —
+остановка выпуска, без возврата к `latest`.
+
+До миграции 0026 сохранить backup PostgreSQL, проверить readback и isolated
+restore. Миграция добавляет тип и короткий payload в существующий outbox без
+перезаписи PostgreSQL таблицы. Старый код v1.3.7 совместим с добавленными
+колонками; rollback выполняется переключением прежних exact образов, без
+удаления журнала и audit. Удаление данных или downgrade миграции в rollback
+не входят.
+
+До switch проверить, что `BET_OWNER_USER_ID` непустой в production profile и
+одинаково передаётся API, Worker и bot. Значение не печатать в логи/evidence:
+без него новый Worker явно завершит цикл ошибкой.
+
+После review, terminal CI/Security, Docker/evidence gates и backup выполнить
+`make production-check`, затем на сервере проверить API/bot health, digest
+работающих контейнеров, `/bet_report season` с PNG, controlled Data Cycle
+с canonical результатом и отдельной сводкой открытых ставок. Если открытых
+ставок нет, проверить нулевой отчёт и доставку terminal notification; не
+создавать фиктивную денежную ставку на production.
+
+После успешного smoke отправить стартовое сообщение владельцу **из уже
+работающего** bot-контейнера из каталога release checkout:
+
+```bash
+docker compose --env-file /etc/sports-forecast/refresh/nhl.env \
+  -f docker-compose.prod.yml exec -T telegram-bot \
+  /app/.venv/bin/python -m sports_forecast.deploy.release_announcement_cli
+```
+
+Команда сверяет
+`SF_APP_VERSION` работающего контейнера с `conf/release-notes.yaml` в его
+образе, затем отправляет только владельцу версию и краткие изменения.
+Зафиксировать факт доставки без токена, chat ID и текста ответа Telegram.
+
+Локально на 2026-10-31 прошли `make test` (1741 passed, 10 skipped),
+`make lint`, `make security` (0 известных уязвимостей после lock update),
+`make docs` и `make production-check`; отдельный PostgreSQL 16 подтвердил
+миграцию существующей outbox строки, grant и sequence. Ожидающие gates:
+итоговый review, PR/terminal CI/Security, tag/Docker/evidence, backup/restore,
+production smoke и сообщение владельцу.
+
+## Архив handoff v1.3.7
 
 - Статус подготовки: `candidate`
 - Решение на 2026-10-12: `GO` — v1.3.7 включена, строгий controlled и плановый Data Cycle без odds завершились успешно, 20 последовательных минутных ticks и release gates прошли. Владелец перенёс непустой owner candidate gate на подключение нового турнира.

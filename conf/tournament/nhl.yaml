@@ -8,6 +8,9 @@ name: nhl
 region: north_america
 description: "National Hockey League (источник: nhl_web_api)"
 
+betting_report:
+  season_start: "09-01"
+
 # Обязательные результаты одного полного Data Cycle. Сбор будущих котировок
 # пока optional и не разрешает итоговый success до TASK-025-6.
 data_cycle:

@@ -688,13 +688,15 @@ class DataCycleDispatcherState(Base):
 
 
 class DataCycleNotificationOutbox(Base):
-    """Durable terminal notification per Data Cycle run and safe destination alias."""
+    """Durable сообщения о цикле и рассчитанных ставках по safe alias."""
 
     __tablename__ = "data_cycle_notification_outbox"
 
     id: int = Column(Integer, primary_key=True, autoincrement=True)
     run_id: str = Column(ForeignKey("data_cycle_runs.run_id"), nullable=False)
     destination_alias: str = Column(String(64), nullable=False)
+    kind: str = Column(String(16), nullable=False, server_default="terminal")
+    payload_json: str | None = Column(Text, nullable=True)
     status: str = Column(String(16), nullable=False, server_default="pending")
     attempts: int = Column(Integer, nullable=False, server_default="0")
     available_at: datetime = Column(DateTime, nullable=False, server_default=func.now())
@@ -706,8 +708,9 @@ class DataCycleNotificationOutbox(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "run_id", "destination_alias", name="uq_data_cycle_notification_run_alias"
+            "run_id", "destination_alias", "kind", name="uq_data_cycle_notification_run_alias_kind"
         ),
+        CheckConstraint("kind IN ('terminal','bet_summary')"),
         CheckConstraint("status IN ('pending','leased','delivered')"),
         CheckConstraint("attempts >= 0"),
         CheckConstraint("length(destination_alias) BETWEEN 1 AND 64"),
