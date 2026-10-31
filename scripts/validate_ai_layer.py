@@ -12,17 +12,17 @@ from typing import Any
 REQUIRED_SKILL_SECTIONS = {"Нельзя сокращать", "Red flags", "Проверка"}
 REQUIRED_ROLE_SECTIONS = {"Цель", "Scope", "Результат", "Composition"}
 REQUIRED_AGENT_FIELDS = {"name", "description", "developer_instructions", "model"}
-SUPPORTED_AGENT_MODELS = {"gpt-6-astra", "gpt-6-sol", "gpt-6-luna"}
-DEFAULT_AGENT_MODEL = "gpt-6-sol"
+SUPPORTED_AGENT_MODELS = {"gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna"}
+DEFAULT_AGENT_MODEL = "gpt-6.1-sol"
 AGENT_MODELS = {
     "architect": "gpt-6-astra",
     "business-analyst": "gpt-6-luna",
-    "data-researcher": "gpt-6-sol",
+    "data-researcher": "gpt-6.1-sol",
     "developer": "gpt-6-luna",
-    "operations-agent": "gpt-6-sol",
-    "product-owner": "gpt-6-sol",
-    "research-scientist": "gpt-6-sol",
-    "reviewer": "gpt-6-sol",
+    "operations-agent": "gpt-6.1-sol",
+    "product-owner": "gpt-6.1-sol",
+    "research-scientist": "gpt-6.1-sol",
+    "reviewer": "gpt-6.1-sol",
 }
 REQUIRED_AGENT_NAMES = frozenset(AGENT_MODELS)
 FRONTMATTER_PATTERN = re.compile(
@@ -168,13 +168,17 @@ def validate(root: Path) -> list[str]:
     config_path = root / ".codex" / "config.toml"
     with config_path.open("rb") as config_file:
         config = tomllib.load(config_file)
-    if config.get("model") != "gpt-6-sol":
-        errors.append(".codex/config.toml: главный Product Owner должен использовать gpt-6-sol")
+    if config.get("model") != DEFAULT_AGENT_MODEL:
+        errors.append(
+            f".codex/config.toml: главный Product Owner должен использовать {DEFAULT_AGENT_MODEL}"
+        )
     agents_config = config.get("agents")
     if not isinstance(agents_config, dict):
         errors.append(".codex/config.toml: отсутствует таблица agents")
     elif agents_config.get("default_subagent_model") != DEFAULT_AGENT_MODEL:
-        errors.append(".codex/config.toml: default_subagent_model должна быть gpt-6-sol")
+        errors.append(
+            f".codex/config.toml: default_subagent_model должна быть {DEFAULT_AGENT_MODEL}"
+        )
 
     agent_names: set[str] = set()
     for agent_file in sorted((root / ".codex" / "agents").glob("*.toml")):

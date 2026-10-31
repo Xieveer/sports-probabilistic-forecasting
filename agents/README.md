@@ -7,14 +7,14 @@
 
 | Роль | Модель | Результат |
 |---|---|---|
-| Product Owner | `gpt-6-sol` | Память инициативы и следующий подтверждённый шаг |
+| Product Owner | `gpt-6.1-sol` | Память инициативы и следующий подтверждённый шаг |
 | Business Analyst | `gpt-6-luna` | Требования и критерии приёмки |
 | Architect | `gpt-6-astra` | Техническое решение и ADR при необходимости |
 | Developer | `gpt-6-luna` | Проверенный вертикальный срез, TASK и отчёт `done` |
-| Reviewer | `gpt-6-sol` | Независимое review качества, security и Research |
-| Data Researcher | `gpt-6-sol` | Описание источника и задачи на накопление данных |
-| Research Scientist | `gpt-6-sol` | Исследовательский отчёт GO/ITERATE/STOP |
-| Operations Agent | `gpt-6-sol` | Release/deployment evidence или server-task result |
+| Reviewer | `gpt-6.1-sol` | Независимое review качества, security и Research |
+| Data Researcher | `gpt-6.1-sol` | Описание источника и задачи на накопление данных |
+| Research Scientist | `gpt-6.1-sol` | Исследовательский отчёт GO/ITERATE/STOP |
+| Operations Agent | `gpt-6.1-sol` | Release/deployment evidence или server-task result |
 
 Operations Agent живёт в отдельном репозитории
 `/home/xieveer/Документы/codex_projects/operations-agent`; его профиль здесь задаёт только

@@ -33,13 +33,13 @@ def test_validator_rejects_read_only_reviewer_profile() -> None:
     )
 
 
-def test_agent_model_contract_assigns_fixed_gpt_6_models() -> None:
-    """Роли используют закреплённые модели GPT-6 без маршрутизации по сложности."""
+def test_agent_model_contract_assigns_updated_sol_and_preserves_luna() -> None:
+    """Sol обновлён, а Luna остаётся у небольших задач без маршрутизации по сложности."""
     assert _agent_model_error("architect", "gpt-6-astra") is None
     assert _agent_model_error("business-analyst", "gpt-6-luna") is None
     assert _agent_model_error("developer", "gpt-6-luna") is None
-    assert _agent_model_error("reviewer", "gpt-6-sol") is None
-    assert _agent_model_error("operations-agent", "gpt-6-sol") is None
+    assert _agent_model_error("reviewer", "gpt-6.1-sol") is None
+    assert _agent_model_error("operations-agent", "gpt-6.1-sol") is None
 
 
 def test_validate_rejects_wrong_product_owner_root_model(tmp_path: Path) -> None:
@@ -48,7 +48,7 @@ def test_validate_rejects_wrong_product_owner_root_model(tmp_path: Path) -> None
     config_path = root / ".codex" / "config.toml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8").replace(
-            'model = "gpt-6-sol"', 'model = "gpt-6-luna"', 1
+            'model = "gpt-6.1-sol"', 'model = "gpt-6-luna"', 1
         ),
         encoding="utf-8",
     )
@@ -57,8 +57,10 @@ def test_validate_rejects_wrong_product_owner_root_model(tmp_path: Path) -> None
 
 
 def test_agent_model_contract_rejects_legacy_and_astra_outside_architect() -> None:
-    """Старые GPT-5.6 и Astra вне роли Architect блокируют проверку AI-слоя."""
+    """Старые модели и Astra вне роли Architect блокируют проверку AI-слоя."""
     assert _agent_model_error("reviewer", "gpt-5.6-sol") == ("разрешены только модели GPT-6")
+    assert _agent_model_error("reviewer", "gpt-6-sol") == ("разрешены только модели GPT-6")
+    assert _agent_model_error("developer", "gpt-6.1-terra") == ("разрешены только модели GPT-6")
     assert _agent_model_error("reviewer", "gpt-6-astra") == (
         "gpt-6-astra разрешена только для architect"
     )
@@ -74,7 +76,7 @@ def test_validate_rejects_role_outside_required_workflow(tmp_path: Path) -> None
     (root / ".codex" / "agents" / "extra.toml").write_text(
         'name = "extra"\n'
         'description = "Тестовая роль."\n'
-        'model = "gpt-6-sol"\n'
+        'model = "gpt-6.1-sol"\n'
         'developer_instructions = "agents/extra.md"\n',
         encoding="utf-8",
     )
