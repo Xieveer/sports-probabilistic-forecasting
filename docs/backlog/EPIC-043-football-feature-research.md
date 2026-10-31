@@ -25,6 +25,9 @@
 - Review evidence: проверенный diff `0814cd4`; pre-commit hooks, четыре
   теста, календарная диагностика, калибровка, инвентаризация и парный
   bootstrap проверены независимо; блокирующих замечаний нет.
+- Интеграционное объединение с EPIC-041: `6d2ea83`; независимый Reviewer
+  проверил согласованность итоговой документации. Прошли 34 адресных теста,
+  `make lint` и `make ai-validate`.
 - Интеграционные PR: [#99](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/99)
   → [#100](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/100)
   → [#101](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/101).
