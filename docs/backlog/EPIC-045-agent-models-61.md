@@ -10,7 +10,7 @@
 
 - Инициатива: `EPIC-045`.
 - Ветка инициативы: `initiative/epic-045-agent-models-61`.
-- Workflow / этап: `engineering / merge candidate; merge pending`.
+- Workflow / этап: `engineering / merged`.
 - Исходная цель: обновить Sol-профили до 6.1, сохранив Luna и Astra; [REQ-045](../product/requirements/REQ-045-agent-models-61.md).
 - Критерии приёмки и DoD: три критерия REQ-045, независимое review, зелёный CI и merge.
 - Релиз: не требуется.
@@ -18,13 +18,13 @@
   12 AI-тестов и `make ai-validate` прошли; независимый Reviewer подтвердил TASK
   и полный scope EPIC без блокирующих findings. Все TASK завершены;
   [PR #105](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/105)
-  прошёл три проверки CI на `d985aca16dcf8a8d6108ccfd8773476d85350c5f`.
+  прошёл три проверки CI на `8b7cf081d79b144ffb00424a0668eab2725cb5ba`
+  и слит в `main` коммитом `84cb4dc4941c8c6cd93d62fa045a84c1869fbd7b`.
 - Решения: Terra не назначается после уточнения владельца; ADR не нужен.
 - Артефакты: REQ-045, [TASK-045-1](tasks/TASK-045-1-agent-models-61.md),
   [отчёт `done`](../changes/done/TASK-045-1-agent-models-61.md), PR #105 и CI ниже.
-- Предыдущая роль: Reviewer — полное EPIC review и проверка финальной документации.
-- Следующая роль: Product Owner — дождаться повторного terminal CI документационного
-  коммита и выполнить merge PR #105. Интеграция в `main` ещё не выполнена.
+- Предыдущая роль: Product Owner — проверил terminal CI и выполнил merge PR #105.
+- Следующая роль: нет, инициатива завершена.
 - Открытые вопросы / блокеры: нет.
 - Research: не применяется.
 - Обновлено: 2026-10-31.
@@ -64,6 +64,9 @@ evidence-коммите получил terminal `SUCCESS` по всем трём
 - [Filesystem and secrets](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/41230165205/job/124622530283).
 
 Reviewer повторно проверил только итоговую документацию; новых findings нет.
-Статус `done` фиксирует завершённый scope TASK и готовность кандидата к интеграции;
-`merge pending` остаётся явным до повторного зелёного CI текущего документационного
-коммита и фактического merge. Новый production-релиз не требуется.
+Итоговый коммит `8b7cf081d79b144ffb00424a0668eab2725cb5ba` прошёл terminal
+`SUCCESS` по всем трём проверкам в [CI](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/41230355683)
+и [Security](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/41230355669),
+после чего [PR #105](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/105)
+слит в `main` коммитом [`84cb4dc4941c8c6cd93d62fa045a84c1869fbd7b`](https://github.com/Xieveer/sports-probabilistic-forecasting/commit/84cb4dc4941c8c6cd93d62fa045a84c1869fbd7b).
+Новый production-релиз не требовался и не выпускался.

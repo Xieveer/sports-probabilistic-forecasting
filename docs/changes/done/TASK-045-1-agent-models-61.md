@@ -35,7 +35,9 @@ Sol-профили обновлены до `gpt-6.1-sol`. Business Analyst и De
   проверены карта моделей, validator, тесты и документация. Sandbox и права не менялись,
   достижимых новых security-рисков в этом diff не обнаружено.
 - Commit/push: проверенный commit [`d29a40a3f952675bcc0733988f3af3f4b1054f58`](https://github.com/Xieveer/sports-probabilistic-forecasting/commit/d29a40a3f952675bcc0733988f3af3f4b1054f58);
-  это evidence фиксируется отдельным documentation-only коммитом и отправляется вместе с ним.
+  evidence зафиксировано отдельным documentation-only коммитом
+  `d985aca16dcf8a8d6108ccfd8773476d85350c5f` и отправлено вместе с ним;
+  итоговый PR #105 после зелёного CI слит в `main`.
 - Follow-up: нет.
 
 ## Остаточные риски
