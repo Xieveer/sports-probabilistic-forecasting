@@ -25,6 +25,7 @@ stages:
     cmd: uv run python -m sports_forecast.data.ingest
     deps:
       - sports_forecast/data/ingest.py
+      - sports_forecast/validation/club_regulation_scores.py
       - sports_forecast/identity/events.py
       - sports_forecast/identity/snapshot.py
       - sports_forecast/identity/data_provenance.py

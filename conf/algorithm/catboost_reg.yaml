@@ -6,8 +6,8 @@ description: "CatBoost with regularization-focused Optuna search space"
 _target_: sports_forecast.training.models.catboost.CatBoostModel
 
 params:
-  loss_function: Logloss
-  eval_metric: Logloss
+  loss_function: ${oc.select:model_strategy.catboost_loss_function,Logloss}
+  eval_metric: ${oc.select:model_strategy.catboost_eval_metric,Logloss}
   iterations: 500
   learning_rate: 0.08
   depth: 5

@@ -6,6 +6,7 @@ data_format: wide
 target_source_key: home_result_1x2
 target_name: target_result_1x2
 outcomes: [home_win, draw, away_win]
+# Для обеих стратегий допустим только полный неотрицательный целый счёт.
 score_basis: regulation
 training:
   binary_calibration: false

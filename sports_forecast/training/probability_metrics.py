@@ -39,37 +39,47 @@ def compose_long_1x2_probabilities(
     """Собрать П1/Х/П2 из двух оценок победы без нормировки П1 и П2."""
     valid, rejected = audit_long_1x2_probabilities(events, win_probabilities)
     if not rejected.empty:
-        raise ValueError("Long 1X2 дал отрицательный остаток ничьей")
+        raise ValueError(
+            "Long 1X2 содержит невалидные вероятности или отрицательный остаток ничьей"
+        )
     return valid
 
 
 def audit_long_1x2_probabilities(
     events: pd.DataFrame, win_probabilities: np.ndarray
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Вернуть валидные распределения и отдельные матчи с плохим остатком."""
+    """Вернуть валидные распределения и отдельные матчи с невалидными оценками."""
     if not {"id", "is_home"} <= set(events.columns):
         raise ValueError("Long 1X2 требует id и is_home")
     values = np.asarray(win_probabilities, dtype=float)
     if values.ndim != 1 or len(values) != len(events):
         raise ValueError("Число вероятностей не совпадает с long-строками")
-    if not np.isfinite(values).all() or (values < 0).any() or (values > 1).any():
-        raise ValueError("Оценка победы выходит за [0, 1]")
     prepared = events[["id", "is_home"]].copy()
     prepared["p_win"] = values
     if prepared["id"].isna().any() or prepared.duplicated(["id", "is_home"]).any():
         raise ValueError("Long 1X2 содержит пустой ID или повторную сторону")
     if not set(prepared["is_home"].unique()) <= {0, 1}:
         raise ValueError("Long 1X2 содержит неизвестную сторону")
+    if prepared.groupby("id").size().ne(2).any():
+        raise ValueError("Long 1X2 требует обе стороны каждого матча")
     pivot = prepared.pivot(index="id", columns="is_home", values="p_win")
-    if not {0, 1} <= set(pivot.columns) or pivot[[0, 1]].isna().any().any():
+    if not {0, 1} <= set(pivot.columns):
         raise ValueError("Long 1X2 требует обе стороны каждого матча")
     result = pd.DataFrame(index=pivot.index)
     result["home_win"] = pivot[1]
     result["away_win"] = pivot[0]
     result["draw"] = 1.0 - result["home_win"] - result["away_win"]
-    bad = result["draw"] < -1e-10
-    rejected = result.loc[bad, ["home_win", "draw", "away_win"]].copy()
-    rejected["reason"] = "negative_draw_residual"
-    valid = result.loc[~bad, ["home_win", "draw", "away_win"]].copy()
+    invalid = (
+        ~np.isfinite(result["home_win"])
+        | ~np.isfinite(result["away_win"])
+        | ~result["home_win"].between(0, 1)
+        | ~result["away_win"].between(0, 1)
+    )
+    negative_draw = result["draw"] < -1e-10
+    rejected = result.loc[invalid | negative_draw, ["home_win", "draw", "away_win"]].copy()
+    rejected["reason"] = np.where(
+        invalid.loc[rejected.index], "invalid_win_probability", "negative_draw_residual"
+    )
+    valid = result.loc[~(invalid | negative_draw), ["home_win", "draw", "away_win"]].copy()
     valid["draw"] = valid["draw"].clip(lower=0)
     return valid, rejected
