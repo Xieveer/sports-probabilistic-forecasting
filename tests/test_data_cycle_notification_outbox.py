@@ -99,6 +99,44 @@ def test_terminal_success_and_partial_create_one_row_per_alias(monkeypatch, engi
     ]
 
 
+def test_terminal_transition_releases_separate_bet_summary(monkeypatch, engine) -> None:
+    """Сводка ждёт завершения run и не заменяет terminal notification."""
+    monkeypatch.setenv("SF_DATA_CYCLE_NOTIFICATION_ALIASES", "nhl_admins")
+    now = datetime(2026, 10, 31, 10, tzinfo=UTC)
+    with Session(engine) as session:
+        repository = DataCycleRunRepository(session)
+        repository.create(run_id="run-bets", tournament="nhl", reason="scheduled", at=now)
+        session.add(
+            DataCycleNotificationOutbox(
+                run_id="run-bets",
+                destination_alias="bets_owner",
+                kind="bet_summary",
+                payload_json='{"settled_count":1}',
+                status="pending",
+                attempts=0,
+                available_at=now.replace(tzinfo=None) + timedelta(days=3650),
+                created_at=now.replace(tzinfo=None),
+            )
+        )
+        session.flush()
+        assert DataCycleNotificationOutboxRepository(session).claim_due(at=now) == []
+        repository.start_stage("run-bets", "calendar", at=now)
+        repository.fail_run("run-bets", failure_code="source_fetch_failed", at=now)
+        rows = list(session.scalars(select(DataCycleNotificationOutbox)))
+        assert {(row.kind, row.destination_alias) for row in rows} == {
+            ("bet_summary", "bets_owner"),
+            ("terminal", "nhl_admins"),
+        }
+        assert (
+            len(
+                DataCycleNotificationOutboxRepository(session).claim_due(
+                    at=now, include_bet_summaries=True
+                )
+            )
+            == 2
+        )
+
+
 def test_fail_run_creates_outbox_rows_and_rollback_removes_both(monkeypatch, engine) -> None:
     """Failed terminal status and outbox rows share a single DB transaction."""
     monkeypatch.setenv("SF_DATA_CYCLE_NOTIFICATION_ALIASES", "nhl_admins")

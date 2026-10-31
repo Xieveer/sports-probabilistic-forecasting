@@ -6,11 +6,15 @@ import hashlib
 import json
 import math
 import os
-from datetime import UTC, datetime
+import re
+from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
+import yaml
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -22,6 +26,7 @@ from sports_forecast.betting.real_bets import (
     expected_payout,
     money,
     monthly_summary,
+    season_summary,
 )
 from sports_forecast.service.control_auth import require_control_admin
 from sports_forecast.service.db.engine import get_control_session, get_session
@@ -35,6 +40,8 @@ from sports_forecast.service.db.models import (
 
 
 router = APIRouter(prefix="/admin", tags=["real-bets"])
+_MOSCOW = ZoneInfo("Europe/Moscow")
+_TOURNAMENT_CONF = Path(__file__).resolve().parents[3] / "conf" / "tournament"
 
 
 def require_bets_owner(admin: Annotated[str, Depends(require_control_admin)]) -> str:
@@ -539,6 +546,57 @@ def get_bet_summary(
             for bet in bets
         ]
     return monthly_summary(rows, year, month)
+
+
+def _season_start(tournament: str, today: date) -> date:
+    """Прочитать начало отчётного сезона из конфигурации турнира."""
+    if re.fullmatch(r"[a-z][a-z0-9_]{0,63}", tournament) is None:
+        raise HTTPException(status_code=422, detail="Некорректный турнир")
+    path = _TOURNAMENT_CONF / f"{tournament}.yaml"
+    try:
+        conf = yaml.safe_load(path.read_text(encoding="utf-8"))
+        value = conf["betting_report"]["season_start"]
+        month, day = (int(part) for part in value.split("-"))
+        candidate = date(today.year, month, day)
+        return candidate if today >= candidate else date(today.year - 1, month, day)
+    except (OSError, TypeError, KeyError, ValueError, AttributeError) as exc:
+        raise HTTPException(status_code=422, detail="Сезонный отчёт турнира не настроен") from exc
+
+
+@router.get("/bets/season-summary")
+def get_bet_season_summary(
+    owner: Annotated[str, Depends(require_bets_owner)],
+    tournament: Annotated[str, Query(min_length=1, max_length=64)] = "nhl",
+) -> dict[str, Any]:
+    """Вернуть сезонный денежный результат и точки графика владельцу."""
+    today = datetime.now(_MOSCOW).date()
+    start = _season_start(tournament, today)
+    with get_control_session() as session:
+        bets = session.scalars(
+            select(RealBet).where(
+                RealBet.owner_user_id == owner,
+                RealBet.tournament == tournament,
+                RealBet.status != "cancelled",
+            )
+        ).all()
+        rows = [
+            {
+                "status": bet.status,
+                "funding": bet.funding,
+                "result": bet.result,
+                "stake": bet.stake,
+                "payout": bet.payout,
+                "placed_at": bet.placed_at,
+                "settled_at": bet.settled_at,
+                "bookmaker": bet.bookmaker,
+                "market_spec": bet.market_spec,
+                "tournament": bet.tournament,
+            }
+            for bet in bets
+        ]
+    return season_summary(
+        rows, tournament=tournament, start=start.isoformat(), end=today.isoformat()
+    )
 
 
 @router.get("/bets/{bet_id}")
