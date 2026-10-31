@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -80,6 +80,20 @@ def _context(client: TestClient) -> str:
     context_id = response.json()["context_id"]
     assert isinstance(context_id, str)
     return context_id
+
+
+def test_season_start_comes_from_tournament_configuration(client) -> None:
+    """NHL использует 1 сентября из конфигурации и закрытый owner API."""
+    http, _engine = client
+    assert real_bets._season_start("nhl", date(2026, 10, 31)) == date(2026, 9, 1)
+    assert real_bets._season_start("nhl", date(2026, 3, 1)) == date(2025, 9, 1)
+    response = http.get("/admin/bets/season-summary", headers=_headers())
+    assert response.status_code == 200, response.text
+    assert response.json()["tournament"] == "nhl"
+    assert response.json()["total_cash_pnl"] == "0.00"
+    assert response.json()["daily_pnl"] == []
+    denied = http.get("/admin/bets/season-summary", headers=_headers("202"))
+    assert denied.status_code == 403
 
 
 def test_bet_topups_settlement_and_monthly_money_rules(client) -> None:

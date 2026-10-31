@@ -1401,17 +1401,26 @@ class DataCycleRunRepository:
 
     def _enqueue_terminal_notifications(self, run: DataCycleRun, *, at: datetime) -> None:
         """Добавить по одному outbox item на configured alias в текущую транзакцию."""
+        now = _utc_naive_for_query(at)
+        for bet_summary in self.session.scalars(
+            select(DataCycleNotificationOutbox).where(
+                DataCycleNotificationOutbox.run_id == run.run_id,
+                DataCycleNotificationOutbox.kind == "bet_summary",
+                DataCycleNotificationOutbox.status == "pending",
+            )
+        ):
+            bet_summary.available_at = now
         aliases = _data_cycle_notification_aliases()
         if not aliases:
             return
         existing = set(
             self.session.scalars(
                 select(DataCycleNotificationOutbox.destination_alias).where(
-                    DataCycleNotificationOutbox.run_id == run.run_id
+                    DataCycleNotificationOutbox.run_id == run.run_id,
+                    DataCycleNotificationOutbox.kind == "terminal",
                 )
             )
         )
-        now = _utc_naive_for_query(at)
         self.session.add_all(
             DataCycleNotificationOutbox(
                 run_id=run.run_id,
@@ -1571,7 +1580,11 @@ class DataCycleNotificationOutboxRepository:
         self.session = session
 
     def claim_due(
-        self, *, limit: int = 20, at: datetime | None = None
+        self,
+        *,
+        limit: int = 20,
+        at: datetime | None = None,
+        include_bet_summaries: bool = False,
     ) -> list[DataCycleNotificationOutbox]:
         """Захватить due rows и истёкшие leases для одного bot worker."""
         if not 1 <= limit <= 50:
@@ -1581,6 +1594,9 @@ class DataCycleNotificationOutboxRepository:
             self.session.scalars(
                 select(DataCycleNotificationOutbox)
                 .where(
+                    DataCycleNotificationOutbox.__table__.c.kind.in_(
+                        ("terminal", "bet_summary") if include_bet_summaries else ("terminal",)
+                    ),
                     or_(
                         and_(
                             DataCycleNotificationOutbox.status == "pending",
@@ -1590,7 +1606,7 @@ class DataCycleNotificationOutboxRepository:
                             DataCycleNotificationOutbox.status == "leased",
                             DataCycleNotificationOutbox.lease_until <= now,
                         ),
-                    )
+                    ),
                 )
                 .order_by(DataCycleNotificationOutbox.created_at, DataCycleNotificationOutbox.id)
                 .limit(limit)

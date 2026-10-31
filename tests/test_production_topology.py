@@ -147,6 +147,14 @@ def test_production_runtime_images_are_external_and_immutable_inputs() -> None:
         assert f"${{{variable_name}:?" in service["image"]
 
 
+def test_daily_cycle_uses_installed_images_without_registry_pull() -> None:
+    """Обычный tick и его одноразовые стадии не требуют доступности GHCR."""
+    compose = _load_yaml("docker-compose.prod.yml")
+    services = cast(dict[str, dict[str, object]], compose["services"])
+    for name in ("data-cycle-dispatcher", "source-acquirer", "worker", "archive-sync"):
+        assert services[name]["pull_policy"] == "never"
+
+
 def test_deploy_workflow_is_manual_only() -> None:
     """Production deployment не стартует от завершения сборки образов."""
     workflow = _load_yaml(".github/workflows/deploy.yml")
@@ -280,6 +288,7 @@ def test_production_services_receive_only_scoped_runtime_access() -> None:
     assert bot_environment["BOT_BETS_OWNER_ID"] == "${BET_OWNER_USER_ID:-}"
     assert worker["environment"] == {
         "DATABASE_URL_FILE": "/run/secrets/worker_database_url",
+        "SF_BETS_OWNER_ID": "${BET_OWNER_USER_ID:-}",
         "SF_REGISTRY_EVENT_READER_ENABLED": "${SF_REGISTRY_EVENT_READER_ENABLED:-false}",
         "SF_WORKER_RUN_ID": "${SF_WORKER_RUN_ID:?set a scheduler-generated id}",
         "SF_DATA_CYCLE_NOTIFICATION_ALIASES": (
