@@ -24,8 +24,12 @@ REQ и источник данных EPIC-027 можно прорабатыва�
 на merge инженерного контракта EPIC-026, а production-подключение — на его
 серверный gate. EPIC-028 можно готовить независимо от EPIC-027; указанный
 порядок не является расписанием релизов. Завершённый [EPIC-003](EPIC-003-scalable-multisport-platform.md)
-остаётся историей прежнего среза. Текущие [EPIC-021](EPIC-021-football-1x2-research.md)
-и [EPIC-025](EPIC-025-bot-schedule-readiness.md) продолжаются в собственных границах.
+остаётся историей прежнего среза. Исходный план
+[EPIC-021](EPIC-021-football-1x2-research.md) закрыт с отменой незавершённых задач;
+результаты последующих исследований описаны в [EPIC-040](EPIC-040-club-football-platform-e2e.md),
+[EPIC-041](EPIC-041-advanced-club-1x2-search.md) и
+[EPIC-043](EPIC-043-football-feature-research.md).
+[EPIC-025](EPIC-025-bot-schedule-readiness.md) продолжается в своих границах.
 
 | ID | Статус | Приоритет | Артефакт |
 |---|---|---|---|

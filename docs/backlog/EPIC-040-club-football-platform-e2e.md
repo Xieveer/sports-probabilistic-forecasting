@@ -40,7 +40,9 @@
 - Следующая роль: Product Owner — передать результаты владельцу; отдельное
   решение о research GO/ITERATE/STOP и production-модели не принято.
 - Release intent: выпуск и deployment не запрошены.
-- Обновлено: 2026-10-12.
+- Интеграционный PR: [#99](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/99).
+  `done` описывает локальный результат, а не production-выпуск.
+- Обновлено: 2026-10-31.
 
 ## Проверяемый результат и задачи
 

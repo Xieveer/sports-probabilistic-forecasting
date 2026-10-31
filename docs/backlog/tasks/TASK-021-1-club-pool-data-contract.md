@@ -1,6 +1,6 @@
 # TASK-021-1 — Контракт данных клубного футбольного пула
 
-> **Статус:** in_progress
+> **Статус:** cancelled — исходный план закрыт
 > **Владелец:** implementer
 > **Эпик:** [EPIC-021](../EPIC-021-football-1x2-research.md)
 > **Требование:** [REQ-021](../../product/requirements/REQ-021-top-football-winner-baseline.md)
@@ -11,6 +11,11 @@
 Добавить минимальный изолированный ingest/clean contract `football_top_leagues` для девяти
 competition codes. Данная задача не запускает полный network backfill, не строит features,
 не обучает модель и не меняет betting policy.
+
+Позднее клубный пул и локальный цикл исследованы в
+[EPIC-040](../EPIC-040-club-football-platform-e2e.md). Соответствие каждого
+критерия этой исторической задачи не проверялось; задача отменена при закрытии
+[EPIC-021](../EPIC-021-football-1x2-research.md), а не объявлена выполненной.
 
 ## Критерии приёмки
 
