@@ -8,6 +8,22 @@
 - Целевой source tag: `v1.4.0` после merge и terminal CI/Security.
 - Среда: `ops-prod-01`; release intent подтверждён владельцем 2026-10-31.
 
+## Release evidence v1.4.0
+
+- source_tag: `v1.4.0`; source_commit: `1bfefabdf95d60f08810235caca4a22ad73f5ec2`; evidence_tag: `v1.4.0-evidence.1`.
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/41196325122 — terminal success на exact source commit.
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/41196325055 — terminal success на exact source commit.
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/41196451336 — release gates, tested OCI, publish, scan и provenance.
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/41196451336 — clean isolated first-rollout success.
+
+- api: ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:2e498b8eeb146598ef8428454b5add5b213198afc6676c4438d931c2e69b11e6 — published; linux/amd64; scan; provenance.
+- worker: ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:732998b97d59d0b5f0055373be67c483fae31dc9cda98c3e28b965c70d379bc7 — published; linux/amd64; scan; provenance.
+- telegram_bot: ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:c06c2f46cab09eaab41a1b5d9152d204617393536ce99832b4b156de63481f19 — published; linux/amd64; scan; provenance.
+- archive_sync: ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:cbc8410f750e40a139186229d1b7045990da1f652eb35ab8b6148d2505642c21 — published; linux/amd64; scan; provenance.
+- postgres: postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94 — неизменённый проверенный образ.
+
+Предрелизный root-only backup `/var/backups/sports-forecast/postgres/pre-v1.4.0-20261031T112521955573869.dump` имеет SHA-256 `e0713f55cd27d555ce0992fba2315078ee43bdfeadfaf79f32383eca6f5e7950`, 59 176 162 байта. Полный off-host GET/bytecmp и isolated restore exact PostgreSQL image прошли: schema 0025, events 22 718, predictions 2 056, записей real_bets 104. Перед миграцией повторно сверить отсутствие активного цикла.
+
 ## Граница выпуска v1.4.0
 
 Образ API, Worker, bot и archive-sync должен быть опубликован по exact digest
@@ -51,9 +67,10 @@ docker compose --env-file /etc/sports-forecast/refresh/nhl.env \
 Локально на 2026-10-31 прошли `make test` (1741 passed, 10 skipped),
 `make lint`, `make security` (0 известных уязвимостей после lock update),
 `make docs` и `make production-check`; отдельный PostgreSQL 16 подтвердил
-миграцию существующей outbox строки, grant и sequence. Ожидающие gates:
-итоговый review, PR/terminal CI/Security, tag/Docker/evidence, backup/restore,
-production smoke и сообщение владельцу.
+миграцию существующей outbox строки, grant и sequence. Review, PR,
+post-merge CI/Security, source tag, Docker/first-rollout и pre-switch
+backup/readback/isolated restore прошли. Ожидающие gates: immutable evidence,
+exact Worker/model, production smoke и сообщение владельцу.
 
 ## Архив handoff v1.3.7
 
