@@ -38,4 +38,5 @@
 - Follow-up / findings: нет.
 - Review: независимый Reviewer подтвердил REQ-045 без блокирующих findings;
   замечание форматирования устранено и проверено повторно.
-- Commit/push: ожидает Reviewer.
+- Commit/push: проверенный commit [`d29a40a3f952675bcc0733988f3af3f4b1054f58`](https://github.com/Xieveer/sports-probabilistic-forecasting/commit/d29a40a3f952675bcc0733988f3af3f4b1054f58);
+  evidence фиксируется отдельным documentation-only коммитом и отправляется в той же ветке.

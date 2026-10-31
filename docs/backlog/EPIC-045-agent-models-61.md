@@ -47,5 +47,6 @@ production-приложения. Исторические артефакты с�
 Прежний Sol заменён во всех активных назначениях; Luna, Astra, reasoning и sandbox
 сохранены. Замечание форматирования теста устранено; блокирующих findings нет.
 Проверки: 12 AI-тестов, `make ai-validate`, целевые Ruff check/format и `git diff --check`
-прошли. Production-код, секреты и внешние сервисы этим diff не менялись. Hash проверенного
-коммита фиксируется следующим documentation-only evidence-коммитом; PR и CI ожидаются.
+прошли. Production-код, секреты и внешние сервисы этим diff не менялись.
+Hash проверенного коммита: [`d29a40a3f952675bcc0733988f3af3f4b1054f58`](https://github.com/Xieveer/sports-probabilistic-forecasting/commit/d29a40a3f952675bcc0733988f3af3f4b1054f58).
+Этот hash фиксируется отдельным documentation-only evidence-коммитом; PR и CI ожидаются.

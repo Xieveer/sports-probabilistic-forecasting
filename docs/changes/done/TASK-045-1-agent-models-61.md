@@ -26,6 +26,7 @@ Sol-профили обновлены до `gpt-6.1-sol`. Business Analyst и De
 - `uv run ruff check scripts/validate_ai_layer.py tests/test_ai_layer_validation.py` — успешно.
 - `uv run ruff format --check scripts/validate_ai_layer.py tests/test_ai_layer_validation.py` — успешно после устранения замечания review.
 - `git diff --check` — успешно.
+- Commit hooks — Ruff check/format, TOML, mypy, AI roles и остальные применимые hooks прошли.
 
 ## Документация, review и follow-up
 
@@ -33,7 +34,8 @@ Sol-профили обновлены до `gpt-6.1-sol`. Business Analyst и De
 - Review / security: независимое TASK и полное EPIC review без блокирующих findings;
   проверены карта моделей, validator, тесты и документация. Sandbox и права не менялись,
   достижимых новых security-рисков в этом diff не обнаружено.
-- Commit/push: ожидает Reviewer.
+- Commit/push: проверенный commit [`d29a40a3f952675bcc0733988f3af3f4b1054f58`](https://github.com/Xieveer/sports-probabilistic-forecasting/commit/d29a40a3f952675bcc0733988f3af3f4b1054f58);
+  это evidence фиксируется отдельным documentation-only коммитом и отправляется вместе с ним.
 - Follow-up: нет.
 
 ## Остаточные риски
