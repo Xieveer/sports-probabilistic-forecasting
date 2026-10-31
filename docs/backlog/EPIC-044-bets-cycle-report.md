@@ -1,6 +1,6 @@
 # EPIC-044 — Надёжный Data Cycle и результат фактических ставок
 
-> **Статус:** in_progress — реализация и локальные проверки, выпуск ожидается
+> **Статус:** done — v1.4.0 выпущена на production, controlled cycle успешен
 > **Приоритет:** high
 > **Владелец:** Product Owner
 > **Ветка:** `initiative/epic-044-bets-cycle-report`
@@ -29,8 +29,8 @@
 
 ## Память Product Owner
 
-- Этап: код TASK-044-1/2/3 реализован и проверен локально; TASK-044-4
-  содержит review/CI/production rollout. На production остаётся v1.3.7.
+- Этап: TASK-044-1/2/3/4 завершены. На production установлена v1.4.0;
+  следующий плановый цикл назначен на 2026-11-01 10:00 МСК.
 - Задачи: [TASK-044-1](tasks/TASK-044-1-local-cycle-images.md),
   [TASK-044-2](tasks/TASK-044-2-auto-bet-settlement.md),
   [TASK-044-3](tasks/TASK-044-3-season-report.md),
@@ -52,12 +52,16 @@
   [ADR-034](../architecture/adr/ADR-034-manual-bet-market-rules.md),
   [ADR-044](../architecture/adr/ADR-044-automatic-bet-settlement.md).
 - Evidence: `make test` — 1741 passed, 10 skipped; `make lint`,
-  `make security` (после обновления четырёх уязвимых зависимостей),
-  `make docs`, `make pre-commit` и `make production-check` прошли. Миграция SQLite и переход
-  PostgreSQL 16 с существующей outbox строкой прошли. Последние UX-правки:
-  адресный набор 30 passed. Итоговый review и CI ещё ожидаются.
-- Предыдущая роль: Developer. Следующая роль: независимый Reviewer, затем
-  Product Owner и Operations Agent для выпуска.
+  `make security`, `make docs`, `make pre-commit` и `make production-check`
+  прошли. Независимый review без блокеров; source PR #102, post-merge
+  CI/Security и Docker/first-rollout success. Evidence PR #103 и workflow
+  success. На production миграция 0026, backup/readback/restore, controlled
+  Data Cycle `672444d9-3611-4793-8e97-81272ff75207` success, 232 прогноза,
+  213 future ready, terminal notification delivered. Сезонный endpoint и
+  PNG-график проверены; сообщение о версии владельцу отправлено.
+- Предыдущая роль: Operations Agent. Следующий контроль: плановый слот
+  2026-11-01 и первая реальная bet-summary после сыгранных матчей; это
+  наблюдение эксплуатации, а не незавершённая задача выпуска.
 - Обновлено: 2026-10-31.
 
 ## Независимый EPIC review
@@ -77,5 +81,5 @@
   остаются в evidence команд; production цикл ими не подтверждён.
 - Остаточный риск: Telegram delivery использует at-least-once и может
   повторить сообщение, если отправка состоялась, а ack не сохранился.
-  Выпуск остаётся в TASK-044-4 до terminal CI, exact image gates, backup,
-  production smoke и сообщения владельцу.
+  Release gates, backup, production smoke и сообщение владельцу выполнены;
+  итоговый [отчёт TASK-044-4](../changes/done/TASK-044-4-release.md).

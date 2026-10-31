@@ -5,7 +5,7 @@
   требования [REQ-044](../product/requirements/REQ-044-automatic-bet-settlement-and-season-report.md),
   решение [ADR-044](../architecture/adr/ADR-044-automatic-bet-settlement.md).
 - Целевая версия: `1.4.0`; установленная до выпуска версия: `1.3.7`.
-- Целевой source tag: `v1.4.0` после merge и terminal CI/Security.
+- Source tag: `v1.4.0` на exact merge commit после terminal CI/Security.
 - Среда: `ops-prod-01`; release intent подтверждён владельцем 2026-10-31.
 
 ## Release evidence v1.4.0
@@ -23,6 +23,16 @@
 - postgres: postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94 — неизменённый проверенный образ.
 
 Предрелизный root-only backup `/var/backups/sports-forecast/postgres/pre-v1.4.0-20261031T112521955573869.dump` имеет SHA-256 `e0713f55cd27d555ce0992fba2315078ee43bdfeadfaf79f32383eca6f5e7950`, 59 176 162 байта. Полный off-host GET/bytecmp и isolated restore exact PostgreSQL image прошли: schema 0025, events 22 718, predictions 2 056, записей real_bets 104. Перед миграцией повторно сверить отсутствие активного цикла.
+
+## Фактический production outcome v1.4.0 — 2026-10-31
+
+После [успешного Release evidence workflow](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/41197806424) exact образы загружены на VPS, Worker/model bundle прошёл runtime gate с 489 ordered features. Три timers остановлены перед миграцией; активных циклов 0. Дополнительный pre-switch dump `pre-v1.4.0-switch-20261031T114138038657892.dump` (59 176 161 байт, SHA-256 `3db22645001035aab9b60fff288c8864067f8f21f8c5e13a7aa5d4d2547d086a`) прошёл полный off-host GET/bytecmp.
+
+Миграция `0025 → 0026_bet_summary_notification` прошла; 104 записи ставок, пять открыты, 44 прежние terminal outbox rows и права сохранены. `/opt/sports-forecast` установлен на `1bfefabdf95d60f08810235caca4a22ad73f5ec2`; authoritative profile SHA-256 `44b5c9e2384d6d6d4ece5d405e8ca13aa2b31fa2ca159fb52ea4eb5e3981a5a0`, прежний profile сохранён root-only. Model `current` указывает на bundle `sha256:1efb8f2e3ff832aada4a8680fa95b07631eeb09af8eae2e98aab487844a83035`, `previous` — на v1.3.7 bundle. API/бот/БД healthy, restart 0, OOM false; `/health` и `/ready` HTTP 200.
+
+Controlled run `672444d9-3611-4793-8e97-81272ff75207` завершился `success` за 410 с: 22 727 событий, 232 прогноза, 213 future ready, 0 ошибок публикации, итоговое уведомление delivered. Пять открытых ставок привязаны к будущим scheduled матчам, поэтому их расчёт и отдельная сводка в этом run не создавались. Авторизованный сезонный endpoint вернул 99 рассчитанных/пять открытых ставок, PNG-график создан. Три минутных dispatcher ticks после возвращения timers завершились успешно и не содержат GHCR pull; следующий слот — 2026-11-01 10:00 МСК. Стартовое сообщение версии с краткими изменениями отправлено владельцу из работающего bot-контейнера.
+
+Post-switch dump `post-v1.4.0-20261031T115312836682863.dump` (59 185 145 байт, SHA-256 `e0c11047dc923292c0ecfc60f53561181ddbd8d7fee2560228200212c6189c18`) прошёл off-host GET/bytecmp и isolated restore exact PostgreSQL image: schema 0026, 22 727 событий, 2 065 сохранённых predictions, 104 ставки и 45 outbox rows. Временные restore artifacts удалены, рабочая БД healthy. Rollback: остановить три timers, проверить отсутствие активного executor, вернуть сохранённые exact v1.3.7 source/profile/model/images и пересоздать API/бот; schema 0026 аддитивна, downgrade и удаление ставок не выполнять. Результат следующего scheduled run и первая сводка рассчитанных ставок требуют последующего наблюдения.
 
 ## Граница выпуска v1.4.0
 
@@ -68,9 +78,9 @@ docker compose --env-file /etc/sports-forecast/refresh/nhl.env \
 `make lint`, `make security` (0 известных уязвимостей после lock update),
 `make docs` и `make production-check`; отдельный PostgreSQL 16 подтвердил
 миграцию существующей outbox строки, grant и sequence. Review, PR,
-post-merge CI/Security, source tag, Docker/first-rollout и pre-switch
-backup/readback/isolated restore прошли. Ожидающие gates: immutable evidence,
-exact Worker/model, production smoke и сообщение владельцу.
+post-merge CI/Security, source tag, Docker/first-rollout,
+immutable evidence, exact Worker/model, backup/readback/isolated restore,
+production smoke и сообщение владельцу прошли.
 
 ## Архив handoff v1.3.7
 
