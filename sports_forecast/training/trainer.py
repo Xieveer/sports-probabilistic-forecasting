@@ -998,7 +998,7 @@ class SingleExperimentRunner:
         optuna_metrics: dict[str, Any] = {
             "enabled": True,
             "best_params": best_params,
-            "study_name": study_name,
+            "study_name": optimizer.active_study_name,
         }
 
         logger.info("Optuna: лучшие параметры найдены для '%s'", algorithm)

@@ -70,25 +70,53 @@ def test_optuna_uses_last_complete_events_before_holdout(tmp_path, monkeypatch) 
     captured = {}
 
     class FakeOptimizer:
-        def __init__(self, **_kwargs) -> None:
-            pass
+        def __init__(self, **kwargs) -> None:
+            self.active_study_name = kwargs["study_name"]
 
         def optimize(self, features, target, groups=None):
+            self.active_study_name += "__without_legacy_penalties__logloss"
             captured["features"] = features
             captured["groups"] = groups
             return {"depth": 4}
 
         def log_to_mlflow(self, _params) -> None:
-            pass
+            trainer_module.mlflow.set_tag("optuna_study", self.active_study_name)
 
+    tags = {}
+    monkeypatch.setattr(
+        trainer_module.mlflow, "set_tag", lambda key, value: tags.update({key: value})
+    )
+    monkeypatch.setattr(trainer_module.mlflow, "log_param", lambda *_args: None)
+    monkeypatch.setattr(trainer_module.mlflow, "log_metric", lambda *_args: None)
+    monkeypatch.setattr(trainer_module.mlflow, "log_text", lambda *_args: None)
     monkeypatch.setattr(trainer_module, "OptunaHyperOptimizer", FakeOptimizer)
     groups = pd.Series([event for event in range(10) for _ in range(2)])
     features = pd.DataFrame({"x": range(20)})
     target = pd.Series([0, 1] * 10)
     runner = SingleExperimentRunner(cfg, tmp_path)
-    runner._optimize_hyperparams(features, target, cfg, groups=groups)
+    _, metrics = runner._optimize_hyperparams(features, target, cfg, groups=groups)
+    assert metrics["study_name"].endswith("__without_legacy_penalties__logloss")
     assert captured["groups"].tolist() == [7, 7, 8, 8, 9, 9]
     assert captured["features"]["x"].tolist() == [14, 15, 16, 17, 18, 19]
+    runner._log_metrics_to_mlflow(
+        shadow_metrics={},
+        test_metrics={},
+        calibration_metrics={},
+        business_metrics={},
+        stability_metrics={
+            "cv_logloss": 0.1,
+            "std_auc": None,
+            "stability_level": "stable",
+            "prod_confidence": "not_assessed",
+            "recommendation": "none",
+        },
+        optuna_metrics=metrics,
+        feature_importance=None,
+        feature_selection_result=None,
+        cfg=cfg,
+        feature_names=["x"],
+    )
+    assert tags["optuna_study"] == metrics["study_name"]
 
 
 def test_club_smoke_run_does_not_claim_production_confidence(tmp_path) -> None:

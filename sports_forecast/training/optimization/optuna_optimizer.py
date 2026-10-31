@@ -18,16 +18,17 @@ from __future__ import annotations
 
 import json
 import time
+from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import mlflow
 from omegaconf import DictConfig, OmegaConf
 from optuna.logging import INFO, WARNING, set_verbosity
 from optuna.pruners import MedianPruner
 from optuna.samplers import RandomSampler, TPESampler
-from optuna.study import create_study, load_study
-from optuna.trial import Trial, TrialState
+from optuna.study import Study, StudyDirection, create_study, get_all_study_summaries, load_study
+from optuna.trial import FrozenTrial, Trial, TrialState
 
 from sports_forecast.training.optimization.tscv import TimeSeriesCrossValidator
 from sports_forecast.utils.log_config import get_logger
@@ -157,6 +158,7 @@ class OptunaHyperOptimizer:
         # Study naming
         model_name = algorithm_cfg.name
         self.study_name = study_name or f"hyper_{model_name}"
+        self.active_study_name = self.study_name
 
         # SQLite storage
         storage_dir = Path(str(hyper_cfg.get("storage_dir", "optuna")))
@@ -219,6 +221,110 @@ class OptunaHyperOptimizer:
             self.metric,
             self.n_splits,
         )
+
+    def _valid_trials(self, study: Study) -> list[FrozenTrial]:
+        """Исключить старый штраф, если нет подтверждения метрики."""
+        return [
+            trial
+            for trial in study.get_trials(states=(TrialState.COMPLETE,))
+            if trial.value != 1e6
+            or trial.user_attrs.get(f"mean_{self.metric}") == trial.value
+            or trial.user_attrs.get("objective_succeeded") is True
+        ]
+
+    def _best_trial(self, study: Study) -> FrozenTrial:
+        """Выбрать лучший подтверждённый результат по направлению study."""
+        trials = self._valid_trials(study)
+        if not trials:
+            raise RuntimeError(f"Optuna study {self.study_name}: нет валидных trials")
+        return (min if study.direction == StudyDirection.MINIMIZE else max)(
+            trials, key=lambda trial: cast(float, trial.value)
+        )
+
+    def _study(self, *, create: bool = False) -> Study:
+        """Изолировать старые штрафы от sampler, не изменяя исходное study."""
+        if create:
+            source = create_study(
+                study_name=self.study_name,
+                storage=self.storage_url,
+                load_if_exists=True,
+                direction=self.direction,
+                sampler=self.sampler,
+                pruner=self.pruner,
+            )
+        else:
+            source = load_study(
+                study_name=self.study_name,
+                storage=self.storage_url,
+                sampler=self.sampler,
+                pruner=self.pruner,
+            )
+
+        valid_numbers = {trial.number for trial in self._valid_trials(source)}
+        if not any(
+            trial.number not in valid_numbers
+            for trial in source.get_trials(states=(TrialState.COMPLETE,))
+        ):
+            return source
+
+        base_name = f"{self.study_name}__without_legacy_penalties__{self.metric}"
+        origin_key = "_legacy_penalty_migration_source"
+        number_key = "_legacy_penalty_migration_trial"
+        summaries = get_all_study_summaries(storage=self.storage_url)
+        candidates = {
+            summary.study_name: summary
+            for summary in summaries
+            if summary.study_name == base_name
+            or (
+                summary.study_name.startswith(f"{base_name}__")
+                and summary.study_name[len(base_name) + 2 :].isdigit()
+            )
+        }
+        owned = [
+            name
+            for name, summary in candidates.items()
+            if summary.user_attrs.get(origin_key) == self.study_name
+        ]
+        if len(owned) > 1:
+            raise RuntimeError(
+                f"Найдено несколько изолированных studies для {self.study_name}: {owned}"
+            )
+        if owned:
+            isolated = load_study(
+                study_name=owned[0],
+                storage=self.storage_url,
+                sampler=self.sampler,
+                pruner=self.pruner,
+            )
+        else:
+            isolated_name = base_name
+            suffix = 1
+            while isolated_name in candidates:
+                isolated_name = f"{base_name}__{suffix}"
+                suffix += 1
+            isolated = create_study(
+                study_name=isolated_name,
+                storage=self.storage_url,
+                direction=source.direction.name.lower(),
+                sampler=self.sampler,
+                pruner=self.pruner,
+            )
+            isolated.set_user_attr(origin_key, self.study_name)
+
+        copied = {
+            trial.user_attrs[number_key]
+            for trial in isolated.trials
+            if number_key in trial.user_attrs
+        }
+        for trial in source.trials:
+            if not trial.state.is_finished() or trial.number in copied:
+                continue
+            if trial.state == TrialState.COMPLETE and trial.number not in valid_numbers:
+                continue
+            migrated = deepcopy(trial)
+            migrated.user_attrs[number_key] = trial.number
+            isolated.add_trial(migrated)
+        return isolated
 
     def optimize(
         self,
@@ -307,27 +413,22 @@ class OptunaHyperOptimizer:
                         trial.set_user_attr(key, float(raw))
                     except (TypeError, ValueError):
                         trial.set_user_attr(key, raw)
+                trial.set_user_attr("objective_succeeded", True)
                 return objective_value
 
             except Exception as e:
                 logger.exception("Trial %d failed: %s", trial.number, e)
                 raise
 
-        # Создаём/загружаем study
-        study = create_study(
-            study_name=self.study_name,
-            storage=self.storage_url,
-            load_if_exists=True,
-            direction=self.direction,
-            sampler=self.sampler,
-            pruner=self.pruner,
-        )
+        # Исходное study остаётся неизменным при изоляции старых штрафов.
+        study = self._study(create=True)
+        self.active_study_name = study.study_name
 
         # Запускаем оптимизацию
         verbose = self.hyper_cfg.get("verbose", True)
         set_verbosity(INFO if verbose else WARNING)
 
-        completed = len(study.get_trials(states=(TrialState.COMPLETE,)))
+        completed = len(self._valid_trials(study))
         attempts = 0
         max_extra_attempts = max(5, self.n_trials // 5)
         max_attempts = max(0, self.n_trials - completed) + max_extra_attempts
@@ -348,23 +449,24 @@ class OptunaHyperOptimizer:
                 show_progress_bar=self.hyper_cfg.get("show_progress_bar", False),
             )
             attempts += 1
-            completed = len(study.get_trials(states=(TrialState.COMPLETE,)))
+            completed = len(self._valid_trials(study))
         if completed < self.n_trials:
             raise RuntimeError(
                 f"Optuna study {self.study_name}: завершено {completed}/{self.n_trials} "
                 "валидных trials; проверьте ошибки и повторите запуск"
             )
 
-        best_params = dict(study.best_params)
+        best_trial = self._best_trial(study)
+        best_params = dict(best_trial.params)
 
         logger.info("=" * 60)
         logger.info("OPTUNA ЗАВЕРШЕНА")
-        logger.info("  Best value (%s): %.6f", self.metric, study.best_value)
+        logger.info("  Best value (%s): %.6f", self.metric, best_trial.value)
         logger.info("  Best params: %s", best_params)
         logger.info("  Total trials: %d", len(study.trials))
         logger.info(
-            "  Completed/Pruned/Failed: %d / %d / %d",
-            len([t for t in study.trials if t.state == TrialState.COMPLETE]),
+            "  Valid/Pruned/Failed: %d / %d / %d",
+            completed,
             len([t for t in study.trials if t.state == TrialState.PRUNED]),
             len([t for t in study.trials if t.state == TrialState.FAIL]),
         )
@@ -379,41 +481,36 @@ class OptunaHyperOptimizer:
         Args:
             best_params: Лучшие параметры (полные, с базовыми).
         """
-        # Загружаем study для статистики
-        study = load_study(
-            study_name=self.study_name,
-            storage=self.storage_url,
-        )
+        study = self._study()
 
         # Параметры
         for key, value in best_params.items():
             mlflow.log_param(f"optuna_best__{key}", value)
 
         # Метрики оптимизации
-        mlflow.log_metric("optuna_best_value", study.best_value)
+        mlflow.log_metric("optuna_best_value", self._best_trial(study).value)
         mlflow.log_metric("optuna_n_trials", len(study.trials))
         mlflow.log_metric(
             "optuna_n_completed",
-            len([t for t in study.trials if t.state == TrialState.COMPLETE]),
+            len(self._valid_trials(study)),
         )
 
         # Теги
         mlflow.set_tag("hyper_strategy", "optuna")
-        mlflow.set_tag("optuna_study", self.study_name)
+        mlflow.set_tag("optuna_study", study.study_name)
         mlflow.set_tag("optuna_metric", self.metric)
 
-        # Артефакт: все trials как JSON
+        # Артефакт: валидные trials как JSON
         trials_data = []
-        for trial in study.trials:
-            if trial.state == TrialState.COMPLETE:
-                trials_data.append(
-                    {
-                        "number": trial.number,
-                        "value": trial.value,
-                        "params": trial.params,
-                        "user_attrs": dict(trial.user_attrs),
-                    }
-                )
+        for trial in self._valid_trials(study):
+            trials_data.append(
+                {
+                    "number": trial.number,
+                    "value": trial.value,
+                    "params": trial.params,
+                    "user_attrs": dict(trial.user_attrs),
+                }
+            )
 
         mlflow.log_text(
             json.dumps(trials_data, indent=2, default=str),
@@ -428,16 +525,14 @@ class OptunaHyperOptimizer:
         Args:
             save_path: Путь для сохранения.
         """
-        study = load_study(
-            study_name=self.study_name,
-            storage=self.storage_url,
-        )
+        study = self._study()
+        best_trial = self._best_trial(study)
 
         best_data = {
-            "study_name": self.study_name,
+            "study_name": study.study_name,
             "algorithm": self.algorithm_cfg.name,
-            "best_value": study.best_value,
-            "best_params": study.best_params,
+            "best_value": best_trial.value,
+            "best_params": best_trial.params,
             "n_trials": len(study.trials),
             "metric": self.metric,
         }

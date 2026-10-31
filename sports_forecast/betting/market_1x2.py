@@ -35,8 +35,8 @@ def evaluate_1x2_betting(
     Для long-модели отрицательный остаток ничьей исключает матч из ставок.
     Такие матчи остаются в знаменателе покрытия и измеряются отдельно.
     """
-    if not {"id", *ODDS_COLUMNS} <= set(events.columns):
-        raise ValueError("1X2 требует id и три коэффициента")
+    if "id" not in events:
+        raise ValueError("1X2 требует id")
     if len(events) != len(target):
         raise ValueError("Таргет и события имеют разную длину")
     unique = events.drop_duplicates("id").set_index("id", drop=False)
@@ -49,12 +49,9 @@ def evaluate_1x2_betting(
     if is_long:
         if "is_home" not in events:
             raise ValueError("Long 1X2 требует is_home")
-        if (
-            events.groupby("id", sort=False)[list(ODDS_COLUMNS)]
-            .nunique(dropna=False)
-            .gt(1)
-            .any()
-            .any()
+        available_odds = [column for column in ODDS_COLUMNS if column in events]
+        if available_odds and (
+            events.groupby("id", sort=False)[available_odds].nunique(dropna=False).gt(1).any().any()
         ):
             raise ValueError("Long 1X2 содержит разные коэффициенты у сторон матча")
         sides = events[["id", "is_home"]].copy()
@@ -81,7 +78,7 @@ def evaluate_1x2_betting(
         truth.loc[events["id"].to_numpy()] = np.asarray(target, dtype=int)
         distribution.loc[events["id"].to_numpy(), :] = values[:, order]
 
-    odds = unique.loc[:, list(ODDS_COLUMNS)].apply(pd.to_numeric, errors="coerce").to_numpy()
+    odds = unique.reindex(columns=ODDS_COLUMNS).apply(pd.to_numeric, errors="coerce").to_numpy()
     probs = distribution.to_numpy(dtype=float)
     valid_odds = np.isfinite(odds).all(axis=1) & (odds > 1).all(axis=1)
     valid_probs = np.logical_and(np.all(np.isfinite(probs), axis=1), np.all(probs >= 0, axis=1))
@@ -118,13 +115,20 @@ def evaluate_1x2_betting(
     sweep = None
     if sweep_thresholds is not None:
         sweep = simulator.sweep_thresholds(
-            selected_target, selected_p, selected_odds, sweep_thresholds
+            selected_target[eligible],
+            np.compress(eligible, selected_p),
+            np.compress(eligible, selected_odds),
+            sweep_thresholds,
         )
     valid_market = distribution.notna().all(axis=1)
-    market_metrics = evaluate_multiclass_probabilities(
-        truth.loc[valid_market].to_numpy(dtype=int),
-        distribution.loc[valid_market].to_numpy(dtype=float),
-        np.array([0, 1, 2]),
+    market_metrics = (
+        evaluate_multiclass_probabilities(
+            truth.loc[valid_market].to_numpy(dtype=int),
+            distribution.loc[valid_market].to_numpy(dtype=float),
+            np.array([0, 1, 2]),
+        )
+        if valid_market.any()
+        else {}
     )
     return {
         "n_total_events": result.n_total_events,
