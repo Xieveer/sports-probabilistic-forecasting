@@ -11,16 +11,19 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock
 
 import optuna
+import pandas as pd
 import pytest
 from omegaconf import DictConfig, OmegaConf
-from optuna.study import load_study
-from optuna.trial import Trial
+from optuna.distributions import FloatDistribution
+from optuna.study import create_study, load_study
+from optuna.trial import Trial, TrialState
 
 from sports_forecast.training.optimization.optuna_optimizer import (
     OptunaHyperOptimizer,
@@ -261,6 +264,22 @@ class TestOptunaHyperOptimizer:
 
         assert optimizer.study_name == "custom_study"
 
+    def test_custom_storage_dir_is_isolated(
+        self,
+        logreg_algorithm_cfg: DictConfig,
+        hyper_cfg: DictConfig,
+        tmp_path: Path,
+    ) -> None:
+        """Исследовательский study хранится вне временного каталога тестов."""
+        hyper_cfg.storage_dir = str(tmp_path / "research_optuna")
+        optimizer = OptunaHyperOptimizer(
+            algorithm_cfg=logreg_algorithm_cfg,
+            hyper_cfg=hyper_cfg,
+            study_name="isolated",
+        )
+        assert (tmp_path / "research_optuna").is_dir()
+        assert str(tmp_path / "research_optuna") in optimizer.storage_url
+
     def test_default_split_cfg(
         self,
         logreg_algorithm_cfg: DictConfig,
@@ -373,6 +392,268 @@ class TestOptunaHyperOptimizer:
             storage=optimizer.storage_url,
         )
         assert len(study.trials) == 3  # n_trials=3
+
+    @pytest.mark.usefixtures("_cleanup_optuna_dir")
+    def test_failed_trial_does_not_reduce_completed_target(
+        self,
+        logreg_algorithm_cfg: DictConfig,
+        hyper_cfg: DictConfig,
+        split_cfg: DictConfig,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Один сбой требует дополнительную попытку до трёх COMPLETE."""
+        optimizer = OptunaHyperOptimizer(
+            algorithm_cfg=logreg_algorithm_cfg,
+            hyper_cfg=hyper_cfg,
+            split_cfg=split_cfg,
+            study_name="test_retry_completed",
+        )
+        calls = 0
+
+        def evaluate(**_kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise ValueError("случайный сбой")
+            return {"mean_logloss": 0.5}
+
+        monkeypatch.setattr(optimizer.tscv, "cross_validate", evaluate)
+        optimizer.optimize(pd.DataFrame({"x": range(10)}), pd.Series([0, 1] * 5))
+        study = load_study(study_name=optimizer.study_name, storage=optimizer.storage_url)
+        assert len(study.get_trials(states=(TrialState.COMPLETE,))) == 3
+        assert len(study.get_trials(states=(TrialState.FAIL,))) == 1
+
+    @pytest.mark.parametrize(
+        ("direction", "previous_value", "new_value"),
+        [("minimize", 2_000_000.0, 3_000_000.0), ("maximize", 0.5, 0.25)],
+    )
+    def test_resume_excludes_legacy_penalty_and_keeps_success(
+        self,
+        logreg_algorithm_cfg: DictConfig,
+        hyper_cfg: DictConfig,
+        split_cfg: DictConfig,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        direction: str,
+        previous_value: float,
+        new_value: float,
+    ) -> None:
+        """Старый штраф не считается успехом и не выбирается ни при каком направлении."""
+        hyper_cfg.storage_dir = str(tmp_path)
+        hyper_cfg.n_trials = 2
+        hyper_cfg.direction = direction
+        optimizer = OptunaHyperOptimizer(
+            logreg_algorithm_cfg, hyper_cfg, split_cfg, study_name="legacy"
+        )
+        study = create_study(
+            study_name=optimizer.study_name, storage=optimizer.storage_url, direction=direction
+        )
+        distribution = FloatDistribution(0.01, 10.0, log=True)
+        for value, parameter in [(1e6, 1.0), (previous_value, 2.0)]:
+            study.add_trial(
+                optuna.trial.create_trial(
+                    value=value,
+                    params={"C": parameter},
+                    distributions={"C": distribution},
+                )
+            )
+
+        observed = []
+
+        class InspectingSampler(optuna.samplers.RandomSampler):
+            def sample_independent(self, study, trial, param_name, param_distribution):
+                observed.append(
+                    [item.value for item in study.get_trials(states=(TrialState.COMPLETE,))]
+                )
+                return super().sample_independent(study, trial, param_name, param_distribution)
+
+        optimizer.sampler = InspectingSampler(seed=42)
+
+        calls = []
+
+        def evaluate(**_kwargs):
+            calls.append(True)
+            return {"mean_logloss": new_value}
+
+        monkeypatch.setattr(optimizer.tscv, "cross_validate", evaluate)
+        best = optimizer.optimize(pd.DataFrame({"x": range(10)}), pd.Series([0, 1] * 5))
+        assert len(calls) == 1
+        assert best["C"] == 2.0
+        assert observed
+        assert all(values == [previous_value] for values in observed)
+        source = load_study(study_name="legacy", storage=optimizer.storage_url)
+        assert [trial.value for trial in source.trials] == [1e6, previous_value]
+        isolated_name = "legacy__without_legacy_penalties__logloss"
+        assert optimizer.active_study_name == isolated_name
+        isolated = load_study(study_name=isolated_name, storage=optimizer.storage_url)
+        assert [trial.value for trial in isolated.trials] == [previous_value, new_value]
+
+        restarted = OptunaHyperOptimizer(
+            logreg_algorithm_cfg, hyper_cfg, split_cfg, study_name="legacy"
+        )
+        monkeypatch.setattr(restarted.tscv, "cross_validate", evaluate)
+        assert restarted.optimize(pd.DataFrame({"x": range(10)}), pd.Series([0, 1] * 5)) == best
+        assert restarted.active_study_name == isolated_name
+        assert len(calls) == 1
+        assert len(load_study(study_name=isolated_name, storage=optimizer.storage_url).trials) == 2
+
+        result_path = tmp_path / "best.json"
+        optimizer.save_best_params(result_path)
+        saved = json.loads(result_path.read_text(encoding="utf-8"))
+        assert saved["study_name"] == isolated_name
+        assert saved["best_value"] == previous_value
+        assert saved["best_params"] == {"C": 2.0}
+
+        metrics = {}
+        artifacts = {}
+        monkeypatch.setattr("mlflow.log_param", lambda *_args: None)
+        monkeypatch.setattr("mlflow.set_tag", lambda *_args: None)
+        monkeypatch.setattr("mlflow.log_metric", lambda name, value: metrics.update({name: value}))
+        monkeypatch.setattr("mlflow.log_text", lambda text, name: artifacts.update({name: text}))
+        optimizer.log_to_mlflow(best)
+        assert metrics["optuna_best_value"] == previous_value
+        assert metrics["optuna_n_completed"] == 2
+        assert len(json.loads(artifacts["optuna_trials.json"])) == 2
+
+    def test_resume_keeps_confirmed_penalty_sized_metric(
+        self,
+        logreg_algorithm_cfg: DictConfig,
+        hyper_cfg: DictConfig,
+        split_cfg: DictConfig,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """Реальная метрика, равная старому штрафу, сохраняется при наличии агрегата."""
+        hyper_cfg.storage_dir = str(tmp_path)
+        hyper_cfg.n_trials = 1
+        optimizer = OptunaHyperOptimizer(
+            logreg_algorithm_cfg, hyper_cfg, split_cfg, study_name="confirmed"
+        )
+        study = create_study(
+            study_name=optimizer.study_name, storage=optimizer.storage_url, direction="minimize"
+        )
+        study.add_trial(
+            optuna.trial.create_trial(
+                value=1e6,
+                params={"C": 1.0},
+                distributions={"C": FloatDistribution(0.01, 10.0, log=True)},
+            )
+        )
+        study.add_trial(
+            optuna.trial.create_trial(
+                value=1e6,
+                params={"C": 2.0},
+                distributions={"C": FloatDistribution(0.01, 10.0, log=True)},
+                user_attrs={"mean_logloss": 1e6},
+            )
+        )
+
+        def unexpected_evaluation(**_kwargs):
+            pytest.fail("Подтверждённый результат должен быть сохранён")
+
+        monkeypatch.setattr(optimizer.tscv, "cross_validate", unexpected_evaluation)
+        best = optimizer.optimize(pd.DataFrame({"x": range(10)}), pd.Series([0, 1] * 5))
+        assert best["C"] == 2.0
+
+    def test_resume_interrupted_legacy_migration(
+        self,
+        logreg_algorithm_cfg: DictConfig,
+        hyper_cfg: DictConfig,
+        split_cfg: DictConfig,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """Повторный перенос добавляет только отсутствующие исходные результаты."""
+        hyper_cfg.storage_dir = str(tmp_path)
+        hyper_cfg.n_trials = 2
+        optimizer = OptunaHyperOptimizer(
+            logreg_algorithm_cfg, hyper_cfg, split_cfg, study_name="interrupted"
+        )
+        source = create_study(
+            study_name=optimizer.study_name, storage=optimizer.storage_url, direction="minimize"
+        )
+        distribution = FloatDistribution(0.01, 10.0, log=True)
+        for value, parameter in [(1e6, 1.0), (0.5, 2.0), (0.4, 3.0)]:
+            source.add_trial(
+                optuna.trial.create_trial(
+                    value=value, params={"C": parameter}, distributions={"C": distribution}
+                )
+            )
+        isolated = create_study(
+            study_name="interrupted__without_legacy_penalties__logloss",
+            storage=optimizer.storage_url,
+            direction="minimize",
+        )
+        isolated.set_user_attr("_legacy_penalty_migration_source", "interrupted")
+        isolated.add_trial(
+            optuna.trial.create_trial(
+                value=0.5,
+                params={"C": 2.0},
+                distributions={"C": distribution},
+                user_attrs={"_legacy_penalty_migration_trial": 1},
+            )
+        )
+
+        def unexpected_evaluation(**_kwargs):
+            pytest.fail("Все необходимые результаты уже существуют")
+
+        monkeypatch.setattr(optimizer.tscv, "cross_validate", unexpected_evaluation)
+        best = optimizer.optimize(pd.DataFrame({"x": range(10)}), pd.Series([0, 1] * 5))
+        assert best["C"] == 3.0
+        optimizer.optimize(pd.DataFrame({"x": range(10)}), pd.Series([0, 1] * 5))
+        assert [trial.value for trial in isolated.trials] == [0.5, 0.4]
+        assert [trial.value for trial in source.trials] == [1e6, 0.5, 0.4]
+
+    def test_legacy_migration_does_not_overwrite_existing_study(
+        self,
+        logreg_algorithm_cfg: DictConfig,
+        hyper_cfg: DictConfig,
+        split_cfg: DictConfig,
+        tmp_path: Path,
+    ) -> None:
+        """Занятые имена и немаркированное study не мешают безопасному возобновлению."""
+        hyper_cfg.storage_dir = str(tmp_path)
+        hyper_cfg.n_trials = 1
+        optimizer = OptunaHyperOptimizer(
+            logreg_algorithm_cfg, hyper_cfg, split_cfg, study_name="collision"
+        )
+        source = create_study(
+            study_name=optimizer.study_name, storage=optimizer.storage_url, direction="minimize"
+        )
+        source.add_trial(optuna.trial.create_trial(value=1e6))
+        source.add_trial(
+            optuna.trial.create_trial(
+                value=0.3,
+                params={"C": 2.0},
+                distributions={"C": FloatDistribution(0.01, 10.0, log=True)},
+            )
+        )
+        other = create_study(
+            study_name="collision__without_legacy_penalties__logloss",
+            storage=optimizer.storage_url,
+            direction="minimize",
+        )
+        other.add_trial(optuna.trial.create_trial(value=0.2))
+
+        abandoned = create_study(
+            study_name="collision__without_legacy_penalties__logloss__1",
+            storage=optimizer.storage_url,
+            direction="minimize",
+        )
+        best = optimizer.optimize(pd.DataFrame({"x": range(10)}), pd.Series([0, 1] * 5))
+        assert best["C"] == 2.0
+        assert optimizer.active_study_name == "collision__without_legacy_penalties__logloss__2"
+        restarted = OptunaHyperOptimizer(
+            logreg_algorithm_cfg, hyper_cfg, split_cfg, study_name="collision"
+        )
+        assert restarted.optimize(pd.DataFrame({"x": range(10)}), pd.Series([0, 1] * 5)) == best
+        assert restarted.active_study_name == optimizer.active_study_name
+        isolated = load_study(study_name=optimizer.active_study_name, storage=optimizer.storage_url)
+        assert [trial.value for trial in isolated.trials] == [0.3]
+        assert [trial.value for trial in source.trials] == [1e6, 0.3]
+        assert [trial.value for trial in other.trials] == [0.2]
+        assert abandoned.trials == []
+        assert abandoned.user_attrs == {}
 
 
 class TestOptunaHyperOptimizerSampler:

@@ -1,10 +1,13 @@
 """Метрики 1X2 используют три класса и порядок модели."""
 
+from typing import cast
+
 import numpy as np
 import pandas as pd
 import pytest
 from hydra import compose, initialize_config_dir
 
+from sports_forecast.training.base import BaseModel
 from sports_forecast.training.optimization.tscv import TimeSeriesCrossValidator
 from sports_forecast.training.probability_metrics import (
     audit_long_1x2_probabilities,
@@ -89,7 +92,7 @@ def test_tscv_rejects_fold_without_all_1x2_classes() -> None:
         TimeSeriesCrossValidator(n_splits=2).cross_validate(object(), frame, target)
 
 
-def test_club_1x2_default_config_skips_binary_calibration_and_betting() -> None:
+def test_club_1x2_default_config_uses_market_betting_without_binary_components() -> None:
     from sports_forecast.config.loaders import PROJECT_ROOT
 
     with initialize_config_dir(version_base="1.3", config_dir=str(PROJECT_ROOT / "conf")):
@@ -106,10 +109,32 @@ def test_club_1x2_default_config_skips_binary_calibration_and_betting() -> None:
     assert cfg.calibration.enabled is True
     assert cfg.betting.enabled is True
     assert not supports_binary_training_component(cfg, "binary_calibration")
-    runner = SingleExperimentRunner(cfg, PROJECT_ROOT)
-    assert (
-        runner._compute_business_metrics(
-            None, pd.DataFrame(), pd.Series(dtype=int), pd.DataFrame(), cfg
-        )
-        == {}
+    assert not supports_binary_training_component(cfg, "binary_betting_simulator")
+
+    class ModelStub:
+        classes_ = np.array([0, 1, 2])
+
+        def predict_proba(self, features: pd.DataFrame) -> np.ndarray:
+            assert len(features) == 3
+            return np.array([[0.5, 0.3, 0.2], [0.2, 0.5, 0.3], [0.2, 0.3, 0.5]])
+
+    events = pd.DataFrame(
+        {
+            "id": ["a", "b", "c"],
+            "odd_home": [3.0] * 3,
+            "odd_draw": [4.0] * 3,
+            "odd_away": [4.0] * 3,
+        }
     )
+    runner = SingleExperimentRunner(cfg, PROJECT_ROOT)
+    result = runner._compute_business_metrics(
+        cast(BaseModel, ModelStub()),
+        pd.DataFrame(index=range(3)),
+        pd.Series([0, 1, 2]),
+        events,
+        cfg,
+        save_bet_trace_file=False,
+    )
+    assert result["n_total_events"] == 3
+    assert result["n_bets"] == 3
+    assert result["valid_distribution_count"] == 3

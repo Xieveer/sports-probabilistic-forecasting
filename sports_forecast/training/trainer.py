@@ -30,6 +30,7 @@ from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
 
 from sports_forecast.betting.bootstrap import BlockBootstrap
+from sports_forecast.betting.market_1x2 import evaluate_1x2_betting
 from sports_forecast.betting.odds import extract_betting_odds
 from sports_forecast.betting.simulator import BettingSimulator
 from sports_forecast.config import get_data_path
@@ -473,6 +474,7 @@ class SingleExperimentRunner:
                 inner_train_features,
                 inner_train_target,
                 cfg,
+                groups=train_df["id"] if cfg.market_spec.name == "winner_1x2" else None,
             )
 
             # 6. Создаём Shadow модель через ModelFactory
@@ -931,6 +933,8 @@ class SingleExperimentRunner:
         train_features: pd.DataFrame,
         train_target: pd.Series,
         cfg: DictConfig,
+        *,
+        groups: pd.Series | None = None,
     ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
         """Запустить Optuna оптимизацию гиперпараметров (если включена).
 
@@ -946,8 +950,25 @@ class SingleExperimentRunner:
         if not hyper_cfg.get("enabled", False):
             logger.info("Optuna оптимизация отключена (hyper.enabled=false)")
             return None, {}
-        if cfg.market_spec.name == "winner_1x2":
-            raise ValueError("Optuna для winner_1x2 отключена до поддержки event-level folds")
+        if cfg.market_spec.name == "winner_1x2" and groups is None:
+            raise ValueError("Optuna для winner_1x2 требует ID события для TSCV")
+
+        max_train_events = hyper_cfg.get("max_train_events")
+        if max_train_events is not None:
+            if groups is None or int(max_train_events) < 1:
+                raise ValueError("hyper.max_train_events требует ID событий и положительное число")
+            ordered_events = pd.unique(groups)
+            selected_events = ordered_events[-int(max_train_events) :]
+            selected_mask = groups.isin(selected_events).to_numpy()
+            train_features = train_features.loc[selected_mask].reset_index(drop=True)
+            train_target = train_target.loc[selected_mask].reset_index(drop=True)
+            groups = groups.loc[selected_mask].reset_index(drop=True)
+            logger.info(
+                "Optuna TSCV: последние %d/%d событий до holdout, %d строк",
+                len(selected_events),
+                len(ordered_events),
+                len(train_features),
+            )
 
         # Проверяем наличие optuna_space
         optuna_space = cfg.algorithm.get("optuna_space", None)
@@ -981,7 +1002,7 @@ class SingleExperimentRunner:
             study_name=study_name,
         )
 
-        best_params = optimizer.optimize(train_features, train_target)
+        best_params = optimizer.optimize(train_features, train_target, groups=groups)
 
         # Логируем в MLflow
         optimizer.log_to_mlflow(best_params)
@@ -989,7 +1010,7 @@ class SingleExperimentRunner:
         optuna_metrics: dict[str, Any] = {
             "enabled": True,
             "best_params": best_params,
-            "study_name": study_name,
+            "study_name": optimizer.active_study_name,
         }
 
         logger.info("Optuna: лучшие параметры найдены для '%s'", algorithm)
@@ -1412,6 +1433,45 @@ class SingleExperimentRunner:
             Словарь бизнес-метрик (пустой если odds не найдены).
         """
         betting_cfg = cfg.get("betting", {})
+        if cfg.market_spec.name == "winner_1x2":
+            if not betting_cfg.get("enabled", False):
+                return {}
+            proba = model.predict_proba(test_features)
+            sweep_cfg = betting_cfg.get("threshold_sweep", {})
+            thresholds: list[float] | None = None
+            if sweep_cfg.get("enabled", False):
+                step = float(sweep_cfg.get("step", 0.01))
+                thresholds = cast(
+                    list[float],
+                    np.round(
+                        np.arange(
+                            float(sweep_cfg.get("min", 0.0)),
+                            float(sweep_cfg.get("max", 0.30)) + step / 2,
+                            step,
+                        ),
+                        4,
+                    ).tolist(),
+                )
+            metrics_1x2 = evaluate_1x2_betting(
+                test_df,
+                test_target,
+                proba,
+                is_long=effective_market_spec(cfg).data_format == "long",
+                classes=np.asarray(getattr(model, "classes_", None))
+                if proba.shape[1] == 3
+                else None,
+                min_edge_threshold=float(betting_cfg.get("min_edge_threshold", 0.05)),
+                flat_stake=float(betting_cfg.get("flat_stake", 10.0)),
+                initial_bankroll=float(betting_cfg.get("initial_bankroll", 1000.0)),
+                sweep_thresholds=thresholds,
+            )
+            trace = metrics_1x2.pop("bet_trace")
+            if bool(betting_cfg.get("save_test_bet_trace", True)) and save_bet_trace_file:
+                out_path = self._get_model_path(cfg, "shadow") / "test_bet_trace.csv"
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                trace.to_csv(out_path, index=False)
+                metrics_1x2["bet_trace_csv_path"] = str(out_path.resolve())
+            return metrics_1x2
         if not supports_binary_training_component(cfg, "binary_betting_simulator"):
             logger.info("Бинарный BettingSimulator отключён контрактом market_spec 1X2")
             return {}
@@ -2304,6 +2364,15 @@ class SingleExperimentRunner:
             mlflow.set_tag("has_business_metrics", "true")
             mlflow.set_tag("odds_column", bm["odds_column"])
             mlflow.log_param("betting_valid_odds", bm["valid_odds_count"])
+            if "valid_distribution_count" in bm:
+                mlflow.log_metric("market_valid_distribution_count", bm["valid_distribution_count"])
+                mlflow.log_metric(
+                    "market_rejected_distribution_count", bm["rejected_distribution_count"]
+                )
+                for key, value in bm["market_metrics"].items():
+                    mlflow.log_metric(f"market_{key}", value)
+                for outcome, count in bm["bet_outcome_counts"].items():
+                    mlflow.log_metric(f"betting_n_bets_{outcome}", count)
 
         # ── Volume ───────────────────────────────────────────────────
         mlflow.log_metric(f"{p}betting_n_bets", bm["n_bets"])
