@@ -30,7 +30,9 @@
 - Следующая роль: Product Owner — зафиксировать ITERATE и открыть отдельную
   инициативу только после выбора следующей исследовательской гипотезы.
 - Release intent: production выпуск не запрошен.
-- Обновлено: 2026-10-12.
+- Интеграционный PR: [#100](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/100).
+  Локальные Optuna, MLflow и модели в worktree EPIC-041 сохраняются как evidence.
+- Обновлено: 2026-10-31.
 
 ## Задачи
 

@@ -8,7 +8,7 @@
 
 - Инициатива: `EPIC-043`.
 - Ветка: `initiative/epic-043-football-feature-research`, отдельный worktree.
-- Workflow: Research; этап: отчёт, review и PR/CI завершены.
+- Workflow: Research; исследование и review завершены решением ITERATE.
 - Цель и критерии: [REQ-043](../product/requirements/REQ-043-football-feature-research.md).
 - Baseline: [EPIC-041](../research/epic-041-advanced-club-1x2.md) — advanced
   long и wide, holdout 2025/26 уже раскрыт, итог ITERATE.
@@ -25,14 +25,19 @@
 - Review evidence: проверенный diff `0814cd4`; pre-commit hooks, четыре
   теста, календарная диагностика, калибровка, инвентаризация и парный
   bootstrap проверены независимо; блокирующих замечаний нет.
-- PR: [#101](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/101)
-  поверх EPIC-041; исходный diff и review evidence закоммичены и отправлены.
+- Интеграционные PR: [#99](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/99)
+  → [#100](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/100)
+  → [#101](https://github.com/Xieveer/sports-probabilistic-forecasting/pull/101).
 - CI на `3a88a4e`: `lint-test (3.12)`, `Python dependencies`,
   `Filesystem and secrets` — success.
-- Следующий шаг: передать пользователю исследовательское решение ITERATE;
-  отдельный цикл потребуется для stage/as-of данных и новой модели голов.
+- Следующий шаг: улучшение футбольного прогноза рассматривается отдельно
+  в новой инициативе; текущий результат не подтверждает прибыльную модель.
+  Holdout 2025/26 уже раскрыт и не является новым независимым периодом.
+- Вход для будущей инициативы: проверить происхождение и as-of время odds,
+  календарь, стадии и пары UCL/UEL, а также модель голов; гипотезы и критерии
+  следующего исследования пока не согласованы.
 - Release intent: production выпуск не запрошен.
-- Обновлено: 2026-10-13.
+- Обновлено: 2026-10-31.
 
 ## Исследовательские этапы
 

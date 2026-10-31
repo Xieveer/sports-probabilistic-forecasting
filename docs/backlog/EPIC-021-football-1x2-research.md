@@ -1,6 +1,6 @@
 # EPIC-021 — Исследование 1X2 для топовых футбольных лиг
 
-> **Статус:** in_progress
+> **Статус:** cancelled — исходный план заменён последующими исследованиями
 > **Приоритет:** high
 > **Владелец:** главный агент
 > **Требование:** [REQ-021](../product/requirements/REQ-021-top-football-winner-baseline.md)
@@ -13,22 +13,39 @@
 probabilistic metrics. Historical `odd_*` — разрешённый пользователем, но непроверенный
 last-prematch proxy; результат не означает подтверждённый production edge.
 
+## Состояние инициативы
+
+Исходный worktree `initiative/epic-021-football-1x2-research` не содержит
+уникальных коммитов относительно `main`. Похожие работы и результаты находятся
+в цепочке отдельных инициатив: [EPIC-040](EPIC-040-club-football-platform-e2e.md)
+проверил локальный цикл, [EPIC-041](EPIC-041-advanced-club-1x2-search.md)
+оценил модели на holdout, а [EPIC-043](EPIC-043-football-feature-research.md)
+проверил новые гипотезы на более ранних периодах. Это не подтверждает
+автоматического выполнения всех исходных критериев и задач EPIC-021.
+
+ROI ≥5% на раскрытом holdout не достигнут; результат EPIC-041 — ITERATE.
+По решению владельца исходный незавершённый план закрыт, его оставшиеся
+задачи отменены, а не объявлены выполненными. Улучшение футбольного прогноза
+рассматривается отдельно в новой инициативе; повторно использовать раскрытый
+holdout для выбора гипотез нельзя.
+
 ## Декомпозиция
 
 | Задача | Результат | Зависимости | Проверка | Статус |
 |---|---|---|---|---|
-| [TASK-021-1](tasks/TASK-021-1-club-pool-data-contract.md) | Изолированный club-pool contract, fixture и ingest/clean smoke | REQ-021, ADR-021 | red/green tests, schema gate | in_progress |
-| TASK-021-2 | Advanced features и leakage audit | TASK-021-1 | feature tests, processed validation | backlog |
-| TASK-021-3 | 1X2 target, CatBoost temporal baseline и Research Harness coverage gate | TASK-021-2 | temporal tests, experiment report | backlog |
-| TASK-021-4 | Полный backfill, research iterations и итоговый report | TASK-021-3 | locked-holdout evidence | backlog |
-| [TASK-021-5](tasks/TASK-021-5-bronze-completeness-manifest.md) | Manifest полноты bronze и поэтапный required/optional ingest | TASK-021-1 | unit/integration tests, coverage report | backlog |
+| [TASK-021-1](tasks/TASK-021-1-club-pool-data-contract.md) | Изолированный club-pool contract, fixture и ingest/clean smoke | REQ-021, ADR-021 | red/green tests, schema gate | cancelled |
+| TASK-021-2 | Advanced features и leakage audit | TASK-021-1 | feature tests, processed validation | cancelled |
+| TASK-021-3 | 1X2 target, CatBoost temporal baseline и Research Harness coverage gate | TASK-021-2 | temporal tests, experiment report | cancelled |
+| TASK-021-4 | Полный backfill, research iterations и итоговый report | TASK-021-3 | locked-holdout evidence | cancelled |
+| [TASK-021-5](tasks/TASK-021-5-bronze-completeness-manifest.md) | Manifest полноты bronze и поэтапный required/optional ingest | TASK-021-1 | unit/integration tests, coverage report | done |
 
 ## Риски и rollout
 
-Не выполняются promotion, deployment и публикация модели. Массовый API backfill начинается
-только после проверенного fixture-среза. ROI ограничен допущением historical odds; повторное
-раскрытие locked holdout запрещено.
+Promotion, deployment и публикация модели не выполнялись. ROI ограничен
+допущением historical odds; повторное раскрытие locked holdout запрещено.
 
-## Полное EPIC review
+## Завершение
 
-Заполняется независимым reviewer после terminal-статусов всех TASK.
+Исходный план закрыт без утверждения выполнения всех критериев. Существующее
+evidence и независимые проверки последующих исследований находятся в EPIC-040,
+EPIC-041 и EPIC-043; решение о новой инициативе принимается отдельно.
