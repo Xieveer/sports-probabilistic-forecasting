@@ -59,3 +59,23 @@
 - Предыдущая роль: Developer. Следующая роль: независимый Reviewer, затем
   Product Owner и Operations Agent для выпуска.
 - Обновлено: 2026-10-31.
+
+## Независимый EPIC review
+
+- Проверенный diff: commit `8e84e13` в ветке
+  `initiative/epic-044-bets-cycle-report`. После commit локальные
+  pre-commit hooks прошли без изменений.
+- Проверены границы прав владельца в claim API и Telegram, идемпотентность
+  расчёта, audit с canonical revision, отдельный outbox, финансовая формула,
+  конфигурация сезона, Compose и миграция PostgreSQL 16 с существующей строкой.
+- Первоначальные findings по доступу к сводке, миграции PostgreSQL,
+  молчаливому отсутствию owner ID, audit provenance и mypy исправлены до
+  проверенного commit. Блокирующих findings в итоговом diff нет.
+- Локальные gates: `make test` — 1741 passed, 10 skipped; `make lint`,
+  `make security`, `make docs`, `make pre-commit`, `make production-check` —
+  прошли. Предупреждения Sphinx и пропущенные тесты с внешними prerequisites
+  остаются в evidence команд; production цикл ими не подтверждён.
+- Остаточный риск: Telegram delivery использует at-least-once и может
+  повторить сообщение, если отправка состоялась, а ack не сохранился.
+  Выпуск остаётся в TASK-044-4 до terminal CI, exact image gates, backup,
+  production smoke и сообщения владельцу.
