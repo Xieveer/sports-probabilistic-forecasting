@@ -108,6 +108,47 @@ def format_terminal_notification(notification: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def format_bet_summary_notification(notification: Mapping[str, Any]) -> str:
+    """Показать новые расчёты и причины пропуска без provider payload."""
+    payload = notification.get("payload")
+    if not isinstance(payload, Mapping):
+        raise ValueError("Нет сводки ставок")
+    settled = payload.get("settled")
+    skipped = payload.get("skipped")
+    if not isinstance(settled, list) or not isinstance(skipped, list):
+        raise ValueError("Некорректная сводка ставок")
+    lines = [
+        "<b>Результат открытых ставок</b>",
+        f"Цикл: <code>{escape(str(notification.get('run_id') or 'неизвестен'))}</code>",
+        f"Рассчитано: {_count(payload.get('settled_count'))}; "
+        f"требуют проверки: {_count(payload.get('skipped_count'))}",
+        f"Общий денежный PnL: {escape(str(payload.get('total_cash_pnl') or '0.00'))} ₽",
+    ]
+    for item in settled[:10]:
+        if isinstance(item, Mapping):
+            result_label = {"win": "выигрыш", "loss": "проигрыш", "void": "возврат"}.get(
+                str(item.get("result")), "рассчитано"
+            )
+            lines.append(
+                f"<code>{escape(str(item.get('bet_id') or ''))}</code> · "
+                f"{result_label} · "
+                f"{escape(str(item.get('pnl') or ''))} ₽"
+            )
+    for item in skipped[:10]:
+        if isinstance(item, Mapping):
+            lines.append(
+                f"<code>{escape(str(item.get('bet_id') or ''))}</code> · "
+                f"{escape(str(item.get('reason') or 'Требует проверки'))}"
+            )
+    if (
+        isinstance(payload.get("settled_count"), int)
+        and isinstance(payload.get("skipped_count"), int)
+        and payload["settled_count"] + payload["skipped_count"] > len(settled) + len(skipped)
+    ):
+        lines.append("Остальные записи доступны в /bet_history")
+    return "\n".join(lines)
+
+
 async def poll_notifications_once(cfg: DictConfig, bot: Bot) -> int:
     """Забрать ограниченную партию и доставить её по настроенным destination aliases."""
     destinations = validate_notification_destinations(cfg)
@@ -116,7 +157,8 @@ async def poll_notifications_once(cfg: DictConfig, bot: Bot) -> int:
     )
     if not admin_ids:
         raise NotificationConfigurationError("Не настроен администратор control API")
-    admin_id = admin_ids[0]
+    owner = str(cfg.bot.get("bets_owner_id") or "").strip()
+    admin_id = int(owner) if owner.isdigit() and int(owner) in admin_ids else admin_ids[0]
     batch = await _control_request(
         cfg,
         admin_id,
@@ -135,7 +177,12 @@ async def poll_notifications_once(cfg: DictConfig, bot: Bot) -> int:
         notification_id = item.get("notification_id")
         lease_token = item.get("lease_token")
         alias = item.get("destination_alias")
-        chat_ids = destinations.get(alias) if isinstance(alias, str) else None
+        kind = item.get("kind", "terminal")
+        if kind == "bet_summary":
+            owner = str(cfg.bot.get("bets_owner_id") or "").strip()
+            chat_ids = int(owner) if owner.isdigit() and alias == "bets_owner" else None
+        else:
+            chat_ids = destinations.get(alias) if isinstance(alias, str) else None
         if chat_ids is None:
             logger.warning("Outbox destination alias is not configured")
             continue
@@ -148,7 +195,15 @@ async def poll_notifications_once(cfg: DictConfig, bot: Bot) -> int:
         if not isinstance(lease_token, str) or not lease_token:
             continue
 
-        message = format_terminal_notification(item)
+        try:
+            message = (
+                format_bet_summary_notification(item)
+                if kind == "bet_summary"
+                else format_terminal_notification(item)
+            )
+        except ValueError:
+            logger.warning("Некорректная сводка ставок в outbox")
+            continue
         send_failed = False
         try:
             await bot.send_message(chat_id=chat_ids, text=message)

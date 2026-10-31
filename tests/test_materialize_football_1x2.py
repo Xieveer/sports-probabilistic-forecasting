@@ -27,7 +27,11 @@ from sports_forecast.service.db.models import Base, Prediction
 from sports_forecast.service.routers import predictions as predictions_router
 
 
-def test_long_1x2_keeps_draw_and_skips_only_bad_event() -> None:
+@pytest.mark.parametrize(
+    ("bad_win", "reason"),
+    [(0.7, "negative_draw_residual"), (np.nan, "invalid_win_probability")],
+)
+def test_long_1x2_keeps_draw_and_skips_only_bad_event(bad_win: float, reason: str) -> None:
     frame = pd.DataFrame(
         {
             "id": ["a", "a", "b", "b"],
@@ -36,7 +40,7 @@ def test_long_1x2_keeps_draw_and_skips_only_bad_event() -> None:
             "pl": ["A", "B", "C", "D"],
         }
     )
-    probabilities = np.array([[0.6, 0.4], [0.7, 0.3], [0.3, 0.7], [0.6, 0.4]])
+    probabilities = np.array([[0.6, 0.4], [0.7, 0.3], [0.3, bad_win], [0.6, 0.4]])
     result, rejected = _aggregate_football_1x2_predictions(
         frame, probabilities, np.array([0, 1]), strategy="football_long_binary"
     )
@@ -47,7 +51,7 @@ def test_long_1x2_keeps_draw_and_skips_only_bad_event() -> None:
         "away_win": 0.3,
     }
     assert rejected.match_id.tolist() == ["b"]
-    assert rejected.reason.tolist() == ["negative_draw_residual"]
+    assert rejected.reason.tolist() == [reason]
 
 
 def test_wide_1x2_maps_permuted_classes() -> None:
@@ -189,6 +193,54 @@ def test_local_materialization_keeps_both_1x2_candidates_separate(tmp_path: Path
         cards = [_format_upcoming_line(item) for item in items]
         assert any("1X2 (бинарная): П1 0.400 | Х 0.300 | П2 0.300" in card for card in cards)
         assert any("1X2 (многоклассовая): П1 0.500 | Х 0.300 | П2 0.200" in card for card in cards)
+
+
+@pytest.mark.parametrize("bad_win", [np.nan, np.inf, -0.1, 0.9])
+def test_all_quarantined_clears_only_own_showcase(tmp_path: Path, bad_win: float) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    long_strategy = "football_long_binary"
+    wide_strategy = "football_wide_multiclass"
+    _candidate_input(tmp_path, long_strategy)
+    _candidate_input(tmp_path, wide_strategy)
+    long_model = MagicMock()
+    long_model.classes_ = np.array([0, 1])
+    long_model.predict_proba.return_value = np.array([[0.6, 0.4], [0.7, 0.3]])
+    wide_model = MagicMock()
+    wide_model.classes_ = np.array([0, 1, 2])
+    wide_model.predict_proba.return_value = np.array([[0.5, 0.3, 0.2]])
+    with (
+        Session(engine) as session,
+        patch("sports_forecast.materialize.PROJECT_ROOT", tmp_path),
+        patch("sports_forecast.materialize.load_model_from_path", return_value=long_model) as load,
+    ):
+        assert materialize_predictions(
+            _candidate_cfg(long_strategy), version="shadow", session=session
+        )
+        load.return_value = wide_model
+        assert materialize_predictions(
+            _candidate_cfg(wide_strategy), version="shadow", session=session
+        )
+        load.return_value = long_model
+        long_model.predict_proba.return_value = np.array([[0.5, 0.5]])
+        with pytest.raises(ValueError, match="бинарные вероятности"):
+            materialize_predictions(
+                _candidate_cfg(long_strategy), version="shadow", session=session
+            )
+        session.flush()
+        assert {row.source_namespace: row.status for row in session.query(Prediction).all()} == {
+            "local_test/football_long_binary": "ok",
+            "local_test/football_wide_multiclass": "ok",
+        }
+        long_model.predict_proba.return_value = np.array([[0.5, bad_win], [0.7, 0.3]])
+        assert materialize_predictions(
+            _candidate_cfg(long_strategy), version="shadow", session=session
+        )
+        session.flush()
+        assert {row.source_namespace: row.status for row in session.query(Prediction).all()} == {
+            "local_test/football_long_binary": "stale",
+            "local_test/football_wide_multiclass": "ok",
+        }
 
 
 def test_local_materialization_rejects_non_test_sqlite(tmp_path: Path) -> None:

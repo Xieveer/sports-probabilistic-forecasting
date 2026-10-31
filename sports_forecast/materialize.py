@@ -368,7 +368,7 @@ def _aggregate_football_1x2_predictions(
     *,
     strategy: str,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Собрать 1X2 и отдельно вернуть события с невалидным остатком."""
+    """Собрать 1X2 и отдельно вернуть события с невалидными вероятностями."""
     probabilities = np.asarray(proba, dtype=float)
     class_list = list(np.asarray(classes))
     if strategy == "football_long_binary":
@@ -708,6 +708,17 @@ def materialize_predictions(
             preds_df = _aggregate_long_predictions(df, proba)
         logger.info("Агрегировано %d предсказаний (матчей)", len(preds_df))
 
+        if club_local and preds_df.empty and not rejected.empty:
+            _publish_empty_showcase(
+                session,
+                tournament=tournament_name,
+                market=market_name,
+                market_spec=market_spec_name,
+                source_namespace=f"local_test/{strategy}",
+                model_pool=model_pool,
+                pin=pinned_model,
+            )
+            return True
         if preds_df.empty:
             raise ValueError("Непустой inference не дал агрегированных предсказаний")
 

@@ -287,9 +287,27 @@ def _compute_target_from_source(
                 f"Колонка '{col}' не найдена в датафрейме. Доступные: {list(df.columns)[:20]}..."
             )
 
+    # Обе стратегии рынка 1X2 используют одинаковый допуск счёта.
+    validate_score = comparison == "three_way" or (
+        comparison == "greater" and market_spec.get("name") == "winner_1x2"
+    )
+    if validate_score:
+        score_a = pd.to_numeric(df[col_a], errors="coerce")
+        score_b = pd.to_numeric(df[col_b], errors="coerce")
+        valid_score = (
+            score_a.notna()
+            & score_b.notna()
+            & (score_a >= 0)
+            & (score_b >= 0)
+            & score_a.mod(1).eq(0)
+            & score_b.mod(1).eq(0)
+        )
+        if not bool(valid_score.all()):
+            raise TargetComputationError("Для 1X2 нужен полный неотрицательный целый счёт")
+
     # Вычисляем таргет
     if comparison == "greater":
-        target = (df[col_a] > df[col_b]).astype(int)
+        target = ((score_a > score_b) if validate_score else (df[col_a] > df[col_b])).astype(int)
         logger.info(
             "✓ Таргет '%s': %s > %s, format=%s, positive_rate=%.2f%%",
             target_name,
@@ -299,21 +317,9 @@ def _compute_target_from_source(
             target.mean() * 100,
         )
     elif comparison == "three_way":
-        home_score = pd.to_numeric(df[col_a], errors="coerce")
-        away_score = pd.to_numeric(df[col_b], errors="coerce")
-        valid_score = (
-            home_score.notna()
-            & away_score.notna()
-            & (home_score >= 0)
-            & (away_score >= 0)
-            & home_score.mod(1).eq(0)
-            & away_score.mod(1).eq(0)
-        )
-        if not bool(valid_score.all()):
-            raise TargetComputationError("Для 1X2 нужен полный неотрицательный целый счёт")
         target = pd.Series(1, index=df.index, dtype=int)
-        target.loc[home_score > away_score] = 0
-        target.loc[home_score < away_score] = 2
+        target.loc[score_a > score_b] = 0
+        target.loc[score_a < score_b] = 2
         logger.info("✓ Таргет '%s': 1X2 по %s/%s, n=%d", target_name, col_a, col_b, len(target))
     elif comparison == "total_over":
         if line is None:

@@ -95,6 +95,11 @@ run_with_heartbeat /usr/bin/docker compose -f docker-compose.prod.yml --profile 
   "market_spec=${SF_MARKET_SPEC}" "algorithm=${SF_ALGORITHM}" "features=${SF_FEATURES}" \
   "hydra/job_logging=stdout" "hydra.output_subdir=null"
 
+# Рассчитать подтверждённые открытые ставки по только что сохранённым результатам.
+run_with_heartbeat /usr/bin/docker compose -f docker-compose.prod.yml --profile worker run --rm --no-deps worker \
+  /app/.venv/bin/python -m sports_forecast.orchestration.bet_settlement_cli \
+  --run-id "${SF_WORKER_RUN_ID}" --tournament "${SF_TOURNAMENT}"
+
 # Подтвердить Object Storage до запуска признаков и materialization.
 : "${SF_OPERATIONAL_ARCHIVE_ROOT:?нужен SF_OPERATIONAL_ARCHIVE_ROOT}"
 active_stage="archive_sync"

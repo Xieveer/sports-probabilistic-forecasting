@@ -84,6 +84,15 @@ def supports_binary_training_component(cfg: DictConfig, component: str) -> bool:
     return bool(cfg.market_spec.get("training", {}).get(component, True))
 
 
+def _validate_walk_forward_market(cfg: DictConfig) -> None:
+    """Запретить бинарную оценку walk-forward для рынка 1X2."""
+    if (
+        OmegaConf.select(cfg, "walk_forward.enabled", default=False)
+        and OmegaConf.select(cfg, "market_spec.name", default=None) == "winner_1x2"
+    ):
+        raise ValueError("walk_forward не поддерживает оценку рынка winner_1x2")
+
+
 class SingleExperimentRunner:
     """Оркестратор запуска одного эксперимента.
 
@@ -131,6 +140,7 @@ class SingleExperimentRunner:
             True если эксперимент успешен, иначе False.
         """
         cfg = self.config
+        _validate_walk_forward_market(cfg)
 
         # Формируем имя и теги для MLflow run
         run_name = self._get_run_name(cfg)
@@ -161,6 +171,7 @@ class SingleExperimentRunner:
         ``build_pool_dataset``.
         """
         cfg = self.config
+        _validate_walk_forward_market(cfg)
         if cfg.get("model_pool") is None:
             raise ValueError("Pool training требует явный model_pool context")
         from sports_forecast.identity.data_provenance import load_enabled_registry_snapshot
@@ -344,6 +355,7 @@ class SingleExperimentRunner:
         Returns:
             True если успешно.
         """
+        _validate_walk_forward_market(cfg)
         try:
             # 1. Сортировка по времени (защита от утечек)
             time_col = cfg.get("split", {}).get("time_column", "datetime")
@@ -998,7 +1010,7 @@ class SingleExperimentRunner:
         optuna_metrics: dict[str, Any] = {
             "enabled": True,
             "best_params": best_params,
-            "study_name": study_name,
+            "study_name": optimizer.active_study_name,
         }
 
         logger.info("Optuna: лучшие параметры найдены для '%s'", algorithm)

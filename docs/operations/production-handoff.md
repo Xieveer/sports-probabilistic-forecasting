@@ -1,4 +1,88 @@
-# Передача сервиса в эксплуатацию: v1.3.7 candidate
+# Передача сервиса в эксплуатацию: v1.4.0 candidate
+
+- Статус подготовки: `candidate`
+- Инициатива: [EPIC-044](../backlog/EPIC-044-bets-cycle-report.md),
+  требования [REQ-044](../product/requirements/REQ-044-automatic-bet-settlement-and-season-report.md),
+  решение [ADR-044](../architecture/adr/ADR-044-automatic-bet-settlement.md).
+- Целевая версия: `1.4.0`; установленная до выпуска версия: `1.3.7`.
+- Source tag: `v1.4.0` на exact merge commit после terminal CI/Security.
+- Среда: `ops-prod-01`; release intent подтверждён владельцем 2026-10-31.
+
+## Release evidence v1.4.0
+
+- source_tag: `v1.4.0`; source_commit: `1bfefabdf95d60f08810235caca4a22ad73f5ec2`; evidence_tag: `v1.4.0-evidence.1`.
+- CI: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/41196325122 — terminal success на exact source commit.
+- Security: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/41196325055 — terminal success на exact source commit.
+- Docker: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/41196451336 — release gates, tested OCI, publish, scan и provenance.
+- first-rollout: https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/41196451336 — clean isolated first-rollout success.
+
+- api: ghcr.io/xieveer/sports-probabilistic-forecasting-api@sha256:2e498b8eeb146598ef8428454b5add5b213198afc6676c4438d931c2e69b11e6 — published; linux/amd64; scan; provenance.
+- worker: ghcr.io/xieveer/sports-probabilistic-forecasting-worker@sha256:732998b97d59d0b5f0055373be67c483fae31dc9cda98c3e28b965c70d379bc7 — published; linux/amd64; scan; provenance.
+- telegram_bot: ghcr.io/xieveer/sports-probabilistic-forecasting-telegram-bot@sha256:c06c2f46cab09eaab41a1b5d9152d204617393536ce99832b4b156de63481f19 — published; linux/amd64; scan; provenance.
+- archive_sync: ghcr.io/xieveer/sports-probabilistic-forecasting-archive-sync@sha256:cbc8410f750e40a139186229d1b7045990da1f652eb35ab8b6148d2505642c21 — published; linux/amd64; scan; provenance.
+- postgres: postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94 — неизменённый проверенный образ.
+
+Предрелизный root-only backup `/var/backups/sports-forecast/postgres/pre-v1.4.0-20261031T112521955573869.dump` имеет SHA-256 `e0713f55cd27d555ce0992fba2315078ee43bdfeadfaf79f32383eca6f5e7950`, 59 176 162 байта. Полный off-host GET/bytecmp и isolated restore exact PostgreSQL image прошли: schema 0025, events 22 718, predictions 2 056, записей real_bets 104. Перед миграцией повторно сверить отсутствие активного цикла.
+
+## Фактический production outcome v1.4.0 — 2026-10-31
+
+После [успешного Release evidence workflow](https://github.com/Xieveer/sports-probabilistic-forecasting/actions/runs/41197806424) exact образы загружены на VPS, Worker/model bundle прошёл runtime gate с 489 ordered features. Три timers остановлены перед миграцией; активных циклов 0. Дополнительный pre-switch dump `pre-v1.4.0-switch-20261031T114138038657892.dump` (59 176 161 байт, SHA-256 `3db22645001035aab9b60fff288c8864067f8f21f8c5e13a7aa5d4d2547d086a`) прошёл полный off-host GET/bytecmp.
+
+Миграция `0025 → 0026_bet_summary_notification` прошла; 104 записи ставок, пять открыты, 44 прежние terminal outbox rows и права сохранены. `/opt/sports-forecast` установлен на `1bfefabdf95d60f08810235caca4a22ad73f5ec2`; authoritative profile SHA-256 `44b5c9e2384d6d6d4ece5d405e8ca13aa2b31fa2ca159fb52ea4eb5e3981a5a0`, прежний profile сохранён root-only. Model `current` указывает на bundle `sha256:1efb8f2e3ff832aada4a8680fa95b07631eeb09af8eae2e98aab487844a83035`, `previous` — на v1.3.7 bundle. API/бот/БД healthy, restart 0, OOM false; `/health` и `/ready` HTTP 200.
+
+Controlled run `672444d9-3611-4793-8e97-81272ff75207` завершился `success` за 410 с: 22 727 событий, 232 прогноза, 213 future ready, 0 ошибок публикации, итоговое уведомление delivered. Пять открытых ставок привязаны к будущим scheduled матчам, поэтому их расчёт и отдельная сводка в этом run не создавались. Авторизованный сезонный endpoint вернул 99 рассчитанных/пять открытых ставок, PNG-график создан. Три минутных dispatcher ticks после возвращения timers завершились успешно и не содержат GHCR pull; следующий слот — 2026-11-01 10:00 МСК. Стартовое сообщение версии с краткими изменениями отправлено владельцу из работающего bot-контейнера.
+
+Post-switch dump `post-v1.4.0-20261031T115312836682863.dump` (59 185 145 байт, SHA-256 `e0c11047dc923292c0ecfc60f53561181ddbd8d7fee2560228200212c6189c18`) прошёл off-host GET/bytecmp и isolated restore exact PostgreSQL image: schema 0026, 22 727 событий, 2 065 сохранённых predictions, 104 ставки и 45 outbox rows. Временные restore artifacts удалены, рабочая БД healthy. Rollback: остановить три timers, проверить отсутствие активного executor, вернуть сохранённые exact v1.3.7 source/profile/model/images и пересоздать API/бот; schema 0026 аддитивна, downgrade и удаление ставок не выполнять. Результат следующего scheduled run и первая сводка рассчитанных ставок требуют последующего наблюдения.
+
+## Граница выпуска v1.4.0
+
+Образ API, Worker, bot и archive-sync должен быть опубликован по exact digest
+из проверенного tag `v1.4.0`. Обычный dispatcher и стадии цикла используют
+локальные exact образы (`pull_policy: never`), поэтому release preflight
+явно получает их и сверяет digest до переключения. Отсутствующий образ —
+остановка выпуска, без возврата к `latest`.
+
+До миграции 0026 сохранить backup PostgreSQL, проверить readback и isolated
+restore. Миграция добавляет тип и короткий payload в существующий outbox без
+перезаписи PostgreSQL таблицы. Старый код v1.3.7 совместим с добавленными
+колонками; rollback выполняется переключением прежних exact образов, без
+удаления журнала и audit. Удаление данных или downgrade миграции в rollback
+не входят.
+
+До switch проверить, что `BET_OWNER_USER_ID` непустой в production profile и
+одинаково передаётся API, Worker и bot. Значение не печатать в логи/evidence:
+без него новый Worker явно завершит цикл ошибкой.
+
+После review, terminal CI/Security, Docker/evidence gates и backup выполнить
+`make production-check`, затем на сервере проверить API/bot health, digest
+работающих контейнеров, `/bet_report season` с PNG, controlled Data Cycle
+с canonical результатом и отдельной сводкой открытых ставок. Если открытых
+ставок нет, проверить нулевой отчёт и доставку terminal notification; не
+создавать фиктивную денежную ставку на production.
+
+После успешного smoke отправить стартовое сообщение владельцу **из уже
+работающего** bot-контейнера из каталога release checkout:
+
+```bash
+docker compose --env-file /etc/sports-forecast/refresh/nhl.env \
+  -f docker-compose.prod.yml exec -T telegram-bot \
+  /app/.venv/bin/python -m sports_forecast.deploy.release_announcement_cli
+```
+
+Команда сверяет
+`SF_APP_VERSION` работающего контейнера с `conf/release-notes.yaml` в его
+образе, затем отправляет только владельцу версию и краткие изменения.
+Зафиксировать факт доставки без токена, chat ID и текста ответа Telegram.
+
+Локально на 2026-10-31 прошли `make test` (1741 passed, 10 skipped),
+`make lint`, `make security` (0 известных уязвимостей после lock update),
+`make docs` и `make production-check`; отдельный PostgreSQL 16 подтвердил
+миграцию существующей outbox строки, grant и sequence. Review, PR,
+post-merge CI/Security, source tag, Docker/first-rollout,
+immutable evidence, exact Worker/model, backup/readback/isolated restore,
+production smoke и сообщение владельцу прошли.
+
+## Архив handoff v1.3.7
 
 - Статус подготовки: `candidate`
 - Решение на 2026-10-12: `GO` — v1.3.7 включена, строгий controlled и плановый Data Cycle без odds завершились успешно, 20 последовательных минутных ticks и release gates прошли. Владелец перенёс непустой owner candidate gate на подключение нового турнира.
